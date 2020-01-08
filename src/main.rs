@@ -43,19 +43,7 @@ fn run(expr: &str) {
 
     //println!("Program: {:?}", program);
 
-    /*
-    let result = match eval::eval(&ast, &Default::default()) {
-        Ok(ast) => ast,
-        Err(err) => {
-            print!("{}", err.in_source(expr));
-            return;
-        },
-    };
-
-    println!("{}", result);
-    */
-
-    let vm_result = match eval::Vm::default().execute(&program) {
+    let result = match eval::Vm::default().execute(&program) {
         Ok(result) => result,
         Err(err) => {
             print!("{}", err.in_source(expr));
@@ -63,7 +51,7 @@ fn run(expr: &str) {
         },
     };
 
-    println!("VM Result: {}", vm_result);
+    println!("{}", result);
 }
 
 fn main() {

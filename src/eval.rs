@@ -12,7 +12,7 @@ type Addr = usize;
 
 #[derive(Clone, Debug)]
 pub enum Instr {
-    Value(Value<'static>), // Push a value onto the stack
+    Value(Value), // Push a value onto the stack
     UnaryOp(UnaryOp), // Apply a unary operation to the latest stack item
     BinaryOp(BinaryOp), // Apply a binary operation to the 2 latest stack items
     Branch(Addr, Addr), // Call one of two procedures based on the truth of the last stack item
@@ -170,27 +170,27 @@ impl Expr {
 
 #[derive(Default)]
 pub struct Vm {
-    expr_stack: Vec<Value<'static>>,
+    expr_stack: Vec<Value>,
     call_stack: Vec<Addr>,
-    locals: Vec<Value<'static>>,
+    locals: Vec<Value>,
 }
 
 impl Vm {
-    fn push(&mut self, val: Value<'static>) {
+    fn push(&mut self, val: Value) {
         self.expr_stack.push(val);
     }
 
-    fn pop(&mut self) -> Value<'static> {
+    fn pop(&mut self) -> Value {
         self.expr_stack
             .pop()
             .expect("Tried to pop value from empty stack")
     }
 
-    fn local(&self, offset: usize) -> &Value<'static> {
+    fn local(&self, offset: usize) -> &Value {
         &self.locals[self.locals.len() - 1 - offset]
     }
 
-    pub fn execute(&mut self, prog: &Program) -> Result<Value<'static>, Error> {
+    pub fn execute(&mut self, prog: &Program) -> Result<Value, Error> {
         let mut ip = prog.entry;
         loop {
             let mut incr_ip = true;
@@ -263,10 +263,10 @@ impl Vm {
                         .iter()
                         .map(|offset| self.local(*offset).clone())
                         .collect::<Vec<_>>();
-                    self.push(Value::NewFunc(addr, env));
+                    self.push(Value::Func(addr, env));
                 },
                 Instr::Apply => match self.pop() {
-                    Value::NewFunc(addr, locals) => {
+                    Value::Func(addr, locals) => {
                         let arg = self.pop();
                         self.locals.push(arg);
                         self.locals.extend(locals.iter().cloned());
@@ -293,71 +293,17 @@ impl Vm {
     }
 }
 
-pub fn eval<'a>(expr: &'a Node<Expr>, scope: &Vector<(LocalIntern<String>, Value<'a>)>) -> Result<Value<'a>, Error> {
-    match &**expr {
-        Expr::Literal(x) => match x {
-            Literal::Null => Ok(Value::Null),
-            Literal::Number(x) => Ok(Value::Number(*x)),
-            Literal::String(x) => Ok(Value::String(x.clone())),
-            Literal::Boolean(x) => Ok(Value::Boolean(*x)),
-        },
-        Expr::Unary(op, a) => match &**op {
-            UnaryOp::Neg => eval(a, scope)?.neg(),
-            UnaryOp::Not => eval(a, scope)?.not(),
-            UnaryOp::Head => eval(a, scope)?.head(),
-            UnaryOp::Tail => eval(a, scope)?.tail(),
-        }.ok_or_else(|| Error::invalid_unary_op(op.inner().clone(), op.region())),
-        Expr::Binary(op, a, b) => match &**op {
-            BinaryOp::Add => eval(a, scope)?.add(eval(b, scope)?),
-            BinaryOp::Sub => eval(a, scope)?.sub(eval(b, scope)?),
-            BinaryOp::Mul => eval(a, scope)?.mul(eval(b, scope)?),
-            BinaryOp::Div => eval(a, scope)?.div(eval(b, scope)?),
-            BinaryOp::Rem => eval(a, scope)?.rem(eval(b, scope)?),
-            BinaryOp::Eq => eval(a, scope)?.eq(&eval(b, scope)?).map(Value::Boolean),
-            BinaryOp::Less => eval(a, scope)?.less(eval(b, scope)?),
-            BinaryOp::More => eval(a, scope)?.more(eval(b, scope)?),
-            BinaryOp::LessEq => eval(a, scope)?.less_eq(eval(b, scope)?),
-            BinaryOp::MoreEq => eval(a, scope)?.more_eq(eval(b, scope)?),
-            BinaryOp::Join => eval(a, scope)?.join(eval(b, scope)?),
-        }.ok_or_else(|| Error::invalid_binary_op(op.inner().clone(), op.region())),
-        Expr::Branch(p, t, f) => eval(if eval(p, scope)?
-            .truth()
-            .ok_or_else(|| Error::not_truthy(p.region()))? { t } else { f }, scope),
-        Expr::Func(name, body) => Ok(Value::Func(name, scope.clone(), body)),
-        Expr::Apply(f, arg) => {
-            let arg = eval(arg, scope)?;
-            match eval(f, scope)? {
-                Value::Func(name, mut scope, body) => {
-                    scope.push_back((**name, arg));
-                    eval(&body, &scope)
-                },
-                _ => Err(Error::cannot_call(f.region())),
-            }
-        },
-        Expr::List(items) => Ok(Value::List(items.iter().map(|item| eval(item, scope)).collect::<Result<_, _>>()?)),
-        Expr::Ident(ident) => Ok(scope
-            .iter()
-            .rev()
-            .find(|(name, _)| *name == **ident)
-            .ok_or_else(|| Error::no_such_binding(ident.to_string(), ident.region()))?
-            .1
-            .clone()),
-    }
-}
-
 #[derive(Clone, Debug)]
-pub enum Value<'a> {
+pub enum Value {
     Null,
     Number(f64),
     String(String),
     Boolean(bool),
     List(Vector<Self>),
-    Func(&'a Node<LocalIntern<String>>, Vector<(LocalIntern<String>, Self)>, &'a Node<Expr>),
-
-    NewFunc(Addr, Vec<Value<'static>>),
+    Func(Addr, Vec<Value>),
 }
 
-impl<'a> Value<'a> {
+impl Value {
     pub fn number(self) -> Option<f64> {
         if let Value::Number(x) = self { Some(x) } else { None }
     }
@@ -464,7 +410,7 @@ impl<'a> Value<'a> {
     }
 }
 
-impl<'a> fmt::Display for Value<'a> {
+impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Null => write!(f, "null"),
@@ -476,8 +422,7 @@ impl<'a> fmt::Display for Value<'a> {
                 x.iter().map(|x| write!(f, "{}, ", x)).collect::<Result<_, _>>()?;
                 write!(f, "]")
             },
-            Value::Func(_, _, _) => write!(f, "<func>"),
-            Value::NewFunc(_, _) => write!(f, "<func>"),
+            Value::Func(_, _) => write!(f, "<func>"),
         }
     }
 }

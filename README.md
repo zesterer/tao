@@ -5,7 +5,7 @@ Bread is a statically-typed pure function programming language. The interpreter 
 ## Example
 
 ```
-# Sort list items
+# Quicksort
 let sort = rec(sort -> l ->
     if l:len <= 1
     then l
