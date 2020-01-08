@@ -6,6 +6,7 @@ mod eval;
 mod src;
 mod node;
 mod error;
+mod compile;
 
 use std::{
     env,
@@ -39,7 +40,13 @@ fn run(expr: &str) {
 
     //println!("AST: {:#?}", ast);
 
-    let program = eval::Program::compile(&ast);
+    let program = match compile::Program::compile(&ast) {
+        Ok(program) => program,
+        Err(err) => {
+            print!("{}", err.in_source(expr));
+            return;
+        },
+    };
 
     //println!("Program: {:?}", program);
 

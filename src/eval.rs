@@ -1,172 +1,12 @@
 use std::fmt;
-use internment::LocalIntern;
 use im_rc::Vector;
 use crate::{
     parse::{Expr, Literal, UnaryOp, BinaryOp},
     node::Node,
     error::Error,
     src::SrcRegion,
+    compile::{Addr, Instr, Program},
 };
-
-type Addr = usize;
-
-#[derive(Clone, Debug)]
-pub enum Instr {
-    Value(Value), // Push a value onto the stack
-    UnaryOp(UnaryOp), // Apply a unary operation to the latest stack item
-    BinaryOp(BinaryOp), // Apply a binary operation to the 2 latest stack items
-    Branch(Addr, Addr), // Call one of two procedures based on the truth of the last stack item
-    Return(usize), // Return from the current procedure, popping n locals
-    Func(Addr, Vec<usize>), // Create a function from the given address, list of stack value offsets, and parameter
-    Apply, // Apply the last stack item to the function before it on the stack
-    MakeList(usize), // Make a list of the last n stack items (in reverse order)
-    Local(usize), // Place the local with the given offset onto the value stack
-}
-
-#[derive(Default, Debug)]
-pub struct Program {
-    instrs: Vec<Instr>,
-    entry: Addr,
-}
-
-impl Program {
-    pub fn instr(&self, addr: Addr) -> Option<Instr> {
-        self.instrs.get(addr).cloned()
-    }
-
-    fn insert_procedure(&mut self, mut instrs: Vec<Instr>) -> Addr {
-        let addr = self.instrs.len();
-        self.instrs.append(&mut instrs);
-        addr
-    }
-
-    fn compile_procedure(
-        &mut self,
-        expr: &Node<Expr>,
-        locals: &Vec<LocalIntern<String>>,
-        pop_n: usize,
-    ) -> Addr {
-        let mut instrs = Vec::new();
-        self.compile_expr(expr, &mut instrs, locals);
-        instrs.push(Instr::Return(pop_n));
-        self.insert_procedure(instrs)
-    }
-
-    fn compile_expr(
-        &mut self,
-        expr: &Node<Expr>,
-        instrs: &mut Vec<Instr>,
-        locals: &Vec<LocalIntern<String>>,
-    ) {
-        let offset_of = |ident| locals.len().saturating_sub(1) - locals
-            .iter()
-            .enumerate()
-            .find(|(_, local)| **local == ident)
-            .expect("Could not find local")
-            .0;
-
-        match &**expr {
-            Expr::Literal(x) => instrs.push(Instr::Value(match x {
-                Literal::Null => Value::Null,
-                Literal::Number(x) => Value::Number(*x),
-                Literal::String(x) => Value::String(x.clone()),
-                Literal::Boolean(x) => Value::Boolean(*x),
-            })),
-            Expr::Unary(op, a) => {
-                self.compile_expr(a, instrs, locals);
-                instrs.push(Instr::UnaryOp(**op));
-            },
-            Expr::Binary(op, a, b) => {
-                self.compile_expr(a, instrs, locals);
-                self.compile_expr(b, instrs, locals);
-                instrs.push(Instr::BinaryOp(**op));
-            },
-            Expr::Branch(p, t, f) => {
-                let t = self.compile_procedure(t, locals, 0);
-                let f = self.compile_procedure(f, locals, 0);
-                self.compile_expr(p, instrs, locals);
-                instrs.push(Instr::Branch(t, f));
-            },
-            Expr::Func(name, body) => {
-                let mut env_locals = expr.env_locals();
-
-                // Find environment from current locals
-                let mut env_offsets = Vec::new();
-                for env_local in &env_locals {
-                    env_offsets.push(offset_of(*env_local));
-                }
-
-                env_locals.insert(0, **name);
-
-                let body = self.compile_procedure(body, &env_locals, env_locals.len());
-                instrs.push(Instr::Func(body, env_offsets));
-            },
-            Expr::Apply(f, arg) => {
-                self.compile_expr(arg, instrs, locals);
-                self.compile_expr(f, instrs, locals);
-                instrs.push(Instr::Apply);
-            },
-            Expr::List(items) => {
-                for item in items.iter().rev() {
-                    self.compile_expr(item, instrs, locals);
-                }
-                instrs.push(Instr::MakeList(items.len()));
-            },
-            Expr::Ident(ident) => instrs.push(Instr::Local(offset_of(**ident))),
-        }
-    }
-
-    pub fn compile(expr: &Node<Expr>) -> Self {
-        let mut this = Self::default();
-        let entry = this.compile_procedure(expr, &mut Vec::new(), 0);
-        this.entry = entry;
-        this
-    }
-}
-
-impl Expr {
-    fn build_env_locals(
-        &self,
-        shadowed: &mut Vec<LocalIntern<String>>,
-        env: &mut Vec<LocalIntern<String>>,
-    ) {
-        match self {
-            Expr::Unary(_, a) => a.build_env_locals(shadowed, env),
-            Expr::Binary(_, a, b) => {
-                a.build_env_locals(shadowed, env);
-                b.build_env_locals(shadowed, env);
-            },
-            Expr::Branch(p, t, f) => {
-                p.build_env_locals(shadowed, env);
-                t.build_env_locals(shadowed, env);
-                f.build_env_locals(shadowed, env);
-            },
-            Expr::Func(name, body) => {
-                shadowed.push(**name);
-                body.build_env_locals(shadowed, env);
-            },
-            Expr::Apply(f, arg) => {
-                f.build_env_locals(shadowed, env);
-                arg.build_env_locals(shadowed, env);
-            },
-            Expr::List(items) => for item in items {
-                item.build_env_locals(shadowed, env);
-            },
-            Expr::Ident(ident) => {
-                if !shadowed.contains(&*ident) {
-                    env.push(**ident);
-                }
-            },
-            _ => {},
-        }
-    }
-
-    fn env_locals(&self) -> Vec<LocalIntern<String>> {
-        let mut env = Vec::new();
-        self.build_env_locals(&mut Vec::new(), &mut env);
-        env
-    }
-}
 
 #[derive(Default)]
 pub struct Vm {
@@ -191,7 +31,7 @@ impl Vm {
     }
 
     pub fn execute(&mut self, prog: &Program) -> Result<Value, Error> {
-        let mut ip = prog.entry;
+        let mut ip = prog.entry();
         loop {
             let mut incr_ip = true;
             let instr = prog
@@ -214,7 +54,7 @@ impl Vm {
                         UnaryOp::Not => a.not(),
                         UnaryOp::Head => a.head(),
                         UnaryOp::Tail => a.tail(),
-                    }.ok_or_else(|| Error::invalid_unary_op(op, SrcRegion::none()))?);
+                    }.ok_or_else(|| Error::invalid_unary_op(op, prog.region(ip).unwrap()))?);
                 },
                 Instr::BinaryOp(op) => {
                     let b = self.pop();
@@ -231,13 +71,13 @@ impl Vm {
                         BinaryOp::LessEq => a.less_eq(b),
                         BinaryOp::MoreEq => a.more_eq(b),
                         BinaryOp::Join => a.join(b),
-                    }.ok_or_else(|| Error::invalid_binary_op(op, SrcRegion::none()))?);
+                    }.ok_or_else(|| Error::invalid_binary_op(op, prog.region(ip).unwrap()))?);
                 },
                 Instr::Branch(a, b) => {
                     let new_ip = if self
                         .pop()
                         .truth()
-                        .ok_or_else(|| Error::not_truthy(SrcRegion::none()))?
+                        .ok_or_else(|| Error::not_truthy(prog.region(ip).unwrap()))?
                     {
                         a
                     } else {
@@ -274,7 +114,7 @@ impl Vm {
                         ip = addr;
                         incr_ip = false;
                     },
-                    _ => return Err(Error::cannot_call(SrcRegion::none())),
+                    _ => return Err(Error::cannot_call(prog.region(ip).unwrap())),
                 },
                 Instr::MakeList(n) => {
                     let items = (0..n)
