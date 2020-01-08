@@ -1,0 +1,13 @@
+# Assist in defining recursive functions
+let rec = f ->
+    f:f
+in
+
+# Find the factorial of a number
+let factorial = rec(factorial -> x ->
+	if x = 0
+	then 1
+	else factorial(factorial, x - 1) * x
+) in
+
+factorial(10)

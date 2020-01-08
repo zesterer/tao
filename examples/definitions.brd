@@ -1,0 +1,44 @@
+def x = 5
+
+def factorial = x ->
+	if x = 0
+	then 1
+	else x * factorial(x - 1)
+
+data Maybe T =
+	| Just T
+	| Nil
+
+data Result T E =
+	| Ok T
+	| Err E
+
+data List T =
+	| Item (T, List T)
+	| Nil
+
+data NonEmptyList T = (T, List T)
+
+def head T: List T -> Maybe T = l ->
+	match l in
+	| Item (head, _) => Just head
+	| Nil => Nil
+
+def head T: NonEmptyList T -> T = l ->
+	match l in
+	| (head, _) => head
+
+def len T: List T -> Nat = l ->
+	match l in
+	| Item (_, tail) => 1 + len(tail)
+	| Nil => 0
+
+def sum: List Num -> Num = l ->
+	match l in
+	| Item (head, tail) => head + len(tail)
+	| Nil => 0
+
+def fold T U: T -> (T -> U -> T) -> List U -> T = init -> f -> l
+	match l in
+	| Item (head, tail) => fold(f(init, head), f, tail)
+	| Nil => init
