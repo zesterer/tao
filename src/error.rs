@@ -65,6 +65,13 @@ impl Error {
         }
     }
 
+    pub fn recursive_type(a: Node<TypeInfo>) -> Self {
+        Self {
+            region: a.region(),
+            kind: ErrorKind::RecursiveType(a),
+        }
+    }
+
     pub fn in_source<'a>(&'a self, src: &'a str) -> ErrorInSrc<'a> {
         ErrorInSrc {
             error: self,
@@ -163,6 +170,7 @@ pub enum ErrorKind {
     NoSuchBinding(String),
     TypeMismatch(Node<TypeInfo>, Node<TypeInfo>),
     CannotInferType(Node<TypeInfo>),
+    RecursiveType(Node<TypeInfo>),
 }
 
 pub struct ErrorInSrc<'a> {
@@ -197,7 +205,8 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
             ErrorKind::NotTruthy => write!(f, "Cannot determine truth of value")?,
             ErrorKind::NoSuchBinding(name) => write!(f, "Cannot find binding '{}'", name)?,
             ErrorKind::TypeMismatch(a, b) => write!(f, "Type mismatch between '{}' and '{}'", a.inner(), b.inner())?,
-            ErrorKind::CannotInferType(a) => write!(f, "Cannot infer type")?,
+            ErrorKind::CannotInferType(a) => write!(f, "Cannot infer type '{}'", a.inner)?,
+            ErrorKind::RecursiveType(a) => write!(f, "Recursive type detected '{}'", a.inner)?,
         };
         writeln!(f, "")?;
 

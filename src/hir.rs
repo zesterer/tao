@@ -46,10 +46,22 @@ impl TypeInfo {
             (TypeInfo::Ref(a), TypeInfo::Ref(b)) => if Rc::ptr_eq(a, b) {
                 true
             } else {
-                a.borrow().compatible_with(&b.borrow())
+                a
+                    .try_borrow()
+                    .map(|a| b
+                        .try_borrow()
+                        .map(|b| a.compatible_with(&b))
+                        .unwrap_or(false))
+                    .unwrap_or(false)
             },
-            (TypeInfo::Ref(a), b) => a.borrow().compatible_with(b),
-            (a, TypeInfo::Ref(b)) => a.compatible_with(&b.borrow()),
+            (TypeInfo::Ref(a), b) => a
+                .try_borrow()
+                .map(|a| a.compatible_with(b))
+                .unwrap_or(false),
+            (a, TypeInfo::Ref(b)) => b
+                .try_borrow()
+                .map(|b| a.compatible_with(&b))
+                .unwrap_or(false),
 
             // Atoms
             (TypeInfo::Number, TypeInfo::Number) => true,
@@ -68,7 +80,6 @@ impl TypeInfo {
     pub fn unify_with(self: &mut Node<Self>, other: &mut Node<Self>) -> Result<(), Error> {
         match (self.inner_mut(), other.inner_mut()) {
             // Unknowns
-            (TypeInfo::Unknown, TypeInfo::Unknown) => Ok(()),
             (TypeInfo::Unknown, _) => {
                 other.make_ref();
                 *self = other.clone();
@@ -81,13 +92,26 @@ impl TypeInfo {
             },
 
             // Referenced types
-            (TypeInfo::Ref(a), TypeInfo::Ref(b)) => if Rc::ptr_eq(a, b) {
-                Ok(())
-            } else {
-                a.borrow_mut().unify_with(&mut b.borrow_mut())
+            (TypeInfo::Ref(a), _) => {
+                let a = a.try_borrow_mut();
+                if a.is_err() {
+                    drop(a);
+                    //Err(Error::recursive_type(self.clone()))
+                    Ok(())
+                } else {
+                    a.unwrap().unify_with(other)
+                }
             },
-            (TypeInfo::Ref(a), _) => a.borrow_mut().unify_with(other),
-            (_, TypeInfo::Ref(b)) => self.unify_with(&mut b.borrow_mut()),
+            (_, TypeInfo::Ref(b)) => {
+                let b = b.try_borrow_mut();
+                if b.is_err() {
+                    drop(b);
+                    //Err(Error::recursive_type(other.clone()))
+                    Ok(())
+                } else {
+                    self.unify_with(&mut b.unwrap())
+                }
+            },
 
             // Atoms
             (TypeInfo::Number, TypeInfo::Number) => Ok(()),
@@ -106,9 +130,13 @@ impl TypeInfo {
         }
     }
 
-    pub fn established<'a>(self: &'a Node<Self>) -> Result<(), &'a Node<Self>> {
+    pub fn established<'a>(self: &'a Node<Self>) -> Result<(), Node<Self>> {
         match self.inner() {
-            TypeInfo::Unknown => Err(self),
+            TypeInfo::Unknown => Err(self.clone()),
+            TypeInfo::Ref(ty) => ty
+                .try_borrow_mut()
+                .map(|ty| ty.established())
+                .unwrap_or(Ok(())),
             TypeInfo::List(a) => a.established(),
             TypeInfo::Func(i, o) => {
                 i.established()?;
@@ -141,7 +169,10 @@ impl fmt::Display for TypeInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TypeInfo::Unknown => write!(f, "?"),
-            TypeInfo::Ref(a) => write!(f, "{}", a.borrow().inner()),
+            TypeInfo::Ref(a) => match a.try_borrow_mut() {
+                Ok(a) => write!(f, "{}", a.inner()),
+                Err(_) => write!(f, "<recursive>"),
+            },
             TypeInfo::Number => write!(f, "Num"),
             TypeInfo::Boolean => write!(f, "Bool"),
             TypeInfo::String => write!(f, "String"),
@@ -315,7 +346,7 @@ impl Expr {
         self
             .meta()
             .established()
-            .map_err(|ty| Error::cannot_infer_type(ty.clone()))?;
+            .map_err(|ty| Error::cannot_infer_type(ty))?;
 
         match self.inner() {
             Expr::Unary(_, a) => a.check_types(),
