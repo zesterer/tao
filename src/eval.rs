@@ -1,7 +1,7 @@
 use std::fmt;
 use im_rc::Vector;
 use crate::{
-    parse::{Expr, Literal, UnaryOp, BinaryOp},
+    parse::{UnaryOp, BinaryOp},
     node::Node,
     error::Error,
     src::SrcRegion,

@@ -1,6 +1,5 @@
 use std::{
     fmt,
-    ops::DerefMut,
     rc::Rc,
     cell::RefCell,
     collections::HashMap,
@@ -99,8 +98,7 @@ impl TypeInfo {
                 let a = a.try_borrow_mut();
                 if a.is_err() {
                     drop(a);
-                    //Err(Error::recursive_type(self.clone()))
-                    Ok(())
+                    Err(Error::recursive_type(self.clone()))
                 } else {
                     a.unwrap().unify_with(other)
                 }
@@ -109,8 +107,7 @@ impl TypeInfo {
                 let b = b.try_borrow_mut();
                 if b.is_err() {
                     drop(b);
-                    //Err(Error::recursive_type(other.clone()))
-                    Ok(())
+                    Err(Error::recursive_type(other.clone()))
                 } else {
                     self.unify_with(&mut b.unwrap())
                 }
@@ -219,7 +216,7 @@ pub fn unary_op_resolve(op: &Node<UnaryOp>, a: &mut Node<TypeInfo>, o: &mut Node
     }
 
     match matches.len() {
-        0 => Err(Error::invalid_unary_op(op.clone(), a.region)),
+        0 => Err(Error::invalid_unary_op(op.clone(), a.clone())),
         1 => {
             let m = matches[0];
             a.unify_with(&mut Node::new(m.0.clone(), a.region, ()))?;
@@ -273,7 +270,7 @@ pub fn binary_op_resolve(
     }
 
     match matches.len() {
-        0 => Err(Error::invalid_binary_op(op.clone(), a.region, b.region)), // TODO: Add complex type checks here
+        0 => Err(Error::invalid_binary_op(op.clone(), a.clone(), b.clone())), // TODO: Add complex type checks here
         1 => {
             let m = matches[0];
             a.unify_with(&mut Node::new(m.0.clone(), a.region, ()))?;

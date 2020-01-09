@@ -15,13 +15,13 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn invalid_unary_op(op: Node<UnaryOp>, a: SrcRegion) -> Self {
+    pub fn invalid_unary_op(op: Node<UnaryOp>, a: Node<TypeInfo>) -> Self {
         Self {
             kind: ErrorKind::InvalidUnaryOp(op, a),
         }
     }
 
-    pub fn invalid_binary_op(op: Node<BinaryOp>, a: SrcRegion, b: SrcRegion) -> Self {
+    pub fn invalid_binary_op(op: Node<BinaryOp>, a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
         Self {
             kind: ErrorKind::InvalidBinaryOp(op, a, b),
         }
@@ -70,7 +70,7 @@ impl Error {
         }
     }
 
-    pub fn merge(mut self, mut other: Self) -> Self {
+    pub fn merge(self, mut other: Self) -> Self {
         // TODO
         self
     }
@@ -163,8 +163,8 @@ pub enum ErrorKind {
     FoundExpected(Thing, SrcRegion, HashSet<Thing>),
     UnexpectedEnd,
     ExpectedEnd(Thing, SrcRegion),
-    InvalidUnaryOp(Node<UnaryOp>, SrcRegion),
-    InvalidBinaryOp(Node<BinaryOp>, SrcRegion, SrcRegion),
+    InvalidUnaryOp(Node<UnaryOp>, Node<TypeInfo>),
+    InvalidBinaryOp(Node<BinaryOp>, Node<TypeInfo>, Node<TypeInfo>),
     CannotCall(SrcRegion),
     NotTruthy(SrcRegion),
     NoSuchBinding(String, SrcRegion),
@@ -221,39 +221,6 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                         char_pos += line.len() + 1;
                     }
                 }
-
-                /*
-                let draw_line = |f: &mut fmt::Formatter, line| writeln!(f, "{:>4} | {}", line + 1, lines[line]);
-                let draw_underline = |f: &mut fmt::Formatter, line, start, end| {
-                    write!(f, "       ")?;
-                    for _ in 0..start {
-                        write!(f, " ")?;
-                    }
-                    for _ in start..end {
-                        write!(f, "^")?;
-                    }
-                    let line: &str = lines[line];
-                    for _ in end..line.len() {
-                        write!(f, " ")?;
-                    }
-                    writeln!(f, "")?;
-                    Ok(())
-                };
-
-                if start_line == end_line {
-                    draw_line(f, start_line)?;
-                    draw_underline(f, start_line, start_col, end_col)?;
-                } else {
-                    draw_line(f, start_line)?;
-                    draw_underline(f, start_line, start_col, lines[start_line].len())?;
-                    for i in start_line + 1..end_line {
-                        draw_line(f, i)?;
-                        draw_underline(f, i, 0, lines[i].len())?;
-                    }
-                    draw_line(f, end_line)?;
-                    draw_underline(f, end_line, 0, end_col)?;
-                }
-                */
             } else {
                 todo!()
             }
@@ -280,12 +247,12 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                 highlight_regions(f, &[*region])?;
             },
             ErrorKind::InvalidUnaryOp(op, a) => {
-                writeln!(f, "Invalid unary operation {}", op.inner)?;
-                highlight_regions(f, &[op.region, *a])?;
+                writeln!(f, "Cannot apply '{}' to value of type '{}'", op.inner, a.inner)?;
+                highlight_regions(f, &[op.region, a.region])?;
             },
             ErrorKind::InvalidBinaryOp(op, a, b) => {
-                writeln!(f, "Invalid binary operation {}", op.inner)?;
-                highlight_regions(f, &[op.region, *a, *b])?;
+                writeln!(f, "Cannot apply '{}' to values of types '{}' and '{}'", op.inner, a.inner, b.inner)?;
+                highlight_regions(f, &[op.region, a.region, b.region])?;
             },
             ErrorKind::CannotCall(region) => {
                 writeln!(f, "Cannot call value")?;

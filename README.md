@@ -46,3 +46,16 @@ Below are some examples of types that can be represented in Bread.
 - `List Num` / `List String`
 
 - `Num -> List Num -> Bool`
+
+## Error Messages
+
+Bread aims to have useful error messages. Below are a few examples.
+
+```
+Type error: Error: Cannot apply '+' to values of types 'Num' and 'String'
+-> line 1, column 1
+   1 | 5 + if true
+       ^ ^
+   2 | then "foo"
+            ^^^^^
+```
