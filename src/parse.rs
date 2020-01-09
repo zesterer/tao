@@ -158,13 +158,13 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
             .or(paren_expr.clone())
             .or(brack_expr_list.map(|(items, region)| Expr::List(items).at(region))) // TODO!
             .or(just(Token::If)
-                .padding_for(expr.clone())
+                .then(expr.clone())
                 .padded_by(just(Token::Then))
                 .then(expr.clone())
                 .padded_by(just(Token::Else))
                 .then(expr.clone())
-                .map(|((p, t), f)| {
-                    let region = p.region.union(t.region).union(f.region);
+                .map(|(((head, p), t), f)| {
+                    let region = head.region.union(p.region).union(t.region).union(f.region);
                     Expr::Branch(p, t, f)
                         .at(region)
                 }))

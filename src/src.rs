@@ -135,6 +135,17 @@ impl SrcRegion {
         }
     }
 
+    pub fn earliest(self, other: Self) -> Self {
+        match (self, other) {
+            (SrcRegion::Range(a, _), SrcRegion::Range(b, _)) => if a.later_than(b) {
+                other
+            } else {
+                self
+            },
+            _ => self,
+        }
+    }
+
     pub fn in_context(&self, code: &str) -> Option<((usize, usize), (usize, usize))> {
         match self {
             SrcRegion::Range(from, until) => Some((from.in_context(code), until.in_context(code))),

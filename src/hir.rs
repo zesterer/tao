@@ -83,11 +83,15 @@ impl TypeInfo {
         match (self.inner_mut(), other.inner_mut()) {
             // Unknowns
             (TypeInfo::Unknown, _) => {
+                let region = self.region.earliest(other.region);
                 other.make_ref();
+                other.region = region;
                 *self = other.clone();
                 Ok(())
             },
             (_, TypeInfo::Unknown) => {
+                let region = self.region.earliest(other.region);
+                self.make_ref();
                 self.make_ref();
                 *other = self.clone();
                 Ok(())
@@ -126,7 +130,11 @@ impl TypeInfo {
                 Ok(())
             },
 
-            _ => Err(Error::type_mismatch(self.clone(), other.clone())),
+            _ => if self.region.later_than(other.region) {
+                Err(Error::type_mismatch(other.clone(), self.clone()))
+            } else {
+                Err(Error::type_mismatch(self.clone(), other.clone()))
+            },
         }
     }
 
@@ -329,14 +337,13 @@ impl Expr {
                 binary_op_resolve(op, a.meta_mut(), b.meta_mut(), &mut self.meta)?;
             },
             Expr::Branch(p, t, f) => {
-                p.infer_types(scope)?;
                 p.meta.unify_with(&mut Node::new(TypeInfo::Boolean, p.region, ()))?;
+                p.infer_types(scope)?;
 
                 t.infer_types(scope)?;
                 f.infer_types(scope)?;
-                t.meta_mut().unify_with(f.meta_mut())?;
-                t.meta_mut().unify_with(&mut self.meta)?;
-                f.meta_mut().unify_with(&mut self.meta)?;
+                self.meta.unify_with(t.meta_mut())?;
+                self.meta.unify_with(f.meta_mut())?;
             },
             Expr::Func(arg, body) => {
                 let mut scope = scope.push(*arg.inner, &mut arg.meta);

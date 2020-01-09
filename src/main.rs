@@ -47,7 +47,7 @@ fn run(expr: &str) {
 
     //println!("AST: {:#?}", ast);
 
-    println!("Type: {}", ast.meta.inner);
+    println!("{}", ast.meta.inner);
 
     let program = match compile::Program::compile(&ast) {
         Ok(program) => program,

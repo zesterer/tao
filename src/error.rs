@@ -70,7 +70,7 @@ impl Error {
         }
     }
 
-    pub fn merge(self, mut other: Self) -> Self {
+    pub fn merge(self, other: Self) -> Self {
         // TODO
         self
     }

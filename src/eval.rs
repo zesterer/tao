@@ -123,7 +123,6 @@ impl Vm {
                     self.push(Value::List(items));
                 },
                 Instr::Local(offset) => self.push(self.local(offset).clone()),
-                _ => todo!(),
             }
 
             if incr_ip {
