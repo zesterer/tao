@@ -12,62 +12,53 @@ use crate::{
 
 pub struct Error {
     kind: ErrorKind,
-    region: SrcRegion,
 }
 
 impl Error {
-    pub fn invalid_unary_op(op: UnaryOp, region: SrcRegion) -> Self {
+    pub fn invalid_unary_op(op: Node<UnaryOp>, a: SrcRegion) -> Self {
         Self {
-            kind: ErrorKind::InvalidUnaryOp(op),
-            region,
+            kind: ErrorKind::InvalidUnaryOp(op, a),
         }
     }
 
-    pub fn invalid_binary_op(op: BinaryOp, region: SrcRegion) -> Self {
+    pub fn invalid_binary_op(op: Node<BinaryOp>, a: SrcRegion, b: SrcRegion) -> Self {
         Self {
-            kind: ErrorKind::InvalidBinaryOp(op),
-            region,
+            kind: ErrorKind::InvalidBinaryOp(op, a, b),
         }
     }
 
     pub fn cannot_call(region: SrcRegion) -> Self {
         Self {
-            kind: ErrorKind::CannotCall,
-            region,
+            kind: ErrorKind::CannotCall(region),
         }
     }
 
     pub fn not_truthy(region: SrcRegion) -> Self {
         Self {
-            kind: ErrorKind::NotTruthy,
-            region,
+            kind: ErrorKind::NotTruthy(region),
         }
     }
 
     pub fn no_such_binding(name: String, region: SrcRegion) -> Self {
         Self {
-            kind: ErrorKind::NoSuchBinding(name),
-            region,
+            kind: ErrorKind::NoSuchBinding(name, region),
         }
     }
 
     pub fn type_mismatch(a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
         Self {
-            region: a.region(),
             kind: ErrorKind::TypeMismatch(a, b),
         }
     }
 
     pub fn cannot_infer_type(a: Node<TypeInfo>) -> Self {
         Self {
-            region: a.region(),
             kind: ErrorKind::CannotInferType(a),
         }
     }
 
     pub fn recursive_type(a: Node<TypeInfo>) -> Self {
         Self {
-            region: a.region(),
             kind: ErrorKind::RecursiveType(a),
         }
     }
@@ -90,28 +81,32 @@ impl parze::error::Error<char> for Error {
 
     fn unexpected_sym(sym: char, at: parze::Index) -> Self {
         Self {
-            kind: ErrorKind::FoundExpected(Thing::Char(sym), HashSet::new()),
-            region: SrcRegion::single(SrcLoc::at(at as usize)),
+            kind: ErrorKind::FoundExpected(
+                Thing::Char(sym),
+                SrcRegion::single(SrcLoc::at(at as usize)),
+                HashSet::new(),
+            ),
         }
     }
 
     fn unexpected_end() -> Self {
         Self {
             kind: ErrorKind::UnexpectedEnd,
-            region: SrcRegion::none(),
         }
     }
 
     fn expected_end(sym: char, at: parze::Index) -> Self {
         Self {
-            kind: ErrorKind::ExpectedEnd(Thing::Char(sym)),
-            region: SrcRegion::single(SrcLoc::at(at as usize)),
+            kind: ErrorKind::ExpectedEnd(
+                Thing::Char(sym),
+                SrcRegion::single(SrcLoc::at(at as usize)),
+            ),
         }
     }
 
     fn expected(mut self, sym: char) -> Self {
         match &mut self.kind {
-            ErrorKind::FoundExpected(_, expected) => { expected.insert(Thing::Char(sym)); },
+            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(Thing::Char(sym)); },
             _ => {},
         }
         self
@@ -127,28 +122,33 @@ impl parze::error::Error<Node<Token>> for Error {
 
     fn unexpected_sym(sym: Node<Token>, at: parze::Index) -> Self {
         Self {
-            region: sym.region(),
-            kind: ErrorKind::FoundExpected(Thing::Token(sym.into_inner()), HashSet::new()),
+            kind: ErrorKind::FoundExpected(
+                Thing::Token(sym.into_inner()),
+                SrcRegion::single(SrcLoc::at(at as usize)),
+                HashSet::new(),
+            ),
         }
     }
 
     fn unexpected_end() -> Self {
         Self {
             kind: ErrorKind::UnexpectedEnd,
-            region: SrcRegion::none(),
         }
     }
 
     fn expected_end(sym: Node<Token>, at: parze::Index) -> Self {
+        let region = sym.region;
         Self {
-            region: sym.region(),
-            kind: ErrorKind::ExpectedEnd(Thing::Token(sym.into_inner())),
+            kind: ErrorKind::ExpectedEnd(
+                Thing::Token(sym.into_inner()),
+                region,
+            ),
         }
     }
 
     fn expected(mut self, sym: Node<Token>) -> Self {
         match &mut self.kind {
-            ErrorKind::FoundExpected(_, expected) => { expected.insert(Thing::Token(sym.into_inner())); },
+            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(Thing::Token(sym.into_inner())); },
             _ => {},
         }
         self
@@ -160,14 +160,14 @@ impl parze::error::Error<Node<Token>> for Error {
 }
 
 pub enum ErrorKind {
-    FoundExpected(Thing, HashSet<Thing>),
+    FoundExpected(Thing, SrcRegion, HashSet<Thing>),
     UnexpectedEnd,
-    ExpectedEnd(Thing),
-    InvalidUnaryOp(UnaryOp),
-    InvalidBinaryOp(BinaryOp),
-    CannotCall,
-    NotTruthy,
-    NoSuchBinding(String),
+    ExpectedEnd(Thing, SrcRegion),
+    InvalidUnaryOp(Node<UnaryOp>, SrcRegion),
+    InvalidBinaryOp(Node<BinaryOp>, SrcRegion, SrcRegion),
+    CannotCall(SrcRegion),
+    NotTruthy(SrcRegion),
+    NoSuchBinding(String, SrcRegion),
     TypeMismatch(Node<TypeInfo>, Node<TypeInfo>),
     CannotInferType(Node<TypeInfo>),
     RecursiveType(Node<TypeInfo>),
@@ -180,59 +180,137 @@ pub struct ErrorInSrc<'a> {
 
 impl<'a> fmt::Display for ErrorInSrc<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let error_pos = self.error.region.in_context(self.src);
+        let highlight_regions = |f: &mut fmt::Formatter, regions: &[_]| {
+            if let Some(((start_line, start_col), (end_line, end_col))) = regions
+                .iter()
+                .fold(SrcRegion::none(), |a, x| a.union(*x))
+                .in_context(self.src)
+            {
+                writeln!(f, "-> line {}, column {}", start_line + 1, start_col + 1)?;
+
+                let lines = self.src.lines().collect::<Vec<_>>();
+
+                let mut char_pos = 0;
+                for (i, line) in lines.iter().enumerate() {
+                    if i >= start_line && i <= end_line {
+                        let line_region = SrcRegion::range(
+                            SrcLoc::at(char_pos),
+                            SrcLoc::at(char_pos + line.len()),
+                        );
+
+                        writeln!(f, "{:>4} | {}", i + 1, line)?;
+
+                        // Underline
+                        if regions.iter().any(|r| r.intersects(line_region)) {
+                            write!(f, "       ")?;
+                            for _ in 0..line.len() {
+                                if regions.iter().any(|r| r.contains(SrcLoc::at(char_pos))) {
+                                    write!(f, "^")?;
+                                } else {
+                                    write!(f, " ")?;
+                                }
+
+                                char_pos += 1;
+                            }
+                            writeln!(f, "")?;
+                            char_pos += 1;
+                        } else {
+                            char_pos += line.len() + 1;
+                        }
+                    } else {
+                        char_pos += line.len() + 1;
+                    }
+                }
+
+                /*
+                let draw_line = |f: &mut fmt::Formatter, line| writeln!(f, "{:>4} | {}", line + 1, lines[line]);
+                let draw_underline = |f: &mut fmt::Formatter, line, start, end| {
+                    write!(f, "       ")?;
+                    for _ in 0..start {
+                        write!(f, " ")?;
+                    }
+                    for _ in start..end {
+                        write!(f, "^")?;
+                    }
+                    let line: &str = lines[line];
+                    for _ in end..line.len() {
+                        write!(f, " ")?;
+                    }
+                    writeln!(f, "")?;
+                    Ok(())
+                };
+
+                if start_line == end_line {
+                    draw_line(f, start_line)?;
+                    draw_underline(f, start_line, start_col, end_col)?;
+                } else {
+                    draw_line(f, start_line)?;
+                    draw_underline(f, start_line, start_col, lines[start_line].len())?;
+                    for i in start_line + 1..end_line {
+                        draw_line(f, i)?;
+                        draw_underline(f, i, 0, lines[i].len())?;
+                    }
+                    draw_line(f, end_line)?;
+                    draw_underline(f, end_line, 0, end_col)?;
+                }
+                */
+            } else {
+                todo!()
+            }
+
+            Ok(())
+        };
 
         match self.error.kind {
             _ => write!(f, "Error")?,
             // "Warning"
         };
-        write!(f, " at ")?;
-        match error_pos {
-            Some(((line, col), _)) => write!(f, "line {}, column {}", line + 1, col + 1)?,
-            None => write!(f, "<unknown>")?,
-        };
         write!(f, ": ")?;
         match &self.error.kind {
-            ErrorKind::FoundExpected(found, expected) => {
+            ErrorKind::FoundExpected(found, region, expected) => {
                 let expected = expected.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join(", ");
-                write!(f, "Found {}, expected {}", found, expected)?
+                writeln!(f, "Found {}, expected {}", found, expected)?;
+                highlight_regions(f, &[*region])?;
             },
-            ErrorKind::UnexpectedEnd => write!(f, "Unexpected end of input")?,
-            ErrorKind::ExpectedEnd(found) => write!(f, "Expected end of input, found {}", found)?,
-            ErrorKind::InvalidUnaryOp(op) => write!(f, "Invalid unary operation {:?}", op)?,
-            ErrorKind::InvalidBinaryOp(op) => write!(f, "Invalid binary operation {:?}", op)?,
-            ErrorKind::CannotCall => write!(f, "Cannot call value")?,
-            ErrorKind::NotTruthy => write!(f, "Cannot determine truth of value")?,
-            ErrorKind::NoSuchBinding(name) => write!(f, "Cannot find binding '{}'", name)?,
-            ErrorKind::TypeMismatch(a, b) => write!(f, "Type mismatch between '{}' and '{}'", a.inner(), b.inner())?,
-            ErrorKind::CannotInferType(a) => write!(f, "Cannot infer type '{}'", a.inner)?,
-            ErrorKind::RecursiveType(a) => write!(f, "Recursive type detected '{}'", a.inner)?,
-        };
-        writeln!(f, "")?;
-
-        if let Some(((start_line, start_col), (end_line, end_col))) = error_pos {
-            let draw_underline = |f: &mut fmt::Formatter, line_len, start, end| {
-                for _ in 0..start {
-                    write!(f, " ")?;
-                }
-                for _ in start..end {
-                    write!(f, "^")?;
-                }
-                for _ in end..line_len {
-                    write!(f, " ")?;
-                }
-                Ok(())
-            };
-
-            let lines = self.src.lines().collect::<Vec<_>>();
-            if start_line == end_line {
-                writeln!(f, "{:>4} | {}", start_line + 1, lines[start_line])?;
-                write!(f, "       ")?;
-                draw_underline(f, lines[start_line].len(), start_col, end_col)?;
-                writeln!(f, "")?;
-            } else {
-                todo!()
-            }
+            ErrorKind::UnexpectedEnd => {
+                writeln!(f, "Unexpected end of input")?;
+            },
+            ErrorKind::ExpectedEnd(found, region) => {
+                writeln!(f, "Expected end of input, found {}", found)?;
+                highlight_regions(f, &[*region])?;
+            },
+            ErrorKind::InvalidUnaryOp(op, a) => {
+                writeln!(f, "Invalid unary operation {}", op.inner)?;
+                highlight_regions(f, &[op.region, *a])?;
+            },
+            ErrorKind::InvalidBinaryOp(op, a, b) => {
+                writeln!(f, "Invalid binary operation {}", op.inner)?;
+                highlight_regions(f, &[op.region, *a, *b])?;
+            },
+            ErrorKind::CannotCall(region) => {
+                writeln!(f, "Cannot call value")?;
+                highlight_regions(f, &[*region])?;
+            },
+            ErrorKind::NotTruthy(region) => {
+                writeln!(f, "Cannot determine truth of value")?;
+                highlight_regions(f, &[*region])?;
+            },
+            ErrorKind::NoSuchBinding(name, region) => {
+                writeln!(f, "Cannot find binding '{}' in the current scope", name)?;
+                highlight_regions(f, &[*region])?;
+            },
+            ErrorKind::TypeMismatch(a, b) => {
+                writeln!(f, "Type mismatch between '{}' and '{}'", a.inner(), b.inner())?;
+                highlight_regions(f, &[a.region, b.region])?;
+            },
+            ErrorKind::CannotInferType(ty) => {
+                writeln!(f, "Cannot infer type '{}'", ty.inner)?;
+                highlight_regions(f, &[ty.region])?;
+            },
+            ErrorKind::RecursiveType(ty) => {
+                writeln!(f, "Recursive type detected '{}'", ty.inner)?;
+                highlight_regions(f, &[ty.region])?;
+            },
         }
 
         Ok(())

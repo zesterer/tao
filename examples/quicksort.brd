@@ -1,9 +1,5 @@
-# Assist in defining recursive functions
-let rec = f ->
-    f:f
-in
-
 # Find the length of a list
+let rec = f -> f:f in
 let len = rec(len -> l ->
     if l = []
     then 0
@@ -11,6 +7,7 @@ let len = rec(len -> l ->
 ) in
 
 # Find the nth element in a list
+let rec = f -> f:f in
 let nth = rec(nth -> n -> l ->
     if n < 1
     then <: l
@@ -18,6 +15,7 @@ let nth = rec(nth -> n -> l ->
 ) in
 
 # Filter list items with a predicate
+let rec = f -> f:f in
 let filter = rec(filter -> f -> l ->
     if l = []
     then []
@@ -29,6 +27,7 @@ let filter = rec(filter -> f -> l ->
 ) in
 
 # Sort list items
+let rec = f -> f:f in
 let sort = rec(sort -> l ->
     if l:len <= 1
     then l

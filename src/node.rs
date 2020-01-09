@@ -1,11 +1,12 @@
 use std::{
+    fmt,
     ops::{Deref, DerefMut},
     cmp::PartialEq,
     hash::{Hash, Hasher},
 };
 use crate::src::SrcRegion;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Node<T, U = ()> {
     pub inner: Box<T>,
     pub region: SrcRegion,
@@ -61,7 +62,7 @@ impl<T, U> Node<T, U> {
 
 impl<T: Default, U: Default> Default for Node<T, U> {
     fn default() -> Self {
-        Self::new(Default::default(), Default::default(), Default::default())
+        Self::new(Default::default(), SrcRegion::none(), Default::default())
     }
 }
 
@@ -92,3 +93,13 @@ impl<T, U: PartialEq<T>, V> PartialEq<T> for Node<U, V> {
 }
 
 impl<U, T: PartialEq<Node<T, U>>> Eq for Node<T, U> {}
+
+impl<T: fmt::Debug, U: fmt::Debug> fmt::Debug for Node<T, U> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if f.alternate() {
+            write!(f, "Node({:#?}, {:#?}, {:#?})", self.inner, self.region, self.meta)
+        } else {
+            write!(f, "Node({:?}, {:?}, {:?})", self.inner, self.region, self.meta)
+        }
+    }
+}

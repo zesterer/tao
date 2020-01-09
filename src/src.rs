@@ -88,6 +88,21 @@ impl SrcRegion {
         }
     }
 
+    pub fn contains(self, loc: SrcLoc) -> bool {
+        match self {
+            SrcRegion::None => false,
+            SrcRegion::Range(from, until) => from.0 <= loc.0 && until.0 > loc.0,
+        }
+    }
+
+    pub fn intersects(self, other: Self) -> bool {
+        match (self, other) {
+            (SrcRegion::Range(from_a, until_a), SrcRegion::Range(from_b, until_b)) =>
+                !(until_a.0 <= from_b.0 || from_a.0 >= until_b.0),
+            _ => false,
+        }
+    }
+
     pub fn extend_to(self, limit: SrcLoc) -> Self {
         match self {
             SrcRegion::None => SrcRegion::None,
@@ -152,11 +167,5 @@ impl From<(usize, usize)> for SrcRegion {
 impl<T: Into<SrcLoc>> From<Range<T>> for SrcRegion {
     fn from(range: Range<T>) -> Self {
         Self::range(range.start.into(), range.end.into())
-    }
-}
-
-impl Default for SrcRegion {
-    fn default() -> Self {
-        SrcRegion::none()
     }
 }

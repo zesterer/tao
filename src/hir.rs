@@ -12,7 +12,7 @@ use crate::{
     error::Error,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum TypeInfo {
     Unknown,
     Ref(Rc<RefCell<Node<TypeInfo>>>),
@@ -27,7 +27,10 @@ impl TypeInfo {
     pub fn make_ref(self: &mut Node<Self>) {
         match self.inner() {
             TypeInfo::Ref(_) => {},
-            _ => *self = Node::new(TypeInfo::Ref(Rc::new(RefCell::new(std::mem::take(self)))), self.region(), ()),
+            _ => {
+                let this = Node::new(TypeInfo::Ref(Rc::new(RefCell::new(self.clone()))), self.region(), ());
+                *self = this;
+            },
         }
     }
 
@@ -165,6 +168,12 @@ impl<'a> From<&'a Literal> for TypeInfo {
     }
 }
 
+impl fmt::Debug for TypeInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 impl fmt::Display for TypeInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -177,7 +186,7 @@ impl fmt::Display for TypeInfo {
             TypeInfo::Boolean => write!(f, "Bool"),
             TypeInfo::String => write!(f, "String"),
             TypeInfo::List(a) => write!(f, "List {}", a.inner()),
-            TypeInfo::Func(i, o) => write!(f, "{} -> {}", i.inner(), o.inner()),
+            TypeInfo::Func(i, o) => write!(f, "({} -> {})", i.inner(), o.inner()),
         }
     }
 }
@@ -186,21 +195,35 @@ pub fn unary_op_resolve(op: &Node<UnaryOp>, a: &mut Node<TypeInfo>, o: &mut Node
     let possibles = [
         (UnaryOp::Neg, TypeInfo::Number, TypeInfo::Number),
         (UnaryOp::Not, TypeInfo::Boolean, TypeInfo::Boolean),
+        {
+            let mut item = Node::new(TypeInfo::Unknown, o.region, ());
+            item.make_ref();
+            let mut list = Node::new(TypeInfo::List(item.clone()), o.region, ());
+            list.make_ref();
+
+            (UnaryOp::Head, list.inner().clone(), item.inner().clone())
+        },
+        {
+            let mut list = Node::new(TypeInfo::List(Node::new(TypeInfo::Unknown, o.region, ())), o.region, ());
+            list.make_ref();
+
+            (UnaryOp::Tail, list.inner().clone(), list.inner().clone())
+        },
     ];
 
     let mut matches = Vec::new();
     for (i, (pop, pa, po)) in possibles.iter().enumerate() {
         if op == pop && a.compatible_with(pa) && o.compatible_with(po) {
-            matches.push(i);
+            matches.push((pa, po));
         }
     }
 
     match matches.len() {
-        0 => Err(Error::invalid_unary_op(**op, op.region())),
+        0 => Err(Error::invalid_unary_op(op.clone(), a.region)),
         1 => {
-            let m = possibles[matches[0]].clone();
-            a.unify_with(&mut Node::new(m.1, a.region, ()));
-            o.unify_with(&mut Node::new(m.2, o.region, ()));
+            let m = matches[0];
+            a.unify_with(&mut Node::new(m.0.clone(), a.region, ()))?;
+            o.unify_with(&mut Node::new(m.1.clone(), o.region, ()))?;
             Ok(())
         },
         _ => Ok(()),
@@ -228,22 +251,34 @@ pub fn binary_op_resolve(
         (BinaryOp::Eq, TypeInfo::Number, TypeInfo::Number, TypeInfo::Boolean),
         (BinaryOp::Eq, TypeInfo::String, TypeInfo::String, TypeInfo::Boolean),
         (BinaryOp::Eq, TypeInfo::Boolean, TypeInfo::Boolean, TypeInfo::Boolean),
+        {
+            let mut list = Node::new(TypeInfo::List(Node::new(TypeInfo::Unknown, o.region, ())), o.region, ());
+            list.make_ref();
+
+            (BinaryOp::Join, list.inner().clone(), list.inner().clone(), list.inner().clone())
+        },
+        {
+            let mut list = Node::new(TypeInfo::List(Node::new(TypeInfo::Unknown, a.region, ())), a.region, ());
+            list.make_ref();
+
+            (BinaryOp::Eq, list.inner().clone(), list.inner().clone(), TypeInfo::Boolean)
+        },
     ];
 
     let mut matches = Vec::new();
     for (i, (pop, pa, pb, po)) in possibles.iter().enumerate() {
         if op == pop && a.compatible_with(pa) && b.compatible_with(pb) && o.compatible_with(po) {
-            matches.push(i);
+            matches.push((pa, pb, po));
         }
     }
 
     match matches.len() {
-        0 => Err(Error::invalid_binary_op(**op, op.region())), // TODO: Add complex type checks here
+        0 => Err(Error::invalid_binary_op(op.clone(), a.region, b.region)), // TODO: Add complex type checks here
         1 => {
-            let m = possibles[matches[0]].clone();
-            a.unify_with(&mut Node::new(m.1, a.region, ()));
-            b.unify_with(&mut Node::new(m.2, b.region, ()));
-            o.unify_with(&mut Node::new(m.3, o.region, ()));
+            let m = matches[0];
+            a.unify_with(&mut Node::new(m.0.clone(), a.region, ()))?;
+            b.unify_with(&mut Node::new(m.1.clone(), b.region, ()))?;
+            o.unify_with(&mut Node::new(m.2.clone(), o.region, ()))?;
             Ok(())
         },
         _ => Ok(()),
@@ -343,20 +378,37 @@ impl Expr {
     }
 
     pub fn check_types(self: &Node<Self, Node<TypeInfo>>) -> Result<(), Error> {
-        self
-            .meta()
+        let check_type = |ty: &Node<TypeInfo>| ty
             .established()
-            .map_err(|ty| Error::cannot_infer_type(ty))?;
+            .map_err(|_| Error::cannot_infer_type(ty.clone()));
 
         match self.inner() {
-            Expr::Unary(_, a) => a.check_types(),
+            Expr::Literal(_) => {},
+            Expr::Ident(ident) => {},
+            Expr::Unary(_, a) => a.check_types()?,
             Expr::Binary(_, a, b) => {
                 a.check_types()?;
                 b.check_types()?;
-                Ok(())
             },
-            _ => Ok(()),
+            Expr::Branch(p, t, f) => {
+                p.check_types()?;
+                t.check_types()?;
+                f.check_types()?;
+            },
+            Expr::Func(arg, body) => {
+                check_type(arg.meta())?;
+                body.check_types()?;
+            },
+            Expr::Apply(f, arg) => {
+                f.check_types()?;
+                arg.check_types()?;
+            },
+            Expr::List(items) => for item in items.iter() {
+                item.check_types()?;
+            },
         }
+
+        check_type(self.meta())
     }
 
     pub fn ascribe_types(self: &mut Node<Self, Node<TypeInfo>>) -> Result<(), Error> {

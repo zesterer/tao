@@ -1,3 +1,4 @@
+use std::fmt;
 use parze::prelude::*;
 use internment::LocalIntern;
 use crate::{
@@ -32,6 +33,17 @@ impl UnaryOp {
     }
 }
 
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            UnaryOp::Neg => write!(f, "-"),
+            UnaryOp::Not => write!(f, "!"),
+            UnaryOp::Head => write!(f, "<:"),
+            UnaryOp::Tail => write!(f, ":>"),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BinaryOp {
     Add,
@@ -52,6 +64,24 @@ pub enum BinaryOp {
 impl BinaryOp {
     pub fn at(self, region: SrcRegion) -> Node<Self> {
         Node::new(self, region, ())
+    }
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Sub => write!(f, "-"),
+            BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Div => write!(f, "/"),
+            BinaryOp::Rem => write!(f, "%"),
+            BinaryOp::Eq => write!(f, "="),
+            BinaryOp::Less => write!(f, "<"),
+            BinaryOp::More => write!(f, ">"),
+            BinaryOp::LessEq => write!(f, "<="),
+            BinaryOp::MoreEq => write!(f, ">="),
+            BinaryOp::Join => write!(f, "++"),
+        }
     }
 }
 
@@ -133,17 +163,24 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
                 .then(expr.clone())
                 .padded_by(just(Token::Else))
                 .then(expr.clone())
-                .map(|((p, t), f)| Expr::Branch(p, t, f)
-                    .at(SrcRegion::none())))
+                .map(|((p, t), f)| {
+                    let region = p.region.union(t.region).union(f.region);
+                    Expr::Branch(p, t, f)
+                        .at(region)
+                }))
             .or(just(Token::Let)
                 .padding_for(ident.clone())
                 .padded_by(just(Token::Op(Op::Eq)))
                 .then(expr.clone())
                 .padded_by(just(Token::Ident(LocalIntern::new("in".to_string()))))
                 .then(expr.clone())
-                .map(|((name, val), then)| Expr::Apply(Expr::Func(name, then).at(SrcRegion::none()), val)
-                    .at(SrcRegion::none())))
-            .or(ident.clone().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ())).at(SrcRegion::none())))
+                .map(|((name, val), then)| {
+                    let f_region = name.region.union(then.region);
+                    let region = f_region.union(val.region);
+                    Expr::Apply(Expr::Func(name, then).at(f_region), val)
+                        .at(region)
+                }))
+            .or(ident.clone().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ())).at(x.region())))
             .boxed();
 
         let application = atom.clone()
@@ -216,8 +253,11 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
         let func = ident
             .padded_by(just(Token::RArrow))
             .then(expr)
-            .map(|(name, body)| Expr::Func(name, body)
-                .at(SrcRegion::none()));
+            .map(|(name, body)| {
+                let region = name.region.union(body.region);
+                Expr::Func(name, body)
+                    .at(region)
+            });
 
         func.or(comparison)
     });

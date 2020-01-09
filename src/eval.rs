@@ -54,7 +54,7 @@ impl Vm {
                         UnaryOp::Not => a.not(),
                         UnaryOp::Head => a.head(),
                         UnaryOp::Tail => a.tail(),
-                    }.ok_or_else(|| Error::invalid_unary_op(op, prog.region(ip).unwrap()))?);
+                    }.unwrap()/*.ok_or_else(|| Error::invalid_unary_op(op.at(prog.region(ip).unwrap())))?*/);
                 },
                 Instr::BinaryOp(op) => {
                     let b = self.pop();
@@ -71,7 +71,7 @@ impl Vm {
                         BinaryOp::LessEq => a.less_eq(b),
                         BinaryOp::MoreEq => a.more_eq(b),
                         BinaryOp::Join => a.join(b),
-                    }.ok_or_else(|| Error::invalid_binary_op(op, prog.region(ip).unwrap()))?);
+                    }.unwrap()/*.ok_or_else(|| Error::invalid_binary_op(op.at(prog.region(ip).unwrap())))?*/);
                 },
                 Instr::Branch(a, b) => {
                     let new_ip = if self

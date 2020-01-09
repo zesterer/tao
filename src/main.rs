@@ -42,6 +42,7 @@ fn run(expr: &str) {
 
     if let Err(err) = ast.ascribe_types() {
         print!("Type error: {}", err.in_source(expr));
+        return;
     }
 
     //println!("AST: {:#?}", ast);
