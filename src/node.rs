@@ -45,6 +45,11 @@ impl<T, U> Node<T, U> {
         self.region
     }
 
+    pub fn at(mut self, region: SrcRegion) -> Self {
+        self.region = region;
+        self
+    }
+
     pub fn map_inner<V>(self, f: impl FnOnce(T) -> V) -> Node<V, U> {
         Node {
             inner: Box::new(f(*self.inner)),

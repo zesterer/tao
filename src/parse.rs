@@ -94,9 +94,13 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
 
         let paren_expr = nested_parse({
             let expr = expr.clone();
-            move |token: Node<Token>| match token.into_inner() {
-                Token::Tree(Delimiter::Paren, tokens) => Some((expr.clone(), tokens)),
-                _ => None,
+            move |token: Node<Token>| {
+                let region = token.region();
+                match token.into_inner() {
+                    Token::Tree(Delimiter::Paren, tokens) =>
+                        Some((expr.clone().map(move |e: NodeExpr| e.at(region)), tokens)),
+                    _ => None,
+                }
             }
         }).boxed();
 
@@ -110,15 +114,19 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
 
         let brack_expr_list = nested_parse({
             let expr = expr.clone();
-            move |token: Node<Token>| match token.into_inner() {
-                Token::Tree(Delimiter::Brack, tokens) => Some((expr.clone().separated_by(just(Token::Comma)), tokens)),
-                _ => None,
+            move |token: Node<Token>| {
+                let region = token.region();
+                match token.into_inner() {
+                    Token::Tree(Delimiter::Brack, tokens) =>
+                        Some((expr.clone().separated_by(just(Token::Comma)).map(move |e| (e, region)), tokens)),
+                    _ => None,
+                }
             }
         }).boxed();
 
         let atom = literal
             .or(paren_expr.clone())
-            .or(brack_expr_list.map(|items| Expr::List(items).at(SrcRegion::none()))) // TODO!
+            .or(brack_expr_list.map(|(items, region)| Expr::List(items).at(region))) // TODO!
             .or(just(Token::If)
                 .padding_for(expr.clone())
                 .padded_by(just(Token::Then))

@@ -1,8 +1,11 @@
 use std::{
     fmt,
+    ops::DerefMut,
     rc::Rc,
     cell::RefCell,
+    collections::HashMap,
 };
+use internment::LocalIntern;
 use crate::{
     node::Node,
     parse::{Literal, UnaryOp, BinaryOp, Expr},
@@ -67,8 +70,8 @@ impl TypeInfo {
             // Unknowns
             (TypeInfo::Unknown, TypeInfo::Unknown) => Ok(()),
             (TypeInfo::Unknown, _) => {
-                self.make_ref();
-                *other = self.clone();
+                other.make_ref();
+                *self = other.clone();
                 Ok(())
             },
             (_, TypeInfo::Unknown) => {
@@ -165,8 +168,8 @@ pub fn unary_op_resolve(op: &Node<UnaryOp>, a: &mut Node<TypeInfo>, o: &mut Node
         0 => Err(Error::invalid_unary_op(**op, op.region())),
         1 => {
             let m = possibles[matches[0]].clone();
-            *a.inner_mut() = m.1;
-            *o.inner_mut() = m.2;
+            a.unify_with(&mut Node::new(m.1, a.region, ()));
+            o.unify_with(&mut Node::new(m.2, o.region, ()));
             Ok(())
         },
         _ => Ok(()),
@@ -207,48 +210,88 @@ pub fn binary_op_resolve(
         0 => Err(Error::invalid_binary_op(**op, op.region())), // TODO: Add complex type checks here
         1 => {
             let m = possibles[matches[0]].clone();
-            *a.inner_mut() = m.1;
-            *b.inner_mut() = m.2;
-            *o.inner_mut() = m.3;
+            a.unify_with(&mut Node::new(m.1, a.region, ()));
+            b.unify_with(&mut Node::new(m.2, b.region, ()));
+            o.unify_with(&mut Node::new(m.3, o.region, ()));
             Ok(())
         },
         _ => Ok(()),
     }
 }
 
+pub enum Scope<'a> {
+    Global(HashMap<LocalIntern<String>, RefCell<Node<TypeInfo>>>),
+    Local(LocalIntern<String>, RefCell<Node<TypeInfo>>, &'a Self),
+}
+
+impl<'a> Default for Scope<'a> {
+    fn default() -> Self {
+        Scope::Global(HashMap::default())
+    }
+}
+
+impl<'a> Scope<'a> {
+    pub fn push<'b>(&'b self, name: LocalIntern<String>, ty: &mut Node<TypeInfo>) -> Scope<'b>
+        where 'a: 'b
+    {
+        Scope::Local(name, RefCell::new(ty.reference()), self)
+    }
+
+    pub fn get_mut(&self, name: LocalIntern<String>) -> Option<std::cell::RefMut<Node<TypeInfo>>> {
+        match self {
+            Scope::Local(local_name, ty, parent) => if *local_name == name {
+                Some(ty.borrow_mut())
+            } else {
+                parent.get_mut(name)
+            },
+            Scope::Global(globals) => globals.get(&name).map(|g| g.borrow_mut()),
+        }
+    }
+}
+
 impl Expr {
-    pub fn infer_types(
+    pub fn infer_types<'a>(
         self: &mut Node<Self, Node<TypeInfo>>,
+        scope: &mut Scope<'a>,
     ) -> Result<(), Error> {
         match &mut *self.inner {
             Expr::Literal(lit) => **self.meta_mut() = TypeInfo::from(&*lit),
             Expr::Unary(op, a) => {
-                a.infer_types()?;
+                a.infer_types(scope)?;
                 unary_op_resolve(op, a.meta_mut(), &mut self.meta)?;
             },
             Expr::Binary(op, a, b) => {
-                a.infer_types()?;
-                b.infer_types()?;
+                a.infer_types(scope)?;
+                b.infer_types(scope)?;
                 binary_op_resolve(op, a.meta_mut(), b.meta_mut(), &mut self.meta)?;
             },
             Expr::Branch(p, t, f) => {
-                p.infer_types()?;
-                let p_region = p.region();
-                p.meta_mut().unify_with(&mut Node::new(TypeInfo::Boolean, p_region, ()))?;
-                p.infer_types()?;
+                p.infer_types(scope)?;
+                p.meta.unify_with(&mut Node::new(TypeInfo::Boolean, p.region, ()))?;
 
-                t.infer_types()?;
-                f.infer_types()?;
+                t.infer_types(scope)?;
+                f.infer_types(scope)?;
                 t.meta_mut().unify_with(f.meta_mut())?;
                 t.meta_mut().unify_with(&mut self.meta)?;
                 f.meta_mut().unify_with(&mut self.meta)?;
             },
             Expr::Func(arg, body) => {
-                body.infer_types()?;
-                let f_region = arg.region().union(body.region());
-                self.meta = Node::new(TypeInfo::Func(arg.meta.reference(), body.meta.reference()), f_region, ());
+                let mut scope = scope.push(*arg.inner, &mut arg.meta);
+                body.infer_types(&mut scope)?;
+                self.meta.unify_with(&mut Node::new(TypeInfo::Func(arg.meta.reference(), body.meta.reference()), self.region, ()));
             },
-            _ => todo!(),
+            Expr::Apply(f, arg) => {
+                f.infer_types(scope)?;
+                arg.infer_types(scope)?;
+                f.meta.unify_with(&mut Node::new(TypeInfo::Func(arg.meta.reference(), self.meta.reference()), f.region, ()));
+            },
+            Expr::Ident(ident) => {
+                let mut binding = scope
+                    .get_mut(**ident)
+                    .ok_or(Error::no_such_binding(ident.to_string(), ident.region()))?;
+                self.meta.unify_with(&mut binding);
+            },
+            _ => todo!(), // TODO
         }
 
         Ok(())
@@ -272,7 +315,7 @@ impl Expr {
     }
 
     pub fn ascribe_types(self: &mut Node<Self, Node<TypeInfo>>) -> Result<(), Error> {
-        self.infer_types()?;
+        self.infer_types(&mut Scope::default())?;
         self.check_types()?;
         Ok(())
     }

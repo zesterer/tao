@@ -41,11 +41,12 @@ fn run(expr: &str) {
     };
 
     if let Err(err) = ast.ascribe_types() {
-        println!("AST: {:#?}", ast);
         print!("Type error: {}", err.in_source(expr));
     }
 
-    println!("AST: {:#?}", ast);
+    //println!("AST: {:#?}", ast);
+
+    println!("Type: {}", ast.meta.inner);
 
     let program = match compile::Program::compile(&ast) {
         Ok(program) => program,

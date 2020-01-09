@@ -224,8 +224,6 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
             } else {
                 todo!()
             }
-        } else {
-            todo!()
         }
 
         Ok(())
