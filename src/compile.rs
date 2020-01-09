@@ -5,6 +5,7 @@ use crate::{
     error::Error,
     src::SrcRegion,
     eval::Value,
+    hir::TypeInfo,
 };
 
 pub type Addr = usize;
@@ -64,7 +65,7 @@ impl Program {
 
     fn compile_procedure(
         &mut self,
-        expr: &Node<Expr>,
+        expr: &Node<Expr, Node<TypeInfo>>,
         locals: &Vec<Node<LocalIntern<String>>>,
         pop_n: usize,
     ) -> Result<Addr, Error> {
@@ -76,7 +77,7 @@ impl Program {
 
     fn compile_expr(
         &mut self,
-        expr: &Node<Expr>,
+        expr: &Node<Expr, Node<TypeInfo>>,
         proc: &mut Procedure,
         locals: &Vec<Node<LocalIntern<String>>>,
     ) -> Result<(), Error> {
@@ -118,7 +119,7 @@ impl Program {
                     env_offsets.push(offset_of(**env_local, env_local.region())?);
                 }
 
-                env_locals.insert(0, (*name).clone());
+                env_locals.insert(0, Node::new(**name, name.region(), ()));
 
                 let body = self.compile_procedure(body, &env_locals, env_locals.len())?;
                 proc.push(Instr::Func(body, env_offsets), expr.region());
@@ -140,7 +141,7 @@ impl Program {
         Ok(())
     }
 
-    pub fn compile(expr: &Node<Expr>) -> Result<Self, Error> {
+    pub fn compile(expr: &Node<Expr, Node<TypeInfo>>) -> Result<Self, Error> {
         let mut this = Self::default();
         let entry = this.compile_procedure(expr, &mut Vec::new(), 0)?;
         this.entry = entry;

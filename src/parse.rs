@@ -5,6 +5,7 @@ use crate::{
     src::SrcRegion,
     node::Node,
     error::Error,
+    hir::TypeInfo,
 };
 
 #[derive(Debug)]
@@ -15,7 +16,7 @@ pub enum Literal {
     Boolean(bool),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum UnaryOp {
     Neg,
 
@@ -27,11 +28,11 @@ pub enum UnaryOp {
 
 impl UnaryOp {
     pub fn at(self, region: SrcRegion) -> Node<Self> {
-        Node::new(self, region)
+        Node::new(self, region, ())
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -50,29 +51,31 @@ pub enum BinaryOp {
 
 impl BinaryOp {
     pub fn at(self, region: SrcRegion) -> Node<Self> {
-        Node::new(self, region)
+        Node::new(self, region, ())
     }
 }
+
+type NodeExpr = Node<Expr, Node<TypeInfo>>;
 
 #[derive(Debug)]
 pub enum Expr {
     Literal(Literal),
     Ident(Node<LocalIntern<String>>),
-    Unary(Node<UnaryOp>, Node<Expr>),
-    Binary(Node<BinaryOp>, Node<Expr>, Node<Expr>),
-    Branch(Node<Expr>, Node<Expr>, Node<Expr>),
-    Func(Node<LocalIntern<String>>, Node<Expr>),
-    Apply(Node<Expr>, Node<Expr>),
-    List(Vec<Node<Expr>>),
+    Unary(Node<UnaryOp>, NodeExpr),
+    Binary(Node<BinaryOp>, NodeExpr, NodeExpr),
+    Branch(NodeExpr, NodeExpr, NodeExpr),
+    Func(Node<LocalIntern<String>, Node<TypeInfo>>, NodeExpr),
+    Apply(NodeExpr, NodeExpr),
+    List(Vec<NodeExpr>),
 }
 
 impl Expr {
-    pub fn at(self, region: SrcRegion) -> Node<Self> {
-        Node::new(self, region)
+    pub fn at(self, region: SrcRegion) -> NodeExpr {
+        Node::new(self, region, Node::new(TypeInfo::default(), region, ()))
     }
 }
 
-pub fn parse(tokens: &[Node<Token>]) -> Result<Node<Expr>, Vec<Error>> {
+pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
     let expr = recursive(|expr| {
         let expr = expr.link();
 
@@ -85,7 +88,7 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<Node<Expr>, Vec<Error>> {
         }.at(token.region())));
 
         let ident = permit_map(|token: Node<Token>| match &*token {
-            Token::Ident(x) => Some(Node::new(*x, token.region())),
+            Token::Ident(x) => Some(Node::new(*x, token.region(), Node::new(TypeInfo::default(), token.region(), ()))),
             _ => None,
         });
 
@@ -132,7 +135,7 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<Node<Expr>, Vec<Error>> {
                 .then(expr.clone())
                 .map(|((name, val), then)| Expr::Apply(Expr::Func(name, then).at(SrcRegion::none()), val)
                     .at(SrcRegion::none())))
-            .or(ident.clone().map(|x| Expr::Ident(x).at(SrcRegion::none())))
+            .or(ident.clone().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ())).at(SrcRegion::none())))
             .boxed();
 
         let application = atom.clone()

@@ -57,7 +57,7 @@ pub enum Token {
 
 impl Token {
     fn at(self, region: SrcRegion) -> Node<Self> {
-        Node::new(self, region)
+        Node::new(self, region, ())
     }
 }
 

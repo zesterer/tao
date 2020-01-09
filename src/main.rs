@@ -1,4 +1,5 @@
 #![type_length_limit="10823821"]
+#![feature(arbitrary_self_types)]
 
 mod lex;
 mod parse;
@@ -6,6 +7,7 @@ mod eval;
 mod src;
 mod node;
 mod error;
+mod hir;
 mod compile;
 
 use std::{
@@ -28,7 +30,7 @@ fn run(expr: &str) {
 
     //println!("TOKENS: {:#?}", tokens);
 
-    let ast = match parse::parse(&tokens) {
+    let mut ast = match parse::parse(&tokens) {
         Ok(ast) => ast,
         Err(errs) => {
             for err in errs {
@@ -38,7 +40,12 @@ fn run(expr: &str) {
         },
     };
 
-    //println!("AST: {:#?}", ast);
+    if let Err(err) = ast.ascribe_types() {
+        println!("AST: {:#?}", ast);
+        print!("Type error: {}", err.in_source(expr));
+    }
+
+    println!("AST: {:#?}", ast);
 
     let program = match compile::Program::compile(&ast) {
         Ok(program) => program,

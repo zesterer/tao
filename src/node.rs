@@ -1,35 +1,72 @@
 use std::{
-    ops::Deref,
+    ops::{Deref, DerefMut},
     cmp::PartialEq,
+    hash::{Hash, Hasher},
 };
 use crate::src::SrcRegion;
 
-#[derive(Clone, Debug, Hash)]
-pub struct Node<T>(Box<T>, SrcRegion);
+#[derive(Clone, Debug)]
+pub struct Node<T, U = ()> {
+    pub inner: Box<T>,
+    pub region: SrcRegion,
+    pub meta: U
+}
 
-impl<T> Node<T> {
-    pub fn new(inner: T, region: SrcRegion) -> Self {
-        Self(Box::new(inner), region)
+impl<T, U> Node<T, U> {
+    pub fn new(inner: T, region: SrcRegion, meta: U) -> Self {
+        Self {
+            inner: Box::new(inner),
+            region,
+            meta,
+        }
     }
 
     pub fn inner(&self) -> &T {
-        &self.0
+        &self.inner
+    }
+
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
+    pub fn meta(&self) -> &U {
+        &self.meta
+    }
+
+    pub fn meta_mut(&mut self) -> &mut U {
+        &mut self.meta
     }
 
     pub fn into_inner(self) -> T {
-        *self.0
+        *self.inner
     }
 
     pub fn region(&self) -> SrcRegion {
-        self.1
+        self.region
     }
 
-    pub fn map_inner<U>(self, f: impl FnOnce(T) -> U) -> Node<U> {
-        Node(Box::new(f(*self.0)), self.1)
+    pub fn map_inner<V>(self, f: impl FnOnce(T) -> V) -> Node<V, U> {
+        Node {
+            inner: Box::new(f(*self.inner)),
+            region: self.region,
+            meta: self.meta,
+        }
     }
 }
 
-impl<T> Deref for Node<T> {
+impl<T: Default, U: Default> Default for Node<T, U> {
+    fn default() -> Self {
+        Self::new(Default::default(), Default::default(), Default::default())
+    }
+}
+
+impl<T: Hash, U> Hash for Node<T, U> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner().hash(state);
+    }
+}
+
+impl<T, U> Deref for Node<T, U> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -37,10 +74,16 @@ impl<T> Deref for Node<T> {
     }
 }
 
-impl<T, U: PartialEq<T>> PartialEq<T> for Node<U> {
-    fn eq(&self, other: &T) -> bool {
-        &*self.0 == other
+impl<T, U> DerefMut for Node<T, U> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner_mut()
     }
 }
 
-impl<T: PartialEq<Node<T>>> Eq for Node<T> {}
+impl<T, U: PartialEq<T>, V> PartialEq<T> for Node<U, V> {
+    fn eq(&self, other: &T) -> bool {
+        &*self.inner == other
+    }
+}
+
+impl<U, T: PartialEq<Node<T, U>>> Eq for Node<T, U> {}

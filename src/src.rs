@@ -154,3 +154,9 @@ impl<T: Into<SrcLoc>> From<Range<T>> for SrcRegion {
         Self::range(range.start.into(), range.end.into())
     }
 }
+
+impl Default for SrcRegion {
+    fn default() -> Self {
+        SrcRegion::none()
+    }
+}

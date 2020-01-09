@@ -6,6 +6,7 @@ use crate::{
     src::{SrcLoc, SrcRegion},
     lex::Token,
     parse::{UnaryOp, BinaryOp},
+    hir::TypeInfo,
     node::Node,
 };
 
@@ -47,6 +48,20 @@ impl Error {
         Self {
             kind: ErrorKind::NoSuchBinding(name),
             region,
+        }
+    }
+
+    pub fn type_mismatch(a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
+        Self {
+            region: a.region(),
+            kind: ErrorKind::TypeMismatch(a, b),
+        }
+    }
+
+    pub fn cannot_infer_type(a: Node<TypeInfo>) -> Self {
+        Self {
+            region: a.region(),
+            kind: ErrorKind::CannotInferType(a),
         }
     }
 
@@ -146,6 +161,8 @@ pub enum ErrorKind {
     CannotCall,
     NotTruthy,
     NoSuchBinding(String),
+    TypeMismatch(Node<TypeInfo>, Node<TypeInfo>),
+    CannotInferType(Node<TypeInfo>),
 }
 
 pub struct ErrorInSrc<'a> {
@@ -179,6 +196,8 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
             ErrorKind::CannotCall => write!(f, "Cannot call value")?,
             ErrorKind::NotTruthy => write!(f, "Cannot determine truth of value")?,
             ErrorKind::NoSuchBinding(name) => write!(f, "Cannot find binding '{}'", name)?,
+            ErrorKind::TypeMismatch(a, b) => write!(f, "Type mismatch between '{}' and '{}'", a.inner(), b.inner())?,
+            ErrorKind::CannotInferType(a) => write!(f, "Cannot infer type")?,
         };
         writeln!(f, "")?;
 
