@@ -80,7 +80,7 @@ impl TypeInfo {
                 Ok(())
             },
 
-            // References types
+            // Referenced types
             (TypeInfo::Ref(a), TypeInfo::Ref(b)) => if Rc::ptr_eq(a, b) {
                 Ok(())
             } else {
@@ -278,20 +278,34 @@ impl Expr {
             Expr::Func(arg, body) => {
                 let mut scope = scope.push(*arg.inner, &mut arg.meta);
                 body.infer_types(&mut scope)?;
-                self.meta.unify_with(&mut Node::new(TypeInfo::Func(arg.meta.reference(), body.meta.reference()), self.region, ()));
+                self.meta.unify_with(&mut Node::new(TypeInfo::Func(arg.meta.reference(), body.meta.reference()), self.region, ()))?;
             },
             Expr::Apply(f, arg) => {
                 f.infer_types(scope)?;
                 arg.infer_types(scope)?;
-                f.meta.unify_with(&mut Node::new(TypeInfo::Func(arg.meta.reference(), self.meta.reference()), f.region, ()));
+                f.meta.unify_with(&mut Node::new(TypeInfo::Func(arg.meta.reference(), self.meta.reference()), f.region, ()))?;
             },
             Expr::Ident(ident) => {
                 let mut binding = scope
                     .get_mut(**ident)
                     .ok_or(Error::no_such_binding(ident.to_string(), ident.region()))?;
-                self.meta.unify_with(&mut binding);
+                self.meta.unify_with(&mut binding)?;
             },
-            _ => todo!(), // TODO
+            Expr::List(items) => {
+                for item in items.iter_mut() {
+                    item.infer_types(scope)?;
+                }
+                for i in 0..items.len().saturating_sub(1) {
+                    let (first, last) = items[i..].split_first_mut().unwrap();
+                    first.meta.unify_with(&mut last[0].meta)?;
+                }
+                let item_ty = if let Some(first) = items.first_mut() {
+                    first.meta.reference()
+                } else {
+                    Node::new(TypeInfo::Unknown, self.region, ())
+                };
+                self.meta.unify_with(&mut Node::new(TypeInfo::List(item_ty), self.region, ()))?;
+            },
         }
 
         Ok(())
