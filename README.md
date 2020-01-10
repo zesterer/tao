@@ -102,3 +102,10 @@ Error: Type mismatch between 'Num' and 'String'
    1 | (x -> x + 3)("test")
         ^           ^^^^^^
 ```
+
+## Naming
+
+'Bread' is a stupid name.
+Unfortunately, I ran out of good names for projects 6 months ago.
+I walked into my kitchen the other day and the first thing I saw was a loaf of bread, so that's why this is a thing.
+If you have better ideas for a name, please do tell me.
