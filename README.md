@@ -1,6 +1,6 @@
 # Bread
 
-Bread is a statically-typed pure function programming language.
+Bread is a statically-typed functional programming language.
 
 ## Example
 
