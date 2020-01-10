@@ -103,6 +103,13 @@ Error: Type mismatch between 'Num' and 'String'
         ^           ^^^^^^
 ```
 
+```
+Error: No such binding 'bar' in the current scope
+-> line 1, column 22
+   1 | let foo = 5 in foo + bar
+                            ^^^
+```
+
 ## Naming
 
 'Bread' is a stupid name.
