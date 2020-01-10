@@ -1,4 +1,7 @@
-use std::cmp::PartialEq;
+use std::{
+    fmt,
+    cmp::PartialEq,
+};
 use parze::prelude::*;
 use internment::LocalIntern;
 use crate::{
@@ -28,11 +31,50 @@ pub enum Op {
     Tail,
 }
 
+impl fmt::Display for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Op::Add => write!(f, "+"),
+            Op::Sub => write!(f, "-"),
+            Op::Mul => write!(f, "*"),
+            Op::Div => write!(f, "/"),
+            Op::Rem => write!(f, "%"),
+            Op::Eq => write!(f, "="),
+            Op::Less => write!(f, "<"),
+            Op::More => write!(f, ">"),
+            Op::LessEq => write!(f, "<="),
+            Op::MoreEq => write!(f, ">="),
+            Op::Join => write!(f, "++"),
+            Op::Not => write!(f, "!"),
+            Op::Head => write!(f, "<:"),
+            Op::Tail => write!(f, ":>"),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Delimiter {
     Paren,
     Brack,
     Brace,
+}
+
+impl Delimiter {
+    fn left(&self) -> char {
+        match self {
+            Delimiter::Paren => '(',
+            Delimiter::Brack => '[',
+            Delimiter::Brace => '{',
+        }
+    }
+
+    fn right(&self) -> char {
+        match self {
+            Delimiter::Paren => ')',
+            Delimiter::Brack => ']',
+            Delimiter::Brace => '}',
+        }
+    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -65,6 +107,28 @@ impl Token {
 impl PartialEq<Node<Token>> for Token {
     fn eq(&self, other: &Node<Token>) -> bool {
         self == &**other
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Token::Number(x) => write!(f, "{}", x),
+            Token::Boolean(x) => write!(f, "{}", x),
+            Token::String(x) => write!(f, "\"{}\"", x),
+            Token::Null => write!(f, "null"),
+            Token::Ident(i) => write!(f, "{}", i),
+            Token::Op(op) => write!(f, "{}", op),
+            Token::Tree(delim, tokens) => write!(f, "{}...{}", delim.left(), delim.right()),
+            Token::RArrow => write!(f, "->"),
+            Token::Comma => write!(f, ","),
+            Token::Colon => write!(f, ":"),
+            Token::Let => write!(f, "let"),
+            Token::If => write!(f, "if"),
+            Token::Then => write!(f, "then"),
+            Token::Else => write!(f, "else"),
+            Token::Def => write!(f, "def"),
+        }
     }
 }
 

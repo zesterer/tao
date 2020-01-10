@@ -70,6 +70,15 @@ impl Error {
         }
     }
 
+    pub fn at(mut self, region: SrcRegion) -> Self {
+        // Bit of a hack
+        match &mut self.kind {
+            ErrorKind::UnexpectedEnd(r) => *r = region,
+            _ => {},
+        }
+        self
+    }
+
     pub fn merge(self, other: Self) -> Self {
         // TODO
         self
@@ -91,7 +100,7 @@ impl parze::error::Error<char> for Error {
 
     fn unexpected_end() -> Self {
         Self {
-            kind: ErrorKind::UnexpectedEnd,
+            kind: ErrorKind::UnexpectedEnd(SrcRegion::none()),
         }
     }
 
@@ -132,7 +141,7 @@ impl parze::error::Error<Node<Token>> for Error {
 
     fn unexpected_end() -> Self {
         Self {
-            kind: ErrorKind::UnexpectedEnd,
+            kind: ErrorKind::UnexpectedEnd(SrcRegion::none()),
         }
     }
 
@@ -161,7 +170,7 @@ impl parze::error::Error<Node<Token>> for Error {
 
 pub enum ErrorKind {
     FoundExpected(Thing, SrcRegion, HashSet<Thing>),
-    UnexpectedEnd,
+    UnexpectedEnd(SrcRegion),
     ExpectedEnd(Thing, SrcRegion),
     InvalidUnaryOp(Node<UnaryOp>, Node<TypeInfo>),
     InvalidBinaryOp(Node<BinaryOp>, Node<TypeInfo>, Node<TypeInfo>),
@@ -221,8 +230,6 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                         char_pos += line.len() + 1;
                     }
                 }
-            } else {
-                todo!()
             }
 
             Ok(())
@@ -239,8 +246,9 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                 writeln!(f, "Found {}, expected {}", found, expected)?;
                 highlight_regions(f, &[*region])?;
             },
-            ErrorKind::UnexpectedEnd => {
+            ErrorKind::UnexpectedEnd(region) => {
                 writeln!(f, "Unexpected end of input")?;
+                highlight_regions(f, &[*region])?;
             },
             ErrorKind::ExpectedEnd(found, region) => {
                 writeln!(f, "Expected end of input, found {}", found)?;
@@ -298,7 +306,7 @@ impl fmt::Display for Thing {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Thing::Char(c) => write!(f, "'{}'", c),
-            Thing::Token(t) => write!(f, "{:?}", t),
+            Thing::Token(t) => write!(f, "'{}'", t),
         }
     }
 }

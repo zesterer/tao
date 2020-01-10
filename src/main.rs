@@ -45,7 +45,7 @@ fn run(expr: &str) {
         return;
     }
 
-    //println!("AST: {:#?}", ast);
+    println!("AST: {:#?}", ast);
 
     println!("{}", ast.meta.inner);
 
