@@ -47,15 +47,58 @@ Below are some examples of types that can be represented in Bread.
 
 - `Num -> List Num -> Bool`
 
+## Declarations (Incomplete)
+
+Bread supports top-level type, data structure, and value declarations.
+Below are some examples of these.
+
+*Recursive function*
+
+```
+def factorial = x ->
+	if x = 0
+	then 1
+	else x * factorial(x - 1)
+```
+
+*Maybe type*
+
+```
+data Maybe A =
+	| Just A
+	| Nil
+```
+
+*Cons list type*
+
+```
+data List A =
+	| Item (A, List A)
+	| Nil
+```
+
+*Record type*
+
+```
+data Person =
+	.name String,
+	.age  Num,
+	.address Maybe Num,
+```
+
+*Type alias*
+
+```
+type NonEmpty A = (A, List A)
+```
+
 ## Error Messages
 
 Bread aims to have useful error messages. Below are a few examples.
 
 ```
-Type error: Error: Cannot apply '+' to values of types 'Num' and 'String'
--> line 1, column 1
-   1 | 5 + if true
-       ^ ^
-   2 | then "foo"
-            ^^^^^
+Error: Type mismatch between 'Num' and 'String'
+-> line 1, column 2
+   1 | (x -> x + 3)("test")
+        ^           ^^^^^^
 ```
