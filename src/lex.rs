@@ -53,6 +53,7 @@ pub enum Token {
     If,
     Then,
     Else,
+    Def,
 }
 
 impl Token {
@@ -144,6 +145,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(seq("if".chars()).map_with_range(|_, range| Token::If.at(range.into())))
             .or(seq("then".chars()).map_with_range(|_, range| Token::Then.at(range.into())))
             .or(seq("else".chars()).map_with_range(|_, range| Token::Else.at(range.into())))
+            .or(seq("def".chars()).map_with_range(|_, range| Token::Def.at(range.into())))
             .or(ident)
             .or(op)
             .or(tree)

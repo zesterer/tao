@@ -255,7 +255,7 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                 highlight_regions(f, &[op.region, a.region, b.region])?;
             },
             ErrorKind::CannotCall(region) => {
-                writeln!(f, "Cannot call value")?;
+                writeln!(f, "Value does not support function application")?;
                 highlight_regions(f, &[*region])?;
             },
             ErrorKind::NotTruthy(region) => {
@@ -263,15 +263,19 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                 highlight_regions(f, &[*region])?;
             },
             ErrorKind::NoSuchBinding(name, region) => {
-                writeln!(f, "Cannot find binding '{}' in the current scope", name)?;
+                writeln!(f, "No such binding '{}' in the current scope", name)?;
                 highlight_regions(f, &[*region])?;
             },
             ErrorKind::TypeMismatch(a, b) => {
-                writeln!(f, "Type mismatch between '{}' and '{}'", a.inner(), b.inner())?;
+                if a.region.intersects(b.region) {
+                    writeln!(f, "Conflicting requirements imply value to be of types '{}' and '{}' at once", a.inner(), b.inner())?;
+                } else {
+                    writeln!(f, "Type mismatch between '{}' and '{}'", a.inner(), b.inner())?;
+                }
                 highlight_regions(f, &[a.region, b.region])?;
             },
             ErrorKind::CannotInferType(ty) => {
-                writeln!(f, "Cannot infer type '{}'", ty.inner)?;
+                writeln!(f, "Insufficient information to fully infer type '{}'", ty.inner)?;
                 highlight_regions(f, &[ty.region])?;
             },
             ErrorKind::RecursiveType(ty) => {

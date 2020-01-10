@@ -41,7 +41,7 @@ fn run(expr: &str) {
     };
 
     if let Err(err) = ast.ascribe_types() {
-        print!("Type error: {}", err.in_source(expr));
+        print!("{}", err.in_source(expr));
         return;
     }
 
@@ -84,7 +84,10 @@ fn main() {
         loop {
             let line = rl.readline(">> ");
             match line {
-                Ok(line) => run(&line),
+                Ok(line) => {
+                    rl.add_history_entry(&line);
+                    run(&line);
+                },
                 Err(_) => break,
             }
         }

@@ -154,6 +154,14 @@ impl TypeInfo {
             _ => Ok(()),
         }
     }
+
+    pub fn is_complex(&self) -> bool {
+        match self {
+            TypeInfo::List(_) => true,
+            TypeInfo::Func(_, _) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Default for TypeInfo {
