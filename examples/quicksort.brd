@@ -1,44 +1,36 @@
 # Find the length of a list
-let rec = f -> f:f in
-let len = rec(len -> l ->
+def len = l ->
     if l = []
     then 0
-    else len(len, :> l) + 1
-) in
+    else len(:> l) + 1
 
 # Find the nth element in a list
-let rec = f -> f:f in
-let nth = rec(nth -> n -> l ->
+def nth = n -> l ->
     if n < 1
     then <: l
-    else nth(nth, n - 1, :> l)
-) in
+    else nth(n - 1, :> l)
 
 # Filter list items with a predicate
-let rec = f -> f:f in
-let filter = rec(filter -> f -> l ->
+def filter = f -> l ->
     if l = []
     then []
     else
-        let tail = filter(filter, f, :> l) in
+        let tail = filter(f, :> l) in
         if f(<: l)
         then [<: l] ++ tail
         else tail
-) in
 
 # Sort list items
-let rec = f -> f:f in
-let sort = rec(sort -> l ->
+def sort = l ->
     if l:len <= 1
     then l
     else
         let mid = l:nth(l:len / 2) in
-        l:filter(x -> x < mid):sort(sort) ++
+        l:filter(x -> x < mid):sort ++
         l:filter(x -> x = mid) ++
-        l:filter(x -> x > mid):sort(sort)
-) in
+        l:filter(x -> x > mid):sort
 
-[
+def main = [
 	45, 75, 98, 24, 10, 12, 60, 32, 17, 41,
 	36, 61, 30, 27, 42, 87, 83, 59, 11, 56,
 	22, 99, 50, 76,  6, 57, 19, 52,  7, 51,

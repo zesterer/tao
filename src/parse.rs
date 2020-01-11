@@ -105,8 +105,25 @@ impl Expr {
     }
 }
 
-pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
-    let expr = recursive(|expr| {
+#[derive(Debug)]
+pub enum Decl {
+    Value(Node<LocalIntern<String>>, NodeExpr),
+}
+
+#[derive(Debug)]
+pub struct Module {
+    pub decls: Vec<Node<Decl>>,
+}
+
+fn ident_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<LocalIntern<String>, Node<TypeInfo>>>, Error> {
+    permit_map(|token: Node<Token>| match &*token {
+        Token::Ident(x) => Some(Node::new(*x, token.region(), Node::new(TypeInfo::default(), token.region(), ()))),
+        _ => None,
+    })
+}
+
+fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExpr>, Error> {
+    recursive(|expr| {
         let expr = expr.link();
 
         let literal = permit_map(|token: Node<Token>| Some(match &*token {
@@ -116,11 +133,6 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
             Token::Boolean(x) => Expr::Literal(Literal::Boolean(*x)),
             _ => return None,
         }.at(token.region())));
-
-        let ident = permit_map(|token: Node<Token>| match &*token {
-            Token::Ident(x) => Some(Node::new(*x, token.region(), Node::new(TypeInfo::default(), token.region(), ()))),
-            _ => None,
-        });
 
         let paren_expr = nested_parse({
             let expr = expr.clone();
@@ -145,9 +157,9 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
                 match token.into_inner() {
                     Token::Tree(Delimiter::Paren, tokens) => Some((expr
                         .clone()
+                        .separated_by(just(Token::Comma))
                         .padded_by(end())
-                        .map_err(move |e: Error| e.at(region))
-                        .separated_by(just(Token::Comma)), tokens)),
+                        .map_err(move |e: Error| e.at(region)), tokens)),
                     _ => None,
                 }
             }
@@ -161,8 +173,8 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
                     Token::Tree(Delimiter::Brack, tokens) =>
                         Some((expr
                             .clone()
-                            .padded_by(end())
                             .separated_by(just(Token::Comma))
+                            .padded_by(end())
                             .map_err(move |e: Error| e.at(region))
                             .map(move |e| (e, region)), tokens)),
                     _ => None,
@@ -185,7 +197,7 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
                         .at(region)
                 }))
             .or(just(Token::Let)
-                .padding_for(ident.clone())
+                .padding_for(ident_parser())
                 .padded_by(just(Token::Op(Op::Eq)))
                 .then(expr.clone())
                 .padded_by(just(Token::Ident(LocalIntern::new("in".to_string()))))
@@ -196,7 +208,7 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
                     Expr::Apply(Expr::Func(name, then).at(f_region), val)
                         .at(region)
                 }))
-            .or(ident.clone().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ())).at(x.region())))
+            .or(ident_parser().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ())).at(x.region())))
             .boxed();
 
         let application = atom.clone()
@@ -266,7 +278,7 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
                     .at(region)
             });
 
-        let func = ident
+        let func = ident_parser()
             .padded_by(just(Token::RArrow))
             .then(expr)
             .map(|(name, body)| {
@@ -276,9 +288,28 @@ pub fn parse(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
             });
 
         func.or(comparison)
-    });
+    })
+}
 
-    expr
+pub fn parse_expr(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
+    expr_parser()
+        .padded_by(end())
+        .parse(tokens.iter().cloned())
+}
+
+pub fn parse_module(tokens: &[Node<Token>]) -> Result<Module, Vec<Error>> {
+    just(Token::Def)
+        .then(ident_parser())
+        .padded_by(just(Token::Op(Op::Eq)))
+        .then(expr_parser())
+        .map(|((head, name), body)| {
+            let region = head.region.union(body.region);
+            Node::new(Decl::Value(Node::new(*name.inner, name.region, ()), body), region, ())
+        })
+        .repeated()
+        .map(|decls| Module {
+            decls,
+        })
         .padded_by(end())
         .parse(tokens.iter().cloned())
 }

@@ -123,6 +123,11 @@ impl Vm {
                     self.push(Value::List(items));
                 },
                 Instr::Local(offset) => self.push(self.local(offset).clone()),
+                Instr::Call(addr) => {
+                    self.call_stack.push(ip + 1);
+                    ip = addr;
+                    incr_ip = false;
+                },
             }
 
             if incr_ip {

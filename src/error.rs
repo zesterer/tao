@@ -63,6 +63,12 @@ impl Error {
         }
     }
 
+    pub fn no_main() -> Self {
+        Self {
+            kind: ErrorKind::NoMain,
+        }
+    }
+
     pub fn in_source<'a>(&'a self, src: &'a str) -> ErrorInSrc<'a> {
         ErrorInSrc {
             error: self,
@@ -180,6 +186,7 @@ pub enum ErrorKind {
     TypeMismatch(Node<TypeInfo>, Node<TypeInfo>),
     CannotInferType(Node<TypeInfo>),
     RecursiveType(Node<TypeInfo>),
+    NoMain,
 }
 
 pub struct ErrorInSrc<'a> {
@@ -289,6 +296,9 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
             ErrorKind::RecursiveType(ty) => {
                 writeln!(f, "Recursive type detected '{}'", ty.inner)?;
                 highlight_regions(f, &[ty.region])?;
+            },
+            ErrorKind::NoMain => {
+                writeln!(f, "No 'main' definition could be found")?;
             },
         }
 

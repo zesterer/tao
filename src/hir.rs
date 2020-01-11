@@ -7,7 +7,7 @@ use std::{
 use internment::LocalIntern;
 use crate::{
     node::Node,
-    parse::{Literal, UnaryOp, BinaryOp, Expr},
+    parse::{Literal, UnaryOp, BinaryOp, Expr, Decl, Module},
     error::Error,
 };
 
@@ -102,7 +102,8 @@ impl TypeInfo {
                 let a = a.try_borrow_mut();
                 if a.is_err() {
                     drop(a);
-                    Err(Error::recursive_type(self.clone()))
+                    Ok(())
+                    //Err(Error::recursive_type(self.clone()))
                 } else {
                     a.unwrap().unify_with(other)
                 }
@@ -111,7 +112,8 @@ impl TypeInfo {
                 let b = b.try_borrow_mut();
                 if b.is_err() {
                     drop(b);
-                    Err(Error::recursive_type(other.clone()))
+                    Ok(())
+                    //Err(Error::recursive_type(other.clone()))
                 } else {
                     self.unify_with(&mut b.unwrap())
                 }
@@ -331,7 +333,7 @@ impl<'a> Scope<'a> {
 impl Expr {
     pub fn infer_types<'a>(
         self: &mut Node<Self, Node<TypeInfo>>,
-        scope: &mut Scope<'a>,
+        scope: &Scope<'a>,
     ) -> Result<(), Error> {
         match &mut *self.inner {
             Expr::Literal(lit) => **self.meta_mut() = TypeInfo::from(&*lit),
@@ -354,8 +356,8 @@ impl Expr {
                 self.meta.unify_with(f.meta_mut())?;
             },
             Expr::Func(arg, body) => {
-                let mut scope = scope.push(*arg.inner, &mut arg.meta);
-                body.infer_types(&mut scope)?;
+                let scope = scope.push(*arg.inner, &mut arg.meta);
+                body.infer_types(&scope)?;
                 self.meta.unify_with(&mut Node::new(TypeInfo::Func(arg.meta.reference(), body.meta.reference()), self.region, ()))?;
             },
             Expr::Apply(f, arg) => {
@@ -425,6 +427,56 @@ impl Expr {
 
     pub fn ascribe_types(self: &mut Node<Self, Node<TypeInfo>>) -> Result<(), Error> {
         self.infer_types(&mut Scope::default())?;
+        self.check_types()?;
+        Ok(())
+    }
+}
+
+impl Module {
+    pub fn infer_types<'a>(&mut self) -> Result<(), Error> {
+        let scope = Scope::Global(self.decls
+            .iter()
+            .filter_map(|decl| match decl.inner() {
+                Decl::Value(name, body) => Some((*name.inner(), RefCell::new(body.meta().clone())))
+            })
+            .collect());
+
+        for decl in &mut self.decls {
+            match decl.inner_mut() {
+                Decl::Value(name, body) => body.infer_types(&scope)?,
+            }
+        }
+
+        if let Scope::Global(vals) = scope {
+            for (name, ty) in vals {
+                for decl in &mut self.decls {
+                    match decl.inner_mut() {
+                        Decl::Value(val_name, body) if *val_name.inner() == name => {
+                            body.meta.unify_with(&mut ty.into_inner())?;
+                            break;
+                        },
+                        _ => {},
+                    }
+                }
+            }
+        } else {
+            unreachable!()
+        }
+
+        Ok(())
+    }
+
+    pub fn check_types(&self) -> Result<(), Error> {
+        for decl in &self.decls {
+            match decl.inner() {
+                Decl::Value(_, body) => body.check_types()?,
+            }
+        }
+        Ok(())
+    }
+
+    pub fn ascribe_types(&mut self) -> Result<(), Error> {
+        self.infer_types()?;
         self.check_types()?;
         Ok(())
     }

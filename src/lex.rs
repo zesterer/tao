@@ -170,7 +170,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             })
             .boxed();
 
-        let ident = permit(|c: &char| c.is_ascii_alphabetic()).once_or_more()
+        let ident = permit(|c: &char| c.is_ascii_alphabetic() || *c == '_').once_or_more()
             .map_with_range(|chars, range| {
                 Token::Ident(LocalIntern::new(chars.into_iter().collect()))
                     .at(range.into())
