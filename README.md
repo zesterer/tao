@@ -47,9 +47,10 @@ Below are some examples of types that can be represented in Bread.
 
 - `Num -> List Num -> Bool`
 
-## Declarations (Incomplete)
+## Declarations
 
-Bread supports top-level type, data structure, and value declarations.
+Bread supports top-level type, data structure, and value definition declarations.
+Note that many of these are not yet supported.
 Below are some examples of these.
 
 *Recursive function*
