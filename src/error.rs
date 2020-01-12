@@ -214,7 +214,7 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                             SrcLoc::at(char_pos + line.len()),
                         );
 
-                        writeln!(f, "{:>4} | {}", i + 1, line)?;
+                        writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
 
                         // Underline
                         if regions.iter().any(|r| r.intersects(line_region)) {

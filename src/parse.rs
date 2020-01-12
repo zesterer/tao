@@ -122,6 +122,46 @@ fn ident_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<L
     })
 }
 
+fn type_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<TypeInfo>>, Error> {
+    recursive(|ty| {
+        let ty = ty.link();
+
+        let paren_ty = nested_parse({
+            let ty = ty.clone();
+            move |token: Node<Token>| {
+                let region = token.region();
+                match token.into_inner() {
+                    Token::Tree(Delimiter::Paren, tokens) =>
+                        Some((ty
+                            .clone()
+                            .padded_by(end())
+                            .map_err(move |e: Error| e.at(region))
+                            .map(move |ty: Node<TypeInfo>| ty.at(region)), tokens)),
+                    _ => None,
+                }
+            }
+        }).boxed();
+
+        let ident = permit_map(|token: Node<Token>| match &*token {
+            Token::Ident(x) => Some(Node::new(TypeInfo::from(*x), token.region(), ())),
+            _ => None,
+        });
+
+        let list = just(Token::Ident(LocalIntern::new("List".to_string())))
+            .padding_for(ty.clone())
+            .boxed();
+
+        ident
+            .or(paren_ty)
+            .or(list)
+            .then(just(Token::RArrow).padding_for(ty.clone()).repeated())
+            .reduce_left(|i, o| {
+                let region = i.region().union(o.region());
+                Node::new(TypeInfo::Func(i, o), region, ())
+            })
+    })
+}
+
 fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExpr>, Error> {
     recursive(|expr| {
         let expr = expr.link();
@@ -200,7 +240,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
                 .padding_for(ident_parser())
                 .padded_by(just(Token::Op(Op::Eq)))
                 .then(expr.clone())
-                .padded_by(just(Token::Ident(LocalIntern::new("in".to_string()))))
+                .padded_by(just(Token::In))
                 .then(expr.clone())
                 .map(|((name, val), then)| {
                     let f_region = name.region.union(then.region);
@@ -300,10 +340,14 @@ pub fn parse_expr(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
 pub fn parse_module(tokens: &[Node<Token>]) -> Result<Module, Vec<Error>> {
     just(Token::Def)
         .then(ident_parser())
+        .then(just(Token::Of).padding_for(type_parser()).or_not())
         .padded_by(just(Token::Op(Op::Eq)))
         .then(expr_parser())
-        .map(|((head, name), body)| {
+        .map(|(((head, name), ty), mut body)| {
             let region = head.region.union(body.region);
+            if let Some(ty) = ty {
+                body.meta = ty;
+            }
             Node::new(Decl::Value(Node::new(*name.inner, name.region, ()), body), region, ())
         })
         .repeated()

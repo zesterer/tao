@@ -39,7 +39,7 @@ fn run_module(src: &str) {
     };
 
     if let Err(err) = module.ascribe_types() {
-        println!("Module: {:#?}", module);
+        //println!("Module: {:#?}", module);
         print!("{}", err.in_source(src));
         return;
     }

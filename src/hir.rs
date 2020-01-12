@@ -22,6 +22,17 @@ pub enum TypeInfo {
     Func(Node<TypeInfo>, Node<TypeInfo>),
 }
 
+impl From<LocalIntern<String>> for TypeInfo {
+    fn from(ident: LocalIntern<String>) -> Self {
+        match ident.as_str() {
+            "Num" => TypeInfo::Number,
+            "Bool" => TypeInfo::Boolean,
+            "Str" => TypeInfo::String,
+            _ => todo!("Implement non-primitive types"),
+        }
+    }
+}
+
 impl TypeInfo {
     pub fn make_ref(self: &mut Node<Self>) {
         match self.inner() {
