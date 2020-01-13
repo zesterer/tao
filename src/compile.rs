@@ -157,6 +157,12 @@ impl Program {
                 }
                 proc.push(Instr::MakeList(items.len()), expr.region());
             },
+            Expr::Tuple(items) => { // Tuples are compiled to lists
+                for item in items.iter().rev() {
+                    self.compile_expr(item, proc, globals, locals)?;
+                }
+                proc.push(Instr::MakeList(items.len()), expr.region());
+            },
             Expr::Ident(ident) => {
                 let addr = match offset_of(**ident, ident.region()) {
                     Ok(addr) => proc.push(Instr::Local(addr), expr.region()),

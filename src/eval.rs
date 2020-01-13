@@ -238,15 +238,32 @@ impl Value {
     }
 
     pub fn head(self) -> Option<Self> {
-        self.list().map(|x| x.front().cloned().unwrap_or(Value::Null))
+        match self {
+            Value::List(x) => Some(x
+                .front()
+                .cloned()
+                .unwrap_or(Value::Null)),
+            Value::String(x) => Some(x
+                .get(0..1)
+                .map(|x| Value::String(x.to_string()))
+                .unwrap_or(Value::String(String::new()))),
+            _ => None,
+        }
     }
 
     pub fn tail(self) -> Option<Self> {
-        self.list().map(|mut x| Value::List(if x.len() == 0 {
-            Vector::new()
-        } else {
-            x.split_off(1)
-        }))
+        match self {
+            Value::List(mut x) => Some(Value::List(if x.len() == 0 {
+                Vector::new()
+            } else {
+                x.split_off(1)
+            })),
+            Value::String(x) => Some(x
+                .get(1..)
+                .map(|x| Value::String(x.to_string()))
+                .unwrap_or(Value::String(String::new()))),
+            _ => None,
+        }
     }
 
     pub fn truth(self) -> Option<bool> {

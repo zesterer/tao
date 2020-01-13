@@ -97,6 +97,7 @@ pub enum Expr {
     Func(Node<LocalIntern<String>, Node<TypeInfo>>, NodeExpr),
     Apply(NodeExpr, NodeExpr),
     List(Vec<NodeExpr>),
+    Tuple(Vec<NodeExpr>),
 }
 
 impl Expr {
@@ -142,6 +143,23 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<Ty
             }
         }).boxed();
 
+        let paren_ty_list = nested_parse({
+            let ty = ty.clone();
+            move |token: Node<Token>| {
+                let region = token.region();
+                match token.into_inner() {
+                    Token::Tree(Delimiter::Paren, tokens) =>
+                        Some((ty
+                            .clone()
+                            .separated_by(just(Token::Comma))
+                            .padded_by(end())
+                            .map_err(move |e: Error| e.at(region))
+                            .map(move |ty: Vec<Node<TypeInfo>>| (ty, region)), tokens)),
+                    _ => None,
+                }
+            }
+        }).boxed();
+
         let ident = permit_map(|token: Node<Token>| match &*token {
             Token::Ident(x) => Some(Node::new(TypeInfo::from(*x), token.region(), ())),
             _ => None,
@@ -151,9 +169,13 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<Ty
             .padding_for(ty.clone())
             .boxed();
 
+        let tuple = paren_ty_list
+            .map(|(items, region)| Node::new(TypeInfo::Tuple(items), region, ()));
+
         ident
             .or(paren_ty)
             .or(list)
+            .or(tuple)
             .then(just(Token::RArrow).padding_for(ty.clone()).repeated())
             .reduce_left(|i, o| {
                 let region = i.region().union(o.region());
@@ -183,7 +205,6 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
                         Some((expr
                             .clone()
                             .padded_by(end())
-                            .map_err(move |e: Error| e.at(region))
                             .map(move |e: NodeExpr| e.at(region)), tokens)),
                     _ => None,
                 }
@@ -198,8 +219,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
                     Token::Tree(Delimiter::Paren, tokens) => Some((expr
                         .clone()
                         .separated_by(just(Token::Comma))
-                        .padded_by(end())
-                        .map_err(move |e: Error| e.at(region)), tokens)),
+                        .padded_by(end()), tokens)),
                     _ => None,
                 }
             }
@@ -215,7 +235,6 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
                             .clone()
                             .separated_by(just(Token::Comma))
                             .padded_by(end())
-                            .map_err(move |e: Error| e.at(region))
                             .map(move |e| (e, region)), tokens)),
                     _ => None,
                 }
@@ -238,17 +257,28 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
                 }))
             .or(just(Token::Let)
                 .padding_for(ident_parser())
+                .then(just(Token::Of).padding_for(type_parser()).or_not())
                 .padded_by(just(Token::Op(Op::Eq)))
                 .then(expr.clone())
                 .padded_by(just(Token::In))
                 .then(expr.clone())
-                .map(|((name, val), then)| {
+                .map(|(((mut name, ty), val), then)| {
                     let f_region = name.region.union(then.region);
                     let region = f_region.union(val.region);
+                    if let Some(ty) = ty {
+                        name.meta = ty;
+                    }
                     Expr::Apply(Expr::Func(name, then).at(f_region), val)
                         .at(region)
                 }))
             .or(ident_parser().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ())).at(x.region())))
+            .or(paren_expr_list
+                .clone()
+                .map(|items| {
+                    let region = items.iter().fold(SrcRegion::none(), |a, i| a.union(i.region));
+                    Expr::Tuple(items)
+                        .at(region)
+                }))
             .boxed();
 
         let application = atom.clone()

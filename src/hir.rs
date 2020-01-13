@@ -19,6 +19,7 @@ pub enum TypeInfo {
     Boolean,
     String,
     List(Node<TypeInfo>),
+    Tuple(Vec<Node<TypeInfo>>),
     Func(Node<TypeInfo>, Node<TypeInfo>),
 }
 
@@ -83,6 +84,12 @@ impl TypeInfo {
 
             // Complex types
             (TypeInfo::List(a), TypeInfo::List(b)) => a.compatible_with(b),
+            (TypeInfo::Tuple(items_a), TypeInfo::Tuple(items_b)) if items_a.len() == items_b.len() => {
+                items_a
+                    .iter()
+                    .zip(items_b.iter())
+                    .all(|(a, b)| a.compatible_with(b))
+            },
             (TypeInfo::Func(a_in, a_out), TypeInfo::Func(b_in, b_out)) =>
                 a_in.compatible_with(b_in) && a_out.compatible_with(b_out),
 
@@ -137,6 +144,12 @@ impl TypeInfo {
 
             // Complex types
             (TypeInfo::List(a), TypeInfo::List(b)) => a.unify_with(b),
+            (TypeInfo::Tuple(items_a), TypeInfo::Tuple(items_b)) if items_a.len() == items_b.len() => {
+                items_a
+                    .iter_mut()
+                    .zip(items_b.iter_mut())
+                    .try_for_each(|(a, b)| a.unify_with(b))
+            },
             (TypeInfo::Func(a_in, a_out), TypeInfo::Func(b_in, b_out)) => {
                 a_in.unify_with(b_in)?;
                 a_out.unify_with(b_out)?;
@@ -159,6 +172,7 @@ impl TypeInfo {
                 .map(|ty| ty.established())
                 .unwrap_or(Ok(())),
             TypeInfo::List(a) => a.established(),
+            TypeInfo::Tuple(items) => items.iter().try_for_each(|i| i.established()),
             TypeInfo::Func(i, o) => {
                 i.established()?;
                 o.established()?;
@@ -210,8 +224,9 @@ impl fmt::Display for TypeInfo {
             },
             TypeInfo::Number => write!(f, "Num"),
             TypeInfo::Boolean => write!(f, "Bool"),
-            TypeInfo::String => write!(f, "String"),
+            TypeInfo::String => write!(f, "Str"),
             TypeInfo::List(a) => write!(f, "List {}", a.inner()),
+            TypeInfo::Tuple(items) => write!(f, "({})", items.iter().map(|i| format!("{}", i.inner())).collect::<Vec<_>>().join(", ")),
             TypeInfo::Func(i, o) => write!(f, "({} -> {})", i.inner(), o.inner()),
         }
     }
@@ -221,6 +236,8 @@ pub fn unary_op_resolve(op: &Node<UnaryOp>, a: &mut Node<TypeInfo>, o: &mut Node
     let possibles = [
         (UnaryOp::Neg, TypeInfo::Number, TypeInfo::Number),
         (UnaryOp::Not, TypeInfo::Boolean, TypeInfo::Boolean),
+        (UnaryOp::Head, TypeInfo::String, TypeInfo::String),
+        (UnaryOp::Tail, TypeInfo::String, TypeInfo::String),
         {
             let mut item = Node::new(TypeInfo::Unknown, o.region, ());
             item.make_ref();
@@ -397,6 +414,13 @@ impl Expr {
                 };
                 self.meta.unify_with(&mut Node::new(TypeInfo::List(item_ty), self.region, ()))?;
             },
+            Expr::Tuple(items) => {
+                for item in items.iter_mut() {
+                    item.infer_types(scope)?;
+                }
+                let item_tys = items.iter_mut().map(|i| i.meta.reference()).collect();
+                self.meta.unify_with(&mut Node::new(TypeInfo::Tuple(item_tys), self.region, ()))?;
+            },
         }
 
         Ok(())
@@ -429,6 +453,9 @@ impl Expr {
                 arg.check_types()?;
             },
             Expr::List(items) => for item in items.iter() {
+                item.check_types()?;
+            },
+            Expr::Tuple(items) => for item in items.iter() {
                 item.check_types()?;
             },
         }
