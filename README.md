@@ -26,6 +26,7 @@ See `examples/` for more example programs.
 - Currying
 - Static type system
 - Hindley-Milney type inference
+- Complex types (lists, tuples, functions)
 - Useful error messages
 - Bytecode compilation
 - Pattern matching (incomplete)
@@ -46,6 +47,8 @@ Below are some examples of types that can be represented in Bread.
 - `List Num` / `List String`
 
 - `Num -> List Num -> Bool`
+
+- `(Num, Num)` / `(Str, (Bool, Num -> Num))`
 
 ## Declarations
 
