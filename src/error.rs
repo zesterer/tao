@@ -85,22 +85,25 @@ impl Error {
         self
     }
 
-    pub fn merge(self, other: Self) -> Self {
-        // TODO
+    pub fn merge(mut self, mut other: Self) -> Self {
+        match (&mut self.kind, &mut other.kind) {
+            (ErrorKind::FoundExpected(_, _, e_a), ErrorKind::FoundExpected(_, _, e_b)) =>
+                e_a.extend(e_b.iter().cloned()),
+            _ => {},
+        }
+
         self
     }
 }
 
 impl parze::error::Error<char> for Error {
+    type Region = SrcRegion;
+    type Thing = Thing;
     type Context = ();
 
-    fn unexpected_sym(sym: char, at: parze::Index) -> Self {
+    fn unexpected_sym(c: &char, region: SrcRegion) -> Self {
         Self {
-            kind: ErrorKind::FoundExpected(
-                Thing::Char(sym),
-                SrcRegion::single(SrcLoc::at(at as usize)),
-                HashSet::new(),
-            ),
+            kind: ErrorKind::FoundExpected(Thing::Char(*c), region, HashSet::new()),
         }
     }
 
@@ -110,18 +113,15 @@ impl parze::error::Error<char> for Error {
         }
     }
 
-    fn expected_end(sym: char, at: parze::Index) -> Self {
+    fn expected_end(c: &char, region: SrcRegion) -> Self {
         Self {
-            kind: ErrorKind::ExpectedEnd(
-                Thing::Char(sym),
-                SrcRegion::single(SrcLoc::at(at as usize)),
-            ),
+            kind: ErrorKind::ExpectedEnd(Thing::Char(*c), region),
         }
     }
 
-    fn expected(mut self, sym: char) -> Self {
+    fn expected(mut self, thing: Self::Thing) -> Self {
         match &mut self.kind {
-            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(Thing::Char(sym)); },
+            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(thing); },
             _ => {},
         }
         self
@@ -133,15 +133,14 @@ impl parze::error::Error<char> for Error {
 }
 
 impl parze::error::Error<Node<Token>> for Error {
+    type Region = SrcRegion;
+    type Thing = Thing;
     type Context = ();
 
-    fn unexpected_sym(sym: Node<Token>, at: parze::Index) -> Self {
+    fn unexpected_sym(sym: &Node<Token>, region: SrcRegion) -> Self {
         Self {
             kind: ErrorKind::FoundExpected(
-                Thing::Token(sym.into_inner()),
-                SrcRegion::single(SrcLoc::at(at as usize)),
-                HashSet::new(),
-            ),
+                Thing::Token(sym.inner().clone()), region, HashSet::new()),
         }
     }
 
@@ -151,26 +150,23 @@ impl parze::error::Error<Node<Token>> for Error {
         }
     }
 
-    fn expected_end(sym: Node<Token>, at: parze::Index) -> Self {
+    fn expected_end(sym: &Node<Token>, region: SrcRegion) -> Self {
         let region = sym.region;
         Self {
-            kind: ErrorKind::ExpectedEnd(
-                Thing::Token(sym.into_inner()),
-                region,
-            ),
+            kind: ErrorKind::ExpectedEnd(Thing::Token(sym.inner().clone()), region),
         }
     }
 
-    fn expected(mut self, sym: Node<Token>) -> Self {
+    fn expected(mut self, thing: Self::Thing) -> Self {
         match &mut self.kind {
-            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(Thing::Token(sym.into_inner())); },
+            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(thing); },
             _ => {},
         }
         self
     }
 
-    fn merge(self, _other: Self) -> Self {
-        self
+    fn merge(self, other: Self) -> Self {
+        self.merge(other)
     }
 }
 
@@ -306,10 +302,28 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Thing {
     Char(char),
     Token(Token),
+}
+
+impl From<char> for Thing {
+    fn from(c: char) -> Self {
+        Thing::Char(c)
+    }
+}
+
+impl From<Token> for Thing {
+    fn from(token: Token) -> Self {
+        Thing::Token(token)
+    }
+}
+
+impl From<Node<Token>> for Thing {
+    fn from(token: Node<Token>) -> Self {
+        Self::from(token.into_inner())
+    }
 }
 
 impl fmt::Display for Thing {

@@ -2,6 +2,11 @@ use std::{
     ops::Range,
     fmt,
 };
+use parze::region::Region;
+use crate::{
+    lex::Token,
+    node::Node,
+};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct SrcLoc(usize);
@@ -178,5 +183,40 @@ impl From<(usize, usize)> for SrcRegion {
 impl<T: Into<SrcLoc>> From<Range<T>> for SrcRegion {
     fn from(range: Range<T>) -> Self {
         Self::range(range.start.into(), range.end.into())
+    }
+}
+
+impl Region<char> for SrcRegion {
+    fn none() -> Self {
+        SrcRegion::none()
+    }
+
+    fn single(index: usize, _sym: &char) -> Self {
+        SrcRegion::single(index.into())
+    }
+
+    fn group(_syms: &[char], range: Range<usize>) -> Self {
+        Self::range(range.start.into(), range.end.into())
+    }
+}
+
+impl<T> Region<Node<T>> for SrcRegion {
+    fn none() -> Self {
+        SrcRegion::none()
+    }
+
+    fn single(index: usize, sym: &Node<T>) -> Self {
+        sym.region
+    }
+
+    fn group(syms: &[Node<T>], _range: Range<usize>) -> Self {
+        syms
+            .first()
+            .map(|s| s.region)
+            .unwrap_or(SrcRegion::none())
+            .union(syms
+                .last()
+                .map(|s| s.region)
+                .unwrap_or(SrcRegion::none()))
     }
 }

@@ -147,13 +147,12 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
 
         let number = integer.clone()
             .then(just('.').padding_for(integer).or_not())
-            .map_with_range(|(mut int, fract), range| {
+            .map(|(mut int, fract)| {
                 if let Some(mut fract) = fract {
                     int.push('.');
                     int.append(&mut fract);
                 }
                 Token::Number(LocalIntern::new(int.into_iter().collect()))
-                    .at(range.into())
             });
 
         let special = just('\\')
@@ -168,17 +167,11 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
         let string = just('"')
             .padding_for(permit(|c: &char| *c != '\\' && *c != '"').or(escape).repeated())
             .padded_by(just('"'))
-            .map_with_range(|chars, range| {
-                Token::String(LocalIntern::new(chars.into_iter().collect()))
-                    .at(range.into())
-            })
+            .map(|chars| Token::String(LocalIntern::new(chars.into_iter().collect())))
             .boxed();
 
         let ident = permit(|c: &char| c.is_ascii_alphabetic() || *c == '_').once_or_more()
-            .map_with_range(|chars, range| {
-                Token::Ident(LocalIntern::new(chars.into_iter().collect()))
-                    .at(range.into())
-            });
+            .map(|chars| Token::Ident(LocalIntern::new(chars.into_iter().collect())));
 
         let op = seq("->".chars()).to(Token::RArrow)
             .or(seq("++".chars()).to(Token::Op(Op::Join)))
@@ -197,28 +190,28 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(just('!').map(|sc| Token::Op(Op::Not)))
             .or(just(',').map(|sc| Token::Comma))
             .or(just(':').map(|sc| Token::Colon))
-            .map_with_range(|token, range| token.at(range.into()))
             .boxed();
 
         let tree = just('(').to(Delimiter::Paren).then(tokens.link()).padded_by(just(')'))
             .or(just('[').to(Delimiter::Brack).then(tokens.link()).padded_by(just(']')))
-            .map_with_range(|(delim, tokens), range| Token::Tree(delim, tokens).at(range.into()));
+            .map(|(delim, tokens)| Token::Tree(delim, tokens));
 
         let token = number
             .or(string)
-            .or(seq("true".chars()).map_with_range(|_, range| Token::Boolean(true).at(range.into())))
-            .or(seq("false".chars()).map_with_range(|_, range| Token::Boolean(false).at(range.into())))
-            .or(seq("null".chars()).map_with_range(|_, range| Token::Null.at(range.into())))
-            .or(seq("let".chars()).map_with_range(|_, range| Token::Let.at(range.into())))
-            .or(seq("if".chars()).map_with_range(|_, range| Token::If.at(range.into())))
-            .or(seq("then".chars()).map_with_range(|_, range| Token::Then.at(range.into())))
-            .or(seq("else".chars()).map_with_range(|_, range| Token::Else.at(range.into())))
-            .or(seq("def".chars()).map_with_range(|_, range| Token::Def.at(range.into())))
-            .or(seq("in".chars()).map_with_range(|_, range| Token::In.at(range.into())))
-            .or(seq("of".chars()).map_with_range(|_, range| Token::Of.at(range.into())))
+            .or(seq("true".chars()).to(Token::Boolean(true)))
+            .or(seq("false".chars()).to(Token::Boolean(false)))
+            .or(seq("null".chars()).to(Token::Null))
+            .or(seq("let".chars()).to(Token::Let))
+            .or(seq("if".chars()).to(Token::If))
+            .or(seq("then".chars()).to(Token::Then))
+            .or(seq("else".chars()).to(Token::Else))
+            .or(seq("def".chars()).to(Token::Def))
+            .or(seq("in".chars()).to(Token::In))
+            .or(seq("of".chars()).to(Token::Of))
             .or(ident)
             .or(op)
             .or(tree)
+            .map_with_region(|token, region| token.at(region))
             .padded_by(space.clone());
 
         space.padding_for(token.repeated())
