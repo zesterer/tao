@@ -233,7 +233,7 @@ dependencies = [
 [[package]]
 name = "parze"
 version = "0.1.0"
-source = "git+https://github.com/zesterer/parze-new.git#11af06fbcdd522156fbd7b828c3d6d88c4ef3d5e"
+source = "git+https://github.com/zesterer/parze-new.git#e649de3d9ac0a704d32c94a292080a494ca5ebb7"
 dependencies = [
  "smallbox 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

@@ -153,8 +153,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<Ty
                             .clone()
                             .separated_by(just(Token::Comma))
                             .padded_by(end())
-                            .map_err(move |e: Error| e.at(region))
-                            .map(move |ty: Vec<Node<TypeInfo>>| (ty, region)), tokens)),
+                            .map_err(move |e: Error| e.at(region)), tokens)),
                     _ => None,
                 }
             }
@@ -170,7 +169,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<Ty
             .boxed();
 
         let tuple = paren_ty_list
-            .map(|(items, region)| Node::new(TypeInfo::Tuple(items), region, ()));
+            .map_with_region(|items, region| Node::new(TypeInfo::Tuple(items), region, ()));
 
         ident
             .or(paren_ty)
@@ -194,18 +193,16 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
             Token::String(x) => Expr::Literal(Literal::String(x.to_string())),
             Token::Boolean(x) => Expr::Literal(Literal::Boolean(*x)),
             _ => return None,
-        }.at(token.region())));
+        }));
 
         let paren_expr = nested_parse({
             let expr = expr.clone();
             move |token: Node<Token>| {
-                let region = token.region();
                 match token.into_inner() {
                     Token::Tree(Delimiter::Paren, tokens) =>
                         Some((expr
                             .clone()
-                            .padded_by(end())
-                            .map(move |e: NodeExpr| e.at(region)), tokens)),
+                            .padded_by(end()), tokens)),
                     _ => None,
                 }
             }
@@ -214,7 +211,6 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
         let paren_expr_list = nested_parse({
             let expr = expr.clone();
             move |token: Node<Token>| {
-                let region = token.region();
                 match token.into_inner() {
                     Token::Tree(Delimiter::Paren, tokens) => Some((expr
                         .clone()
@@ -228,33 +224,27 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
         let brack_expr_list = nested_parse({
             let expr = expr.clone();
             move |token: Node<Token>| {
-                let region = token.region();
                 match token.into_inner() {
                     Token::Tree(Delimiter::Brack, tokens) =>
                         Some((expr
                             .clone()
                             .separated_by(just(Token::Comma))
-                            .padded_by(end())
-                            .map(move |e| (e, region)), tokens)),
+                            .padded_by(end()), tokens)),
                     _ => None,
                 }
             }
         }).boxed();
 
         let atom = literal
-            .or(paren_expr.clone())
-            .or(brack_expr_list.map(|(items, region)| Expr::List(items).at(region))) // TODO!
+            .or(brack_expr_list.map(|items| Expr::List(items)))
+            .or(paren_expr_list.clone().map(|items| Expr::Tuple(items)))
             .or(just(Token::If)
-                .then(expr.clone())
+                .padding_for(expr.clone())
                 .padded_by(just(Token::Then))
                 .then(expr.clone())
                 .padded_by(just(Token::Else))
                 .then(expr.clone())
-                .map(|(((head, p), t), f)| {
-                    let region = head.region.union(p.region).union(t.region).union(f.region);
-                    Expr::Branch(p, t, f)
-                        .at(region)
-                }))
+                .map(|((p, t), f)| Expr::Branch(p, t, f)))
             .or(just(Token::Let)
                 .padding_for(ident_parser())
                 .then(just(Token::Of).padding_for(type_parser()).or_not())
@@ -269,16 +259,10 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
                         name.meta = ty;
                     }
                     Expr::Apply(Expr::Func(name, then).at(f_region), val)
-                        .at(region)
                 }))
-            .or(ident_parser().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ())).at(x.region())))
-            .or(paren_expr_list
-                .clone()
-                .map(|items| {
-                    let region = items.iter().fold(SrcRegion::none(), |a, i| a.union(i.region));
-                    Expr::Tuple(items)
-                        .at(region)
-                }))
+            .or(ident_parser().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ()))))
+            .map_with_region(|expr, region| expr.at(region))
+            .or(paren_expr.clone())
             .boxed();
 
         let application = atom.clone()
