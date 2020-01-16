@@ -90,6 +90,7 @@ pub enum Token {
     RArrow,
     Comma,
     Colon,
+    QuestionMark,
 
     Let,
     If,
@@ -125,6 +126,7 @@ impl fmt::Display for Token {
             Token::RArrow => write!(f, "->"),
             Token::Comma => write!(f, ","),
             Token::Colon => write!(f, ":"),
+            Token::QuestionMark => write!(f, "?"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
             Token::Then => write!(f, "then"),
@@ -190,6 +192,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(just('!').map(|sc| Token::Op(Op::Not)))
             .or(just(',').map(|sc| Token::Comma))
             .or(just(':').map(|sc| Token::Colon))
+            .or(just('?').map(|sc| Token::QuestionMark))
             .boxed();
 
         let tree = just('(').to(Delimiter::Paren).then(tokens.link()).padded_by(just(')'))

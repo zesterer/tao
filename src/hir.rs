@@ -29,7 +29,7 @@ impl From<LocalIntern<String>> for TypeInfo {
             "Num" => TypeInfo::Number,
             "Bool" => TypeInfo::Boolean,
             "Str" => TypeInfo::String,
-            _ => todo!("Implement non-primitive types"),
+            ty => todo!("Implement non-primitive types: {}", ty),
         }
     }
 }
@@ -475,13 +475,13 @@ impl Module {
         let scope = Scope::Global(self.decls
             .iter()
             .filter_map(|decl| match decl.inner() {
-                Decl::Value(name, body) => Some((*name.inner(), RefCell::new(body.meta().clone())))
+                Decl::Value(name, _, body) => Some((*name.inner(), RefCell::new(body.meta().clone())))
             })
             .collect());
 
         for decl in &mut self.decls {
             match decl.inner_mut() {
-                Decl::Value(name, body) => body.infer_types(&scope)?,
+                Decl::Value(name, _, body) => body.infer_types(&scope)?,
             }
         }
 
@@ -489,7 +489,7 @@ impl Module {
             for (name, ty) in vals {
                 for decl in &mut self.decls {
                     match decl.inner_mut() {
-                        Decl::Value(val_name, body) if *val_name.inner() == name => {
+                        Decl::Value(val_name, _, body) if *val_name.inner() == name => {
                             body.meta.unify_with(&mut ty.into_inner())?;
                             break;
                         },
@@ -507,7 +507,7 @@ impl Module {
     pub fn check_types(&self) -> Result<(), Error> {
         for decl in &self.decls {
             match decl.inner() {
-                Decl::Value(_, body) => body.check_types()?,
+                Decl::Value(_, _, body) => body.check_types()?,
             }
         }
         Ok(())

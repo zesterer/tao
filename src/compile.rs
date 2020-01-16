@@ -191,7 +191,7 @@ impl Program {
         let globals = module.decls
             .iter()
             .filter_map(|decl| match decl.inner() {
-                Decl::Value(name, _) => Some(*name.inner())
+                Decl::Value(name, _, _) => Some(*name.inner())
             })
             .collect::<Vec<_>>();
 
@@ -199,7 +199,7 @@ impl Program {
         let mut decl_values = HashMap::new();
         for decl in &module.decls {
             match decl.inner() {
-                Decl::Value(name, body) => {
+                Decl::Value(name, _, body) => {
                     decl_values.insert(
                         *name.inner(),
                         this.compile_procedure(body, &globals, &mut Vec::new(), 0)?,

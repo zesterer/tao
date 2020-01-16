@@ -1,9 +1,6 @@
-let rec = f -> f:f in
-
-let count = rec(count -> x ->
-	if x = 0
+def len a of List ? -> ? = l ->
+	if l = []
 	then 0
-	else x + count(count, x - 1)
-) in
+	else 1 + len(:> l)
 
-count(10000000)
+def main = len([1, 2, 3, 4, 5])

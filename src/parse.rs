@@ -100,6 +100,9 @@ pub enum Expr {
     Tuple(Vec<NodeExpr>),
 }
 
+#[derive(Debug)]
+pub struct TypeParam(Node<LocalIntern<String>>);
+
 impl Expr {
     pub fn at(self, region: SrcRegion) -> NodeExpr {
         Node::new(self, region, Node::new(TypeInfo::default(), region, ()))
@@ -108,7 +111,7 @@ impl Expr {
 
 #[derive(Debug)]
 pub enum Decl {
-    Value(Node<LocalIntern<String>>, NodeExpr),
+    Value(Node<LocalIntern<String>>, Vec<TypeParam>, NodeExpr),
 }
 
 #[derive(Debug)]
@@ -123,58 +126,76 @@ fn ident_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<L
     })
 }
 
+fn type_param_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=TypeParam>, Error> {
+    ident_parser()
+        .map(|ident| TypeParam(Node::new(*ident.inner, ident.region, ())))
+}
+
 fn type_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<TypeInfo>>, Error> {
     recursive(|ty| {
         let ty = ty.link();
 
-        let paren_ty = nested_parse({
+        let atom_ty = {
             let ty = ty.clone();
-            move |token: Node<Token>| {
-                let region = token.region();
-                match token.into_inner() {
-                    Token::Tree(Delimiter::Paren, tokens) =>
-                        Some((ty
-                            .clone()
-                            .padded_by(end())
-                            .map_err(move |e: Error| e.at(region))
-                            .map(move |ty: Node<TypeInfo>| ty.at(region)), tokens)),
+            recursive(move |atom_ty| {
+                let atom_ty = atom_ty.link();
+
+                let paren_ty = nested_parse({
+                    let ty = ty.clone();
+                    move |token: Node<Token>| {
+                        let region = token.region();
+                        match token.into_inner() {
+                            Token::Tree(Delimiter::Paren, tokens) =>
+                                Some((ty
+                                    .clone()
+                                    .padded_by(end())
+                                    .map_err(move |e: Error| e.at(region))
+                                    .map(move |ty: Node<TypeInfo>| ty.at(region)), tokens)),
+                            _ => None,
+                        }
+                    }
+                });
+
+                let paren_ty_list = nested_parse({
+                    let ty = ty.clone();
+                    move |token: Node<Token>| {
+                        let region = token.region();
+                        match token.into_inner() {
+                            Token::Tree(Delimiter::Paren, tokens) =>
+                                Some((ty
+                                    .clone()
+                                    .separated_by(just(Token::Comma))
+                                    .padded_by(end())
+                                    .map_err(move |e: Error| e.at(region)), tokens)),
+                            _ => None,
+                        }
+                    }
+                });
+
+                let ident = permit_map(|token: Node<Token>| match &*token {
+                    Token::Ident(x) => Some(Node::new(TypeInfo::from(*x), token.region(), ())),
                     _ => None,
-                }
-            }
-        }).boxed();
+                });
 
-        let paren_ty_list = nested_parse({
-            let ty = ty.clone();
-            move |token: Node<Token>| {
-                let region = token.region();
-                match token.into_inner() {
-                    Token::Tree(Delimiter::Paren, tokens) =>
-                        Some((ty
-                            .clone()
-                            .separated_by(just(Token::Comma))
-                            .padded_by(end())
-                            .map_err(move |e: Error| e.at(region)), tokens)),
-                    _ => None,
-                }
-            }
-        }).boxed();
+                let unknown = just(Token::QuestionMark)
+                    .map_with_region(|_, region| Node::new(TypeInfo::Unknown, region, ()));
 
-        let ident = permit_map(|token: Node<Token>| match &*token {
-            Token::Ident(x) => Some(Node::new(TypeInfo::from(*x), token.region(), ())),
-            _ => None,
-        });
+                let list = just(Token::Ident(LocalIntern::new("List".to_string())))
+                    .padding_for(atom_ty.clone())
+                    .map_with_region(|inner, region| Node::new(TypeInfo::List(inner), region, ()));
 
-        let list = just(Token::Ident(LocalIntern::new("List".to_string())))
-            .padding_for(ty.clone())
-            .boxed();
+                let tuple = paren_ty_list
+                    .map_with_region(|items, region| Node::new(TypeInfo::Tuple(items), region, ()));
 
-        let tuple = paren_ty_list
-            .map_with_region(|items, region| Node::new(TypeInfo::Tuple(items), region, ()));
+                list
+                    .or(paren_ty)
+                    .or(tuple)
+                    .or(unknown)
+                    .or(ident)
+            })
+        };
 
-        ident
-            .or(paren_ty)
-            .or(list)
-            .or(tuple)
+        atom_ty
             .then(just(Token::RArrow).padding_for(ty.clone()).repeated())
             .reduce_left(|i, o| {
                 let region = i.region().union(o.region());
@@ -352,18 +373,22 @@ pub fn parse_expr(tokens: &[Node<Token>]) -> Result<NodeExpr, Vec<Error>> {
 }
 
 pub fn parse_module(tokens: &[Node<Token>]) -> Result<Module, Vec<Error>> {
-    just(Token::Def)
-        .then(ident_parser())
+    let def = just(Token::Def)
+        .padding_for(ident_parser())
+        .then(type_param_parser().repeated())
         .then(just(Token::Of).padding_for(type_parser()).or_not())
         .padded_by(just(Token::Op(Op::Eq)))
         .then(expr_parser())
-        .map(|(((head, name), ty), mut body)| {
-            let region = head.region.union(body.region);
+        .map_with_region(|(((name, ty_params), ty), mut body), region| {
             if let Some(ty) = ty {
                 body.meta = ty;
             }
-            Node::new(Decl::Value(Node::new(*name.inner, name.region, ()), body), region, ())
-        })
+            Node::new(Decl::Value(Node::new(*name.inner, name.region, ()), ty_params, body), region, ())
+        });
+
+    let decl = def;
+
+    decl
         .repeated()
         .map(|decls| Module {
             decls,
