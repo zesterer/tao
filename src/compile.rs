@@ -268,6 +268,9 @@ impl Expr {
             Expr::List(items) => for item in items {
                 item.build_env_locals(globals, shadowed, env);
             },
+            Expr::Tuple(items) => for item in items {
+                item.build_env_locals(globals, shadowed, env);
+            },
             Expr::Ident(ident) => {
                 if !shadowed.contains(&*ident) && !globals.contains(&*ident) {
                     env.push((*ident).clone());

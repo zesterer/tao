@@ -9,6 +9,8 @@ mod node;
 mod error;
 mod hir;
 mod compile;
+mod ast;
+mod ty;
 
 use std::{
     env,

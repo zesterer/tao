@@ -1,6 +1,6 @@
-# Bread
+# Tao
 
-Bread is a statically-typed functional programming language.
+Tao is a statically-typed functional programming language.
 
 ## Example
 
@@ -36,9 +36,9 @@ See `examples/` for more example programs.
 
 ## Static typing
 
-Bread has a static type system and type inference.
+Tao has a static type system and type inference.
 It supports complex types such as functions and lists.
-Below are some examples of types that can be represented in Bread.
+Below are some examples of types that can be represented in Tao.
 
 - `Num` / `String` / `Bool`
 
@@ -52,7 +52,7 @@ Below are some examples of types that can be represented in Bread.
 
 ## Declarations
 
-Bread supports top-level type, data structure, and value definition declarations.
+Tao supports top-level type, data structure, and value definition declarations.
 Note that many of these are not yet supported.
 Below are some examples of these.
 
@@ -98,7 +98,7 @@ type NonEmpty A = (A, List A)
 
 ## Error Messages
 
-Bread aims to have useful error messages. Below are a few examples.
+Tao aims to have useful error messages. Below are a few examples.
 
 ```
 Error: Type mismatch between 'Num' and 'String'
@@ -113,10 +113,3 @@ Error: No such binding 'bar' in the current scope
    1 | let foo = 5 in foo + bar
                             ^^^
 ```
-
-## Naming
-
-'Bread' is a stupid name.
-Unfortunately, I ran out of good names for projects 6 months ago.
-I walked into my kitchen the other day and the first thing I saw was a loaf of bread, so that's why this is a thing.
-If you have better ideas for a name, please do tell me.

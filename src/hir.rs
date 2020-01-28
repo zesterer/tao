@@ -7,7 +7,7 @@ use std::{
 use internment::LocalIntern;
 use crate::{
     node::Node,
-    parse::{Literal, UnaryOp, BinaryOp, Expr, Decl, Module},
+    parse::{Literal, UnaryOp, BinaryOp, Expr, Decl, TypeParam, Module},
     error::Error,
 };
 
@@ -21,15 +21,16 @@ pub enum TypeInfo {
     List(Node<TypeInfo>),
     Tuple(Vec<Node<TypeInfo>>),
     Func(Node<TypeInfo>, Node<TypeInfo>),
+    Generic(LocalIntern<String>, Node<TypeInfo>),
 }
 
-impl From<LocalIntern<String>> for TypeInfo {
-    fn from(ident: LocalIntern<String>) -> Self {
-        match ident.as_str() {
+impl From<Node<LocalIntern<String>>> for TypeInfo {
+    fn from(ident: Node<LocalIntern<String>>) -> Self {
+        match ident.inner.as_str() {
             "Num" => TypeInfo::Number,
             "Bool" => TypeInfo::Boolean,
             "Str" => TypeInfo::String,
-            ty => todo!("Implement non-primitive types: {}", ty),
+            _ => TypeInfo::Generic(*ident.inner, Node::new(TypeInfo::Unknown, ident.region, ())),
         }
     }
 }
@@ -76,6 +77,8 @@ impl TypeInfo {
                 .try_borrow()
                 .map(|b| a.compatible_with(&b))
                 .unwrap_or(false),
+            (TypeInfo::Generic(_, a), b) => a.compatible_with(b),
+            (a, TypeInfo::Generic(_, b)) => a.compatible_with(b),
 
             // Atoms
             (TypeInfo::Number, TypeInfo::Number) => true,
@@ -136,11 +139,14 @@ impl TypeInfo {
                     self.unify_with(&mut b.unwrap())
                 }
             },
+            (TypeInfo::Generic(_, a), _) => a.unify_with(other),
+            (_, TypeInfo::Generic(_, b)) => self.unify_with(b),
 
             // Atoms
             (TypeInfo::Number, TypeInfo::Number) => Ok(()),
             (TypeInfo::Boolean, TypeInfo::Boolean) => Ok(()),
             (TypeInfo::String, TypeInfo::String) => Ok(()),
+            (TypeInfo::Generic(a, a_ty), TypeInfo::Generic(b, b_ty)) => a_ty.unify_with(b_ty),
 
             // Complex types
             (TypeInfo::List(a), TypeInfo::List(b)) => a.unify_with(b),
@@ -178,7 +184,22 @@ impl TypeInfo {
                 o.established()?;
                 Ok(())
             },
+            TypeInfo::Generic(_, _) => Ok(()),
             _ => Ok(()),
+        }
+    }
+
+    pub fn reset_generics(&mut self) {
+        match self {
+            TypeInfo::Ref(ty) => ty.borrow_mut().reset_generics(),
+            TypeInfo::List(a) => a.reset_generics(),
+            TypeInfo::Tuple(items) => items.iter_mut().for_each(|item| item.reset_generics()),
+            TypeInfo::Func(i, o) => {
+                i.reset_generics();
+                o.reset_generics();
+            },
+            TypeInfo::Generic(_, ty) => *ty.inner_mut() = TypeInfo::Unknown,
+            _ => {},
         }
     }
 
@@ -228,6 +249,7 @@ impl fmt::Display for TypeInfo {
             TypeInfo::List(a) => write!(f, "List {}", a.inner()),
             TypeInfo::Tuple(items) => write!(f, "({})", items.iter().map(|i| format!("{}", i.inner())).collect::<Vec<_>>().join(", ")),
             TypeInfo::Func(i, o) => write!(f, "({} -> {})", i.inner(), o.inner()),
+            TypeInfo::Generic(name, ty) => write!(f, "{} = {}", name.as_str(), ty.inner()),
         }
     }
 }
@@ -328,8 +350,9 @@ pub fn binary_op_resolve(
     }
 }
 
+#[derive(Clone)]
 pub enum Scope<'a> {
-    Global(HashMap<LocalIntern<String>, RefCell<Node<TypeInfo>>>),
+    Global(HashMap<LocalIntern<String>, (Vec<TypeParam>, RefCell<Node<TypeInfo>>)>),
     Local(LocalIntern<String>, RefCell<Node<TypeInfo>>, &'a Self),
 }
 
@@ -353,7 +376,22 @@ impl<'a> Scope<'a> {
             } else {
                 parent.get_mut(name)
             },
-            Scope::Global(globals) => globals.get(&name).map(|g| g.borrow_mut()),
+            Scope::Global(globals) => globals
+                .get(&name)
+                .map(|g| {
+                    let mut ty = g.1.borrow_mut();
+                    ty.reset_generics();
+                    ty
+                }),
+        }
+    }
+
+    pub fn set_global(&mut self, name: LocalIntern<String>, item: (Vec<TypeParam>, RefCell<Node<TypeInfo>>)) {
+        match self {
+            Scope::Global(globals) => {
+                globals.insert(name, item);
+            },
+            _ => {},
         }
     }
 }
@@ -472,16 +510,21 @@ impl Expr {
 
 impl Module {
     pub fn infer_types<'a>(&mut self) -> Result<(), Error> {
-        let scope = Scope::Global(self.decls
+        let mut scope = Scope::Global(self.decls
             .iter()
             .filter_map(|decl| match decl.inner() {
-                Decl::Value(name, _, body) => Some((*name.inner(), RefCell::new(body.meta().clone())))
+                Decl::Value(name, ty_params, body) => {
+                    Some((*name.inner(), (ty_params.clone(), RefCell::new(body.meta().clone()))))
+                },
             })
             .collect());
 
         for decl in &mut self.decls {
             match decl.inner_mut() {
-                Decl::Value(name, _, body) => body.infer_types(&scope)?,
+                Decl::Value(name, ty_params, body) => {
+                    body.infer_types(&scope)?;
+                    //scope.set_global(*name.inner(), (ty_params.clone(), RefCell::new(body.meta.clone())));
+                },
             }
         }
 
@@ -490,7 +533,7 @@ impl Module {
                 for decl in &mut self.decls {
                     match decl.inner_mut() {
                         Decl::Value(val_name, _, body) if *val_name.inner() == name => {
-                            body.meta.unify_with(&mut ty.into_inner())?;
+                            body.meta.unify_with(&mut ty.1.into_inner())?;
                             break;
                         },
                         _ => {},

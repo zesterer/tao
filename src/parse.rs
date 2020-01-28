@@ -100,8 +100,14 @@ pub enum Expr {
     Tuple(Vec<NodeExpr>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TypeParam(Node<LocalIntern<String>>);
+
+impl TypeParam {
+    pub fn name(&self) -> &Node<LocalIntern<String>> {
+        &self.0
+    }
+}
 
 impl Expr {
     pub fn at(self, region: SrcRegion) -> NodeExpr {
@@ -173,7 +179,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=Node<Ty
                 });
 
                 let ident = permit_map(|token: Node<Token>| match &*token {
-                    Token::Ident(x) => Some(Node::new(TypeInfo::from(*x), token.region(), ())),
+                    Token::Ident(x) => Some(Node::new(TypeInfo::from(Node::new(*x, token.region, ())), token.region(), ())),
                     _ => None,
                 });
 
