@@ -13,6 +13,12 @@ type Ident = LocalIntern<String>;
 #[derive(Debug)]
 pub struct Node<T>(Box<T>, SrcRegion);
 
+impl<T> Node<T> {
+    pub fn new(item: T, region: SrcRegion) -> Self {
+        Self(Box::new(item), region)
+    }
+}
+
 impl<T> Deref for Node<T> {
     type Target = T;
 
@@ -80,6 +86,7 @@ pub enum Type {
 #[derive(Debug)]
 pub enum Expr {
     Literal(Literal),
+    Ident(Ident),
     Path(Path),
     Unary(Node<UnaryOp>, Node<Expr>),
     Binary(Node<BinaryOp>, Node<Expr>, Node<Expr>),
@@ -92,8 +99,13 @@ pub enum Expr {
     Tuple(Vec<Node<Expr>>),
 }
 
-/*
-fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Node<Ident>>, Error> {
-    todo!()
+fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Ident>, Error> {
+    permit_map(|token: node::Node<_>| match &*token {
+        Token::Ident(x) => Some(*x),
+        _ => None,
+    })
 }
-*/
+
+fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Node<Expr>>, Error> {
+    ident_parser().map_with_region(|ident, region| Node::new(Expr::Ident(ident), region))
+}
