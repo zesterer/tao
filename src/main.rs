@@ -11,6 +11,9 @@ mod hir;
 mod compile;
 mod ast;
 mod ty;
+mod hir2;
+mod mir;
+mod node2;
 
 use std::{
     env,
@@ -89,6 +92,36 @@ fn run_expr(src: &str) {
             return;
         },
     };
+
+    // --------------- NEW STUFF BEGIN ---------------
+
+    let mut ast2 = match ast::parse_expr(&tokens) {
+        Ok(ast2) => ast2,
+        Err(errs) => {
+            for err in errs {
+                print!("AST2: {}", err.in_source(src));
+            }
+            return;
+        },
+    };
+    println!("AST2: {:?}", ast2);
+
+    let main = hir2::Path::intern(&["main"]);
+    let mut ast2 = match hir2::Engine::new()
+        .make_def(main, &ast2)
+        .map_err(|err| vec![err])
+    {
+        Ok(ast2) => ast2,
+        Err(errs) => {
+            for err in errs {
+                print!("AST2: {}", err.in_source(src));
+            }
+            return;
+        },
+    };
+    println!("AST2: {:?}", ast2);
+
+    // -------------- NEW STUFF END ---------------
 
     if let Err(err) = ast.ascribe_types() {
         //println!("AST: {:#?}", ast);

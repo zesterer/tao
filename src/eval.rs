@@ -2,9 +2,7 @@ use std::fmt;
 use im_rc::Vector;
 use crate::{
     parse::{UnaryOp, BinaryOp},
-    node::Node,
     error::Error,
-    src::SrcRegion,
     compile::{Addr, Instr, Program},
 };
 

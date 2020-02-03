@@ -3,10 +3,7 @@ use std::{
     fmt,
 };
 use parze::region::Region;
-use crate::{
-    lex::Token,
-    node::Node,
-};
+use crate::node::Node;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct SrcLoc(usize);

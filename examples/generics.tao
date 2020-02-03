@@ -1,0 +1,5 @@
+given A data List =
+    | Item (A, List A)
+    | Nil
+
+given A def empty of List A = []
