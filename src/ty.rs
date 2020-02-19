@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use internment::LocalIntern;
+use crate::error::Error;
 
 type Ident = LocalIntern<String>;
 
@@ -19,12 +20,13 @@ pub enum Type {
 
 // Generics
 
-type GenericId = usize;
+pub type GenericId = usize;
 
 // Data types
 
-type DataId = usize;
+pub type DataId = usize;
 
+#[derive(Clone, Debug)]
 pub enum InnerDataType {
     Local(GenericId),
     Global(DataId, Vec<InnerDataType>),
@@ -86,7 +88,7 @@ impl DataCtx {
 
 // Trait resolution
 
-type TraitId = usize;
+pub type TraitId = usize;
 
 pub enum TypeConstraint {
     MustImpl(TraitId, Vec<InnerDataType>),
@@ -97,6 +99,30 @@ pub struct Trait {
     pub constraints: Vec<TypeConstraint>,
     pub associated_types: HashMap<Ident, Vec<TypeConstraint>>,
     pub constants: HashMap<Ident, InnerDataType>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct InnerTrait {
+    id: TraitId,
+    params: Vec<InnerDataType>,
+}
+
+impl InnerTrait {
+    pub fn new(id: TraitId, params: Vec<InnerDataType>) -> Self {
+        Self {
+            id,
+            params,
+        }
+    }
+}
+
+impl From<TraitId> for InnerTrait {
+    fn from(id: TraitId) -> Self {
+        Self {
+            id,
+            params: Vec::new(),
+        }
+    }
 }
 
 pub struct Impl {
@@ -143,7 +169,15 @@ impl TypeEngine {
         let primitives = CorePrimitives {
             number: self.data_ctx.insert(DataType::Primitive),
             boolean: self.data_ctx.insert(DataType::Primitive),
+            string: self.data_ctx.insert(DataType::Primitive),
         };
+
+        let neg = self.trait_ctx.insert_trait(Trait {
+            params: Vec::new(),
+            constraints: Vec::new(),
+            associated_types: std::iter::once((Ident::new("Out".to_string()), Vec::new())).collect(),
+            constants: HashMap::default(),
+        });
 
         let add = self.trait_ctx.insert_trait(Trait {
             params: vec![GenericParam::unconstrained(0)],
@@ -166,6 +200,14 @@ impl TypeEngine {
         }
         */
 
+        // -Num
+        self.trait_ctx.insert_impl(Impl {
+            params: Vec::new(),
+            tr: (neg, Vec::new()),
+            target: primitives.number.into(),
+            associated_types: std::iter::once((Ident::new("Out".to_string()), primitives.number.into())).collect(),
+        });
+
         // Num + Num
         self.trait_ctx.insert_impl(Impl {
             params: Vec::new(),
@@ -177,6 +219,7 @@ impl TypeEngine {
         (self, Core {
             primitives,
             traits: CoreTraits {
+                neg,
                 add,
             },
         })
@@ -184,11 +227,13 @@ impl TypeEngine {
 }
 
 pub struct CorePrimitives {
-    number: DataId,
-    boolean: DataId,
+    pub number: DataId,
+    pub boolean: DataId,
+    pub string: DataId,
 }
 
 pub struct CoreTraits {
+    pub neg: TraitId,
     pub add: TraitId,
 }
 
@@ -205,11 +250,25 @@ pub enum InferError {
     Mismatch(TypeId, TypeId),
 }
 
+impl Into<Error> for InferError {
+    fn into(self) -> Error {
+        // TODO
+        match self {
+            InferError::CannotInfer => Error::cannot_infer_type(panic!("Cannot infer type!")),
+            InferError::Mismatch(_, _) => Error::type_mismatch(
+                panic!("Type mismatch!"),
+                panic!("Type mismatch!"),
+            ),
+        }
+    }
+}
+
 pub type TypeId = usize;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum TypeInfo {
     Unknown,
+    Ref(TypeId),
 
     Named(DataId, Vec<TypeId>),
 
@@ -217,7 +276,7 @@ pub enum TypeInfo {
     Tuple(Vec<TypeId>),
     Func(TypeId, TypeId),
 
-    AssociatedType(TraitId, TypeId, Ident), // e.g: (Add<Int>, Int, "Output") = Int
+    Associated(InnerTrait, TypeId, Ident), // e.g: (Add<Int>, Int, "Output") = Int
 }
 
 impl From<DataId> for TypeInfo {
@@ -226,10 +285,9 @@ impl From<DataId> for TypeInfo {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct InferCtx {
     id_counter: TypeId,
-    refs: HashMap<TypeId, TypeId>,
     types: HashMap<TypeId, TypeInfo>,
 }
 
@@ -240,23 +298,22 @@ impl InferCtx {
     }
 
     pub fn get(&self, id: TypeId) -> TypeInfo {
-        let indirect_id = self.refs
-            .get(&id)
-            .expect("No such TypeID registered with inference context");
         self.types
-            .get(indirect_id)
+            .get(&id)
             .unwrap()
             .clone()
     }
 
     fn link(&mut self, a: TypeId, b: TypeId) {
-        self.refs.insert(a, b);
+        self.types.insert(a, TypeInfo::Ref(b));
     }
 
-    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), InferError> {
+    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
         use TypeInfo::*;
 
         match (self.get(a), self.get(b)) {
+            (Ref(a), _) => self.unify(a, b),
+            (_, Ref(b)) => self.unify(a, b),
             (Unknown, _) => {
                 self.link(a, b);
                 Ok(())
@@ -272,25 +329,25 @@ impl InferCtx {
                 .zip(b.into_iter())
                 .try_fold((), |_, (a, b)| self.unify(a, b)),
             (Func(ai, ao), Func(bi, bo)) => self.unify(ai, bi).and_then(|_| self.unify(ao, bo)),
-            (_, _) => Err(InferError::Mismatch(a.clone(), b.clone())),
+            (_, _) => Err(InferError::Mismatch(a.clone(), b.clone()).into()),
         }
     }
 
     pub fn insert(&mut self, ty: impl Into<TypeInfo>) -> TypeId {
         let id = self.new_id();
-        self.refs.insert(id, id);
         self.types.insert(id, ty.into());
         id
     }
 
-    pub fn reconstruct(&self, id: TypeId) -> Result<Type, InferError> {
+    pub fn reconstruct(&self, id: TypeId) -> Result<Type, Error> {
         match self.get(id) {
-            TypeInfo::Unknown => Err(InferError::CannotInfer),
+            TypeInfo::Unknown => Err(InferError::CannotInfer.into()),
+            TypeInfo::Ref(id) => self.reconstruct(id),
             TypeInfo::Named(id, params) => Ok(Type::Named(id, params.into_iter().map(|a| self.reconstruct(a)).collect::<Result<_, _>>()?)),
             TypeInfo::List(a) => Ok(Type::List(Box::new(self.reconstruct(a)?))),
             TypeInfo::Tuple(a) => Ok(Type::Tuple(a.into_iter().map(|a| self.reconstruct(a)).collect::<Result<_, _>>()?)),
             TypeInfo::Func(a, b) => Ok(Type::Func(Box::new(self.reconstruct(a)?), Box::new(self.reconstruct(b)?))),
-            TypeInfo::AssociatedType(_, _, _) => todo!("Query trait engine to determine type of associated type"),
+            TypeInfo::Associated(_, _, _) => todo!("Query trait engine to determine type of associated type"),
         }
     }
 }
@@ -314,11 +371,31 @@ mod tests {
         ctx.unify(b, d);
 
         assert_eq!(
-            ctx.reconstruct(c),
-            Ok(Type::Func(
+            ctx.reconstruct(c).unwrap(),
+            Type::Func(
                 Box::new(Type::Named(number, Vec::new())),
                 Box::new(Type::Named(boolean, Vec::new())),
-            )),
+            ),
+        );
+    }
+
+    #[test]
+    fn list() {
+        let mut ctx = InferCtx::default();
+
+        // Create some types
+        let number: DataId = 0;
+
+        let a = ctx.insert(TypeInfo::Unknown);
+        let b = ctx.insert(TypeInfo::Unknown);
+        let c = ctx.insert(number);
+        let d = ctx.insert(TypeInfo::List(a));
+        ctx.unify(a, b);
+        ctx.unify(b, c);
+
+        assert_eq!(
+            ctx.reconstruct(d).unwrap(),
+            Type::List(Box::new(Type::Named(number, Vec::new()))),
         );
     }
 }

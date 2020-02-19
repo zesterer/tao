@@ -9,7 +9,7 @@ use crate::{
 
 type Ident = LocalIntern<String>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Literal {
     Number(f64),
     String(LocalIntern<String>),
@@ -125,12 +125,43 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
 
         let ident = ident_parser().map(|ident| Expr::Path(Path(vec![ident])));
         let number = number_parser().map(|x| Expr::Literal(Literal::Number(x)));
+        let boolean = just(Token::Boolean(true)).to(Literal::Boolean(true))
+            .or(just(Token::Boolean(false)).to(Literal::Boolean(false)))
+            .map(|b| Expr::Literal(b));
         let literal = ident
             .or(number)
+            .or(boolean)
             .map_with_region(|litr, region| SrcNode::new(litr, region));
 
-        let atom = literal
-            .or(nested_parser(expr.clone(), Delimiter::Paren));
+        let list = nested_parser(
+            expr
+                .clone()
+                .separated_by(just(Token::Comma)),
+            Delimiter::Brack,
+        )
+            .map_with_region(|items, region| SrcNode::new(Expr::List(items), region));
+
+        let tuple = nested_parser(
+            expr
+                .clone()
+                .separated_by(just(Token::Comma)),
+            Delimiter::Paren,
+        )
+            .map_with_region(|items, region| SrcNode::new(Expr::Tuple(items), region));
+
+        let pat = ident_parser()
+            .map_with_region(|ident, region| SrcNode::new(Pat::Ident(ident), region));
+
+        let func = pat.clone()
+            .padded_by(just(Token::RArrow))
+            .then(expr.clone())
+            .map_with_region(|(param, body), region| SrcNode::new(Expr::Func(param, body), region));
+
+        let atom = func
+            .or(literal)
+            .or(nested_parser(expr.clone(), Delimiter::Paren))
+            .or(list)
+            .or(tuple);
 
         let unary = just(Token::Op(Op::Sub)).to(UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(UnaryOp::Not))
@@ -148,7 +179,8 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(just(Token::Op(Op::Div)).to(BinaryOp::Div))
             .or(just(Token::Op(Op::Rem)).to(BinaryOp::Rem))
             .map_with_region(|op, region| SrcNode::new(op, region));
-        let product = unary.clone().then(product_op.then(unary).repeated())
+        let product = unary.clone()
+            .then(product_op.then(unary).repeated())
             .reduce_left(|a, (op, b)| {
                 let region = a.region().union(b.region());
                 SrcNode::new(Expr::Binary(op, a, b), region)
@@ -157,7 +189,8 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         let sum_op = just(Token::Op(Op::Add)).to(BinaryOp::Add)
             .or(just(Token::Op(Op::Sub)).to(BinaryOp::Sub))
             .map_with_region(|op, region| SrcNode::new(op, region));
-        let sum = product.clone().then(sum_op.then(product).repeated())
+        let sum = product.clone()
+            .then(sum_op.then(product).repeated())
             .reduce_left(|a, (op, b)| {
                 let region = a.region().union(b.region());
                 SrcNode::new(Expr::Binary(op, a, b), region)

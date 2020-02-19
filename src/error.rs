@@ -10,6 +10,7 @@ use crate::{
     node::Node,
 };
 
+#[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
 }
@@ -170,6 +171,7 @@ impl parze::error::Error<Node<Token>> for Error {
     }
 }
 
+#[derive(Debug)]
 pub enum ErrorKind {
     FoundExpected(Thing, SrcRegion, HashSet<Thing>),
     UnexpectedEnd(SrcRegion),

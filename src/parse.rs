@@ -262,7 +262,8 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
             }
         }).boxed();
 
-        let atom = literal
+        let atom = paren_expr.clone()
+            .or(literal
             .or(brack_expr_list.map(|items| Expr::List(items)))
             .or(paren_expr_list.clone().map(|items| Expr::Tuple(items)))
             .or(just(Token::If)
@@ -288,8 +289,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=Node<Token>, Output=NodeExp
                     Expr::Apply(Expr::Func(name, then).at(f_region), val)
                 }))
             .or(ident_parser().map(|x| Expr::Ident(Node::new(*x.inner(), x.region(), ()))))
-            .map_with_region(|expr, region| expr.at(region))
-            .or(paren_expr.clone())
+            .map_with_region(|expr, region| expr.at(region)))
             .boxed();
 
         let application = atom.clone()

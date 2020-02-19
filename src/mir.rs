@@ -33,6 +33,14 @@ pub enum Expr {
     MakeFunc(Vec<TypeNode<Expr>>, TypeNode<Expr>),
 }
 
+#[derive(Default)]
 pub struct Module {
-    defs: HashMap<LocalIntern<Path>, Expr>,
+    defs: HashMap<LocalIntern<Path>, TypeNode<Expr>>,
+}
+
+impl Module {
+    pub fn with_def(mut self, name: LocalIntern<Path>, expr: TypeNode<Expr>) -> Self {
+        self.defs.insert(name, expr);
+        self
+    }
 }

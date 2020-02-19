@@ -107,11 +107,13 @@ fn run_expr(src: &str) {
     println!("AST2: {:?}", ast2);
 
     let main = hir2::Path::intern(&["main"]);
-    let mut ast2 = match hir2::Engine::new()
-        .make_def(main, &ast2)
+    let mut engine = match hir2::Engine::new()
+        .with_def(main, &ast2)
         .map_err(|err| vec![err])
+        .and_then(|engine| engine.infer_types())
+        .and_then(|engine| engine.check_types())
     {
-        Ok(ast2) => ast2,
+        Ok(engine) => engine,
         Err(errs) => {
             for err in errs {
                 print!("AST2: {}", err.in_source(src));
@@ -119,7 +121,10 @@ fn run_expr(src: &str) {
             return;
         },
     };
-    println!("AST2: {:?}", ast2);
+
+    println!("TYPE2: {:?}", engine.def(main).unwrap().ty().unwrap());
+
+
 
     // -------------- NEW STUFF END ---------------
 

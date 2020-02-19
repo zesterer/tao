@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use crate::{
     src::SrcRegion,
     ty::{TypeId, Type},
@@ -14,12 +14,18 @@ impl<T, U> Node<T, U> {
     }
 
     pub fn attr(&self) -> &U { &self.1 }
+
+    pub fn attr_mut(&mut self) -> &mut U { &mut self.1 }
 }
 
 impl<T, U> Deref for Node<T, U> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target { &*self.0 }
+}
+
+impl<T, U> DerefMut for Node<T, U> {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut *self.0 }
 }
 
 // SrcNode
@@ -29,20 +35,6 @@ pub type SrcNode<T> = Node<T, SrcRegion>;
 impl<T> Node<T, SrcRegion> {
     pub fn region(&self) -> SrcRegion {
         *self.attr()
-    }
-}
-
-// SrcTypeNode
-
-pub type SrcTypeNode<T> = Node<T, (SrcRegion, TypeId)>;
-
-impl<T> Node<T, (SrcRegion, TypeId)> {
-    pub fn ty(&self) -> TypeId {
-        self.attr().1
-    }
-
-    pub fn region(&self) -> SrcRegion {
-        self.attr().0
     }
 }
 
