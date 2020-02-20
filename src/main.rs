@@ -104,7 +104,7 @@ fn run_expr(src: &str) {
             return;
         },
     };
-    println!("AST2: {:?}", ast2);
+    println!("AST2: {:#?}", ast2);
 
     let main = hir2::Path::intern(&["main"]);
     let mut engine = match hir2::Engine::new()

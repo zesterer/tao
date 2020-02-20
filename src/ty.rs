@@ -1,6 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use internment::LocalIntern;
-use crate::error::Error;
+use crate::{
+    error::Error,
+    src::SrcRegion,
+};
 
 type Ident = LocalIntern<String>;
 
@@ -248,6 +251,7 @@ pub struct Core {
 pub enum InferError {
     CannotInfer,
     Mismatch(TypeId, TypeId),
+    Recursive(TypeId),
 }
 
 impl Into<Error> for InferError {
@@ -259,6 +263,7 @@ impl Into<Error> for InferError {
                 panic!("Type mismatch!"),
                 panic!("Type mismatch!"),
             ),
+            InferError::Recursive(_) => panic!("Recursive type!"),
         }
     }
 }
@@ -289,6 +294,7 @@ impl From<DataId> for TypeInfo {
 pub struct InferCtx {
     id_counter: TypeId,
     types: HashMap<TypeId, TypeInfo>,
+    regions: HashMap<TypeId, SrcRegion>,
 }
 
 impl InferCtx {
@@ -298,57 +304,85 @@ impl InferCtx {
     }
 
     pub fn get(&self, id: TypeId) -> TypeInfo {
-        self.types
-            .get(&id)
-            .unwrap()
-            .clone()
+        self.types[&id].clone()
+    }
+
+    pub fn region(&self, id: TypeId) -> SrcRegion {
+        self.regions[&id].clone()
     }
 
     fn link(&mut self, a: TypeId, b: TypeId) {
-        self.types.insert(a, TypeInfo::Ref(b));
+        *self.types
+            .get_mut(&a)
+            .unwrap() = TypeInfo::Ref(b);
     }
 
-    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
-        use TypeInfo::*;
+    fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<(), Error> {
+        const MAX_UNIFICATION_DEPTH: usize = 1024;
+        if iter > MAX_UNIFICATION_DEPTH {
+            panic!("Maximum unification depth reached (this error should not occur without extremely large types)");
+        }
 
+        use TypeInfo::*;
         match (self.get(a), self.get(b)) {
-            (Ref(a), _) => self.unify(a, b),
-            (_, Ref(b)) => self.unify(a, b),
+            (Ref(a), _) => self.unify_inner(iter + 1, a, b),
+            (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
             (Unknown, _) => {
                 self.link(a, b);
                 Ok(())
             },
-            (_, Unknown) => self.unify(b, a), // TODO: does ordering matter?
+            (_, Unknown) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
             (Named(a, a_params), Named(b, b_params)) if a == b && a_params.len() == b_params.len() => a_params
                 .into_iter()
                 .zip(b_params.into_iter())
-                .try_fold((), |_, (a, b)| self.unify(a, b)),
-            (List(a), List(b)) => self.unify(a, b),
+                .try_fold((), |_, (a, b)| self.unify_inner(iter + 1, a, b)),
+            (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
             (Tuple(a), Tuple(b)) if a.len() == b.len() => a
                 .into_iter()
                 .zip(b.into_iter())
-                .try_fold((), |_, (a, b)| self.unify(a, b)),
-            (Func(ai, ao), Func(bi, bo)) => self.unify(ai, bi).and_then(|_| self.unify(ao, bo)),
-            (_, _) => Err(InferError::Mismatch(a.clone(), b.clone()).into()),
+                .try_fold((), |_, (a, b)| self.unify_inner(iter + 1, a, b)),
+            (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
+                .and_then(|_| self.unify_inner(iter + 1, ao, bo)),
+            (x, y) => {
+                println!("mismatch: {:?} [{:?}], {:?} [{:?}]", x, self.region(a), y, self.region(b));
+                Err(InferError::Mismatch(a.clone(), b.clone()).into())
+            },
         }
     }
 
-    pub fn insert(&mut self, ty: impl Into<TypeInfo>) -> TypeId {
+    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
+        self.unify_inner(0, a, b)
+    }
+
+    pub fn insert(&mut self, ty: impl Into<TypeInfo>, region: SrcRegion) -> TypeId {
         let id = self.new_id();
         self.types.insert(id, ty.into());
+        self.regions.insert(id, region);
         id
     }
 
-    pub fn reconstruct(&self, id: TypeId) -> Result<Type, Error> {
+    fn reconstruct_inner(&self, iter: usize, id: TypeId) -> Result<Type, Error> {
+        const MAX_RECONSTRUCTION_DEPTH: usize = 1024;
+        if iter > MAX_RECONSTRUCTION_DEPTH {
+            return Err(InferError::Recursive(id).into());
+        }
+
         match self.get(id) {
-            TypeInfo::Unknown => Err(InferError::CannotInfer.into()),
-            TypeInfo::Ref(id) => self.reconstruct(id),
-            TypeInfo::Named(id, params) => Ok(Type::Named(id, params.into_iter().map(|a| self.reconstruct(a)).collect::<Result<_, _>>()?)),
-            TypeInfo::List(a) => Ok(Type::List(Box::new(self.reconstruct(a)?))),
-            TypeInfo::Tuple(a) => Ok(Type::Tuple(a.into_iter().map(|a| self.reconstruct(a)).collect::<Result<_, _>>()?)),
-            TypeInfo::Func(a, b) => Ok(Type::Func(Box::new(self.reconstruct(a)?), Box::new(self.reconstruct(b)?))),
+            TypeInfo::Unknown => {
+                println!("cannot infer: [{:?}]", self.region(id));
+                Err(InferError::CannotInfer.into())
+            },
+            TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id),
+            TypeInfo::Named(id, params) => Ok(Type::Named(id, params.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?)),
+            TypeInfo::List(a) => Ok(Type::List(Box::new(self.reconstruct_inner(iter + 1, a)?))),
+            TypeInfo::Tuple(a) => Ok(Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?)),
+            TypeInfo::Func(a, b) => Ok(Type::Func(Box::new(self.reconstruct_inner(iter + 1, a)?), Box::new(self.reconstruct_inner(iter + 1, b)?))),
             TypeInfo::Associated(_, _, _) => todo!("Query trait engine to determine type of associated type"),
         }
+    }
+
+    pub fn reconstruct(&self, id: TypeId) -> Result<Type, Error> {
+        self.reconstruct_inner(0, id)
     }
 }
 
@@ -364,10 +398,10 @@ mod tests {
         let number: DataId = 0;
         let boolean: DataId = 1;
 
-        let a = ctx.insert(number);
-        let b = ctx.insert(TypeInfo::Unknown);
-        let c = ctx.insert(TypeInfo::Func(a, b));
-        let d = ctx.insert(boolean);
+        let a = ctx.insert(number, SrcRegion::none());
+        let b = ctx.insert(TypeInfo::Unknown, SrcRegion::none());
+        let c = ctx.insert(TypeInfo::Func(a, b), SrcRegion::none());
+        let d = ctx.insert(boolean, SrcRegion::none());
         ctx.unify(b, d);
 
         assert_eq!(
@@ -386,10 +420,10 @@ mod tests {
         // Create some types
         let number: DataId = 0;
 
-        let a = ctx.insert(TypeInfo::Unknown);
-        let b = ctx.insert(TypeInfo::Unknown);
-        let c = ctx.insert(number);
-        let d = ctx.insert(TypeInfo::List(a));
+        let a = ctx.insert(TypeInfo::Unknown, SrcRegion::none());
+        let b = ctx.insert(TypeInfo::Unknown, SrcRegion::none());
+        let c = ctx.insert(number, SrcRegion::none());
+        let d = ctx.insert(TypeInfo::List(a), SrcRegion::none());
         ctx.unify(a, b);
         ctx.unify(b, c);
 

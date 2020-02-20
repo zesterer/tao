@@ -16,12 +16,20 @@ pub enum Literal {
     Boolean(bool),
 }
 
-#[derive(Debug)]
-pub struct Path(Vec<Ident>);
+#[derive(Clone, Debug)]
+pub struct Path(Vec<Ident>); // Always at least one element
 
 impl Path {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub fn parts(&self) -> &[Ident] {
         &self.0
+    }
+
+    pub fn base(&self) -> Ident {
+        *self.0.last().expect("Path must have a base")
     }
 }
 
@@ -133,35 +141,66 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(boolean)
             .map_with_region(|litr, region| SrcNode::new(litr, region));
 
-        let list = nested_parser(
+        let brack_expr_list = nested_parser(
             expr
                 .clone()
                 .separated_by(just(Token::Comma)),
             Delimiter::Brack,
-        )
-            .map_with_region(|items, region| SrcNode::new(Expr::List(items), region));
+        );
 
-        let tuple = nested_parser(
+        let paren_expr_list = nested_parser(
             expr
                 .clone()
                 .separated_by(just(Token::Comma)),
             Delimiter::Paren,
-        )
-            .map_with_region(|items, region| SrcNode::new(Expr::Tuple(items), region));
+        );
 
         let pat = ident_parser()
             .map_with_region(|ident, region| SrcNode::new(Pat::Ident(ident), region));
 
-        let func = pat.clone()
-            .padded_by(just(Token::RArrow))
-            .then(expr.clone())
-            .map_with_region(|(param, body), region| SrcNode::new(Expr::Func(param, body), region));
-
-        let atom = func
-            .or(literal)
+        let atom = literal
+            // Parenthesised expression
             .or(nested_parser(expr.clone(), Delimiter::Paren))
-            .or(list)
-            .or(tuple);
+            // Lists
+            .or(brack_expr_list
+                .map_with_region(|items, region| SrcNode::new(Expr::List(items), region)))
+            // Tuples
+            .or(paren_expr_list
+                .clone()
+                .map_with_region(|items, region| SrcNode::new(Expr::Tuple(items), region)))
+            // Let
+            .or(just(Token::Let)
+                .padding_for(pat.clone())
+                .padded_by(just(Token::Op(Op::Eq)))
+                .then(expr.clone())
+                .map_with_region(|(pat, expr), region| ((pat, expr), region))
+                .padded_by(just(Token::In))
+                .then(expr.clone())
+                .map(|(((pat, expr), region), then)| SrcNode::new(Expr::Let(pat, None, expr, then), region)))
+            // If
+            .or(just(Token::If)
+                .padding_for(expr.clone())
+                .padded_by(just(Token::Then))
+                .then(expr.clone())
+                .padded_by(just(Token::Else))
+                .then(expr.clone())
+                .map_with_region(|((pred, a), b), region| SrcNode::new(Expr::If(pred, a, b), region)));
+
+        let application = atom
+            .then(paren_expr_list.repeated())
+            .reduce_left(|f, args| args
+                .into_iter()
+                .fold(f, |f, arg| {
+                    let region = f.region().union(arg.region());
+                    SrcNode::new(Expr::Apply(f, arg), region)
+                }));
+
+        let infix = application.clone()
+            .then(just(Token::Colon).padding_for(application).repeated())
+            .reduce_left(|arg, f| {
+                let region = f.region().union(arg.region());
+                SrcNode::new(Expr::Apply(f, arg), region)
+            });
 
         let unary = just(Token::Op(Op::Sub)).to(UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(UnaryOp::Not))
@@ -169,7 +208,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(just(Token::Op(Op::Tail)).to(UnaryOp::Tail))
             .map_with_region(|op, region| SrcNode::new(op, region))
             .repeated()
-            .then(atom)
+            .then(infix)
             .reduce_right(|op, expr| {
                 let region = op.region().union(expr.region());
                 SrcNode::new(Expr::Unary(op, expr), region)
@@ -196,7 +235,13 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 SrcNode::new(Expr::Binary(op, a, b), region)
             });
 
-        sum
+        let func = pat
+            .clone()
+            .padded_by(just(Token::RArrow))
+            .then(expr)
+            .map_with_region(|(param, body), region| SrcNode::new(Expr::Func(param, body), region));
+
+        func.or(sum)
     })
 }
 

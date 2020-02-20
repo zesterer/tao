@@ -1,11 +1,14 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+};
 use crate::{
     src::SrcRegion,
     ty::{TypeId, Type},
     mir::RawType,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Node<T, U>(Box<T>, U);
 
 impl<T, U> Node<T, U> {
@@ -26,6 +29,16 @@ impl<T, U> Deref for Node<T, U> {
 
 impl<T, U> DerefMut for Node<T, U> {
     fn deref_mut(&mut self) -> &mut Self::Target { &mut *self.0 }
+}
+
+impl<T: fmt::Debug, U: fmt::Debug> fmt::Debug for Node<T, U> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if f.alternate() {
+            write!(f, "({:#?}: {:#?})", self.0, self.attr())
+        } else {
+            write!(f, "({:?}: {:?})", self.0, self.attr())
+        }
+    }
 }
 
 // SrcNode
