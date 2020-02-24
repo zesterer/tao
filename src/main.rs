@@ -20,6 +20,7 @@ use std::{
     fs::File,
     io::Read,
 };
+use internment::LocalIntern;
 use rustyline::Editor;
 
 fn run_module(src: &str) {
@@ -106,25 +107,18 @@ fn run_expr(src: &str) {
     };
     println!("AST2: {:#?}", ast2);
 
-    let main = hir2::Path::intern(&["main"]);
-    let mut engine = match hir2::Engine::new()
-        .with_def(main, &ast2)
-        .map_err(|err| vec![err])
-        .and_then(|engine| engine.infer_types())
-        .and_then(|engine| engine.check_types())
-    {
+    let mut prog = hir2::Program::new();
+
+    let main_ident = LocalIntern::new("main".to_string());
+    match prog.insert_def(main_ident, &ast2) {
         Ok(engine) => engine,
-        Err(errs) => {
-            for err in errs {
-                print!("AST2: {}", err.in_source(src));
-            }
+        Err(err) => {
+            print!("AST2: {}", err.in_source(src));
             return;
         },
     };
 
-    println!("TYPE2: {:?}", engine.def(main).unwrap().ty().unwrap());
-
-
+    println!("TYPE2: {:?}", prog.root().def(main_ident).unwrap().body.ty());
 
     // -------------- NEW STUFF END ---------------
 

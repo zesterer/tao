@@ -16,6 +16,10 @@ impl<T, U> Node<T, U> {
         Self(Box::new(item), attr)
     }
 
+    pub fn into_inner(self) -> T {
+        *self.0
+    }
+
     pub fn attr(&self) -> &U { &self.1 }
 
     pub fn attr_mut(&mut self) -> &mut U { &mut self.1 }
