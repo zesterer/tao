@@ -97,6 +97,7 @@ pub enum Token {
     Then,
     Else,
     Def,
+    Given,
     In,
     Of,
 }
@@ -132,6 +133,7 @@ impl fmt::Display for Token {
             Token::Then => write!(f, "then"),
             Token::Else => write!(f, "else"),
             Token::Def => write!(f, "def"),
+            Token::Given => write!(f, "given"),
             Token::In => write!(f, "in"),
             Token::Of => write!(f, "of"),
         }
@@ -209,6 +211,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(seq("then".chars()).to(Token::Then))
             .or(seq("else".chars()).to(Token::Else))
             .or(seq("def".chars()).to(Token::Def))
+            .or(seq("given".chars()).to(Token::Given))
             .or(seq("in".chars()).to(Token::In))
             .or(seq("of".chars()).to(Token::Of))
             .or(ident)

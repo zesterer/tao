@@ -1,7 +1,4 @@
-use std::{
-    ops::Deref,
-    collections::HashMap,
-};
+use std::collections::HashMap;
 use internment::LocalIntern;
 use crate::{
     ast,
@@ -23,18 +20,6 @@ impl<T> Node<T, (SrcRegion, TypeId)> {
 
     pub fn type_id(&self) -> TypeId {
         self.attr().1
-    }
-}
-
-pub type TypedNode<T> = Node<T, (SrcRegion, Type)>;
-
-impl<T> Node<T, (SrcRegion, Type)> {
-    pub fn region(&self) -> SrcRegion {
-        self.attr().0
-    }
-
-    pub fn ty(&self) -> &Type {
-        &self.attr().1
     }
 }
 
@@ -98,12 +83,12 @@ pub enum Expr<M> {
 
 type InferExpr = InferNode<Expr<(SrcRegion, TypeId)>>;
 type InferPat = InferNode<Pat>;
-type TypedExpr = TypedNode<Expr<(SrcRegion, Type)>>;
-type TypedPat = TypedNode<Pat>;
+type TypeExpr = TypeNode<Expr<SrcNode<Type>>>;
+type TypedPat = TypeNode<Pat>;
 
 #[derive(Clone)]
 pub enum Scope<'a> {
-    Empty,
+    Module(&'a Module),
     Local(Ident, TypeId, &'a Self),
     Many(Vec<(Ident, TypeId)>, &'a Self),
 }
@@ -125,20 +110,20 @@ impl<'a> Scope<'a> {
         }
     }
 
-    fn get(&self, ident: Ident) -> Option<TypeId> {
+    fn get(&self, ident: Ident, ctx: &mut InferCtx) -> Option<TypeId> {
         match self {
             Scope::Local(local, ty, parent) => if *local == ident {
                 Some(*ty)
             } else {
-                parent.get(ident)
+                parent.get(ident, ctx)
             },
             Scope::Many(locals, parent) => locals
                 .iter()
                 .find(|(local, _)| *local == ident)
                 .copied()
                 .map(|(_, ty)| ty)
-                .or_else(|| parent.get(ident)),
-            Scope::Empty => None,
+                .or_else(|| parent.get(ident, ctx)),
+            Scope::Module(module) => module.get_val(ident, ctx),
         }
     }
 }
@@ -158,7 +143,7 @@ fn op_to_binary_trait(core: &Core, op: ast::BinaryOp) -> TraitId {
 }
 
 pub struct Def {
-    pub body: TypedExpr,
+    pub body: TypeExpr,
 }
 
 pub struct Program {
@@ -177,16 +162,31 @@ impl Program {
         }
     }
 
+    pub fn new_root(module: &SrcNode<ast::Module>) -> Result<Self, Error> {
+        let mut this = Self::new();
+        for decl in module.decls.iter() {
+            match &**decl {
+                ast::Decl::Def(def) => this.insert_def(*def.name, &def.body)?,
+            }
+        }
+        Ok(this)
+    }
+
     pub fn root(&self) -> &Module {
         &self.root
     }
 
+    fn create_scope(&self) -> Scope {
+        Scope::Module(&self.root)
+    }
+
     pub fn insert_def(&mut self, name: Ident, body: &SrcNode<ast::Expr>) -> Result<(), Error> {
         let mut ctx = InferCtx::default();
+        let scope = self.create_scope();
         self.root.defs.insert(name, Def {
             body: {
                 let mut body = body.to_hir(&mut ctx)?;
-                body.infer(&self.core, &mut ctx, &Scope::Empty)?;
+                body.infer(&self.core, &mut ctx, &scope)?;
                 body.into_checked(&self.type_engine, &mut ctx)?
             },
         });
@@ -205,6 +205,12 @@ pub struct Module {
 impl Module {
     pub fn def(&self, name: Ident) -> Option<&Def> {
         self.defs.get(&name)
+    }
+
+    fn get_val(&self, ident: Ident, ctx: &mut InferCtx) -> Option<TypeId> {
+        self.defs
+            .get(&ident)
+            .map(|def| ctx.insert_ty(def.body.ty()))
     }
 }
 
@@ -240,9 +246,9 @@ impl ast::Expr {
             ast::Expr::Binary(op, a, b) => Expr::Binary(op.clone(), a.to_hir(ctx)?, b.to_hir(ctx)?),
             ast::Expr::List(items) => Expr::List(items.iter().map(|item| item.to_hir(ctx)).collect::<Result<_, _>>()?),
             ast::Expr::Tuple(items) => Expr::Tuple(items.iter().map(|item| item.to_hir(ctx)).collect::<Result<_, _>>()?),
-            ast::Expr::Func(param, body) => Expr::Func(param.to_hir(ctx)?, body.to_hir(ctx)?),
+            ast::Expr::Func((param, _), body) => Expr::Func(param.to_hir(ctx)?, body.to_hir(ctx)?),
             ast::Expr::Apply(f, arg) => Expr::Apply(f.to_hir(ctx)?, arg.to_hir(ctx)?),
-            ast::Expr::Let(pat, _, expr, then) => {
+            ast::Expr::Let((pat, _), _, expr, then) => {
                 // `let a = b in c` desugars to `b:(a -> c)`
                 let then = InferNode::new(Expr::Func(pat.to_hir(ctx)?, then.to_hir(ctx)?), (then.region(), ctx.insert(TypeInfo::Unknown, then.region())));
                 Expr::Apply(then, expr.to_hir(ctx)?)
@@ -273,9 +279,9 @@ impl Pat {
     }
 
     fn into_checked(self: InferNode<Self>, engine: &TypeEngine, ctx: &InferCtx) -> Result<TypedPat, Error> {
-        let meta = (self.region(), ctx.reconstruct(self.type_id())?);
+        let meta = ctx.reconstruct(self.type_id())?;
 
-        Ok(TypedNode::new(match self.into_inner() {
+        Ok(TypeNode::new(match self.into_inner() {
             Pat::Value(val) => Pat::Value(val),
             Pat::Ident(ident) => Pat::Ident(ident),
         }, meta))
@@ -289,7 +295,7 @@ impl Expr<(SrcRegion, TypeId)> {
             Expr::Value(x) => ctx.insert(TypeInfo::from(x.get_data_id(core)), region),
             Expr::Path(path) => if path.len() == 1 {
                 scope
-                    .get(path.base())
+                    .get(path.base(), ctx)
                     .ok_or_else(|| Error::no_such_binding(path.base().to_string(), region))?
             } else {
                 todo!("Complex paths")
@@ -366,10 +372,10 @@ impl Expr<(SrcRegion, TypeId)> {
         Ok(())
     }
 
-    fn into_checked(self: InferNode<Self>, engine: &TypeEngine, ctx: &InferCtx) -> Result<TypedExpr, Error> {
-        let meta = (self.region(), ctx.reconstruct(self.type_id())?);
+    fn into_checked(self: InferNode<Self>, engine: &TypeEngine, ctx: &InferCtx) -> Result<TypeExpr, Error> {
+        let meta = ctx.reconstruct(self.type_id())?;
 
-        Ok(TypedNode::new(match self.into_inner() {
+        Ok(TypeNode::new(match self.into_inner() {
             Expr::Value(val) => Expr::Value(val),
             Expr::Path(path) => Expr::Path(path),
             Expr::Unary(op, x) => Expr::Unary(

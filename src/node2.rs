@@ -1,6 +1,7 @@
 use std::{
     fmt,
     ops::{Deref, DerefMut},
+    cmp::{PartialEq, Eq},
 };
 use crate::{
     src::SrcRegion,
@@ -9,7 +10,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct Node<T, U>(Box<T>, U);
+pub struct Node<T, U = SrcRegion>(Box<T>, U);
 
 impl<T, U> Node<T, U> {
     pub fn new(item: T, attr: U) -> Self {
@@ -45,6 +46,14 @@ impl<T: fmt::Debug, U: fmt::Debug> fmt::Debug for Node<T, U> {
     }
 }
 
+impl<T: PartialEq, U> PartialEq for Node<T, U> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Eq, U> Eq for Node<T, U> {}
+
 // SrcNode
 
 pub type SrcNode<T> = Node<T, SrcRegion>;
@@ -57,10 +66,10 @@ impl<T> Node<T, SrcRegion> {
 
 // TypeNode
 
-pub type TypeNode<T> = Node<T, Type>;
+pub type TypeNode<T> = Node<T, SrcNode<Type>>;
 
-impl<T> Node<T, Type> {
-    pub fn ty(&self) -> &Type {
+impl<T> Node<T, SrcNode<Type>> {
+    pub fn ty(&self) -> &SrcNode<Type> {
         self.attr()
     }
 }

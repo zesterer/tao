@@ -1,3 +1,4 @@
+use std::fmt;
 use internment::LocalIntern;
 use parze::prelude::*;
 use crate::{
@@ -16,7 +17,7 @@ pub enum Literal {
     Boolean(bool),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Path(Vec<Ident>); // Always at least one element
 
 impl Path {
@@ -30,6 +31,15 @@ impl Path {
 
     pub fn base(&self) -> Ident {
         *self.0.last().expect("Path must have a base")
+    }
+}
+
+impl fmt::Debug for Path {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for part in self.0.iter() {
+            write!(f, "::{:?}", part)?;
+        }
+        Ok(())
     }
 }
 
@@ -75,8 +85,9 @@ pub enum Pat {
 
 #[derive(Debug)]
 pub enum Type {
+    Unknown,
     Ident(Ident),
-    Complex(SrcNode<Type>, Vec<SrcNode<Type>>),
+    List(SrcNode<Type>),
     Tuple(Vec<SrcNode<Type>>),
     Func(SrcNode<Type>, SrcNode<Type>),
 }
@@ -89,9 +100,9 @@ pub enum Expr {
     Binary(SrcNode<BinaryOp>, SrcNode<Expr>, SrcNode<Expr>),
     If(SrcNode<Expr>, SrcNode<Expr>, SrcNode<Expr>),
     Match(SrcNode<Expr>, Vec<(SrcNode<Pat>, SrcNode<Expr>)>),
-    Func(SrcNode<Pat>, SrcNode<Expr>),
+    Func((SrcNode<Pat>, Option<SrcNode<Type>>), SrcNode<Expr>),
     Apply(SrcNode<Expr>, SrcNode<Expr>),
-    Let(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Expr>, SrcNode<Expr>),
+    Let((SrcNode<Pat>, Option<SrcNode<Type>>), Option<SrcNode<Type>>, SrcNode<Expr>, SrcNode<Expr>),
     List(Vec<SrcNode<Expr>>),
     Tuple(Vec<SrcNode<Expr>>),
 }
@@ -127,6 +138,58 @@ fn nested_parser<'a, O: 'a>(
     })
 }
 
+fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Type>>, Error> {
+    recursive(|ty|{
+        let ty = ty.link();
+
+        let atom = {
+            let ty = ty.clone();
+
+            recursive(move |atom| {
+                let atom = atom.link();
+
+                let list = nested_parser(
+                    ty.clone(),
+                    Delimiter::Brack,
+                )
+                    .map(|ty| Type::List(ty));
+
+                let tuple = nested_parser(
+                    ty.clone().separated_by(just(Token::Comma)),
+                    Delimiter::Paren,
+                )
+                    .map(|ty| Type::Tuple(ty));
+
+                let unknown = just(Token::QuestionMark)
+                    .map(|_| Type::Unknown);
+
+                let ident = ident_parser()
+                    .map(|ident| Type::Ident(ident));
+
+                let ty = list
+                    .or(tuple)
+                    .or(unknown)
+                    .or(ident)
+                    .map_with_region(|ty, region| SrcNode::new(ty, region));
+
+                let paren_ty = nested_parser(
+                    ty.clone(),
+                    Delimiter::Paren,
+                );
+
+                paren_ty.or(ty)
+            })
+        };
+
+        atom
+            .then(just(Token::RArrow).padding_for(ty.clone()).repeated())
+            .reduce_left(|i, o| {
+                let region = i.region().union(o.region());
+                SrcNode::new(Type::Func(i, o), region)
+            })
+    })
+}
+
 fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Expr>>, Error> {
     recursive(|expr| {
         let expr = expr.link();
@@ -156,7 +219,10 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         );
 
         let pat = ident_parser()
-            .map_with_region(|ident, region| SrcNode::new(Pat::Ident(ident), region));
+            .map_with_region(|ident, region| SrcNode::new(Pat::Ident(ident), region))
+            .then(just(Token::Of)
+                .padding_for(type_parser())
+                .or_not());
 
         let atom = literal
             // Parenthesised expression
@@ -184,7 +250,8 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .then(expr.clone())
                 .padded_by(just(Token::Else))
                 .then(expr.clone())
-                .map_with_region(|((pred, a), b), region| SrcNode::new(Expr::If(pred, a, b), region)));
+                .map_with_region(|((pred, a), b), region| SrcNode::new(Expr::If(pred, a, b), region)))
+            .boxed();
 
         let application = atom
             .then(paren_expr_list.repeated())
@@ -235,18 +302,97 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 SrcNode::new(Expr::Binary(op, a, b), region)
             });
 
+        let join_op = just(Token::Op(Op::Join)).to(BinaryOp::Join)
+            .map_with_region(|op, region| SrcNode::new(op, region));
+        let join = sum.clone()
+            .then(join_op.then(sum).repeated())
+            .reduce_left(|a, (op, b)| {
+                let region = a.region().union(b.region());
+                SrcNode::new(Expr::Binary(op, a, b), region)
+            });
+
+        let comparison_op = just(Token::Op(Op::Eq)).to(BinaryOp::Eq)
+            .or(just(Token::Op(Op::Less)).to(BinaryOp::Less))
+            .or(just(Token::Op(Op::More)).to(BinaryOp::More))
+            .or(just(Token::Op(Op::LessEq)).to(BinaryOp::LessEq))
+            .or(just(Token::Op(Op::MoreEq)).to(BinaryOp::MoreEq))
+            .map_with_region(|op, region| SrcNode::new(op, region));
+        let comparison = join.clone()
+            .then(comparison_op.then(join).repeated())
+            .reduce_left(|a, (op, b)| {
+                let region = a.region().union(b.region());
+                SrcNode::new(Expr::Binary(op, a, b), region)
+            });
+
         let func = pat
             .clone()
             .padded_by(just(Token::RArrow))
             .then(expr)
             .map_with_region(|(param, body), region| SrcNode::new(Expr::Func(param, body), region));
 
-        func.or(sum)
+        func
+            .or(comparison)
     })
 }
 
 pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Error>> {
     expr_parser()
+        .padded_by(end())
+        .parse(tokens.iter().cloned())
+}
+
+#[derive(Debug)]
+pub struct Def {
+    pub generics: Vec<SrcNode<Ident>>,
+    pub name: SrcNode<Ident>,
+    pub body: SrcNode<Expr>,
+}
+
+#[derive(Debug)]
+pub enum Decl {
+    Def(Def),
+}
+
+#[derive(Default, Debug)]
+pub struct Module {
+    pub decls: Vec<SrcNode<Decl>>,
+}
+
+fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Module>>, Error> {
+    recursive(|module| {
+        let module = module.link();
+
+        let generics = ident_parser()
+            .map_with_region(|ident, region| SrcNode::new(ident, region))
+            .separated_by(just(Token::Comma));
+
+        let given_params = just(Token::Given)
+            .padding_for(generics)
+            .or_not()
+            .map(|gs| gs.unwrap_or_default());
+
+        let def = given_params
+            .padded_by(just(Token::Def))
+            .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padded_by(just(Token::Op(Op::Eq)))
+            .then(expr_parser())
+            .map_with_region(|((generics, name), body), region| Decl::Def(Def {
+                generics,
+                name,
+                body,
+            }));
+
+        let decl = def
+            .map_with_region(|decl, region| SrcNode::new(decl, region));
+
+        decl
+            .repeated()
+            .map_with_region(|decls, region| SrcNode::new(Module { decls }, region))
+    })
+}
+
+pub fn parse_module(tokens: &[node::Node<Token>]) -> Result<SrcNode<Module>, Vec<Error>> {
+    module_parser()
         .padded_by(end())
         .parse(tokens.iter().cloned())
 }

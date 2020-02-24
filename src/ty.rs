@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use internment::LocalIntern;
 use crate::{
     error::Error,
     src::SrcRegion,
+    node2::SrcNode,
 };
 
 type Ident = LocalIntern<String>;
@@ -15,10 +16,10 @@ pub enum Atom {
 
 #[derive(PartialEq, Debug)]
 pub enum Type {
-    Named(DataId, Vec<Self>), // parameters
-    List(Box<Self>),
-    Tuple(Vec<Self>),
-    Func(Box<Self>, Box<Self>),
+    Named(DataId, Vec<SrcNode<Self>>), // parameters
+    List(SrcNode<Self>),
+    Tuple(Vec<SrcNode<Self>>),
+    Func(SrcNode<Self>, SrcNode<Self>),
 }
 
 // Generics
@@ -361,27 +362,48 @@ impl InferCtx {
         id
     }
 
-    fn reconstruct_inner(&self, iter: usize, id: TypeId) -> Result<Type, Error> {
+    pub fn insert_ty(&mut self, ty: &SrcNode<Type>) -> TypeId {
+        let info = match &**ty {
+            Type::Named(data, args) => TypeInfo::Named(
+                *data,
+                args.iter().map(|arg| self.insert_ty(arg)).collect(),
+            ),
+            Type::List(item) => TypeInfo::List(self.insert_ty(item)),
+            Type::Tuple(items) => TypeInfo::Tuple(
+                items.iter().map(|item| self.insert_ty(item)).collect(),
+            ),
+            Type::Func(i, o) => TypeInfo::Func(
+                self.insert_ty(i),
+                self.insert_ty(o),
+            ),
+        };
+
+        self.insert(info, ty.region())
+    }
+
+    fn reconstruct_inner(&self, iter: usize, id: TypeId) -> Result<SrcNode<Type>, Error> {
         const MAX_RECONSTRUCTION_DEPTH: usize = 1024;
         if iter > MAX_RECONSTRUCTION_DEPTH {
             return Err(InferError::Recursive(id).into());
         }
 
-        match self.get(id) {
+        let ty = match self.get(id) {
             TypeInfo::Unknown => {
                 println!("cannot infer: [{:?}]", self.region(id));
-                Err(InferError::CannotInfer.into())
+                return Err(InferError::CannotInfer.into());
             },
-            TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id),
-            TypeInfo::Named(id, params) => Ok(Type::Named(id, params.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?)),
-            TypeInfo::List(a) => Ok(Type::List(Box::new(self.reconstruct_inner(iter + 1, a)?))),
-            TypeInfo::Tuple(a) => Ok(Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?)),
-            TypeInfo::Func(a, b) => Ok(Type::Func(Box::new(self.reconstruct_inner(iter + 1, a)?), Box::new(self.reconstruct_inner(iter + 1, b)?))),
+            TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
+            TypeInfo::Named(id, params) => Type::Named(id, params.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
+            TypeInfo::List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
+            TypeInfo::Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
+            TypeInfo::Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),
             TypeInfo::Associated(_, _, _) => todo!("Query trait engine to determine type of associated type"),
-        }
+        };
+
+        Ok(SrcNode::new(ty, self.region(id)))
     }
 
-    pub fn reconstruct(&self, id: TypeId) -> Result<Type, Error> {
+    pub fn reconstruct(&self, id: TypeId) -> Result<SrcNode<Type>, Error> {
         self.reconstruct_inner(0, id)
     }
 }
@@ -405,7 +427,7 @@ mod tests {
         ctx.unify(b, d);
 
         assert_eq!(
-            ctx.reconstruct(c).unwrap(),
+            ctx.reconstruct(c).unwrap().into_inner(),
             Type::Func(
                 Box::new(Type::Named(number, Vec::new())),
                 Box::new(Type::Named(boolean, Vec::new())),
@@ -428,7 +450,7 @@ mod tests {
         ctx.unify(b, c);
 
         assert_eq!(
-            ctx.reconstruct(d).unwrap(),
+            ctx.reconstruct(d).unwrap().into_inner(),
             Type::List(Box::new(Type::Named(number, Vec::new()))),
         );
     }

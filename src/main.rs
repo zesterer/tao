@@ -34,6 +34,32 @@ fn run_module(src: &str) {
         },
     };
 
+    // --------------- NEW STUFF BEGIN ---------------
+
+    let mut ast2 = match ast::parse_module(&tokens) {
+        Ok(ast2) => ast2,
+        Err(errs) => {
+            for err in errs {
+                print!("AST2: {}", err.in_source(src));
+            }
+            return;
+        },
+    };
+    println!("AST2: {:#?}", ast2);
+
+    let prog = match hir2::Program::new_root(&ast2) {
+        Ok(engine) => engine,
+        Err(err) => {
+            print!("AST2: {}", err.in_source(src));
+            return;
+        },
+    };
+
+    let main_ident = LocalIntern::new("main".to_string());
+    println!("TYPE2: {:?}", prog.root().def(main_ident).unwrap().body.ty());
+
+    // -------------- NEW STUFF END ---------------
+
     let mut module = match parse::parse_module(&tokens) {
         Ok(module) => module,
         Err(errs) => {
@@ -82,8 +108,6 @@ fn run_expr(src: &str) {
         },
     };
 
-    //println!("TOKENS: {:#?}", tokens);
-
     let mut ast = match parse::parse_expr(&tokens) {
         Ok(ast) => ast,
         Err(errs) => {
@@ -111,7 +135,7 @@ fn run_expr(src: &str) {
 
     let main_ident = LocalIntern::new("main".to_string());
     match prog.insert_def(main_ident, &ast2) {
-        Ok(engine) => engine,
+        Ok(()) => {},
         Err(err) => {
             print!("AST2: {}", err.in_source(src));
             return;
