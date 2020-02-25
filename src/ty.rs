@@ -20,6 +20,28 @@ pub enum Type {
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
     Func(SrcNode<Self>, SrcNode<Self>),
+    GenParam(Ident),
+}
+
+impl Type {
+    pub fn visit(self: &SrcNode<Self>, mut f: &mut impl FnMut(&SrcNode<Self>)) {
+        let iter = match &**self {
+            Type::Named(_, params) => params
+                .iter()
+                .for_each(|param| param.visit(f)),
+            Type::List(item) => item.visit(f),
+            Type::Tuple(items) => items
+                .iter()
+                .for_each(|item| item.visit(f)),
+            Type::Func(i, o) => {
+                i.visit(f);
+                o.visit(f);
+            },
+            Type::GenParam(_) => {},
+        };
+
+        f(self);
+    }
 }
 
 // Generics
@@ -275,13 +297,11 @@ pub type TypeId = usize;
 pub enum TypeInfo {
     Unknown,
     Ref(TypeId),
-
-    Named(DataId, Vec<TypeId>),
-
     List(TypeId),
     Tuple(Vec<TypeId>),
     Func(TypeId, TypeId),
-
+    Named(DataId, Vec<TypeId>),
+    GenParam(Ident),
     Associated(InnerTrait, TypeId, Ident), // e.g: (Add<Int>, Int, "Output") = Int
 }
 
@@ -333,6 +353,7 @@ impl InferCtx {
                 Ok(())
             },
             (_, Unknown) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
+            (GenParam(a), GenParam(b)) if a == b => Ok(()),
             (Named(a, a_params), Named(b, b_params)) if a == b && a_params.len() == b_params.len() => a_params
                 .into_iter()
                 .zip(b_params.into_iter())
@@ -362,19 +383,25 @@ impl InferCtx {
         id
     }
 
-    pub fn insert_ty(&mut self, ty: &SrcNode<Type>) -> TypeId {
+    pub fn insert_ty(&mut self, ty: &SrcNode<Type>, generics: &HashMap<Ident, TypeId>) -> TypeId {
         let info = match &**ty {
+            //Type::GenParam(ident) => TypeInfo::GenParam(*ident),
+            Type::GenParam(ident) => {
+                return *generics
+                    .get(ident)
+                    .expect("Missing generic parameter");
+            },
             Type::Named(data, args) => TypeInfo::Named(
                 *data,
-                args.iter().map(|arg| self.insert_ty(arg)).collect(),
+                args.iter().map(|arg| self.insert_ty(arg, generics)).collect(),
             ),
-            Type::List(item) => TypeInfo::List(self.insert_ty(item)),
+            Type::List(item) => TypeInfo::List(self.insert_ty(item, generics)),
             Type::Tuple(items) => TypeInfo::Tuple(
-                items.iter().map(|item| self.insert_ty(item)).collect(),
+                items.iter().map(|item| self.insert_ty(item, generics)).collect(),
             ),
             Type::Func(i, o) => TypeInfo::Func(
-                self.insert_ty(i),
-                self.insert_ty(o),
+                self.insert_ty(i, generics),
+                self.insert_ty(o, generics),
             ),
         };
 
@@ -393,6 +420,7 @@ impl InferCtx {
                 return Err(InferError::CannotInfer.into());
             },
             TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
+            TypeInfo::GenParam(name) => Type::GenParam(name),
             TypeInfo::Named(id, params) => Type::Named(id, params.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
             TypeInfo::List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
             TypeInfo::Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),

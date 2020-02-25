@@ -21,6 +21,15 @@ impl<T, U> Node<T, U> {
         *self.0
     }
 
+    pub fn map_inner<V>(self, f: impl FnOnce(T) -> V) -> Node<V, U> {
+        let Node(inner, meta) = self;
+        Node::new(f(*inner), meta)
+    }
+
+    pub fn as_ref(&self) -> Node<&T, U> where U: Clone {
+        Node::new(&*self, self.1.clone())
+    }
+
     pub fn attr(&self) -> &U { &self.1 }
 
     pub fn attr_mut(&mut self) -> &mut U { &mut self.1 }

@@ -1,7 +1,7 @@
-given A, b def identity = x -> x
+given A def identity = x -> let x of A = x in x
 
-given A def identity = x ->
-	let x of [A] -> B = x in
-	x
+def five = 5:identity
+
+def troo = true:identity
 
 def main = 5:identity

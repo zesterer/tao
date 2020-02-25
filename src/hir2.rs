@@ -33,11 +33,11 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn get_data_id(&self, core: &Core) -> DataId {
+    pub fn get_data_id(&self, data: &DataCtx) -> DataId {
         match self {
-            Value::Number(_) => core.primitives.number,
-            Value::String(_) => core.primitives.string,
-            Value::Boolean(_) => core.primitives.boolean,
+            Value::Number(_) => data.core.primitives.number,
+            Value::String(_) => data.core.primitives.string,
+            Value::Boolean(_) => data.core.primitives.boolean,
         }
     }
 }
@@ -61,10 +61,10 @@ pub enum Pat { // TODO: <M>
 }
 
 impl InferNode<Pat> {
-    fn ident_types(&self) -> Vec<(Ident, TypeId)> {
+    fn ident_types(&self) -> HashMap<Ident, TypeId> {
         match &**self {
-            Pat::Value(_) => Vec::new(),
-            Pat::Ident(ident) => vec![(*ident, self.type_id())],
+            Pat::Value(_) => HashMap::default(),
+            Pat::Ident(ident) => std::iter::once((*ident, self.type_id())).collect(),
         }
     }
 }
@@ -90,21 +90,18 @@ type TypedPat = TypeNode<Pat>;
 pub enum Scope<'a> {
     Module(&'a Module),
     Local(Ident, TypeId, &'a Self),
-    Many(Vec<(Ident, TypeId)>, &'a Self),
+    Many(HashMap<Ident, TypeId>, &'a Self),
 }
 
 impl<'a> Scope<'a> {
-    fn with<'b>(&'b self, ident: Ident, ty: TypeId) -> Scope<'b>
-        where 'a: 'b
-    {
+    fn with<'b>(&'b self, ident: Ident, ty: TypeId) -> Scope<'b> where 'a: 'b {
         Scope::Local(ident, ty, self)
     }
 
-    fn with_many<'b>(&'b self, locals: Vec<(Ident, TypeId)>) -> Scope<'b>
-        where 'a: 'b
-    {
+    fn with_many<'b>(&'b self, locals: HashMap<Ident, TypeId>) -> Scope<'b> where 'a: 'b {
         if locals.len() == 1 {
-            self.with(locals[0].0, locals[0].1)
+            let local = locals.into_iter().next().unwrap();
+            self.with(local.0, local.1)
         } else {
             Scope::Many(locals, self)
         }
@@ -112,16 +109,12 @@ impl<'a> Scope<'a> {
 
     fn get(&self, ident: Ident, ctx: &mut InferCtx) -> Option<TypeId> {
         match self {
-            Scope::Local(local, ty, parent) => if *local == ident {
-                Some(*ty)
-            } else {
-                parent.get(ident, ctx)
-            },
+            Scope::Local(local, ty, parent) => Some(*ty)
+                .filter(|_| local == &ident)
+                .or_else(|| parent.get(ident, ctx)),
             Scope::Many(locals, parent) => locals
-                .iter()
-                .find(|(local, _)| *local == ident)
+                .get(&ident)
                 .copied()
-                .map(|(_, ty)| ty)
                 .or_else(|| parent.get(ident, ctx)),
             Scope::Module(module) => module.get_val(ident, ctx),
         }
@@ -142,7 +135,12 @@ fn op_to_binary_trait(core: &Core, op: ast::BinaryOp) -> TraitId {
     }
 }
 
+pub struct GenParam {
+    name: Ident,
+}
+
 pub struct Def {
+    pub generics: Vec<SrcNode<GenParam>>,
     pub body: TypeExpr,
 }
 
@@ -166,7 +164,7 @@ impl Program {
         let mut this = Self::new();
         for decl in module.decls.iter() {
             match &**decl {
-                ast::Decl::Def(def) => this.insert_def(*def.name, &def.body)?,
+                ast::Decl::Def(def) => this.insert_def(def)?,
             }
         }
         Ok(this)
@@ -180,15 +178,29 @@ impl Program {
         Scope::Module(&self.root)
     }
 
-    pub fn insert_def(&mut self, name: Ident, body: &SrcNode<ast::Expr>) -> Result<(), Error> {
-        let mut ctx = InferCtx::default();
+    pub fn insert_def(&mut self, ast_def: &ast::Def) -> Result<(), Error> {
+        let generics = ast_def.generics
+            .iter()
+            .map(|g| g.as_ref().map_inner(|ident| GenParam {
+                name: *ident,
+            }))
+            .collect();
+        let mut data = DataCtx {
+            core: &self.core,
+            generics: &generics,
+        };
+        let mut infer = InferCtx::default();
         let scope = self.create_scope();
-        self.root.defs.insert(name, Def {
-            body: {
-                let mut body = body.to_hir(&mut ctx)?;
-                body.infer(&self.core, &mut ctx, &scope)?;
-                body.into_checked(&self.type_engine, &mut ctx)?
-            },
+
+        let body = {
+            let mut body = ast_def.body.to_hir(&data, &mut infer)?;
+            body.infer(&data, &mut infer, &scope)?;
+            body.into_checked(&mut infer)?
+        };
+
+        self.root.defs.insert(*ast_def.name, Def {
+            generics,
+            body,
         });
         Ok(())
     }
@@ -207,10 +219,40 @@ impl Module {
         self.defs.get(&name)
     }
 
-    fn get_val(&self, ident: Ident, ctx: &mut InferCtx) -> Option<TypeId> {
+    fn get_val(&self, ident: Ident, infer: &mut InferCtx) -> Option<TypeId> {
         self.defs
             .get(&ident)
-            .map(|def| ctx.insert_ty(def.body.ty()))
+            .map(|def| {
+                let mut generics = HashMap::new();
+                def.body
+                    .ty()
+                    .visit(&mut |ty| match &**ty {
+                        Type::GenParam(param) => {
+                            generics.insert(*param, infer.insert(TypeInfo::Unknown, ty.region()));
+                        },
+                        _ => {},
+                    });
+                infer.insert_ty(def.body.ty(), &generics)
+            })
+    }
+}
+
+pub struct DataCtx<'a> {
+    core: &'a Core,
+    generics: &'a Vec<SrcNode<GenParam>>,
+}
+
+impl<'a> DataCtx<'a> {
+    fn get_type_info(&self, ident: Ident) -> Option<TypeInfo> {
+        match ident.as_str() {
+            "Num" => Some(TypeInfo::Named(self.core.primitives.number, Vec::new())),
+            "Bool" => Some(TypeInfo::Named(self.core.primitives.boolean, Vec::new())),
+            "Str" => Some(TypeInfo::Named(self.core.primitives.string, Vec::new())),
+            _ => self.generics
+                .iter()
+                .find(|param| param.name == ident)
+                .map(|param| TypeInfo::GenParam(param.name)),
+        }
     }
 }
 
@@ -237,49 +279,87 @@ impl ast::Literal {
     }
 }
 
+impl ast::Type {
+    fn to_type_id(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx) -> Result<TypeId, Error> {
+        let info = match &**self {
+            ast::Type::Unknown => TypeInfo::Unknown,
+            ast::Type::Ident(ident) => data.get_type_info(*ident).unwrap_or_else(|| panic!("Implement non-primitive types")),
+            ast::Type::List(ty) => TypeInfo::List(ty.to_type_id(data, infer)?),
+            ast::Type::Tuple(items) => TypeInfo::Tuple(items
+                .iter()
+                .map(|item| item.to_type_id(data, infer))
+                .collect::<Result<_, _>>()?),
+            ast::Type::Func(i, o) => TypeInfo::Func(
+                i.to_type_id(data, infer)?,
+                o.to_type_id(data, infer)?,
+            ),
+        };
+
+        Ok(infer.insert(info, self.region()))
+    }
+}
+
 impl ast::Expr {
-    fn to_hir(self: &SrcNode<Self>, ctx: &mut InferCtx) -> Result<InferExpr, Error> {
+    fn to_hir(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx) -> Result<InferExpr, Error> {
         let hir_expr = match &**self {
             ast::Expr::Literal(litr) => Expr::Value(litr.to_hir()?),
             ast::Expr::Path(path) => Expr::Path(path.clone()),
-            ast::Expr::Unary(op, a) => Expr::Unary(op.clone(), a.to_hir(ctx)?),
-            ast::Expr::Binary(op, a, b) => Expr::Binary(op.clone(), a.to_hir(ctx)?, b.to_hir(ctx)?),
-            ast::Expr::List(items) => Expr::List(items.iter().map(|item| item.to_hir(ctx)).collect::<Result<_, _>>()?),
-            ast::Expr::Tuple(items) => Expr::Tuple(items.iter().map(|item| item.to_hir(ctx)).collect::<Result<_, _>>()?),
-            ast::Expr::Func((param, _), body) => Expr::Func(param.to_hir(ctx)?, body.to_hir(ctx)?),
-            ast::Expr::Apply(f, arg) => Expr::Apply(f.to_hir(ctx)?, arg.to_hir(ctx)?),
-            ast::Expr::Let((pat, _), _, expr, then) => {
+            ast::Expr::Unary(op, a) => Expr::Unary(op.clone(), a.to_hir(data, infer)?),
+            ast::Expr::Binary(op, a, b) => Expr::Binary(op.clone(), a.to_hir(data, infer)?, b.to_hir(data, infer)?),
+            ast::Expr::List(items) => Expr::List(items.iter().map(|item| item.to_hir(data, infer)).collect::<Result<_, _>>()?),
+            ast::Expr::Tuple(items) => Expr::Tuple(items.iter().map(|item| item.to_hir(data, infer)).collect::<Result<_, _>>()?),
+            ast::Expr::Func(param, param_ty, body) => {
+                let param = param.to_hir(infer)?;
+
+                // Unify param_ty with type hint
+                if let Some(param_ty) = param_ty {
+                    let param_ty_id = param_ty.to_type_id(data, infer)?;
+                    infer.unify(param.type_id(), param_ty_id)?;
+                }
+
+                Expr::Func(param, body.to_hir(data, infer)?)
+            },
+            ast::Expr::Apply(f, arg) => Expr::Apply(f.to_hir(data, infer)?, arg.to_hir(data, infer)?),
+            ast::Expr::Let(pat, pat_ty, val, then) => {
+                let pat = pat.to_hir(infer)?;
+
+                // Unify pattern with type hint
+                if let Some(pat_ty) = pat_ty {
+                    let pat_ty_id = pat_ty.to_type_id(data, infer)?;
+                    infer.unify(pat.type_id(), pat_ty_id)?;
+                }
+
                 // `let a = b in c` desugars to `b:(a -> c)`
-                let then = InferNode::new(Expr::Func(pat.to_hir(ctx)?, then.to_hir(ctx)?), (then.region(), ctx.insert(TypeInfo::Unknown, then.region())));
-                Expr::Apply(then, expr.to_hir(ctx)?)
+                let then = InferNode::new(Expr::Func(pat, then.to_hir(data, infer)?), (then.region(), infer.insert(TypeInfo::Unknown, then.region())));
+                Expr::Apply(then, val.to_hir(data, infer)?)
             },
             ast::Expr::If(pred, a, b) => {
-                Expr::Match(pred.to_hir(ctx)?, vec![
-                    (InferNode::new(Pat::Value(Value::Boolean(true)), (a.region(), ctx.insert(TypeInfo::Unknown, a.region()))), a.to_hir(ctx)?),
-                    (InferNode::new(Pat::Value(Value::Boolean(false)), (b.region(), ctx.insert(TypeInfo::Unknown, b.region()))), b.to_hir(ctx)?),
+                Expr::Match(pred.to_hir(data, infer)?, vec![
+                    (InferNode::new(Pat::Value(Value::Boolean(true)), (a.region(), infer.insert(TypeInfo::Unknown, a.region()))), a.to_hir(data, infer)?),
+                    (InferNode::new(Pat::Value(Value::Boolean(false)), (b.region(), infer.insert(TypeInfo::Unknown, b.region()))), b.to_hir(data, infer)?),
                 ])
             },
             ast_expr => todo!("HIR parsing of {:?}", ast_expr),
         };
 
-        Ok(InferNode::new(hir_expr, (self.region(), ctx.insert(TypeInfo::Unknown, self.region()))))
+        Ok(InferNode::new(hir_expr, (self.region(), infer.insert(TypeInfo::Unknown, self.region()))))
     }
 }
 
 impl Pat {
-    fn infer(self: &mut InferNode<Self>, core: &Core, ctx: &mut InferCtx) -> Result<(), Error> {
+    fn infer(self: &mut InferNode<Self>, data: &DataCtx, infer: &mut InferCtx) -> Result<(), Error> {
         let type_id = match &mut **self {
-            Pat::Value(x) => ctx.insert(TypeInfo::from(x.get_data_id(core)), self.region()),
-            Pat::Ident(ident) => ctx.insert(TypeInfo::Unknown, self.region()),
+            Pat::Value(x) => infer.insert(TypeInfo::from(x.get_data_id(data)), self.region()),
+            Pat::Ident(ident) => infer.insert(TypeInfo::Unknown, self.region()),
         };
 
-        ctx.unify(self.type_id(), type_id)?;
+        infer.unify(self.type_id(), type_id)?;
 
         Ok(())
     }
 
-    fn into_checked(self: InferNode<Self>, engine: &TypeEngine, ctx: &InferCtx) -> Result<TypedPat, Error> {
-        let meta = ctx.reconstruct(self.type_id())?;
+    fn into_checked(self: InferNode<Self>, infer: &InferCtx) -> Result<TypedPat, Error> {
+        let meta = infer.reconstruct(self.type_id())?;
 
         Ok(TypeNode::new(match self.into_inner() {
             Pat::Value(val) => Pat::Value(val),
@@ -289,125 +369,125 @@ impl Pat {
 }
 
 impl Expr<(SrcRegion, TypeId)> {
-    fn infer(self: &mut InferNode<Self>, core: &Core, ctx: &mut InferCtx, scope: &Scope) -> Result<(), Error> {
+    fn infer(self: &mut InferNode<Self>, data: &DataCtx, infer: &mut InferCtx, scope: &Scope) -> Result<(), Error> {
         let region = self.region();
         let type_id = match &mut **self {
-            Expr::Value(x) => ctx.insert(TypeInfo::from(x.get_data_id(core)), region),
+            Expr::Value(x) => infer.insert(TypeInfo::from(x.get_data_id(data)), region),
             Expr::Path(path) => if path.len() == 1 {
                 scope
-                    .get(path.base(), ctx)
+                    .get(path.base(), infer)
                     .ok_or_else(|| Error::no_such_binding(path.base().to_string(), region))?
             } else {
                 todo!("Complex paths")
             },
             Expr::Unary(op, x) => {
-                x.infer(core, ctx, scope)?;
-                ctx.insert(TypeInfo::Associated(
-                    op_to_unary_trait(core, **op).into(),
+                x.infer(data, infer, scope)?;
+                infer.insert(TypeInfo::Associated(
+                    op_to_unary_trait(data.core, **op).into(),
                     x.type_id(),
                     LocalIntern::new("Out".to_string()),
                 ), region)
             },
             Expr::Binary(op, x, y) => {
-                x.infer(core, ctx, scope)?;
-                y.infer(core, ctx, scope)?;
-                ctx.insert(TypeInfo::Associated(
-                    InnerTrait::new(op_to_binary_trait(core, **op), vec![y.type_id().into()]),
+                x.infer(data, infer, scope)?;
+                y.infer(data, infer, scope)?;
+                infer.insert(TypeInfo::Associated(
+                    InnerTrait::new(op_to_binary_trait(data.core, **op), vec![y.type_id().into()]),
                     x.type_id(),
                     LocalIntern::new("Out".to_string()),
                 ), region)
             },
             Expr::List(items) => {
-                let item_ty = ctx.insert(TypeInfo::Unknown, region);
+                let item_ty = infer.insert(TypeInfo::Unknown, region);
                 for item in items.iter_mut() {
-                    item.infer(core, ctx, scope)?;
-                    ctx.unify(item_ty, item.type_id())?;
+                    item.infer(data, infer, scope)?;
+                    infer.unify(item_ty, item.type_id())?;
                 }
-                ctx.insert(TypeInfo::List(item_ty), region)
+                infer.insert(TypeInfo::List(item_ty), region)
             },
             Expr::Tuple(items) => {
                 let items = items
                     .iter_mut()
                     .map(|item| {
-                        item.infer(core, ctx, scope)?;
+                        item.infer(data, infer, scope)?;
                         Ok(item.type_id())
                     })
                     .collect::<Result<_, _>>()?;
-                ctx.insert(TypeInfo::Tuple(items), region)
+                infer.insert(TypeInfo::Tuple(items), region)
             },
             Expr::Func(param, body) => {
-                param.infer(core, ctx)?;
+                param.infer(data, infer)?;
                 let body_scope = scope.with_many(param.ident_types());
-                body.infer(core, ctx, &body_scope)?;
-                ctx.insert(TypeInfo::Func(param.type_id(), body.type_id()), region)
+                body.infer(data, infer, &body_scope)?;
+                infer.insert(TypeInfo::Func(param.type_id(), body.type_id()), region)
             },
             Expr::Apply(f, arg) => {
-                f.infer(core, ctx, scope)?;
-                arg.infer(core, ctx, scope)?;
-                let out_ty = ctx.insert(TypeInfo::Unknown, region);
-                let f_ty = ctx.insert(TypeInfo::Func(
+                f.infer(data, infer, scope)?;
+                arg.infer(data, infer, scope)?;
+                let out_ty = infer.insert(TypeInfo::Unknown, region);
+                let f_ty = infer.insert(TypeInfo::Func(
                     arg.type_id(),
                     out_ty,
                 ), f.region());
-                ctx.unify(f.type_id(), f_ty)?;
+                infer.unify(f.type_id(), f_ty)?;
                 out_ty
             },
             Expr::Match(pred, arms) => {
-                pred.infer(core, ctx, scope)?;
-                let out_ty = ctx.insert(TypeInfo::Unknown, region);
+                pred.infer(data, infer, scope)?;
+                let out_ty = infer.insert(TypeInfo::Unknown, region);
                 for (pat, body) in arms.iter_mut() {
-                    pat.infer(core, ctx)?;
-                    ctx.unify(pat.type_id(), pred.type_id())?;
+                    pat.infer(data, infer)?;
+                    infer.unify(pat.type_id(), pred.type_id())?;
                     let body_scope = scope.with_many(pat.ident_types());
-                    body.infer(core, ctx, &body_scope)?;
-                    ctx.unify(body.type_id(), out_ty)?;
+                    body.infer(data, infer, &body_scope)?;
+                    infer.unify(body.type_id(), out_ty)?;
                 }
                 out_ty
             },
             _ => todo!(),
         };
 
-        ctx.unify(self.type_id(), type_id)?;
+        infer.unify(self.type_id(), type_id)?;
 
         Ok(())
     }
 
-    fn into_checked(self: InferNode<Self>, engine: &TypeEngine, ctx: &InferCtx) -> Result<TypeExpr, Error> {
-        let meta = ctx.reconstruct(self.type_id())?;
+    fn into_checked(self: InferNode<Self>, infer: &InferCtx) -> Result<TypeExpr, Error> {
+        let meta = infer.reconstruct(self.type_id())?;
 
         Ok(TypeNode::new(match self.into_inner() {
             Expr::Value(val) => Expr::Value(val),
             Expr::Path(path) => Expr::Path(path),
             Expr::Unary(op, x) => Expr::Unary(
                 op,
-                x.into_checked(engine, ctx)?,
+                x.into_checked(infer)?,
             ),
             Expr::Binary(op, x, y) => Expr::Binary(
                 op,
-                x.into_checked(engine, ctx)?,
-                y.into_checked(engine, ctx)?,
+                x.into_checked(infer)?,
+                y.into_checked(infer)?,
             ),
             Expr::List(items) => Expr::List(
-                items.into_iter().map(|item| item.into_checked(engine, ctx)).collect::<Result<_, _>>()?,
+                items.into_iter().map(|item| item.into_checked(infer)).collect::<Result<_, _>>()?,
             ),
             Expr::Tuple(items) => Expr::Tuple(
-                items.into_iter().map(|item| item.into_checked(engine, ctx)).collect::<Result<_, _>>()?,
+                items.into_iter().map(|item| item.into_checked(infer)).collect::<Result<_, _>>()?,
             ),
             Expr::Func(param, body) => Expr::Func(
-                param.into_checked(engine, ctx)?,
-                body.into_checked(engine, ctx)?,
+                param.into_checked(infer)?,
+                body.into_checked(infer)?,
             ),
             Expr::Apply(f, arg) => Expr::Apply(
-                f.into_checked(engine, ctx)?,
-                arg.into_checked(engine, ctx)?,
+                f.into_checked(infer)?,
+                arg.into_checked(infer)?,
             ),
             Expr::Match(pred, arms) => Expr::Match(
-                pred.into_checked(engine, ctx)?,
+                pred.into_checked(infer)?,
                 arms
                     .into_iter()
                     .map(|(pat, body)| Ok((
-                        pat.into_checked(engine, ctx)?,
-                        body.into_checked(engine, ctx)?,
+                        pat.into_checked(infer)?,
+                        body.into_checked(infer)?,
                     )))
                     .collect::<Result<_, _>>()?,
             ),

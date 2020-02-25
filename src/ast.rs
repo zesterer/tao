@@ -6,6 +6,7 @@ use crate::{
     lex::{Token, Delimiter, Op},
     error::Error,
     node2::SrcNode,
+    src::SrcRegion,
 };
 
 type Ident = LocalIntern<String>;
@@ -100,9 +101,9 @@ pub enum Expr {
     Binary(SrcNode<BinaryOp>, SrcNode<Expr>, SrcNode<Expr>),
     If(SrcNode<Expr>, SrcNode<Expr>, SrcNode<Expr>),
     Match(SrcNode<Expr>, Vec<(SrcNode<Pat>, SrcNode<Expr>)>),
-    Func((SrcNode<Pat>, Option<SrcNode<Type>>), SrcNode<Expr>),
+    Func(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Expr>),
     Apply(SrcNode<Expr>, SrcNode<Expr>),
-    Let((SrcNode<Pat>, Option<SrcNode<Type>>), Option<SrcNode<Type>>, SrcNode<Expr>, SrcNode<Expr>),
+    Let(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Expr>, SrcNode<Expr>),
     List(Vec<SrcNode<Expr>>),
     Tuple(Vec<SrcNode<Expr>>),
 }
@@ -242,7 +243,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .map_with_region(|(pat, expr), region| ((pat, expr), region))
                 .padded_by(just(Token::In))
                 .then(expr.clone())
-                .map(|(((pat, expr), region), then)| SrcNode::new(Expr::Let(pat, None, expr, then), region)))
+                .map(|((((pat, pat_ty), expr), region), then)| SrcNode::new(Expr::Let(pat, pat_ty, expr, then), region)))
             // If
             .or(just(Token::If)
                 .padding_for(expr.clone())
@@ -328,7 +329,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .clone()
             .padded_by(just(Token::RArrow))
             .then(expr)
-            .map_with_region(|(param, body), region| SrcNode::new(Expr::Func(param, body), region));
+            .map_with_region(|((param, param_ty), body), region| SrcNode::new(Expr::Func(param, param_ty, body), region));
 
         func
             .or(comparison)
@@ -346,6 +347,16 @@ pub struct Def {
     pub generics: Vec<SrcNode<Ident>>,
     pub name: SrcNode<Ident>,
     pub body: SrcNode<Expr>,
+}
+
+impl Def {
+    pub fn main(body: SrcNode<Expr>) -> Self {
+        Self {
+            generics: Vec::new(),
+            name: SrcNode::new(LocalIntern::new("main".to_string()), SrcRegion::none()),
+            body,
+        }
+    }
 }
 
 #[derive(Debug)]

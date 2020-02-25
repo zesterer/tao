@@ -133,8 +133,7 @@ fn run_expr(src: &str) {
 
     let mut prog = hir2::Program::new();
 
-    let main_ident = LocalIntern::new("main".to_string());
-    match prog.insert_def(main_ident, &ast2) {
+    match prog.insert_def(&ast::Def::main(ast2)) {
         Ok(()) => {},
         Err(err) => {
             print!("AST2: {}", err.in_source(src));
@@ -142,6 +141,7 @@ fn run_expr(src: &str) {
         },
     };
 
+    let main_ident = LocalIntern::new("main".to_string());
     println!("TYPE2: {:?}", prog.root().def(main_ident).unwrap().body.ty());
 
     // -------------- NEW STUFF END ---------------
