@@ -1,6 +1,8 @@
-given A def identity = x -> let x of A = x in x
+given A def empty of [A] = []
 
-def five = 5:identity
+def five = empty
+
+given A def identity = x -> let x of A = x in x
 
 def troo = true:identity
 

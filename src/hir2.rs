@@ -107,16 +107,16 @@ impl<'a> Scope<'a> {
         }
     }
 
-    fn get(&self, ident: Ident, ctx: &mut InferCtx) -> Option<TypeId> {
+    fn get(&self, ident: Ident, ctx: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
         match self {
             Scope::Local(local, ty, parent) => Some(*ty)
                 .filter(|_| local == &ident)
-                .or_else(|| parent.get(ident, ctx)),
+                .or_else(|| parent.get(ident, ctx, region)),
             Scope::Many(locals, parent) => locals
                 .get(&ident)
                 .copied()
-                .or_else(|| parent.get(ident, ctx)),
-            Scope::Module(module) => module.get_val(ident, ctx),
+                .or_else(|| parent.get(ident, ctx, region)),
+            Scope::Module(module) => module.get_val(ident, ctx, region),
         }
     }
 }
@@ -195,6 +195,13 @@ impl Program {
         let body = {
             let mut body = ast_def.body.to_hir(&data, &mut infer)?;
             body.infer(&data, &mut infer, &scope)?;
+
+            // Unify with optional type annotation
+            if let Some(ty) = &ast_def.ty {
+                let ty_id = ty.to_type_id(&data, &mut infer)?;
+                infer.unify(body.type_id(), ty_id)?;
+            }
+
             body.into_checked(&mut infer)?
         };
 
@@ -219,7 +226,7 @@ impl Module {
         self.defs.get(&name)
     }
 
-    fn get_val(&self, ident: Ident, infer: &mut InferCtx) -> Option<TypeId> {
+    fn get_val(&self, ident: Ident, infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
         self.defs
             .get(&ident)
             .map(|def| {
@@ -228,7 +235,7 @@ impl Module {
                     .ty()
                     .visit(&mut |ty| match &**ty {
                         Type::GenParam(param) => {
-                            generics.insert(*param, infer.insert(TypeInfo::Unknown, ty.region()));
+                            generics.insert(*param, infer.insert(TypeInfo::Unknown, region));
                         },
                         _ => {},
                     });
@@ -375,7 +382,7 @@ impl Expr<(SrcRegion, TypeId)> {
             Expr::Value(x) => infer.insert(TypeInfo::from(x.get_data_id(data)), region),
             Expr::Path(path) => if path.len() == 1 {
                 scope
-                    .get(path.base(), infer)
+                    .get(path.base(), infer, region)
                     .ok_or_else(|| Error::no_such_binding(path.base().to_string(), region))?
             } else {
                 todo!("Complex paths")

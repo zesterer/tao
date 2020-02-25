@@ -346,6 +346,7 @@ pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Err
 pub struct Def {
     pub generics: Vec<SrcNode<Ident>>,
     pub name: SrcNode<Ident>,
+    pub ty: Option<SrcNode<Type>>,
     pub body: SrcNode<Expr>,
 }
 
@@ -354,6 +355,7 @@ impl Def {
         Self {
             generics: Vec::new(),
             name: SrcNode::new(LocalIntern::new("main".to_string()), SrcRegion::none()),
+            ty: None,
             body,
         }
     }
@@ -384,12 +386,18 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
 
         let def = given_params
             .padded_by(just(Token::Def))
+            // Name
             .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            // Optional type annotation
+            .then(just(Token::Of)
+                .padding_for(type_parser())
+                .or_not())
             .padded_by(just(Token::Op(Op::Eq)))
             .then(expr_parser())
-            .map_with_region(|((generics, name), body), region| Decl::Def(Def {
+            .map_with_region(|(((generics, name), ty), body), region| Decl::Def(Def {
                 generics,
                 name,
+                ty,
                 body,
             }));
 
