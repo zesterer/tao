@@ -2,7 +2,7 @@ given A def empty of [A] = []
 
 def five = empty
 
-given A def identity = x -> let x of A = x in x
+given A def identity = |x of A| x
 
 def troo = true:identity
 

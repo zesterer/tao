@@ -108,16 +108,6 @@ fn run_expr(src: &str) {
         },
     };
 
-    let mut ast = match parse::parse_expr(&tokens) {
-        Ok(ast) => ast,
-        Err(errs) => {
-            for err in errs {
-                print!("{}", err.in_source(src));
-            }
-            return;
-        },
-    };
-
     // --------------- NEW STUFF BEGIN ---------------
 
     let mut ast2 = match ast::parse_expr(&tokens) {
@@ -145,6 +135,16 @@ fn run_expr(src: &str) {
     println!("TYPE2: {:?}", prog.root().def(main_ident).unwrap().body.ty());
 
     // -------------- NEW STUFF END ---------------
+
+    let mut ast = match parse::parse_expr(&tokens) {
+        Ok(ast) => ast,
+        Err(errs) => {
+            for err in errs {
+                print!("{}", err.in_source(src));
+            }
+            return;
+        },
+    };
 
     if let Err(err) = ast.ascribe_types() {
         //println!("AST: {:#?}", ast);

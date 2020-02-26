@@ -325,11 +325,28 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 SrcNode::new(Expr::Binary(op, a, b), region)
             });
 
+        /*
+        // :( ambiguities
         let func = pat
-            .clone()
             .padded_by(just(Token::RArrow))
             .then(expr)
             .map_with_region(|((param, param_ty), body), region| SrcNode::new(Expr::Func(param, param_ty, body), region));
+        */
+
+        let func = just(Token::Pipe)
+            .padding_for(pat.separated_by(just(Token::Comma)))
+            .padded_by(just(Token::Pipe))
+            .then(expr)
+            .reduce_right(|(param, param_ty), body| {
+                let region = param
+                    .region()
+                    .union(param_ty
+                        .as_ref()
+                        .map(|t| t.region())
+                        .unwrap_or(SrcRegion::none()))
+                    .union(body.region());
+                SrcNode::new(Expr::Func(param, param_ty, body), region)
+            });
 
         func
             .or(comparison)
