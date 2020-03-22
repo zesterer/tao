@@ -1,6 +1,8 @@
-given A def empty of [A] = []
+given A type List = [A]
 
-def five = empty
+given A def empty of List(A) = []
+
+#def five = empty
 
 given A def identity = |x of A| x
 

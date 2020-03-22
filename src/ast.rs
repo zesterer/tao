@@ -84,28 +84,29 @@ pub enum Pat {
     Tuple(Vec<SrcNode<Pat>>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Type {
     Unknown,
     Ident(Ident),
-    List(SrcNode<Type>),
-    Tuple(Vec<SrcNode<Type>>),
-    Func(SrcNode<Type>, SrcNode<Type>),
+    List(SrcNode<Self>),
+    Tuple(Vec<SrcNode<Self>>),
+    Func(SrcNode<Self>, SrcNode<Self>),
+    Apply(SrcNode<Self>, SrcNode<Self>),
 }
 
 #[derive(Debug)]
 pub enum Expr {
     Literal(Literal),
     Path(Path),
-    Unary(SrcNode<UnaryOp>, SrcNode<Expr>),
-    Binary(SrcNode<BinaryOp>, SrcNode<Expr>, SrcNode<Expr>),
-    If(SrcNode<Expr>, SrcNode<Expr>, SrcNode<Expr>),
-    Match(SrcNode<Expr>, Vec<(SrcNode<Pat>, SrcNode<Expr>)>),
-    Func(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Expr>),
-    Apply(SrcNode<Expr>, SrcNode<Expr>),
-    Let(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Expr>, SrcNode<Expr>),
-    List(Vec<SrcNode<Expr>>),
-    Tuple(Vec<SrcNode<Expr>>),
+    Unary(SrcNode<UnaryOp>, SrcNode<Self>),
+    Binary(SrcNode<BinaryOp>, SrcNode<Self>, SrcNode<Self>),
+    If(SrcNode<Self>, SrcNode<Self>, SrcNode<Self>),
+    Match(SrcNode<Self>, Vec<(SrcNode<Pat>, SrcNode<Self>)>),
+    Func(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Self>),
+    Apply(SrcNode<Self>, SrcNode<Self>),
+    Let(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Self>, SrcNode<Self>),
+    List(Vec<SrcNode<Self>>),
+    Tuple(Vec<SrcNode<Self>>),
 }
 
 fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Ident>, Error> {
@@ -178,7 +179,26 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                     Delimiter::Paren,
                 );
 
-                paren_ty.or(ty)
+                let paren_ty_list = nested_parser(
+                    ty
+                        .clone()
+                        .separated_by(just(Token::Comma)),
+                    Delimiter::Paren,
+                );
+
+                let atom = paren_ty
+                    .or(ty);
+
+                let application = atom
+                    .then(paren_ty_list.repeated())
+                    .reduce_left(|f, args| args
+                        .into_iter()
+                        .fold(f, |f, arg| {
+                            let region = f.region().union(arg.region());
+                            SrcNode::new(Type::Apply(f, arg), region)
+                        }));
+
+                application
             })
         };
 
@@ -379,8 +399,16 @@ impl Def {
 }
 
 #[derive(Debug)]
+pub struct TypeAlias {
+    pub generics: Vec<SrcNode<Ident>>,
+    pub name: SrcNode<Ident>,
+    pub ty: SrcNode<Type>,
+}
+
+#[derive(Debug)]
 pub enum Decl {
     Def(Def),
+    TypeAlias(TypeAlias),
 }
 
 #[derive(Default, Debug)]
@@ -401,7 +429,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
             .or_not()
             .map(|gs| gs.unwrap_or_default());
 
-        let def = given_params
+        let def = given_params.clone()
             .padded_by(just(Token::Def))
             // Name
             .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
@@ -418,7 +446,20 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
                 body,
             }));
 
+        let type_alias = given_params
+            .padded_by(just(Token::Type))
+            // Name
+            .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padded_by(just(Token::Op(Op::Eq)))
+            .then(type_parser())
+            .map_with_region(|((generics, name), ty), region| Decl::TypeAlias(TypeAlias {
+                generics,
+                name,
+                ty,
+            }));
+
         let decl = def
+            .or(type_alias)
             .map_with_region(|decl, region| SrcNode::new(decl, region));
 
         decl

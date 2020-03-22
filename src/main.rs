@@ -60,6 +60,7 @@ fn run_module(src: &str) {
 
     // -------------- NEW STUFF END ---------------
 
+    /*
     let mut module = match parse::parse_module(&tokens) {
         Ok(module) => module,
         Err(errs) => {
@@ -95,6 +96,7 @@ fn run_module(src: &str) {
     };
 
     println!("{}", result);
+    */
 }
 
 fn run_expr(src: &str) {

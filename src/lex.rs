@@ -101,6 +101,7 @@ pub enum Token {
     Given,
     In,
     Of,
+    Type,
 }
 
 impl Token {
@@ -138,6 +139,7 @@ impl fmt::Display for Token {
             Token::Given => write!(f, "given"),
             Token::In => write!(f, "in"),
             Token::Of => write!(f, "of"),
+            Token::Type => write!(f, "type"),
         }
     }
 }
@@ -217,6 +219,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(seq("given".chars()).to(Token::Given))
             .or(seq("in".chars()).to(Token::In))
             .or(seq("of".chars()).to(Token::Of))
+            .or(seq("type".chars()).to(Token::Type))
             .or(ident)
             .or(op)
             .or(tree)

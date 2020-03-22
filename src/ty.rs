@@ -16,7 +16,8 @@ pub enum Atom {
 
 #[derive(PartialEq, Debug)]
 pub enum Type {
-    Named(DataId, Vec<SrcNode<Self>>), // parameters
+    Data(DataId),
+    Apply(SrcNode<Self>, SrcNode<Self>),
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
     Func(SrcNode<Self>, SrcNode<Self>),
@@ -26,9 +27,11 @@ pub enum Type {
 impl Type {
     pub fn visit(self: &SrcNode<Self>, mut f: &mut impl FnMut(&SrcNode<Self>)) {
         let iter = match &**self {
-            Type::Named(_, params) => params
-                .iter()
-                .for_each(|param| param.visit(f)),
+            Type::Data(_) => {},
+            Type::Apply(a, param) => {
+                a.visit(f);
+                param.visit(f);
+            },
             Type::List(item) => item.visit(f),
             Type::Tuple(items) => items
                 .iter()
@@ -42,6 +45,29 @@ impl Type {
 
         f(self);
     }
+
+    /*
+    pub fn to_type_id(self: &SrcNode<Self>, infer: &mut InferCtx) -> TypeId {
+        let ty_info = match &**self {
+            Type::Named(data_id, params) => TypeInfo::Named(*data_id, params
+                .iter()
+                .map(|ty| ty.to_type_id(infer))
+                .collect()),
+            Type::List(item) => TypeInfo::List(item.to_type_id(infer)),
+            Type::Tuple(items) => TypeInfo::Tuple(items
+                .iter()
+                .map(|ty| ty.to_type_id(infer))
+                .collect()),
+            Type::Func(arg, body) => TypeInfo::Func(
+                arg.to_type_id(infer),
+                body.to_type_id(infer),
+            ),
+            Type::GenParam(name) => TypeInfo::GenParam(*name),
+        };
+
+        infer.insert(ty_info, self.region())
+    }
+    */
 }
 
 // Generics
@@ -300,14 +326,15 @@ pub enum TypeInfo {
     List(TypeId),
     Tuple(Vec<TypeId>),
     Func(TypeId, TypeId),
-    Named(DataId, Vec<TypeId>),
+    Data(DataId),
+    Apply(TypeId, TypeId),
     GenParam(Ident),
     Associated(InnerTrait, TypeId, Ident), // e.g: (Add<Int>, Int, "Output") = Int
 }
 
 impl From<DataId> for TypeInfo {
     fn from(id: DataId) -> Self {
-        TypeInfo::Named(id, Vec::new())
+        TypeInfo::Data(id)
     }
 }
 
@@ -354,10 +381,9 @@ impl InferCtx {
             },
             (_, Unknown) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
             (GenParam(a), GenParam(b)) if a == b => Ok(()),
-            (Named(a, a_params), Named(b, b_params)) if a == b && a_params.len() == b_params.len() => a_params
-                .into_iter()
-                .zip(b_params.into_iter())
-                .try_fold((), |_, (a, b)| self.unify_inner(iter + 1, a, b)),
+            (Data(a), Data(b)) if a == b => Ok(()),
+            (Apply(a, a_param), Apply(b, b_param)) => self.unify_inner(iter + 1, a, b)
+                .and_then(|_| self.unify_inner(iter + 1, a_param, b_param)),
             (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
             (Tuple(a), Tuple(b)) if a.len() == b.len() => a
                 .into_iter()
@@ -391,9 +417,10 @@ impl InferCtx {
                     .get(ident)
                     .expect("Missing generic parameter");
             },
-            Type::Named(data, args) => TypeInfo::Named(
-                *data,
-                args.iter().map(|arg| self.insert_ty(arg, generics)).collect(),
+            Type::Data(data) => TypeInfo::Data(*data),
+            Type::Apply(a, param) => TypeInfo::Apply(
+                self.insert_ty(a, generics),
+                self.insert_ty(param, generics),
             ),
             Type::List(item) => TypeInfo::List(self.insert_ty(item, generics)),
             Type::Tuple(items) => TypeInfo::Tuple(
@@ -421,7 +448,11 @@ impl InferCtx {
             },
             TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
             TypeInfo::GenParam(name) => Type::GenParam(name),
-            TypeInfo::Named(id, params) => Type::Named(id, params.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
+            TypeInfo::Data(data) => Type::Data(data),
+            TypeInfo::Apply(a, param) => Type::Apply(
+                self.reconstruct_inner(iter + 1, a)?,
+                self.reconstruct_inner(iter + 1, param)?,
+            ),
             TypeInfo::List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
             TypeInfo::Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
             TypeInfo::Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),

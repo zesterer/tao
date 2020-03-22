@@ -144,6 +144,11 @@ pub struct Def {
     pub body: TypeExpr,
 }
 
+pub struct TypeAlias {
+    pub generics: Vec<SrcNode<GenParam>>,
+    pub ty: SrcNode<ast::Type>,
+}
+
 pub struct Program {
     type_engine: TypeEngine,
     core: Core,
@@ -165,6 +170,7 @@ impl Program {
         for decl in module.decls.iter() {
             match &**decl {
                 ast::Decl::Def(def) => this.insert_def(def)?,
+                ast::Decl::TypeAlias(type_alias) => this.insert_type_alias(type_alias)?,
             }
         }
         Ok(this)
@@ -186,6 +192,7 @@ impl Program {
             }))
             .collect();
         let mut data = DataCtx {
+            module: &self.root,
             core: &self.core,
             generics: &generics,
         };
@@ -211,6 +218,20 @@ impl Program {
         });
         Ok(())
     }
+
+    pub fn insert_type_alias(&mut self, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
+        let generics = ast_type_alias.generics
+            .iter()
+            .map(|g| g.as_ref().map_inner(|ident| GenParam {
+                name: *ident,
+            }))
+            .collect();
+        self.root.type_aliases.insert(*ast_type_alias.name, TypeAlias {
+            generics,
+            ty: ast_type_alias.ty.clone(),
+        });
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -218,6 +239,7 @@ pub struct Module {
     modules: HashMap<Ident, Module>,
     traits: HashMap<Ident, Trait>,
     datatypes: HashMap<Ident, Data>,
+    type_aliases: HashMap<Ident, TypeAlias>,
     defs: HashMap<Ident, Def>,
 }
 
@@ -245,20 +267,39 @@ impl Module {
 }
 
 pub struct DataCtx<'a> {
+    module: &'a Module,
     core: &'a Core,
     generics: &'a Vec<SrcNode<GenParam>>,
 }
 
 impl<'a> DataCtx<'a> {
-    fn get_type_info(&self, ident: Ident) -> Option<TypeInfo> {
+    fn get_type_info(&self, ident: Ident, infer: &mut InferCtx) -> Result<TypeInfo, Error> {
         match ident.as_str() {
-            "Num" => Some(TypeInfo::Named(self.core.primitives.number, Vec::new())),
-            "Bool" => Some(TypeInfo::Named(self.core.primitives.boolean, Vec::new())),
-            "Str" => Some(TypeInfo::Named(self.core.primitives.string, Vec::new())),
-            _ => self.generics
-                .iter()
-                .find(|param| param.name == ident)
-                .map(|param| TypeInfo::GenParam(param.name)),
+            "Num" => Ok(TypeInfo::Data(self.core.primitives.number)),
+            "Bool" => Ok(TypeInfo::Data(self.core.primitives.boolean)),
+            "Str" => Ok(TypeInfo::Data(self.core.primitives.string)),
+            _ => {
+                if let Some(ty_info) = self.generics
+                    .iter()
+                    .find(|param| param.name == ident)
+                    .map(|param| TypeInfo::GenParam(param.name))
+                {
+                    Ok(ty_info)
+                } else if let Some((_, type_alias)) = self.module.type_aliases
+                    .iter()
+                    .find(|(name, _)| **name == ident)
+                {
+                    let data = DataCtx {
+                        module: self.module,
+                        core: self.core,
+                        generics: &type_alias.generics,
+                    };
+
+                    Ok(TypeInfo::Ref(type_alias.ty.to_type_id(&data, infer)?))
+                } else {
+                    panic!("Cannot find type for {}", ident);
+                }
+            },
         }
     }
 }
@@ -290,7 +331,11 @@ impl ast::Type {
     fn to_type_id(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx) -> Result<TypeId, Error> {
         let info = match &**self {
             ast::Type::Unknown => TypeInfo::Unknown,
-            ast::Type::Ident(ident) => data.get_type_info(*ident).unwrap_or_else(|| panic!("Implement non-primitive types")),
+            ast::Type::Ident(ident) => data.get_type_info(*ident, infer)?,
+            ast::Type::Apply(a, param) => TypeInfo::Apply(
+                a.to_type_id(data, infer)?,
+                param.to_type_id(data, infer)?,
+            ),
             ast::Type::List(ty) => TypeInfo::List(ty.to_type_id(data, infer)?),
             ast::Type::Tuple(items) => TypeInfo::Tuple(items
                 .iter()
