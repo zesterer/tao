@@ -14,6 +14,7 @@ mod ty;
 mod hir2;
 mod mir;
 mod node2;
+mod scope;
 
 use std::{
     env,

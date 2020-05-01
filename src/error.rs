@@ -13,60 +13,78 @@ use crate::{
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
+    regions: Vec<SrcRegion>,
 }
 
 impl Error {
+    #[deprecated]
+    pub fn custom(s: String) -> Self {
+        Self {
+            kind: ErrorKind::Custom(s),
+            regions: Vec::new(),
+        }
+    }
+
     pub fn invalid_unary_op(op: Node<UnaryOp>, a: Node<TypeInfo>) -> Self {
         Self {
             kind: ErrorKind::InvalidUnaryOp(op, a),
+            regions: Vec::new(),
         }
     }
 
     pub fn invalid_binary_op(op: Node<BinaryOp>, a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
         Self {
             kind: ErrorKind::InvalidBinaryOp(op, a, b),
+            regions: Vec::new(),
         }
     }
 
     pub fn cannot_call(region: SrcRegion) -> Self {
         Self {
             kind: ErrorKind::CannotCall(region),
+            regions: Vec::new(),
         }
     }
 
     pub fn not_truthy(region: SrcRegion) -> Self {
         Self {
             kind: ErrorKind::NotTruthy(region),
+            regions: Vec::new(),
         }
     }
 
     pub fn no_such_binding(name: String, region: SrcRegion) -> Self {
         Self {
             kind: ErrorKind::NoSuchBinding(name, region),
+            regions: Vec::new(),
         }
     }
 
     pub fn type_mismatch(a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
         Self {
             kind: ErrorKind::TypeMismatch(a, b),
+            regions: Vec::new(),
         }
     }
 
     pub fn cannot_infer_type(a: Node<TypeInfo>) -> Self {
         Self {
             kind: ErrorKind::CannotInferType(a),
+            regions: Vec::new(),
         }
     }
 
     pub fn recursive_type(a: Node<TypeInfo>) -> Self {
         Self {
             kind: ErrorKind::RecursiveType(a),
+            regions: Vec::new(),
         }
     }
 
     pub fn no_main() -> Self {
         Self {
             kind: ErrorKind::NoMain,
+            regions: Vec::new(),
         }
     }
 
@@ -95,6 +113,11 @@ impl Error {
 
         self
     }
+
+    pub fn with_region(mut self, region: SrcRegion) -> Self {
+        self.regions.push(region);
+        self
+    }
 }
 
 impl parze::error::Error<char> for Error {
@@ -105,18 +128,21 @@ impl parze::error::Error<char> for Error {
     fn unexpected_sym(c: &char, region: SrcRegion) -> Self {
         Self {
             kind: ErrorKind::FoundExpected(Thing::Char(*c), region, HashSet::new()),
+            regions: Vec::new(),
         }
     }
 
     fn unexpected_end() -> Self {
         Self {
             kind: ErrorKind::UnexpectedEnd(SrcRegion::none()),
+            regions: Vec::new(),
         }
     }
 
     fn expected_end(c: &char, region: SrcRegion) -> Self {
         Self {
             kind: ErrorKind::ExpectedEnd(Thing::Char(*c), region),
+            regions: Vec::new(),
         }
     }
 
@@ -142,12 +168,14 @@ impl parze::error::Error<Node<Token>> for Error {
         Self {
             kind: ErrorKind::FoundExpected(
                 Thing::Token(sym.inner().clone()), region, HashSet::new()),
+            regions: Vec::new(),
         }
     }
 
     fn unexpected_end() -> Self {
         Self {
             kind: ErrorKind::UnexpectedEnd(SrcRegion::none()),
+            regions: Vec::new(),
         }
     }
 
@@ -155,6 +183,7 @@ impl parze::error::Error<Node<Token>> for Error {
         let region = sym.region;
         Self {
             kind: ErrorKind::ExpectedEnd(Thing::Token(sym.inner().clone()), region),
+            regions: Vec::new(),
         }
     }
 
@@ -173,6 +202,7 @@ impl parze::error::Error<Node<Token>> for Error {
 
 #[derive(Debug)]
 pub enum ErrorKind {
+    Custom(String),
     FoundExpected(Thing, SrcRegion, HashSet<Thing>),
     UnexpectedEnd(SrcRegion),
     ExpectedEnd(Thing, SrcRegion),
@@ -195,8 +225,12 @@ pub struct ErrorInSrc<'a> {
 impl<'a> fmt::Display for ErrorInSrc<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let highlight_regions = |f: &mut fmt::Formatter, regions: &[_]| {
-            if let Some(((start_line, start_col), (end_line, end_col))) = regions
+            let region_iter = regions
                 .iter()
+                .chain(self.error.regions.iter());
+
+            if let Some(((start_line, start_col), (end_line, end_col))) = region_iter
+                .clone()
                 .fold(SrcRegion::none(), |a, x| a.union(*x))
                 .in_context(self.src)
             {
@@ -215,10 +249,12 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                         writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
 
                         // Underline
-                        if regions.iter().any(|r| r.intersects(line_region)) {
+                        if region_iter
+                            .clone()
+                            .any(|r| r.intersects(line_region)) {
                             write!(f, "       ")?;
                             for _ in 0..line.len() {
-                                if regions.iter().any(|r| r.contains(SrcLoc::at(char_pos))) {
+                                if region_iter.clone().any(|r| r.contains(SrcLoc::at(char_pos))) {
                                     write!(f, "^")?;
                                 } else {
                                     write!(f, " ")?;
@@ -246,6 +282,10 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
         };
         write!(f, ": ")?;
         match &self.error.kind {
+            ErrorKind::Custom(msg) => {
+                writeln!(f, "{}", msg)?;
+                highlight_regions(f, &[])?;
+            },
             ErrorKind::FoundExpected(found, region, expected) => {
                 let expected = expected.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join(", ");
                 writeln!(f, "Found {}, expected {}", found, expected)?;

@@ -1,9 +1,13 @@
-use std::collections::HashMap;
+use std::{
+    fmt,
+    collections::HashMap,
+};
 use internment::LocalIntern;
 use crate::{
     error::Error,
     src::SrcRegion,
     node2::SrcNode,
+    scope::Scope,
 };
 
 type Ident = LocalIntern<String>;
@@ -14,10 +18,9 @@ pub enum Atom {
     Bool,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Type {
     Data(DataId),
-    Apply(SrcNode<Self>, SrcNode<Self>),
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
     Func(SrcNode<Self>, SrcNode<Self>),
@@ -25,13 +28,9 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn visit(self: &SrcNode<Self>, mut f: &mut impl FnMut(&SrcNode<Self>)) {
+    pub fn visit(self: &SrcNode<Self>, f: &mut impl FnMut(&SrcNode<Self>)) {
         let iter = match &**self {
             Type::Data(_) => {},
-            Type::Apply(a, param) => {
-                a.visit(f);
-                param.visit(f);
-            },
             Type::List(item) => item.visit(f),
             Type::Tuple(items) => items
                 .iter()
@@ -44,6 +43,33 @@ impl Type {
         };
 
         f(self);
+    }
+
+    pub fn visit_mut(self: &mut SrcNode<Self>, f: &mut impl FnMut(&mut SrcNode<Self>)) {
+        let iter = match &mut **self {
+            Type::Data(_) => {},
+            Type::List(item) => item.visit_mut(f),
+            Type::Tuple(items) => items
+                .iter_mut()
+                .for_each(|item| item.visit_mut(f)),
+            Type::Func(i, o) => {
+                i.visit_mut(f);
+                o.visit_mut(f);
+            },
+            Type::GenParam(_) => {},
+        };
+
+        f(self);
+    }
+
+    fn substitute_generics(self: &mut SrcNode<Self>, name: Ident, new_ty: SrcNode<Self>) {
+        self.visit_mut(&mut |ty| {
+            if let Type::GenParam(gen) = &**ty {
+                if *gen == name {
+                    *ty = new_ty.clone();
+                }
+            }
+        });
     }
 
     /*
@@ -296,27 +322,6 @@ pub struct Core {
 
 // Inference
 
-#[derive(PartialEq, Debug)]
-pub enum InferError {
-    CannotInfer,
-    Mismatch(TypeId, TypeId),
-    Recursive(TypeId),
-}
-
-impl Into<Error> for InferError {
-    fn into(self) -> Error {
-        // TODO
-        match self {
-            InferError::CannotInfer => Error::cannot_infer_type(panic!("Cannot infer type!")),
-            InferError::Mismatch(_, _) => Error::type_mismatch(
-                panic!("Type mismatch!"),
-                panic!("Type mismatch!"),
-            ),
-            InferError::Recursive(_) => panic!("Recursive type!"),
-        }
-    }
-}
-
 pub type TypeId = usize;
 
 #[derive(Clone, Debug)]
@@ -327,7 +332,6 @@ pub enum TypeInfo {
     Tuple(Vec<TypeId>),
     Func(TypeId, TypeId),
     Data(DataId),
-    Apply(TypeId, TypeId),
     GenParam(Ident),
     Associated(InnerTrait, TypeId, Ident), // e.g: (Add<Int>, Int, "Output") = Int
 }
@@ -365,6 +369,49 @@ impl InferCtx {
             .unwrap() = TypeInfo::Ref(b);
     }
 
+    fn display_type_info(&self, id: TypeId) -> impl fmt::Display + '_ {
+        #[derive(Copy, Clone)]
+        struct TypeInfoDisplay<'a> {
+            ctx: &'a InferCtx,
+            id: TypeId,
+        }
+
+        impl<'a> TypeInfoDisplay<'a> {
+            fn with_id(mut self, id: TypeId) -> Self {
+                self.id = id;
+                self
+            }
+        }
+
+        impl<'a> fmt::Display for TypeInfoDisplay<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match self.ctx.get(self.id) {
+                    TypeInfo::Unknown => write!(f, "_"),
+                    TypeInfo::Ref(id) => self.with_id(id).fmt(f),
+                    TypeInfo::List(id) => write!(f, "[{}]", self.with_id(id)),
+                    TypeInfo::Tuple(ids) => {
+                        write!(f, "(")?;
+                        ids
+                            .iter()
+                            .map(|id| write!(f, "{}, ", self.with_id(*id)))
+                            .collect::<Result<_, _>>()?;
+                        write!(f, ")")?;
+                        Ok(())
+                    },
+                    TypeInfo::Func(i, o) => write!(f, "({} -> {})", self.with_id(i), self.with_id(o)),
+                    TypeInfo::Data(_) => write!(f, "TODO"),
+                    TypeInfo::GenParam(ident) => write!(f, "{}", ident),
+                    TypeInfo::Associated(tr, a, assoc) => write!(f, "<{} as Trait>::{}", self.with_id(a), assoc),
+                }
+            }
+        }
+
+        TypeInfoDisplay {
+            ctx: self,
+            id
+        }
+    }
+
     fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<(), Error> {
         const MAX_UNIFICATION_DEPTH: usize = 1024;
         if iter > MAX_UNIFICATION_DEPTH {
@@ -373,17 +420,15 @@ impl InferCtx {
 
         use TypeInfo::*;
         match (self.get(a), self.get(b)) {
-            (Ref(a), _) => self.unify_inner(iter + 1, a, b),
-            (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
+            (Ref(a), _) => self.unify_inner(iter, a, b),
+            (_, Ref(_)) => self.unify_inner(iter, b, a),
             (Unknown, _) => {
                 self.link(a, b);
                 Ok(())
             },
-            (_, Unknown) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
+            (_, Unknown) => self.unify_inner(iter, b, a), // TODO: does ordering matter?
             (GenParam(a), GenParam(b)) if a == b => Ok(()),
             (Data(a), Data(b)) if a == b => Ok(()),
-            (Apply(a, a_param), Apply(b, b_param)) => self.unify_inner(iter + 1, a, b)
-                .and_then(|_| self.unify_inner(iter + 1, a_param, b_param)),
             (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
             (Tuple(a), Tuple(b)) if a.len() == b.len() => a
                 .into_iter()
@@ -392,8 +437,13 @@ impl InferCtx {
             (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
                 .and_then(|_| self.unify_inner(iter + 1, ao, bo)),
             (x, y) => {
-                println!("mismatch: {:?} [{:?}], {:?} [{:?}]", x, self.region(a), y, self.region(b));
-                Err(InferError::Mismatch(a.clone(), b.clone()).into())
+                Err(Error::custom(format!(
+                    "Type mismatch between {} and {}",
+                    self.display_type_info(a),
+                    self.display_type_info(b),
+                ))
+                    .with_region(self.region(a))
+                    .with_region(self.region(b)))
             },
         }
     }
@@ -409,50 +459,57 @@ impl InferCtx {
         id
     }
 
-    pub fn insert_ty(&mut self, ty: &SrcNode<Type>, generics: &HashMap<Ident, TypeId>) -> TypeId {
+    pub fn insert_ty_inner(&mut self, get_generic: &impl Fn(Ident) -> Option<TypeInfo>, ty: &SrcNode<Type>) -> TypeId {
         let info = match &**ty {
-            //Type::GenParam(ident) => TypeInfo::GenParam(*ident),
-            Type::GenParam(ident) => {
-                return *generics
-                    .get(ident)
-                    .expect("Missing generic parameter");
-            },
+            Type::GenParam(ident) => get_generic(*ident)
+                .expect("Generic type without matching generic parameter found in concrete type"),
             Type::Data(data) => TypeInfo::Data(*data),
-            Type::Apply(a, param) => TypeInfo::Apply(
-                self.insert_ty(a, generics),
-                self.insert_ty(param, generics),
-            ),
-            Type::List(item) => TypeInfo::List(self.insert_ty(item, generics)),
+            Type::List(item) => TypeInfo::List(self.insert_ty_inner(get_generic, item)),
             Type::Tuple(items) => TypeInfo::Tuple(
-                items.iter().map(|item| self.insert_ty(item, generics)).collect(),
+                items.iter().map(|item| self.insert_ty_inner(get_generic, item)).collect(),
             ),
             Type::Func(i, o) => TypeInfo::Func(
-                self.insert_ty(i, generics),
-                self.insert_ty(o, generics),
+                self.insert_ty_inner(get_generic, i),
+                self.insert_ty_inner(get_generic, o),
             ),
         };
 
         self.insert(info, ty.region())
     }
 
-    fn reconstruct_inner(&self, iter: usize, id: TypeId) -> Result<SrcNode<Type>, Error> {
+    pub fn insert_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>) -> TypeId {
+        // Turn generics into types the `InferCtx` can understand
+        let generic_type_ids = generics
+            .iter()
+            .map(|g| (**g, self.insert(TypeInfo::Unknown, g.region())))
+            .collect::<Vec<_>>();
+        let get_generic = |ident| generic_type_ids
+            .iter()
+            .find(|(name, _)| *name == ident)
+            .map(|(_, id)| TypeInfo::Ref(*id));
+
+        self.insert_ty_inner(&get_generic, ty)
+    }
+
+    fn reconstruct_inner(
+        &self,
+        iter: usize,
+        id: TypeId,
+    ) -> Result<SrcNode<Type>, Error> {
         const MAX_RECONSTRUCTION_DEPTH: usize = 1024;
         if iter > MAX_RECONSTRUCTION_DEPTH {
-            return Err(InferError::Recursive(id).into());
+            return Err(Error::custom(format!("Recursive type"))
+                .with_region(self.region(id)));
         }
 
         let ty = match self.get(id) {
             TypeInfo::Unknown => {
-                println!("cannot infer: [{:?}]", self.region(id));
-                return Err(InferError::CannotInfer.into());
+                return Err(Error::custom(format!("Cannot infer type"))
+                    .with_region(self.region(id)));
             },
             TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
             TypeInfo::GenParam(name) => Type::GenParam(name),
             TypeInfo::Data(data) => Type::Data(data),
-            TypeInfo::Apply(a, param) => Type::Apply(
-                self.reconstruct_inner(iter + 1, a)?,
-                self.reconstruct_inner(iter + 1, param)?,
-            ),
             TypeInfo::List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
             TypeInfo::Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
             TypeInfo::Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),

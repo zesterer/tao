@@ -26,6 +26,11 @@ impl<T, U> Node<T, U> {
         Node::new(f(*inner), meta)
     }
 
+    pub fn map_meta<V>(self, f: impl FnOnce(U) -> V) -> Node<T, V> {
+        let Node(inner, meta) = self;
+        Node(inner, f(meta))
+    }
+
     pub fn as_ref(&self) -> Node<&T, U> where U: Clone {
         Node::new(&*self, self.1.clone())
     }

@@ -1,11 +1,5 @@
 given A type List = [A]
 
-given A def empty of List(A) = []
-
-#def five = empty
-
-given A def identity = |x of A| x
-
-def troo = true:identity
+given A def identity = |x of List A| x
 
 def main = 5:identity

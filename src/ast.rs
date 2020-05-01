@@ -87,11 +87,10 @@ pub enum Pat {
 #[derive(Clone, Debug)]
 pub enum Type {
     Unknown,
-    Ident(Ident),
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
     Func(SrcNode<Self>, SrcNode<Self>),
-    Apply(SrcNode<Self>, SrcNode<Self>),
+    Data(Ident, Vec<SrcNode<Self>>),
 }
 
 #[derive(Debug)]
@@ -141,7 +140,7 @@ fn nested_parser<'a, O: 'a>(
 }
 
 fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Type>>, Error> {
-    recursive(|ty|{
+    recursive(|ty| {
         let ty = ty.link();
 
         let atom = {
@@ -165,13 +164,12 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 let unknown = just(Token::QuestionMark)
                     .map(|_| Type::Unknown);
 
-                let ident = ident_parser()
-                    .map(|ident| Type::Ident(ident));
-
                 let ty = list
                     .or(tuple)
                     .or(unknown)
-                    .or(ident)
+                    .or(ident_parser()
+                        .then(atom.repeated())
+                        .map(|(data, params)| Type::Data(data, params)))
                     .map_with_region(|ty, region| SrcNode::new(ty, region));
 
                 let paren_ty = nested_parser(
@@ -189,16 +187,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 let atom = paren_ty
                     .or(ty);
 
-                let application = atom
-                    .then(paren_ty_list.repeated())
-                    .reduce_left(|f, args| args
-                        .into_iter()
-                        .fold(f, |f, arg| {
-                            let region = f.region().union(arg.region());
-                            SrcNode::new(Type::Apply(f, arg), region)
-                        }));
-
-                application
+                atom
             })
         };
 

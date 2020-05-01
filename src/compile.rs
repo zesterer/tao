@@ -91,12 +91,14 @@ impl Program {
         globals: &[LocalIntern<String>],
         locals: &Vec<Node<LocalIntern<String>>>,
     ) -> Result<(), Error> {
-        let offset_of = |ident, region| Ok(locals.len().saturating_sub(1) - locals
-            .iter()
-            .enumerate()
-            .find(|(_, local)| **local == ident)
-            .ok_or(Error::no_such_binding(ident.to_string(), region))?
-            .0);
+        let offset_of = |ident, region| -> Result<usize, Error> {
+            Ok(locals.len().saturating_sub(1) - locals
+                .iter()
+                .enumerate()
+                .find(|(_, local)| **local == ident)
+                .ok_or(Error::no_such_binding(ident.to_string(), region))?
+                .0)
+        };
 
         let globals_index = |ident| globals
             .iter()

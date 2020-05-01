@@ -33,11 +33,11 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn get_data_id(&self, data: &DataCtx) -> DataId {
+    pub fn get_data_id(&self, core: &Core) -> DataId {
         match self {
-            Value::Number(_) => data.core.primitives.number,
-            Value::String(_) => data.core.primitives.string,
-            Value::Boolean(_) => data.core.primitives.boolean,
+            Value::Number(_) => core.primitives.number,
+            Value::String(_) => core.primitives.string,
+            Value::Boolean(_) => core.primitives.boolean,
         }
     }
 }
@@ -116,7 +116,42 @@ impl<'a> Scope<'a> {
                 .get(&ident)
                 .copied()
                 .or_else(|| parent.get(ident, ctx, region)),
-            Scope::Module(module) => module.get_val(ident, ctx, region),
+            Scope::Module(module) => module.get_val_type(ident, ctx, region),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct DataCtx<'a> {
+    module: &'a Module,
+    core: &'a Core,
+    generics: HashMap<Ident, TypeId>,
+}
+
+impl<'a> DataCtx<'a> {
+    fn get_named_type(&self, name: Ident, params: &[TypeId], infer: &mut InferCtx, region: SrcRegion) -> Result<TypeId, Error> {
+        if let Some(ty_id) = self
+            .generics
+            .get(&name)
+        {
+            Ok(*ty_id)
+        } else {
+            match name.as_str() {
+                "Num" => Some(TypeInfo::Data(self.core.primitives.number)),
+                "Bool" => Some(TypeInfo::Data(self.core.primitives.boolean)),
+                "Str" => Some(TypeInfo::Data(self.core.primitives.string)),
+                _ => None,
+            }
+                .and_then(|ty_info| Some(if params.len() == 0 {
+                    Ok(infer.insert(ty_info, region))
+                } else {
+                    Err(Error::custom(format!("Primitive type '{}' cannot be parameterised", name))
+                        .with_region(infer.region(params[0])))
+                }))
+                .transpose()?
+                .or_else(|| self.module.get_named_type(name, params, infer, region))
+                .ok_or_else(|| Error::custom(format!("No such data type '{}'", name))
+                    .with_region(region))
         }
     }
 }
@@ -135,18 +170,14 @@ fn op_to_binary_trait(core: &Core, op: ast::BinaryOp) -> TraitId {
     }
 }
 
-pub struct GenParam {
-    name: Ident,
-}
-
 pub struct Def {
-    pub generics: Vec<SrcNode<GenParam>>,
+    pub generics: Vec<SrcNode<Ident>>,
     pub body: TypeExpr,
 }
 
 pub struct TypeAlias {
-    pub generics: Vec<SrcNode<GenParam>>,
-    pub ty: SrcNode<ast::Type>,
+    pub generics: Vec<SrcNode<Ident>>,
+    pub ty: SrcNode<Type>,
 }
 
 pub struct Program {
@@ -185,18 +216,16 @@ impl Program {
     }
 
     pub fn insert_def(&mut self, ast_def: &ast::Def) -> Result<(), Error> {
-        let generics = ast_def.generics
-            .iter()
-            .map(|g| g.as_ref().map_inner(|ident| GenParam {
-                name: *ident,
-            }))
-            .collect();
-        let mut data = DataCtx {
+        let mut infer = InferCtx::default();
+        let data = DataCtx {
             module: &self.root,
             core: &self.core,
-            generics: &generics,
+            generics: ast_def
+                .generics
+                .iter()
+                .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.region())))
+                .collect(),
         };
-        let mut infer = InferCtx::default();
         let scope = self.create_scope();
 
         let body = {
@@ -212,24 +241,37 @@ impl Program {
             body.into_checked(&mut infer)?
         };
 
-        self.root.defs.insert(*ast_def.name, Def {
-            generics,
-            body,
-        });
+        let generics = ast_def.generics
+            .iter()
+            .map(|g| SrcNode::new(**g, g.region()))
+            .collect();
+
+        self.root.defs.insert(*ast_def.name, Def { generics, body });
         Ok(())
     }
 
     pub fn insert_type_alias(&mut self, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
+        let mut infer = InferCtx::default();
+        let data = DataCtx {
+            module: &self.root,
+            core: &self.core,
+            generics: ast_type_alias
+                .generics
+                .iter()
+                .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.region())))
+                .collect(),
+        };
+
+        let ty_info = TypeInfo::Ref(ast_type_alias.ty.to_type_id(&data, &mut infer)?);
+        let region = ast_type_alias.ty.region();
         let generics = ast_type_alias.generics
             .iter()
-            .map(|g| g.as_ref().map_inner(|ident| GenParam {
-                name: *ident,
-            }))
+            .map(|g| SrcNode::new(**g, g.region()))
             .collect();
-        self.root.type_aliases.insert(*ast_type_alias.name, TypeAlias {
-            generics,
-            ty: ast_type_alias.ty.clone(),
-        });
+        let ty_id = infer.insert(ty_info, region);
+        let ty = infer.reconstruct(ty_id)?;
+
+        self.root.type_aliases.insert(*ast_type_alias.name, TypeAlias { generics, ty });
         Ok(())
     }
 }
@@ -248,59 +290,23 @@ impl Module {
         self.defs.get(&name)
     }
 
-    fn get_val(&self, ident: Ident, infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
+    fn get_val_type(&self, ident: Ident, infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
         self.defs
             .get(&ident)
-            .map(|def| {
-                let mut generics = HashMap::new();
-                def.body
-                    .ty()
-                    .visit(&mut |ty| match &**ty {
-                        Type::GenParam(param) => {
-                            generics.insert(*param, infer.insert(TypeInfo::Unknown, region));
-                        },
-                        _ => {},
-                    });
-                infer.insert_ty(def.body.ty(), &generics)
-            })
+            .map(|def| infer.insert_ty(&def.generics, def.body.ty()))
     }
-}
 
-pub struct DataCtx<'a> {
-    module: &'a Module,
-    core: &'a Core,
-    generics: &'a Vec<SrcNode<GenParam>>,
-}
-
-impl<'a> DataCtx<'a> {
-    fn get_type_info(&self, ident: Ident, infer: &mut InferCtx) -> Result<TypeInfo, Error> {
-        match ident.as_str() {
-            "Num" => Ok(TypeInfo::Data(self.core.primitives.number)),
-            "Bool" => Ok(TypeInfo::Data(self.core.primitives.boolean)),
-            "Str" => Ok(TypeInfo::Data(self.core.primitives.string)),
-            _ => {
-                if let Some(ty_info) = self.generics
+    fn get_named_type(&self, ident: Ident, params: &[TypeId], infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
+        self
+            .type_aliases
+            .get(&ident)
+            .map(|type_alias| infer.insert_ty_inner(&|ident| {
+                type_alias.generics
                     .iter()
-                    .find(|param| param.name == ident)
-                    .map(|param| TypeInfo::GenParam(param.name))
-                {
-                    Ok(ty_info)
-                } else if let Some((_, type_alias)) = self.module.type_aliases
-                    .iter()
-                    .find(|(name, _)| **name == ident)
-                {
-                    let data = DataCtx {
-                        module: self.module,
-                        core: self.core,
-                        generics: &type_alias.generics,
-                    };
-
-                    Ok(TypeInfo::Ref(type_alias.ty.to_type_id(&data, infer)?))
-                } else {
-                    panic!("Cannot find type for {}", ident);
-                }
-            },
-        }
+                    .enumerate()
+                    .find(|(_, g)| ***g == ident)
+                    .map(|(i, _)| TypeInfo::Ref(params[i]))
+            }, &type_alias.ty))
     }
 }
 
@@ -331,11 +337,13 @@ impl ast::Type {
     fn to_type_id(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx) -> Result<TypeId, Error> {
         let info = match &**self {
             ast::Type::Unknown => TypeInfo::Unknown,
-            ast::Type::Ident(ident) => data.get_type_info(*ident, infer)?,
-            ast::Type::Apply(a, param) => TypeInfo::Apply(
-                a.to_type_id(data, infer)?,
-                param.to_type_id(data, infer)?,
-            ),
+            ast::Type::Data(name, params) => {
+                let params = params
+                    .iter()
+                    .map(|param| param.to_type_id(data, infer))
+                    .collect::<Result<Vec<_>, _>>()?;
+                TypeInfo::Ref(data.get_named_type(*name, &params, infer, self.region())?)
+            },
             ast::Type::List(ty) => TypeInfo::List(ty.to_type_id(data, infer)?),
             ast::Type::Tuple(items) => TypeInfo::Tuple(items
                 .iter()
@@ -401,7 +409,7 @@ impl ast::Expr {
 impl Pat {
     fn infer(self: &mut InferNode<Self>, data: &DataCtx, infer: &mut InferCtx) -> Result<(), Error> {
         let type_id = match &mut **self {
-            Pat::Value(x) => infer.insert(TypeInfo::from(x.get_data_id(data)), self.region()),
+            Pat::Value(x) => infer.insert(TypeInfo::from(x.get_data_id(&data.core)), self.region()),
             Pat::Ident(ident) => infer.insert(TypeInfo::Unknown, self.region()),
         };
 
@@ -424,7 +432,7 @@ impl Expr<(SrcRegion, TypeId)> {
     fn infer(self: &mut InferNode<Self>, data: &DataCtx, infer: &mut InferCtx, scope: &Scope) -> Result<(), Error> {
         let region = self.region();
         let type_id = match &mut **self {
-            Expr::Value(x) => infer.insert(TypeInfo::from(x.get_data_id(data)), region),
+            Expr::Value(x) => infer.insert(TypeInfo::from(x.get_data_id(&data.core)), region),
             Expr::Path(path) => if path.len() == 1 {
                 scope
                     .get(path.base(), infer, region)
@@ -435,7 +443,7 @@ impl Expr<(SrcRegion, TypeId)> {
             Expr::Unary(op, x) => {
                 x.infer(data, infer, scope)?;
                 infer.insert(TypeInfo::Associated(
-                    op_to_unary_trait(data.core, **op).into(),
+                    op_to_unary_trait(&data.core, **op).into(),
                     x.type_id(),
                     LocalIntern::new("Out".to_string()),
                 ), region)
@@ -444,7 +452,7 @@ impl Expr<(SrcRegion, TypeId)> {
                 x.infer(data, infer, scope)?;
                 y.infer(data, infer, scope)?;
                 infer.insert(TypeInfo::Associated(
-                    InnerTrait::new(op_to_binary_trait(data.core, **op), vec![y.type_id().into()]),
+                    InnerTrait::new(op_to_binary_trait(&data.core, **op), vec![y.type_id().into()]),
                     x.type_id(),
                     LocalIntern::new("Out".to_string()),
                 ), region)
@@ -460,7 +468,7 @@ impl Expr<(SrcRegion, TypeId)> {
             Expr::Tuple(items) => {
                 let items = items
                     .iter_mut()
-                    .map(|item| {
+                    .map(|item| -> Result<_, Error> {
                         item.infer(data, infer, scope)?;
                         Ok(item.type_id())
                     })
@@ -537,10 +545,12 @@ impl Expr<(SrcRegion, TypeId)> {
                 pred.into_checked(infer)?,
                 arms
                     .into_iter()
-                    .map(|(pat, body)| Ok((
-                        pat.into_checked(infer)?,
-                        body.into_checked(infer)?,
-                    )))
+                    .map(|(pat, body)| -> Result<_, Error> {
+                        Ok((
+                            pat.into_checked(infer)?,
+                            body.into_checked(infer)?,
+                        ))
+                    })
                     .collect::<Result<_, _>>()?,
             ),
             _ => todo!(),
