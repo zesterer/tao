@@ -135,23 +135,25 @@ impl<'a> DataCtx<'a> {
             .get(&name)
         {
             Ok(*ty_id)
-        } else {
-            match name.as_str() {
-                "Num" => Some(TypeInfo::Data(self.core.primitives.number)),
-                "Bool" => Some(TypeInfo::Data(self.core.primitives.boolean)),
-                "Str" => Some(TypeInfo::Data(self.core.primitives.string)),
-                _ => None,
+        } else if let Some(ty_info) = match name.as_str() {
+            "Num" => Some(TypeInfo::Data(self.core.primitives.number)),
+            "Bool" => Some(TypeInfo::Data(self.core.primitives.boolean)),
+            "Str" => Some(TypeInfo::Data(self.core.primitives.string)),
+            _ => None,
+        } {
+            if params.len() == 0 {
+                Ok(infer.insert(ty_info, region))
+            } else {
+                Err(Error::custom(format!("Primitive type '{}' cannot be parameterised", name))
+                    .with_region(infer.region(params[0])))
             }
-                .and_then(|ty_info| Some(if params.len() == 0 {
-                    Ok(infer.insert(ty_info, region))
-                } else {
-                    Err(Error::custom(format!("Primitive type '{}' cannot be parameterised", name))
-                        .with_region(infer.region(params[0])))
-                }))
-                .transpose()?
-                .or_else(|| self.module.get_named_type(name, params, infer, region))
-                .ok_or_else(|| Error::custom(format!("No such data type '{}'", name))
+        } else {
+            if let Some(res) = self.module.get_named_type(name, params, infer, region) {
+                res
+            } else {
+                Err(Error::custom(format!("No such data type '{}'", name))
                     .with_region(region))
+            }
         }
     }
 }
@@ -296,17 +298,21 @@ impl Module {
             .map(|def| infer.insert_ty(&def.generics, def.body.ty()))
     }
 
-    fn get_named_type(&self, ident: Ident, params: &[TypeId], infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
+    fn get_named_type(&self, ident: Ident, params: &[TypeId], infer: &mut InferCtx, region: SrcRegion) -> Option<Result<TypeId, Error>> {
         self
             .type_aliases
             .get(&ident)
-            .map(|type_alias| infer.insert_ty_inner(&|ident| {
-                type_alias.generics
-                    .iter()
-                    .enumerate()
-                    .find(|(_, g)| ***g == ident)
-                    .map(|(i, _)| TypeInfo::Ref(params[i]))
-            }, &type_alias.ty))
+            .map(|type_alias| if params.len() != type_alias.generics.len() {
+                Err(Error::custom(format!("Type '{}' expected {} parameters, found {}", ident, type_alias.generics.len(), params.len())))
+            } else {
+                Ok(infer.insert_ty_inner(&|ident| {
+                    type_alias.generics
+                        .iter()
+                        .enumerate()
+                        .find(|(_, g)| ***g == ident)
+                        .map(|(i, _)| TypeInfo::Ref(params[i]))
+                }, &type_alias.ty))
+            })
     }
 }
 
