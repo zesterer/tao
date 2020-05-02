@@ -358,6 +358,11 @@ impl InferCtx {
 
     pub fn region(&self, id: TypeId) -> SrcRegion {
         self.regions[&id].clone()
+        // Follow the chain of references
+        // match self.get(id) {
+        //     TypeInfo::Ref(a) => self.region(a),
+        //     _ => self.regions[&id].clone(),
+        // }
     }
 
     fn link(&mut self, a: TypeId, b: TypeId) {

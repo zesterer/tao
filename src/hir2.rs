@@ -89,11 +89,16 @@ type TypedPat = TypeNode<Pat>;
 #[derive(Clone)]
 pub enum Scope<'a> {
     Module(&'a Module),
+    Def(SrcNode<Ident>, Vec<SrcNode<Ident>>, Option<SrcNode<Type>>, &'a Self),
     Local(Ident, TypeId, &'a Self),
     Many(HashMap<Ident, TypeId>, &'a Self),
 }
 
 impl<'a> Scope<'a> {
+    fn with_def<'b>(&'b self, ident: SrcNode<Ident>, generics: Vec<SrcNode<Ident>>, ty: Option<SrcNode<Type>>) -> Scope<'b> where 'a: 'b {
+        Scope::Def(ident, generics, ty, self)
+    }
+
     fn with<'b>(&'b self, ident: Ident, ty: TypeId) -> Scope<'b> where 'a: 'b {
         Scope::Local(ident, ty, self)
     }
@@ -107,16 +112,30 @@ impl<'a> Scope<'a> {
         }
     }
 
-    fn get(&self, ident: Ident, ctx: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
+    fn get(&self, ident: Ident, ctx: &mut InferCtx, region: SrcRegion) -> Option<Result<TypeId, Error>> {
         match self {
-            Scope::Local(local, ty, parent) => Some(*ty)
+            Scope::Local(local, ty, parent) => Some(Ok(*ty))
                 .filter(|_| local == &ident)
                 .or_else(|| parent.get(ident, ctx, region)),
             Scope::Many(locals, parent) => locals
                 .get(&ident)
                 .copied()
+                .map(Ok)
                 .or_else(|| parent.get(ident, ctx, region)),
-            Scope::Module(module) => module.get_val_type(ident, ctx, region),
+            Scope::Def(def, generics, ty, parent) => if **def == ident {
+                Some(if let Some(ty) = ty {
+                    Ok(ctx.insert_ty(generics, ty))
+                } else {
+                    // Err(Error::custom(format!("Definition '{}' was found but requires an explicit type to be used recursively", **def))
+                    //     .with_region(def.region())
+                    //     .with_region(region)
+                    //     .with_hint(format!("Consider adding a type annotation to '{}' that fully describes it", **def)))
+                    Ok(ctx.insert(TypeInfo::Unknown, def.region()))
+                })
+            } else {
+                parent.get(ident, ctx, region)
+            },
+            Scope::Module(module) => module.get_val_type(ident, ctx, region).map(Ok),
         }
     }
 }
@@ -129,10 +148,10 @@ pub struct DataCtx<'a> {
 }
 
 impl<'a> DataCtx<'a> {
-    fn get_named_type(&self, name: Ident, params: &[TypeId], infer: &mut InferCtx, region: SrcRegion) -> Result<TypeId, Error> {
+    fn get_data_type(&self, name: &SrcNode<Ident>, params: &[TypeId], infer: &mut InferCtx, region: SrcRegion) -> Result<TypeId, Error> {
         if let Some(ty_id) = self
             .generics
-            .get(&name)
+            .get(&**name)
         {
             Ok(*ty_id)
         } else if let Some(ty_info) = match name.as_str() {
@@ -144,18 +163,40 @@ impl<'a> DataCtx<'a> {
             if params.len() == 0 {
                 Ok(infer.insert(ty_info, region))
             } else {
-                Err(Error::custom(format!("Primitive type '{}' cannot be parameterised", name))
-                    .with_region(infer.region(params[0])))
+                Err(Error::custom(format!("Primitive type '{}' cannot be parameterised", **name))
+                    .with_region(name.region())
+                    .with_region(infer.region(params[0]))
+                    .with_hint(format!("Remove all type parameters from '{}'", **name)))
             }
         } else {
-            if let Some(res) = self.module.get_named_type(name, params, infer, region) {
+            if let Some(res) = self.module
+                .get_data_type(**name)
+                .map(|(ty, generics)| if params.len() != generics.len() {
+                    Err(Error::custom(format!("Type '{}' expected {} parameters, found {}", **name, generics.len(), params.len()))
+                        .with_region(ty.region())
+                        .with_region(region))
+                } else {
+                    Ok(infer.insert_ty_inner(&|ident| {
+                        generics
+                            .iter()
+                            .enumerate()
+                            .find(|(_, g)| ***g == ident)
+                            .map(|(i, _)| TypeInfo::Ref(params[i]))
+                    }, ty))
+                })
+            {
                 res
             } else {
-                Err(Error::custom(format!("No such data type '{}'", name))
-                    .with_region(region))
+                Err(Error::custom(format!("No such data type '{}'", **name))
+                    .with_region(name.region()))
             }
         }
     }
+}
+
+struct PhoneyData {
+    name: SrcNode<Ident>,
+    generics: Vec<SrcNode<Ident>>,
 }
 
 fn op_to_unary_trait(core: &Core, op: ast::UnaryOp) -> TraitId {
@@ -174,11 +215,13 @@ fn op_to_binary_trait(core: &Core, op: ast::BinaryOp) -> TraitId {
 
 pub struct Def {
     pub generics: Vec<SrcNode<Ident>>,
+    pub name: SrcNode<Ident>,
     pub body: TypeExpr,
 }
 
 pub struct TypeAlias {
     pub generics: Vec<SrcNode<Ident>>,
+    pub name: SrcNode<Ident>,
     pub ty: SrcNode<Type>,
 }
 
@@ -217,7 +260,15 @@ impl Program {
         Scope::Module(&self.root)
     }
 
+
     pub fn insert_def(&mut self, ast_def: &ast::Def) -> Result<(), Error> {
+        // Check for double declaration
+        if let Some(existing_def) = self.root.defs.get(&**ast_def.name) {
+            return Err(Error::custom(format!("Definition with name '{}' already exists", **ast_def.name))
+                .with_region(existing_def.name.region())
+                .with_region(ast_def.name.region()));
+        }
+
         let mut infer = InferCtx::default();
         let data = DataCtx {
             module: &self.root,
@@ -230,15 +281,19 @@ impl Program {
         };
         let scope = self.create_scope();
 
+        // Attempt to fully infer just from the type signature - needed for recursive definitions!
+        let scope = scope.with_def(ast_def.name.clone(), ast_def.generics.clone(), {
+            let ty_id = ast_def.ty.to_type_id(&data, &mut infer)?;
+            infer.reconstruct(ty_id).ok()
+        });
+
         let body = {
             let mut body = ast_def.body.to_hir(&data, &mut infer)?;
             body.infer(&data, &mut infer, &scope)?;
 
             // Unify with optional type annotation
-            if let Some(ty) = &ast_def.ty {
-                let ty_id = ty.to_type_id(&data, &mut infer)?;
-                infer.unify(body.type_id(), ty_id)?;
-            }
+            let ty_id = ast_def.ty.to_type_id(&data, &mut infer)?;
+            infer.unify(body.type_id(), ty_id)?;
 
             body.into_checked(&mut infer)?
         };
@@ -259,11 +314,16 @@ impl Program {
             if !uses_gen {
                 return Err(Error::custom(format!("Type parameter '{}' must be mentioned by type {}", **gen, **body.ty()))
                     .with_region(gen.region())
-                    .with_region(body.ty().region()));
+                    .with_region(body.ty().region())
+                    .with_hint(format!("Consider removing '{}' from the list of generics", **gen)));
             }
         }
 
-        self.root.defs.insert(*ast_def.name, Def { generics, body });
+        self.root.defs.insert(*ast_def.name, Def {
+            generics,
+            name: ast_def.name.clone(),
+            body,
+        });
         Ok(())
     }
 
@@ -300,11 +360,16 @@ impl Program {
             if !uses_gen {
                 return Err(Error::custom(format!("Type parameter '{}' must be mentioned by type {}", **gen, *ty))
                     .with_region(gen.region())
-                    .with_region(ty.region()));
+                    .with_region(ty.region())
+                    .with_hint(format!("Consider removing '{}' from the list of generics", **gen)));
             }
         }
 
-        self.root.type_aliases.insert(*ast_type_alias.name, TypeAlias { generics, ty });
+        self.root.type_aliases.insert(*ast_type_alias.name, TypeAlias {
+            generics,
+            name: ast_type_alias.name.clone(),
+            ty,
+        });
         Ok(())
     }
 }
@@ -329,21 +394,11 @@ impl Module {
             .map(|def| infer.insert_ty(&def.generics, def.body.ty()))
     }
 
-    fn get_named_type(&self, ident: Ident, params: &[TypeId], infer: &mut InferCtx, region: SrcRegion) -> Option<Result<TypeId, Error>> {
+    fn get_data_type(&self, ident: Ident) -> Option<(&SrcNode<Type>, &[SrcNode<Ident>])> {
         self
             .type_aliases
             .get(&ident)
-            .map(|type_alias| if params.len() != type_alias.generics.len() {
-                Err(Error::custom(format!("Type '{}' expected {} parameters, found {}", ident, type_alias.generics.len(), params.len())))
-            } else {
-                Ok(infer.insert_ty_inner(&|ident| {
-                    type_alias.generics
-                        .iter()
-                        .enumerate()
-                        .find(|(_, g)| ***g == ident)
-                        .map(|(i, _)| TypeInfo::Ref(params[i]))
-                }, &type_alias.ty))
-            })
+            .map(|type_alias| (&type_alias.ty, type_alias.generics.as_slice()))
     }
 }
 
@@ -379,7 +434,7 @@ impl ast::Type {
                     .iter()
                     .map(|param| param.to_type_id(data, infer))
                     .collect::<Result<Vec<_>, _>>()?;
-                TypeInfo::Ref(data.get_named_type(*name, &params, infer, self.region())?)
+                TypeInfo::Ref(data.get_data_type(name, &params, infer, self.region())?)
             },
             ast::Type::List(ty) => TypeInfo::List(ty.to_type_id(data, infer)?),
             ast::Type::Tuple(items) => TypeInfo::Tuple(items
@@ -473,6 +528,7 @@ impl Expr<(SrcRegion, TypeId)> {
             Expr::Path(path) => if path.len() == 1 {
                 scope
                     .get(path.base(), infer, region)
+                    .transpose()?
                     .ok_or_else(|| Error::no_such_binding(path.base().to_string(), region))?
             } else {
                 todo!("Complex paths")

@@ -90,7 +90,7 @@ pub enum Type {
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
     Func(SrcNode<Self>, SrcNode<Self>),
-    Data(Ident, Vec<SrcNode<Self>>),
+    Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
 }
 
 #[derive(Debug)]
@@ -157,7 +157,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 let atom = atom.link();
 
                 let ident = ident_parser()
-                    .map_with_region(|ident, region| SrcNode::new(Type::Data(ident, Vec::new()), region));
+                    .map_with_region(|ident, region| SrcNode::new(Type::Data(SrcNode::new(ident, region), Vec::new()), region));
 
                 let list = nested_parser(
                     ty.clone(),
@@ -198,6 +198,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         };
 
         let data = ident_parser()
+            .map_with_region(|name, region| SrcNode::new(name, region))
             .then(atom.clone().repeated())
             .map(|(data, params)| Type::Data(data, params))
             .map_with_region(|ty, region| SrcNode::new(ty, region))
@@ -387,7 +388,7 @@ pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Err
 pub struct Def {
     pub generics: Vec<SrcNode<Ident>>,
     pub name: SrcNode<Ident>,
-    pub ty: Option<SrcNode<Type>>,
+    pub ty: SrcNode<Type>,
     pub body: SrcNode<Expr>,
 }
 
@@ -396,7 +397,7 @@ impl Def {
         Self {
             generics: Vec::new(),
             name: SrcNode::new(LocalIntern::new("main".to_string()), SrcRegion::none()),
-            ty: None,
+            ty: SrcNode::new(Type::Unknown, SrcRegion::none()),
             body,
         }
     }
@@ -440,7 +441,8 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
             // Optional type annotation
             .then(just(Token::Of)
                 .padding_for(type_parser())
-                .or_not())
+                .or_not()
+                .map(|ty_hint| ty_hint.unwrap_or_else(|| SrcNode::new(Type::Unknown, SrcRegion::none()))))
             .padded_by(just(Token::Op(Op::Eq)))
             .then(expr_parser())
             .map_with_region(|(((generics, name), ty), body), region| Decl::Def(Def {

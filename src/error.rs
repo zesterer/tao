@@ -14,78 +14,57 @@ use crate::{
 pub struct Error {
     kind: ErrorKind,
     regions: Vec<SrcRegion>,
+    hints: Vec<String>,
 }
 
 impl Error {
+    fn kind(kind: ErrorKind) -> Self {
+        Self {
+            kind,
+            regions: Vec::new(),
+            hints: Vec::new(),
+        }
+    }
+
     #[deprecated]
     pub fn custom(s: String) -> Self {
-        Self {
-            kind: ErrorKind::Custom(s),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::Custom(s))
     }
 
     pub fn invalid_unary_op(op: Node<UnaryOp>, a: Node<TypeInfo>) -> Self {
-        Self {
-            kind: ErrorKind::InvalidUnaryOp(op, a),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::InvalidUnaryOp(op, a))
     }
 
     pub fn invalid_binary_op(op: Node<BinaryOp>, a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
-        Self {
-            kind: ErrorKind::InvalidBinaryOp(op, a, b),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::InvalidBinaryOp(op, a, b))
     }
 
     pub fn cannot_call(region: SrcRegion) -> Self {
-        Self {
-            kind: ErrorKind::CannotCall(region),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::CannotCall(region))
     }
 
     pub fn not_truthy(region: SrcRegion) -> Self {
-        Self {
-            kind: ErrorKind::NotTruthy(region),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::NotTruthy(region))
     }
 
     pub fn no_such_binding(name: String, region: SrcRegion) -> Self {
-        Self {
-            kind: ErrorKind::NoSuchBinding(name, region),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::NoSuchBinding(name, region))
     }
 
     pub fn type_mismatch(a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
-        Self {
-            kind: ErrorKind::TypeMismatch(a, b),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::TypeMismatch(a, b))
     }
 
     pub fn cannot_infer_type(a: Node<TypeInfo>) -> Self {
-        Self {
-            kind: ErrorKind::CannotInferType(a),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::CannotInferType(a))
     }
 
     pub fn recursive_type(a: Node<TypeInfo>) -> Self {
-        Self {
-            kind: ErrorKind::RecursiveType(a),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::RecursiveType(a))
     }
 
     pub fn no_main() -> Self {
-        Self {
-            kind: ErrorKind::NoMain,
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::NoMain)
     }
 
     pub fn in_source<'a>(&'a self, src: &'a str) -> ErrorInSrc<'a> {
@@ -118,6 +97,11 @@ impl Error {
         self.regions.push(region);
         self
     }
+
+    pub fn with_hint(mut self, hint: String) -> Self {
+        self.hints.push(hint);
+        self
+    }
 }
 
 impl parze::error::Error<char> for Error {
@@ -126,24 +110,15 @@ impl parze::error::Error<char> for Error {
     type Context = ();
 
     fn unexpected_sym(c: &char, region: SrcRegion) -> Self {
-        Self {
-            kind: ErrorKind::FoundExpected(Thing::Char(*c), region, HashSet::new()),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::FoundExpected(Thing::Char(*c), region, HashSet::new()))
     }
 
     fn unexpected_end() -> Self {
-        Self {
-            kind: ErrorKind::UnexpectedEnd(SrcRegion::none()),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::UnexpectedEnd(SrcRegion::none()))
     }
 
     fn expected_end(c: &char, region: SrcRegion) -> Self {
-        Self {
-            kind: ErrorKind::ExpectedEnd(Thing::Char(*c), region),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::ExpectedEnd(Thing::Char(*c), region))
     }
 
     fn expected(mut self, thing: Self::Thing) -> Self {
@@ -165,26 +140,16 @@ impl parze::error::Error<Node<Token>> for Error {
     type Context = ();
 
     fn unexpected_sym(sym: &Node<Token>, region: SrcRegion) -> Self {
-        Self {
-            kind: ErrorKind::FoundExpected(
-                Thing::Token(sym.inner().clone()), region, HashSet::new()),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::FoundExpected(Thing::Token(sym.inner().clone()), region, HashSet::new()))
     }
 
     fn unexpected_end() -> Self {
-        Self {
-            kind: ErrorKind::UnexpectedEnd(SrcRegion::none()),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::UnexpectedEnd(SrcRegion::none()))
     }
 
     fn expected_end(sym: &Node<Token>, region: SrcRegion) -> Self {
         let region = sym.region;
-        Self {
-            kind: ErrorKind::ExpectedEnd(Thing::Token(sym.inner().clone()), region),
-            regions: Vec::new(),
-        }
+        Self::kind(ErrorKind::ExpectedEnd(Thing::Token(sym.inner().clone()), region))
     }
 
     fn expected(mut self, thing: Self::Thing) -> Self {
@@ -338,6 +303,10 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
             ErrorKind::NoMain => {
                 writeln!(f, "No 'main' definition could be found")?;
             },
+        }
+
+        for hint in self.error.hints.iter() {
+            writeln!(f, "Hint: {}", hint)?;
         }
 
         Ok(())
