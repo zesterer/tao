@@ -246,7 +246,22 @@ impl Program {
         let generics = ast_def.generics
             .iter()
             .map(|g| SrcNode::new(**g, g.region()))
-            .collect();
+            .collect::<Vec<_>>();
+
+        // Ensure that all generic parameters are in use
+        for gen in generics.iter() {
+            let mut uses_gen = false;
+            body.ty().visit(&mut |ty| {
+                if **ty == Type::GenParam(**gen) {
+                    uses_gen = true;
+                }
+            });
+            if !uses_gen {
+                return Err(Error::custom(format!("Type parameter '{}' must be mentioned by type {}", **gen, **body.ty()))
+                    .with_region(gen.region())
+                    .with_region(body.ty().region()));
+            }
+        }
 
         self.root.defs.insert(*ast_def.name, Def { generics, body });
         Ok(())
@@ -269,9 +284,25 @@ impl Program {
         let generics = ast_type_alias.generics
             .iter()
             .map(|g| SrcNode::new(**g, g.region()))
-            .collect();
+            .collect::<Vec<_>>();
+
         let ty_id = infer.insert(ty_info, region);
         let ty = infer.reconstruct(ty_id)?;
+
+        // Ensure that all generic parameters are in use
+        for gen in generics.iter() {
+            let mut uses_gen = false;
+            ty.visit(&mut |ty| {
+                if **ty == Type::GenParam(**gen) {
+                    uses_gen = true;
+                }
+            });
+            if !uses_gen {
+                return Err(Error::custom(format!("Type parameter '{}' must be mentioned by type {}", **gen, *ty))
+                    .with_region(gen.region())
+                    .with_region(ty.region()));
+            }
+        }
 
         self.root.type_aliases.insert(*ast_type_alias.name, TypeAlias { generics, ty });
         Ok(())

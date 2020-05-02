@@ -122,6 +122,13 @@ fn number_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
     })
 }
 
+fn string_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=LocalIntern<String>>, Error> {
+    permit_map(|token: node::Node<_>| match &*token {
+        Token::String(x) => Some(*x),
+        _ => None,
+    })
+}
+
 fn nested_parser<'a, O: 'a>(
     inner: Parser<impl Pattern<Error, Input=node::Node<Token>, Output=O> + 'a, Error>,
     delim: Delimiter,
@@ -149,6 +156,9 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             recursive(move |atom| {
                 let atom = atom.link();
 
+                let ident = ident_parser()
+                    .map_with_region(|ident, region| SrcNode::new(Type::Data(ident, Vec::new()), region));
+
                 let list = nested_parser(
                     ty.clone(),
                     Delimiter::Brack,
@@ -164,14 +174,6 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 let unknown = just(Token::QuestionMark)
                     .map(|_| Type::Unknown);
 
-                let ty = list
-                    .or(tuple)
-                    .or(unknown)
-                    .or(ident_parser()
-                        .then(atom.repeated())
-                        .map(|(data, params)| Type::Data(data, params)))
-                    .map_with_region(|ty, region| SrcNode::new(ty, region));
-
                 let paren_ty = nested_parser(
                     ty.clone(),
                     Delimiter::Paren,
@@ -185,18 +187,29 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 );
 
                 let atom = paren_ty
-                    .or(ty);
+                    .or(ident)
+                    .or(list
+                        .or(tuple)
+                        .or(unknown)
+                        .map_with_region(|ty, region| SrcNode::new(ty, region)));
 
                 atom
             })
         };
 
-        atom
+        let data = ident_parser()
+            .then(atom.clone().repeated())
+            .map(|(data, params)| Type::Data(data, params))
+            .map_with_region(|ty, region| SrcNode::new(ty, region))
+            .or(atom);
+
+        data.clone()
             .then(just(Token::RArrow).padding_for(ty.clone()).repeated())
             .reduce_left(|i, o| {
                 let region = i.region().union(o.region());
                 SrcNode::new(Type::Func(i, o), region)
             })
+            .or(data)
     })
 }
 
@@ -209,9 +222,11 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         let boolean = just(Token::Boolean(true)).to(Literal::Boolean(true))
             .or(just(Token::Boolean(false)).to(Literal::Boolean(false)))
             .map(|b| Expr::Literal(b));
+        let string = string_parser().map(|x| Expr::Literal(Literal::String(x)));
         let literal = ident
             .or(number)
             .or(boolean)
+            .or(string)
             .map_with_region(|litr, region| SrcNode::new(litr, region));
 
         let brack_expr_list = nested_parser(

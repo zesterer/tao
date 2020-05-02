@@ -71,29 +71,26 @@ impl Type {
             }
         });
     }
+}
 
-    /*
-    pub fn to_type_id(self: &SrcNode<Self>, infer: &mut InferCtx) -> TypeId {
-        let ty_info = match &**self {
-            Type::Named(data_id, params) => TypeInfo::Named(*data_id, params
-                .iter()
-                .map(|ty| ty.to_type_id(infer))
-                .collect()),
-            Type::List(item) => TypeInfo::List(item.to_type_id(infer)),
-            Type::Tuple(items) => TypeInfo::Tuple(items
-                .iter()
-                .map(|ty| ty.to_type_id(infer))
-                .collect()),
-            Type::Func(arg, body) => TypeInfo::Func(
-                arg.to_type_id(infer),
-                body.to_type_id(infer),
-            ),
-            Type::GenParam(name) => TypeInfo::GenParam(*name),
-        };
-
-        infer.insert(ty_info, self.region())
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Type::Data(_) => write!(f, "TODO"),
+            Type::List(item) => write!(f, "[{}]", **item),
+            Type::Tuple(items) => {
+                write!(f, "(")?;
+                items
+                    .iter()
+                    .map(|item| write!(f, "{}, ", **item))
+                    .collect::<Result<_, _>>()?;
+                write!(f, ")")?;
+                Ok(())
+            },
+            Type::Func(i, o) => write!(f, "({} -> {})", **i, **o),
+            Type::GenParam(ident) => write!(f, "{}", ident),
+        }
     }
-    */
 }
 
 // Generics
@@ -369,7 +366,7 @@ impl InferCtx {
             .unwrap() = TypeInfo::Ref(b);
     }
 
-    fn display_type_info(&self, id: TypeId) -> impl fmt::Display + '_ {
+    pub fn display_type_info(&self, id: TypeId) -> impl fmt::Display + '_ {
         #[derive(Copy, Clone)]
         struct TypeInfoDisplay<'a> {
             ctx: &'a InferCtx,

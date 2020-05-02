@@ -1,5 +1,7 @@
-given A type List = [A]
+given A, B type Pair = (A, B)
 
-given A def identity = |x of List A| x
+given A def identity = |x of A| x
 
-def main = 5:identity
+given A, B def transform of ? -> A -> B = |f of A -> ?, a| a:f
+
+def main = (5, "test"):identity
