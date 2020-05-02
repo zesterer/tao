@@ -90,6 +90,7 @@ pub enum Token {
     RArrow,
     Comma,
     Colon,
+    Dot,
     QuestionMark,
     Pipe,
 
@@ -102,6 +103,7 @@ pub enum Token {
     In,
     Of,
     Type,
+    Data,
 }
 
 impl Token {
@@ -129,6 +131,7 @@ impl fmt::Display for Token {
             Token::RArrow => write!(f, "->"),
             Token::Comma => write!(f, ","),
             Token::Colon => write!(f, ":"),
+            Token::Dot => write!(f, "."),
             Token::QuestionMark => write!(f, "?"),
             Token::Pipe => write!(f, "|"),
             Token::Let => write!(f, "let"),
@@ -140,6 +143,7 @@ impl fmt::Display for Token {
             Token::In => write!(f, "in"),
             Token::Of => write!(f, "of"),
             Token::Type => write!(f, "type"),
+            Token::Data => write!(f, "data"),
         }
     }
 }
@@ -198,6 +202,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(just('!').map(|sc| Token::Op(Op::Not)))
             .or(just(',').map(|sc| Token::Comma))
             .or(just(':').map(|sc| Token::Colon))
+            .or(just('.').map(|sc| Token::Dot))
             .or(just('?').map(|sc| Token::QuestionMark))
             .or(just('|').map(|sc| Token::Pipe))
             .boxed();
@@ -220,6 +225,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(seq("in".chars()).to(Token::In))
             .or(seq("of".chars()).to(Token::Of))
             .or(seq("type".chars()).to(Token::Type))
+            .or(seq("data".chars()).to(Token::Data))
             .or(ident)
             .or(op)
             .or(tree)

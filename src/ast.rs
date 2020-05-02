@@ -384,6 +384,43 @@ pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Err
         .parse(tokens.iter().cloned())
 }
 
+fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<DataType>>, Error> {
+
+    let variant = ident_parser()
+        .map_with_region(|ident, region| SrcNode::new(ident, region))
+        .then(type_parser()
+            .or_not()
+            .map(|ty| ty.unwrap_or_else(|| SrcNode::new(Type::Tuple(vec![]), SrcRegion::none()))));
+
+    let sum = just(Token::Pipe)
+        .or_not()
+        .padding_for(variant.clone()
+            .then(just(Token::Pipe).padding_for(variant).repeated())
+            .map(|(head, tail)| (vec![head], tail))
+            .reduce_left(|mut variants, variant| {
+                variants.push(variant);
+                variants
+            }))
+        .map_with_region(|variants, region| SrcNode::new(DataType::Sum(variants), region));
+
+    let field = ident_parser()
+        .map_with_region(|ident, region| SrcNode::new(ident, region))
+        .then(type_parser());
+
+    let product = just(Token::Dot)
+        .padding_for(field)
+        .repeated()
+        .map_with_region(|fields, region| SrcNode::new(DataType::Product(fields), region));
+
+    sum.or(product)
+}
+
+#[derive(Clone, Debug)]
+pub enum DataType {
+    Sum(Vec<(SrcNode<Ident>, SrcNode<Type>)>),
+    Product(Vec<(SrcNode<Ident>, SrcNode<Type>)>),
+}
+
 #[derive(Debug)]
 pub struct Def {
     pub generics: Vec<SrcNode<Ident>>,
@@ -411,9 +448,17 @@ pub struct TypeAlias {
 }
 
 #[derive(Debug)]
+pub struct Data {
+    pub generics: Vec<SrcNode<Ident>>,
+    pub name: SrcNode<Ident>,
+    pub data_ty: SrcNode<DataType>,
+}
+
+#[derive(Debug)]
 pub enum Decl {
     Def(Def),
     TypeAlias(TypeAlias),
+    Data(Data),
 }
 
 #[derive(Default, Debug)]
@@ -452,7 +497,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
                 body,
             }));
 
-        let type_alias = given_params
+        let type_alias = given_params.clone()
             .padded_by(just(Token::Type))
             // Name
             .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
@@ -464,8 +509,21 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
                 ty,
             }));
 
+        let data = given_params
+            .padded_by(just(Token::Data))
+            // Name
+            .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padded_by(just(Token::Op(Op::Eq)))
+            .then(data_type_parser())
+            .map_with_region(|((generics, name), data_ty), region| Decl::Data(Data {
+                generics,
+                name,
+                data_ty,
+            }));
+
         let decl = def
             .or(type_alias)
+            .or(data)
             .map_with_region(|decl, region| SrcNode::new(decl, region));
 
         decl

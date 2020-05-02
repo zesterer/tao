@@ -247,6 +247,7 @@ impl Program {
             match &**decl {
                 ast::Decl::Def(def) => this.insert_def(def)?,
                 ast::Decl::TypeAlias(type_alias) => this.insert_type_alias(type_alias)?,
+                ast::Decl::Data(_) => todo!("Data types"),
             }
         }
         Ok(this)
