@@ -48,8 +48,8 @@ fn run_module(src: &str) {
     };
     println!("AST2: {:#?}", ast2);
 
-    let prog = match hir2::Program::new_root(&ast2) {
-        Ok(engine) => engine,
+    let hir_prog = match hir2::Program::new_root(&ast2) {
+        Ok(hir_prog) => hir_prog,
         Err(err) => {
             print!("AST2: {}", err.in_source(src));
             return;
@@ -57,7 +57,15 @@ fn run_module(src: &str) {
     };
 
     let main_ident = LocalIntern::new("main".to_string());
-    println!("TYPE2: {:?}", prog.root().def(main_ident).unwrap().body.ty());
+    println!("TYPE2: {}", **hir_prog.root().def(main_ident).unwrap().body.ty());
+
+    let mir_prog = match mir::Program::from_hir(&hir_prog, main_ident) {
+        Ok(mir_prog) => mir_prog,
+        Err(err) => {
+            print!("AST2: {}", err.in_source(src));
+            return;
+        },
+    };
 
     // -------------- NEW STUFF END ---------------
 

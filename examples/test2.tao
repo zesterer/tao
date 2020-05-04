@@ -1,16 +1,18 @@
-given A data Pair =
-	.a A
-	.b A
+#given A data Pair =
+#	.a A
+#	.b A
 
-data Person =
-	.name Str
-	.age Num
+#data Person =
+#	.name Str
+#	.age Num
 
-given A data Maybe = Just A | Nil
+#given A data Maybe = Just A | Nil
+
+given A def recurse of A -> (A, A) = |x| (recurse(x), recurse(x))
 
 given A, B type Pair = (A, B)
 
-given I, O, type Fn = I -> O
+given I, O, type Fn = I -> ?
 
 given A def identity = |x of A| x
 

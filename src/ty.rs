@@ -12,14 +12,26 @@ use crate::{
 
 type Ident = LocalIntern<String>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Atom {
-    Num,
-    Bool,
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum Primitive {
+    Boolean,
+    Number,
+    String,
+}
+
+impl fmt::Display for Primitive {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Primitive::Boolean => write!(f, "Bool"),
+            Primitive::Number => write!(f, "Num"),
+            Primitive::String => write!(f, "Str"),
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Type {
+    Primitive(Primitive),
     Data(DataId),
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
@@ -30,6 +42,7 @@ pub enum Type {
 impl Type {
     pub fn visit(self: &SrcNode<Self>, f: &mut impl FnMut(&SrcNode<Self>)) {
         let iter = match &**self {
+            Type::Primitive(_) => {},
             Type::Data(_) => {},
             Type::List(item) => item.visit(f),
             Type::Tuple(items) => items
@@ -47,6 +60,7 @@ impl Type {
 
     pub fn visit_mut(self: &mut SrcNode<Self>, f: &mut impl FnMut(&mut SrcNode<Self>)) {
         let iter = match &mut **self {
+            Type::Primitive(_) => {},
             Type::Data(_) => {},
             Type::List(item) => item.visit_mut(f),
             Type::Tuple(items) => items
@@ -76,6 +90,7 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Type::Primitive(prim) => write!(f, "{}", prim),
             Type::Data(_) => write!(f, "TODO"),
             Type::List(item) => write!(f, "[{}]", **item),
             Type::Tuple(items) => {
@@ -325,6 +340,7 @@ pub type TypeId = usize;
 pub enum TypeInfo {
     Unknown,
     Ref(TypeId),
+    Primitive(Primitive),
     List(TypeId),
     Tuple(Vec<TypeId>),
     Func(TypeId, TypeId),
@@ -389,6 +405,7 @@ impl InferCtx {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 match self.ctx.get(self.id) {
                     TypeInfo::Unknown => write!(f, "_"),
+                    TypeInfo::Primitive(prim) => write!(f, "{}", prim),
                     TypeInfo::Ref(id) => self.with_id(id).fmt(f),
                     TypeInfo::List(id) => write!(f, "[{}]", self.with_id(id)),
                     TypeInfo::Tuple(ids) => {
@@ -430,6 +447,7 @@ impl InferCtx {
             },
             (_, Unknown) => self.unify_inner(iter, b, a), // TODO: does ordering matter?
             (GenParam(a), GenParam(b)) if a == b => Ok(()),
+            (Primitive(a), Primitive(b)) if a == b => Ok(()),
             (Data(a), Data(b)) if a == b => Ok(()),
             (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
             (Tuple(a), Tuple(b)) if a.len() == b.len() => a
@@ -465,6 +483,7 @@ impl InferCtx {
         let info = match &**ty {
             Type::GenParam(ident) => get_generic(*ident)
                 .expect("Generic type without matching generic parameter found in concrete type"),
+            Type::Primitive(prim) => TypeInfo::Primitive(prim.clone()),
             Type::Data(data) => TypeInfo::Data(*data),
             Type::List(item) => TypeInfo::List(self.insert_ty_inner(get_generic, item)),
             Type::Tuple(items) => TypeInfo::Tuple(
@@ -511,6 +530,7 @@ impl InferCtx {
             },
             TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
             TypeInfo::GenParam(name) => Type::GenParam(name),
+            TypeInfo::Primitive(prim) => Type::Primitive(prim),
             TypeInfo::Data(data) => Type::Data(data),
             TypeInfo::List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
             TypeInfo::Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
