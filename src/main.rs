@@ -15,6 +15,7 @@ mod hir2;
 mod mir;
 mod node2;
 mod scope;
+mod vm;
 
 use std::{
     env,
@@ -41,7 +42,7 @@ fn run_module(src: &str) {
         Ok(ast2) => ast2,
         Err(errs) => {
             for err in errs {
-                print!("AST2: {}", err.in_source(src));
+                print!("{}", err.in_source(src));
             }
             return;
         },
@@ -51,7 +52,7 @@ fn run_module(src: &str) {
     let hir_prog = match hir2::Program::new_root(&ast2) {
         Ok(hir_prog) => hir_prog,
         Err(err) => {
-            print!("AST2: {}", err.in_source(src));
+            print!("{}", err.in_source(src));
             return;
         },
     };
@@ -62,10 +63,23 @@ fn run_module(src: &str) {
     let mir_prog = match mir::Program::from_hir(&hir_prog, main_ident) {
         Ok(mir_prog) => mir_prog,
         Err(err) => {
-            print!("AST2: {}", err.in_source(src));
+            print!("{}", err.in_source(src));
             return;
         },
     };
+
+    let prog = match mir_prog.compile() {
+        Ok(prog) => prog,
+        Err(err) => {
+            print!("{}", err.in_source(src));
+            return;
+        },
+    };
+
+    let output = vm::Vm::default()
+        .execute(&prog);
+
+    println!("Output: {:?}", output);
 
     // -------------- NEW STUFF END ---------------
 

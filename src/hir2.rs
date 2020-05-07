@@ -5,7 +5,7 @@ use crate::{
     mir,
     error::Error,
     src::SrcRegion,
-    ty::{TypeEngine, DataId, TypeId, TypeInfo, Primitive, Type, TraitId, InnerTrait, InferCtx, Core},
+    ty::{TypeEngine, DataId, TypeId, TypeInfo, Primitive, Type, TraitId, InferCtx, Core},
     node2::{Node, SrcNode, TypeNode},
 };
 
@@ -565,6 +565,7 @@ impl Expr<(SrcRegion, TypeId)> {
                 x.infer(data, infer, scope)?;
                 infer.insert(TypeInfo::Associated(
                     op_to_unary_trait(&data.core, **op).into(),
+                    Vec::new(),
                     x.type_id(),
                     LocalIntern::new("Out".to_string()),
                 ), region)
@@ -573,7 +574,8 @@ impl Expr<(SrcRegion, TypeId)> {
                 x.infer(data, infer, scope)?;
                 y.infer(data, infer, scope)?;
                 infer.insert(TypeInfo::Associated(
-                    InnerTrait::new(op_to_binary_trait(&data.core, **op), vec![y.type_id().into()]),
+                    op_to_binary_trait(&data.core, **op),
+                    vec![y.type_id().into()],
                     x.type_id(),
                     LocalIntern::new("Out".to_string()),
                 ), region)

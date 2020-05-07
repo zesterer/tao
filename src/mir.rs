@@ -5,7 +5,7 @@ use crate::{
     ty::{Type, Primitive},
     error::Error,
     node2::RawTypeNode,
-    hir2::{self, Value, Path},
+    hir2::{self, Value},
 };
 
 type Ident = LocalIntern<String>;
@@ -41,18 +41,21 @@ pub enum Expr {
     MakeFunc(Vec<RawTypeNode<Expr>>, RawTypeNode<Expr>),
 }
 
-#[derive(Default)]
 pub struct Program {
-    globals: HashMap<DefId, RawTypeNode<Expr>>,
+    pub entry: DefId,
+    pub globals: HashMap<DefId, RawTypeNode<Expr>>,
 }
 
 impl Program {
-    pub fn from_hir(prog: &hir2::Program, entry: Ident) -> Result<(Self, DefId), Error> {
-        let mut this = Self::default();
+    pub fn from_hir(prog: &hir2::Program, entry: Ident) -> Result<Self, Error> {
+        let mut this = Self {
+            entry: LocalIntern::new((entry, Vec::new())),
+            globals: HashMap::default(),
+        };
 
         let entry = this.instantiate_def(prog, entry, Vec::new());
 
-        Ok((this, entry))
+        Ok(this)
     }
 
     fn instantiate_def(&mut self, prog: &hir2::Program, name: Ident, params: Vec<RawType>) -> DefId {

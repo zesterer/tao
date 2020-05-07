@@ -12,3 +12,4 @@ parze = { git = "https://github.com/zesterer/parze-new.git" }
 internment = "0.3"
 rustyline = "6.0"
 im-rc = "14.0"
+nanbox = "0.2"
