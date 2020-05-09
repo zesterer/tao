@@ -80,6 +80,8 @@ impl Program {
     fn instantiate_expr(&mut self, hir_expr: &hir2::TypeExpr, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawTypeNode<Expr> {
         let expr = match &**hir_expr {
             hir2::Expr::Value(val) => Expr::Value(val.clone()),
+            hir2::Expr::Unary(op, a) => Expr::Unary(**op, self.instantiate_expr(a, get_generic)),
+            hir2::Expr::Binary(op, a, b) => Expr::Binary(**op, self.instantiate_expr(a, get_generic), self.instantiate_expr(b, get_generic)),
             _ => todo!(),
         };
 

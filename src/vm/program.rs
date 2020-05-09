@@ -16,9 +16,16 @@ pub enum Instr {
     /// Push `false`
     False,
 
+    NegNum,
+    NotBool,
+    AddNum,
+    SubNum,
+    MulNum,
+    DivNum,
+    RemNum,
+
     /// Load a constant from the program constants
     LoadConst(ConstAddr),
-
     /// Push the top value in the stack as a local
     PushLocal,
 

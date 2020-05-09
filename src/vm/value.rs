@@ -13,7 +13,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_number_unchecked(&self) -> &f64 {
+    pub fn into_number_unchecked(self) -> f64 {
         match self {
             Value::Number(x) => x,
             #[cfg(debug_assertions)]
@@ -23,9 +23,9 @@ impl Value {
         }
     }
 
-    pub fn as_boolean_unchecked(&self) -> &f64 {
+    pub fn into_boolean_unchecked(self) -> bool {
         match self {
-            Value::Number(x) => x,
+            Value::Boolean(x) => x,
             #[cfg(debug_assertions)]
             _ => unreachable!(),
             #[cfg(not(debug_assertions))]

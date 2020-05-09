@@ -4,6 +4,8 @@ use std::{
 };
 use crate::{
     error::Error,
+    ast::{UnaryOp, BinaryOp},
+    ty::Primitive,
     mir, hir2,
 };
 use super::{
@@ -27,6 +29,26 @@ impl mir::Expr {
                     let s = builder.emit_const(Value::String(Rc::new(x.to_string())));
                     builder.emit_instr(Instr::LoadConst(s));
                 },
+            },
+            mir::Expr::Unary(op, a) => {
+                a.compile(builder);
+                match (op, a.ty()) {
+                    (UnaryOp::Neg, mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::NegNum),
+                    (UnaryOp::Not, mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::NotBool),
+                    _ => todo!(),
+                };
+            },
+            mir::Expr::Binary(op, a, b) => {
+                b.compile(builder);
+                a.compile(builder);
+                match (op, a.ty(), b.ty()) {
+                    (BinaryOp::Add, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::AddNum),
+                    (BinaryOp::Sub, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::SubNum),
+                    (BinaryOp::Mul, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::MulNum),
+                    (BinaryOp::Div, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::DivNum),
+                    (BinaryOp::Rem, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::RemNum),
+                    _ => todo!(),
+                };
             },
             _ => todo!(),
         }

@@ -8,6 +8,7 @@ use crate::{
     src::SrcRegion,
     node2::SrcNode,
     scope::Scope,
+    ast::{UnaryOp, BinaryOp},
 };
 
 type Ident = LocalIntern<String>;
@@ -274,7 +275,7 @@ pub type TypeId = usize;
 
 #[derive(Clone, Debug)]
 pub enum TypeInfo {
-    Unknown,
+    Unknown(Option<Type>), // Optionally instantiated from
     Ref(TypeId),
     Primitive(Primitive),
     List(TypeId),
@@ -291,11 +292,27 @@ impl From<DataId> for TypeInfo {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum Constraint {
+    Unary {
+        out: TypeId,
+        op: SrcNode<UnaryOp>,
+        a: TypeId,
+    },
+    Binary {
+        out: TypeId,
+        op: SrcNode<BinaryOp>,
+        a: TypeId,
+        b: TypeId,
+    },
+}
+
 #[derive(Default, Debug)]
 pub struct InferCtx {
     id_counter: TypeId,
     types: HashMap<TypeId, TypeInfo>,
     regions: HashMap<TypeId, SrcRegion>,
+    constraints: Vec<Constraint>,
 }
 
 impl InferCtx {
@@ -340,7 +357,11 @@ impl InferCtx {
         impl<'a> fmt::Display for TypeInfoDisplay<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 match self.ctx.get(self.id) {
-                    TypeInfo::Unknown => write!(f, "_"),
+                    TypeInfo::Unknown(ty) => if let Some(ty) = ty {
+                        write!(f, "{}", ty)
+                    } else {
+                        write!(f, "_")
+                    },
                     TypeInfo::Primitive(prim) => write!(f, "{}", prim),
                     TypeInfo::Ref(id) => self.with_id(id).fmt(f),
                     TypeInfo::List(id) => write!(f, "[{}]", self.with_id(id)),
@@ -375,7 +396,7 @@ impl InferCtx {
         }
     }
 
-    fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<(), Error> {
+    fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<bool, Error> {
         const MAX_UNIFICATION_DEPTH: usize = 1024;
         if iter > MAX_UNIFICATION_DEPTH {
             panic!("Maximum unification depth reached (this error should not occur without extremely large types)");
@@ -385,21 +406,22 @@ impl InferCtx {
         match (self.get(a), self.get(b)) {
             (Ref(a), _) => self.unify_inner(iter, a, b),
             (_, Ref(_)) => self.unify_inner(iter, b, a),
-            (Unknown, _) => {
+            (Unknown(_), Unknown(_)) => Ok(false),
+            (Unknown(_), _) => {
                 self.link(a, b);
-                Ok(())
+                Ok(true)
             },
-            (_, Unknown) => self.unify_inner(iter, b, a), // TODO: does ordering matter?
-            (GenParam(a), GenParam(b)) if a == b => Ok(()),
-            (Primitive(a), Primitive(b)) if a == b => Ok(()),
-            (Data(a), Data(b)) if a == b => Ok(()),
+            (_, Unknown(_)) => self.unify_inner(iter, b, a), // TODO: does ordering matter?
+            (GenParam(a), GenParam(b)) if a == b => Ok(false),
+            (Primitive(a), Primitive(b)) if a == b => Ok(false),
+            (Data(a), Data(b)) if a == b => Ok(false),
             (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
             (Tuple(a), Tuple(b)) if a.len() == b.len() => a
                 .into_iter()
                 .zip(b.into_iter())
-                .try_fold((), |_, (a, b)| self.unify_inner(iter + 1, a, b)),
+                .try_fold(false, |new_info, (a, b)| Ok(new_info || self.unify_inner(iter + 1, a, b)?)),
             (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
-                .and_then(|_| self.unify_inner(iter + 1, ao, bo)),
+                .and_then(|new_info| Ok(new_info || self.unify_inner(iter + 1, ao, bo)?)),
             (x, y) => {
                 Err(Error::custom(format!(
                     "Type mismatch between {} and {}",
@@ -412,7 +434,8 @@ impl InferCtx {
         }
     }
 
-    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
+    // Returns true if new information was inferred
+    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<bool, Error> {
         self.unify_inner(0, a, b)
     }
 
@@ -423,37 +446,176 @@ impl InferCtx {
         id
     }
 
-    pub fn insert_ty_inner(&mut self, get_generic: &impl Fn(Ident) -> Option<TypeInfo>, ty: &SrcNode<Type>) -> TypeId {
+    pub fn instantiate_ty_inner(&mut self, get_generic: &impl Fn(Ident) -> Option<TypeId>, ty: &SrcNode<Type>, region: SrcRegion) -> TypeId {
         let info = match &**ty {
-            Type::GenParam(ident) => get_generic(*ident)
-                .expect("Generic type without matching generic parameter found in concrete type"),
+            Type::GenParam(ident) => TypeInfo::Ref(get_generic(*ident)
+                .expect("Generic type without matching generic parameter found in concrete type")),
             Type::Primitive(prim) => TypeInfo::Primitive(prim.clone()),
             Type::Data(data) => TypeInfo::Data(*data),
-            Type::List(item) => TypeInfo::List(self.insert_ty_inner(get_generic, item)),
+            Type::List(item) => TypeInfo::List(self.instantiate_ty_inner(get_generic, item, region)),
             Type::Tuple(items) => TypeInfo::Tuple(
-                items.iter().map(|item| self.insert_ty_inner(get_generic, item)).collect(),
+                items.iter().map(|item| self.instantiate_ty_inner(get_generic, item, region)).collect(),
             ),
             Type::Func(i, o) => TypeInfo::Func(
-                self.insert_ty_inner(get_generic, i),
-                self.insert_ty_inner(get_generic, o),
+                self.instantiate_ty_inner(get_generic, i, region),
+                self.instantiate_ty_inner(get_generic, o, region),
             ),
         };
 
-        self.insert(info, ty.region())
+        self.insert(info, region)
     }
 
-    pub fn insert_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>) -> TypeId {
+    pub fn instantiate_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>, region: SrcRegion) -> TypeId {
         // Turn generics into types the `InferCtx` can understand
         let generic_type_ids = generics
             .iter()
-            .map(|g| (**g, self.insert(TypeInfo::Unknown, g.region())))
+            .map(|g| (**g, self.insert(TypeInfo::Unknown(Some(Type::GenParam(**g))), region)))
             .collect::<Vec<_>>();
         let get_generic = |ident| generic_type_ids
             .iter()
             .find(|(name, _)| *name == ident)
-            .map(|(_, id)| TypeInfo::Ref(*id));
+            .map(|(_, id)| *id);
 
-        self.insert_ty_inner(&get_generic, ty)
+        self.instantiate_ty_inner(&get_generic, ty, region)
+    }
+
+    pub fn may_unify_to(&self, from: TypeInfo, to: TypeInfo) -> bool {
+        use TypeInfo::*;
+        match (&from, &to) {
+            (Ref(from), _) => self.may_unify_to(self.get(*from), to),
+            (_, Ref(to)) => self.may_unify_to(from, self.get(*to)),
+            (Unknown(_), _) => true,
+            (_, Unknown(_)) => true,
+            (Primitive(a), Primitive(b)) => a == b,
+            (List(from), List(to)) => self.may_unify_to(self.get(*from), self.get(*to)),
+            (Tuple(froms), Tuple(tos)) if froms.len() == tos.len() => froms
+                .iter()
+                .zip(tos.iter())
+                .all(|(from, to)| self.may_unify_to(self.get(*from), self.get(*to))),
+            (Func(fromi, fromo), Func(toi, too)) => {
+                self.may_unify_to(self.get(*fromi), self.get(*toi)) &&
+                self.may_unify_to(self.get(*fromo), self.get(*too))
+            },
+            (Data(a), Data(b)) => a == b,
+            (GenParam(a), GenParam(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    pub fn add_constraint(&mut self, constraint: Constraint) {
+        self.constraints.push(constraint);
+    }
+
+    // Attempt to infer type information for a constraint
+    fn solve_inner(&mut self, constraint: Constraint) -> Result<bool, Error> {
+        match constraint {
+            Constraint::Unary { out, op, a } => {
+                let matchers: [fn(_, _, _, _) -> _; 2] = [
+                    // -Int => Int
+                    |this: &Self, out, op, a| if
+                        this.may_unify_to(TypeInfo::Primitive(Primitive::Number), out)
+                        && op == UnaryOp::Neg
+                        && this.may_unify_to(a, TypeInfo::Primitive(Primitive::Number))
+                    {
+                        Some((TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                    } else {
+                        None
+                    },
+                    // !Bool => Bool
+                    |this: &Self, out, op, a| if
+                        this.may_unify_to(TypeInfo::Primitive(Primitive::Boolean), out)
+                        && op == UnaryOp::Not
+                        && this.may_unify_to(a, TypeInfo::Primitive(Primitive::Boolean))
+                    {
+                        Some((TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean)))
+                    } else {
+                        None
+                    },
+                ];
+
+                let mut matches = {
+                    let out_info = self.get(out);
+                    let a_info = self.get(a);
+
+                    matchers
+                        .iter()
+                        .filter_map(|matcher| matcher(self, out_info.clone(), *op, a_info.clone()))
+                        .collect::<Vec<_>>()
+                };
+
+                if matches.len() == 0 {
+                    Err(Error::custom(format!("Cannot apply {} to {}", *op, self.display_type_info(a)))
+                        .with_region(op.region())
+                        .with_region(self.region(a)))
+                } else if matches.len() > 1 {
+                    // Still ambiguous, so we can't infer anything
+                    Ok(false)
+                } else {
+                    let (out_info, a_info) = matches.remove(0);
+
+                    let out_id = self.insert(out_info, self.region(out));
+                    let a_id = self.insert(a_info, self.region(a));
+
+                    Ok(self.unify(out, out_id)? || self.unify(a, a_id)?)
+                }
+            },
+            Constraint::Binary { out, op, a, b } => {
+                let matchers: [fn(_, _, _, _, _) -> _; 1] = [
+                    // Int op Int => Int
+                    |this: &Self, out, op, a, b| if
+                        this.may_unify_to(TypeInfo::Primitive(Primitive::Number), out)
+                        && (op == BinaryOp::Add || op == BinaryOp::Sub || op == BinaryOp::Mul || op == BinaryOp::Div || op == BinaryOp::Rem)
+                        && this.may_unify_to(a, TypeInfo::Primitive(Primitive::Number))
+                    {
+                        Some((TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                    } else {
+                        None
+                    },
+                ];
+
+                let mut matches = {
+                    let out_info = self.get(out);
+                    let a_info = self.get(a);
+                    let b_info = self.get(b);
+
+                    matchers
+                        .iter()
+                        .filter_map(|matcher| matcher(self, out_info.clone(), *op, a_info.clone(), b_info.clone()))
+                        .collect::<Vec<_>>()
+                };
+
+                if matches.len() == 0 {
+                    Err(Error::custom(format!("Cannot apply {} to {} and {}", *op, self.display_type_info(a), self.display_type_info(b)))
+                        .with_region(op.region())
+                        .with_region(self.region(a))
+                        .with_region(self.region(b)))
+                } else if matches.len() > 1 {
+                    // Still ambiguous, so we can't infer anything
+                    Ok(false)
+                } else {
+                    let (out_info, a_info, b_info) = matches.remove(0);
+
+                    let out_id = self.insert(out_info, self.region(out));
+                    let a_id = self.insert(a_info, self.region(a));
+                    let b_id = self.insert(b_info, self.region(b));
+
+                    Ok(self.unify(out, out_id)? || self.unify(a, a_id)? || self.unify(b, b_id)?)
+                }
+            },
+            _ => todo!(),
+        }
+    }
+
+    pub fn solve_all(&mut self) -> Result<(), Error> {
+        loop {
+            let constraints = self.constraints.clone();
+            if !constraints
+                .into_iter()
+                .try_fold(false, |changed, constraint| Ok(changed || self.solve_inner(constraint)?))?
+            {
+                break Ok(());
+            }
+        }
     }
 
     fn reconstruct_inner(
@@ -467,19 +629,30 @@ impl InferCtx {
                 .with_region(self.region(id)));
         }
 
+        use TypeInfo::*;
         let ty = match self.get(id) {
-            TypeInfo::Unknown => {
-                return Err(Error::custom(format!("Cannot infer type"))
-                    .with_region(self.region(id)));
+            Unknown(ty) => return if let Some(ty) = ty {
+                Err(Error::custom(format!("Cannot infer type {}", ty))
+                    .with_region(self.region(id)))
+            } else {
+                Err(Error::custom(format!("Cannot infer type"))
+                    .with_region(self.region(id)))
             },
-            TypeInfo::Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
-            TypeInfo::GenParam(name) => Type::GenParam(name),
-            TypeInfo::Primitive(prim) => Type::Primitive(prim),
-            TypeInfo::Data(data) => Type::Data(data),
-            TypeInfo::List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
-            TypeInfo::Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
-            TypeInfo::Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),
-            TypeInfo::Associated(_, _, _, _) => todo!("Query trait engine to determine type of associated type"),
+            Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
+            GenParam(name) => Type::GenParam(name),
+            Primitive(prim) => Type::Primitive(prim),
+            Data(data) => Type::Data(data),
+            List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
+            Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
+            Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),
+            Associated(_, _, _, _) => todo!("Query trait engine to determine type of associated type"),
+            // Unary(op, a) => return Err(Error::custom(format!("Ambiguous operation: {} {}", *op, self.display_type_info(a)))
+            //     .with_region(op.region())
+            //     .with_region(self.region(a))),
+            // Binary(op, a, b) => return Err(Error::custom(format!("Ambiguous operation: {} {} {}", self.display_type_info(a), *op, self.display_type_info(b)))
+            //     .with_region(self.region(a))
+            //     .with_region(op.region())
+            //     .with_region(self.region(b))),
         };
 
         Ok(SrcNode::new(ty, self.region(id)))

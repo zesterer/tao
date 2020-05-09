@@ -21,13 +21,12 @@ impl ProcBuilder {
         self.code[addr as usize] = instr;
     }
 
-    pub fn link(mut self, program: &mut Program) {
+    pub fn link(mut self, program: &mut Program) -> CodeAddr {
         // Emit constants
         let const_offset = program.next_const_addr();
         for c in self.consts.into_iter() {
             program.emit_const(c);
         }
-
 
         // Emit instructions
         let code_offset = program.next_instr_addr();
@@ -43,5 +42,7 @@ impl ProcBuilder {
         }
 
         program.emit_instr(Instr::Return(0));
+
+        code_offset
     }
 }

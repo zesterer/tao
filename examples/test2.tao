@@ -8,15 +8,15 @@
 
 #given A data Maybe = Just A | Nil
 
-given A def recurse of A -> (A, A) = |x| (recurse(x), recurse(x))
+#given A def recurse of A -> (A, A) = |x| (recurse(x), recurse(x))
 
-given A, B type Pair = (A, B)
+#given A, B type Pair = (A, B)
 
-given I, O, type Fn = I -> ?
+given I, O type Fn = I -> O
 
 given A def identity = |x of A| x
 
-given A, B def transform of Fn ? B -> A -> ? = |f, a| a:identity:f
+given A, B def transform of (Fn A B) -> A -> B = |f of A -> B, a of A| a:identity:f
 
 given A def len of [A] -> Num = |l| l:len
 

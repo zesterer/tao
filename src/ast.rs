@@ -54,6 +54,17 @@ pub enum UnaryOp {
     Tail,
 }
 
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            UnaryOp::Neg => write!(f, "-"),
+            UnaryOp::Not => write!(f, "!"),
+            UnaryOp::Head => write!(f, "<:"),
+            UnaryOp::Tail => write!(f, ":>"),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BinaryOp {
     Add,
@@ -69,8 +80,24 @@ pub enum BinaryOp {
     MoreEq,
 
     Join,
+}
 
-    Apply,
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Sub => write!(f, "-"),
+            BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Div => write!(f, "/"),
+            BinaryOp::Rem => write!(f, "%"),
+            BinaryOp::Eq => write!(f, "="),
+            BinaryOp::Less => write!(f, "<"),
+            BinaryOp::More => write!(f, ">"),
+            BinaryOp::LessEq => write!(f, "<="),
+            BinaryOp::MoreEq => write!(f, ">="),
+            BinaryOp::Join => write!(f, "++"),
+        }
+    }
 }
 
 #[derive(Debug)]

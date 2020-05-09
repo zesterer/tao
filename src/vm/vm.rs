@@ -21,8 +21,41 @@ impl Vm {
                 Instr::True => expr_stack.push(Value::Boolean(true)),
                 Instr::False => expr_stack.push(Value::Boolean(false)),
 
-                Instr::LoadConst(addr) => expr_stack.push(prog.fetch_const(addr)),
+                Instr::NegNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Number(-x));
+                },
+                Instr::NotBool => {
+                    let x = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    expr_stack.push(Value::Boolean(!x));
+                },
+                Instr::AddNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Number(x + y));
+                },
+                Instr::SubNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Number(x - y));
+                },
+                Instr::MulNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Number(x * y));
+                },
+                Instr::DivNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Number(x / y));
+                },
+                Instr::RemNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Number(x % y));
+                },
 
+                Instr::LoadConst(addr) => expr_stack.push(prog.fetch_const(addr)),
                 Instr::PushLocal => local_stack.push(expr_stack.pop().unwrap()),
 
                 Instr::Jump(addr) => ip = addr,
