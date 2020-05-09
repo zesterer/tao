@@ -272,6 +272,7 @@ pub struct Core {
 // Inference
 
 pub type TypeId = usize;
+pub type ConstraintId = usize;
 
 #[derive(Clone, Debug)]
 pub enum TypeInfo {
@@ -313,25 +314,46 @@ pub enum Constraint {
 }
 
 #[derive(Default, Debug)]
-pub struct InferCtx {
+pub struct InferCtx<'a> {
+    parent: Option<&'a Self>,
     id_counter: TypeId,
     types: HashMap<TypeId, TypeInfo>,
     regions: HashMap<TypeId, SrcRegion>,
-    constraints: Vec<Constraint>,
+    constraint_id_counter: ConstraintId,
+    constraints: HashMap<ConstraintId, Constraint>,
 }
 
-impl InferCtx {
+impl<'a> InferCtx<'a> {
+    pub fn scoped(&self) -> InferCtx {
+        InferCtx {
+            parent: Some(self),
+            id_counter: self.id_counter,
+            types: HashMap::default(),
+            regions: HashMap::default(),
+            constraint_id_counter: self.constraint_id_counter,
+            constraints: HashMap::default(),
+        }
+    }
+
     fn new_id(&mut self) -> TypeId {
         self.id_counter += 1;
         self.id_counter
     }
 
     pub fn get(&self, id: TypeId) -> TypeInfo {
-        self.types[&id].clone()
+        self.types
+            .get(&id)
+            .cloned()
+            .or_else(|| self.parent.map(|p| p.get(id)))
+            .unwrap()
     }
 
     pub fn region(&self, id: TypeId) -> SrcRegion {
-        self.regions[&id].clone()
+        self.regions
+            .get(&id)
+            .cloned()
+            .or_else(|| self.parent.map(|p| p.region(id)))
+            .unwrap()
         // Follow the chain of references
         // match self.get(id) {
         //     TypeInfo::Ref(a) => self.region(a),
@@ -348,10 +370,8 @@ impl InferCtx {
 
     // Return true if linking inferred new information
     fn link(&mut self, a: TypeId, b: TypeId) -> bool {
-        if self.get_base(a) != b {
-            *self.types
-                .get_mut(&a)
-                .unwrap() = TypeInfo::Ref(b);
+        if self.get_base(a) != self.get_base(b) {
+            self.types.insert(a, TypeInfo::Ref(b));
             true
         } else {
             false
@@ -361,7 +381,7 @@ impl InferCtx {
     pub fn display_type_info(&self, id: TypeId) -> impl fmt::Display + '_ {
         #[derive(Copy, Clone)]
         struct TypeInfoDisplay<'a> {
-            ctx: &'a InferCtx,
+            ctx: &'a InferCtx<'a>,
             id: TypeId,
         }
 
@@ -385,10 +405,14 @@ impl InferCtx {
                     TypeInfo::List(id) => write!(f, "[{}]", self.with_id(id)),
                     TypeInfo::Tuple(ids) => {
                         write!(f, "(")?;
-                        ids
+                        write!(f, "{}", ids
                             .iter()
-                            .map(|id| write!(f, "{}, ", self.with_id(*id)))
-                            .collect::<Result<_, _>>()?;
+                            .map(|id| format!("{}", self.with_id(*id)))
+                            .collect::<Vec<_>>()
+                            .join(", "))?;
+                        if ids.len() == 1 {
+                            write!(f, ",")?;
+                        }
                         write!(f, ")")?;
                         Ok(())
                     },
@@ -397,10 +421,11 @@ impl InferCtx {
                     TypeInfo::GenParam(ident) => write!(f, "{}", ident),
                     TypeInfo::Associated(tr, params, a, assoc) => {
                         write!(f, "<{} as Trait<", self.with_id(a))?;
-                        params
+                        write!(f, "{}", params
                             .iter()
-                            .map(|id| write!(f, "{}, ", self.with_id(*id)))
-                            .collect::<Result<Vec<_>, _>>()?;
+                            .map(|id| format!("{}", self.with_id(*id)))
+                            .collect::<Vec<_>>()
+                            .join(", "))?;
                         write!(f, ">>::{}", assoc)?;
                         Ok(())
                     },
@@ -495,22 +520,22 @@ impl InferCtx {
         self.instantiate_ty_inner(&get_generic, ty, region)
     }
 
-    pub fn may_unify_to(&self, from: TypeInfo, to: TypeInfo) -> bool {
+    pub fn may_unify_with(&self, from: TypeInfo, to: TypeInfo) -> bool {
         use TypeInfo::*;
         match (&from, &to) {
-            (Ref(from), _) => self.may_unify_to(self.get(*from), to),
-            (_, Ref(to)) => self.may_unify_to(from, self.get(*to)),
+            (Ref(from), _) => self.may_unify_with(self.get(*from), to),
+            (_, Ref(to)) => self.may_unify_with(from, self.get(*to)),
             (Unknown(_), _) => true,
             (_, Unknown(_)) => true,
             (Primitive(a), Primitive(b)) => a == b,
-            (List(from), List(to)) => self.may_unify_to(self.get(*from), self.get(*to)),
+            (List(from), List(to)) => self.may_unify_with(self.get(*from), self.get(*to)),
             (Tuple(froms), Tuple(tos)) if froms.len() == tos.len() => froms
                 .iter()
                 .zip(tos.iter())
-                .all(|(from, to)| self.may_unify_to(self.get(*from), self.get(*to))),
+                .all(|(from, to)| self.may_unify_with(self.get(*from), self.get(*to))),
             (Func(fromi, fromo), Func(toi, too)) => {
-                self.may_unify_to(self.get(*fromi), self.get(*toi)) &&
-                self.may_unify_to(self.get(*fromo), self.get(*too))
+                self.may_unify_with(self.get(*fromi), self.get(*toi)) &&
+                self.may_unify_with(self.get(*fromo), self.get(*too))
             },
             (Data(a), Data(b)) => a == b,
             (GenParam(a), GenParam(b)) => a == b,
@@ -518,20 +543,22 @@ impl InferCtx {
         }
     }
 
-    pub fn add_constraint(&mut self, constraint: Constraint) {
-        self.constraints.push(constraint);
+    pub fn add_constraint(&mut self, constraint: Constraint) -> ConstraintId {
+        self.constraint_id_counter += 1;
+        self.constraints.insert(self.constraint_id_counter, constraint);
+        self.constraint_id_counter
     }
 
-    // Attempt to infer type information for a constraint
+    // Attempt to infer type information for a constraint, return true if the constraint is solved
     fn solve_inner(&mut self, constraint: Constraint) -> Result<bool, Error> {
         match constraint {
             Constraint::Unary { out, op, a } => {
                 let matchers: [fn(_, _, _, _) -> _; 2] = [
                     // -Int => Int
                     |this: &Self, out, op, a| if
-                        this.may_unify_to(TypeInfo::Primitive(Primitive::Number), out)
+                        this.may_unify_with(TypeInfo::Primitive(Primitive::Number), out)
                         && op == UnaryOp::Neg
-                        && this.may_unify_to(a, TypeInfo::Primitive(Primitive::Number))
+                        && this.may_unify_with(a, TypeInfo::Primitive(Primitive::Number))
                     {
                         Some((TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
                     } else {
@@ -539,9 +566,9 @@ impl InferCtx {
                     },
                     // !Bool => Bool
                     |this: &Self, out, op, a| if
-                        this.may_unify_to(TypeInfo::Primitive(Primitive::Boolean), out)
+                        this.may_unify_with(TypeInfo::Primitive(Primitive::Boolean), out)
                         && op == UnaryOp::Not
-                        && this.may_unify_to(a, TypeInfo::Primitive(Primitive::Boolean))
+                        && this.may_unify_with(a, TypeInfo::Primitive(Primitive::Boolean))
                     {
                         Some((TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean)))
                     } else {
@@ -572,35 +599,75 @@ impl InferCtx {
                     let out_id = self.insert(out_info, self.region(out));
                     let a_id = self.insert(a_info, self.region(a));
 
-                    Ok(self.unify(out, out_id)? || self.unify(a, a_id)?)
+                    self.unify(out, out_id)?;
+                    self.unify(a, a_id)?;
+
+                    // Constraint solved
+                    Ok(true)
                 }
             },
             Constraint::Binary { out, op, a, b } => {
-                let matchers: [fn(_, _, _, _, _) -> _; 1] = [
+                let matchers: [fn(_, _, _, _, _) -> Option<fn(_) -> _>; 3] = [
                     // Int op Int => Int
-                    |this: &Self, out, op, a, b| if
-                        this.may_unify_to(TypeInfo::Primitive(Primitive::Number), out)
-                        && [BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul, BinaryOp::Div, BinaryOp::Rem, BinaryOp::Eq, BinaryOp::Less, BinaryOp::More, BinaryOp::LessEq, BinaryOp::MoreEq].contains(&op)
-                        && this.may_unify_to(a, TypeInfo::Primitive(Primitive::Number))
-                    {
-                        Some((TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
-                    } else {
-                        None
+                    |this: &Self, out, op, a, b| {
+                        let mut this = this.scoped();
+                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), SrcRegion::none());
+                        if
+                            this.unify(num, out).is_ok()
+                            && [BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul, BinaryOp::Div, BinaryOp::Rem].contains(&op)
+                            && this.unify(num, a).is_ok()
+                            && this.unify(num, b).is_ok()
+                        {
+                            Some(|this: &mut Self| (TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                        } else {
+                            None
+                        }
+                    },
+                    // Int op Int => Bool
+                    |this: &Self, out, op, a, b| {
+                        let mut this = this.scoped();
+                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), SrcRegion::none());
+                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), SrcRegion::none());
+                        if
+                            this.unify(boolean, out).is_ok()
+                            && [BinaryOp::Eq, BinaryOp::Less, BinaryOp::More, BinaryOp::LessEq, BinaryOp::MoreEq].contains(&op)
+                            && this.unify(num, a).is_ok()
+                            && this.unify(num, b).is_ok()
+                        {
+                            Some(|this: &mut Self| (TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                        } else {
+                            None
+                        }
+                    },
+                    // [A] ++ [A] => [A]
+                    |this: &Self, out, op, a, b| {
+                        let mut this = this.scoped();
+                        let item_ty = this.insert(TypeInfo::Unknown(None), SrcRegion::none()); // A free type term for the list item type
+                        let list_ty = this.insert(TypeInfo::List(item_ty), SrcRegion::none());
+
+                        if this.unify(list_ty, out).is_ok()
+                            && [BinaryOp::Join].contains(&op)
+                            && this.unify(list_ty, a).is_ok()
+                            && this.unify(list_ty, b).is_ok()
+                        {
+                            Some(|this: &mut Self| {
+                                let item_ty = this.insert(TypeInfo::Unknown(None), SrcRegion::none()); // A free type term for the list item type
+                                let list_ty = this.insert(TypeInfo::List(item_ty), SrcRegion::none());
+
+                                (TypeInfo::Ref(list_ty), TypeInfo::Ref(list_ty), TypeInfo::Ref(list_ty))
+                            })
+                        } else {
+                            None
+                        }
                     },
                 ];
 
-                let mut matches = {
-                    let out_info = self.get(out);
-                    let a_info = self.get(a);
-                    let b_info = self.get(b);
-
-                    matchers
-                        .iter()
-                        .filter_map(|matcher| matcher(self, out_info.clone(), *op, a_info.clone(), b_info.clone()))
-                        .collect::<Vec<_>>()
-                };
-
-                println!("Matches: {:?}", matches);
+                let mut matches = matchers
+                    .iter()
+                    .filter_map(|matcher| {
+                        matcher(self, out, *op, a, b)
+                    })
+                    .collect::<Vec<_>>();
 
                 if matches.len() == 0 {
                     Err(Error::custom(format!("Cannot apply {} to {} and {}", *op, self.display_type_info(a), self.display_type_info(b)))
@@ -611,31 +678,43 @@ impl InferCtx {
                     // Still ambiguous, so we can't infer anything
                     Ok(false)
                 } else {
-                    let (out_info, a_info, b_info) = matches.remove(0);
+                    let (out_info, a_info, b_info) = (matches.remove(0))(self);
 
                     let out_id = self.insert(out_info, self.region(out));
                     let a_id = self.insert(a_info, self.region(a));
                     let b_id = self.insert(b_info, self.region(b));
 
-                    Ok(self.unify(out, out_id)? || self.unify(a, a_id)? || self.unify(b, b_id)?)
+                    self.unify(out, out_id)?;
+                    self.unify(a, a_id)?;
+                    self.unify(b, b_id)?;
+
+                    // Constraint is solved
+                    Ok(true)
                 }
             },
             Constraint::Func { f, i, o } => {
                 let f_id = self.insert(TypeInfo::Func(i, o), self.region(f));
 
-                Ok(self.unify(f, f_id)?)
+                self.unify(f, f_id)?;
+                Ok(true)
             },
         }
     }
 
     pub fn solve_all(&mut self) -> Result<(), Error> {
-        loop {
-            let constraints = self.constraints.clone();
-            if !constraints
-                .into_iter()
-                .try_fold(false, |changed, constraint| Ok(changed || self.solve_inner(constraint)?))?
-            {
+        'solver: loop {
+            let constraints = self.constraints.keys().copied().collect::<Vec<_>>();
+
+            // All constraints have been resolved
+            if constraints.len() == 0 {
                 break Ok(());
+            }
+
+            for c in constraints {
+                if self.solve_inner(self.constraints[&c].clone())? {
+                    self.constraints.remove(&c);
+                    continue 'solver;
+                }
             }
         }
     }

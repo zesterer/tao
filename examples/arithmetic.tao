@@ -1,1 +1,11 @@
-def main = [3, 5, 8, 13]
+given A type Succ = (A, ())
+
+type Zero = Succ ()
+type One = Succ Zero
+type Two = Succ One
+type Three = Succ Two
+type Four = Succ Three
+
+def main = |x of Four, y of Succ (Succ (Succ (Succ Zero)))|
+	# Hacky equivalence check
+	[x] ++ [y]

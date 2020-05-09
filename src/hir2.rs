@@ -128,11 +128,6 @@ impl<'a> Scope<'a> {
                 if let Some(ty) = ty {
                     Some(ctx.instantiate_ty(generics, ty, region))
                 } else {
-                    // Err(Error::custom(format!("Definition '{}' was found but requires an explicit type to be used recursively", **def))
-                    //     .with_region(def.region())
-                    //     .with_region(region)
-                    //     .with_hint(format!("Consider adding a type annotation to '{}' that fully describes it", **def)))
-
                     // TODO: Is this correct? Can this lead to incorrect typing?
                     Some(ctx.insert(TypeInfo::Unknown(None), def.region()))
                 }
@@ -140,7 +135,6 @@ impl<'a> Scope<'a> {
                 parent.get_local(ident, ctx, region)
             },
             Scope::Root => None,
-            //Scope::Module(module) => module.get_def_type(ident, ctx, region).map(Ok),
         }
     }
 }
@@ -464,23 +458,18 @@ impl ast::Type {
 impl ast::Expr {
     fn to_hir(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx, scope: &Scope) -> Result<InferExpr, Error> {
         let type_id = infer.insert(TypeInfo::Unknown(None), self.region());
-        let hir_expr = match &**self {
+        let (info, hir_expr) = match &**self {
             ast::Expr::Literal(litr) => {
                 let val = litr.to_hir()?;
-                let val_type_info = val.get_type_info(infer);
-                let val_type_id = infer.insert(val_type_info, self.region());
-                infer.unify(val_type_id, type_id)?;
-                Expr::Value(val)
+                (val.get_type_info(infer), Expr::Value(val))
             },
             ast::Expr::Path(path) => if path.len() == 1 {
                 if let Some(local_id) = scope
                     .get_local(path.base(), infer, self.region())
                 {
-                    infer.unify(local_id, type_id)?;
-                    Expr::Local(path.base())
+                    (TypeInfo::Ref(local_id), Expr::Local(path.base()))
                 } else if let Some(global_id) = data.get_def_type(path.base(), infer, self.region()) {
-                    infer.unify(global_id, type_id)?;
-                    Expr::Global(path.base())
+                    (TypeInfo::Ref(global_id), Expr::Global(path.base()))
                 } else {
                     return Err(Error::no_such_binding(path.base().to_string(), self.region()));
                 }
@@ -494,7 +483,7 @@ impl ast::Expr {
                     op: op.clone(),
                     a: a.type_id(),
                 });
-                Expr::Unary(op.clone(), a)
+                (TypeInfo::Unknown(None), Expr::Unary(op.clone(), a))
             },
             ast::Expr::Binary(op, a, b) => {
                 let a = a.to_hir(data, infer, scope)?;
@@ -505,7 +494,7 @@ impl ast::Expr {
                     a: a.type_id(),
                     b: b.type_id(),
                 });
-                Expr::Binary(op.clone(), a, b)
+                (TypeInfo::Unknown(None), Expr::Binary(op.clone(), a, b))
             },
             ast::Expr::List(items) => {
                 let items = items.iter().map(|item| item.to_hir(data, infer, scope)).collect::<Result<Vec<_>, _>>()?;
@@ -513,17 +502,11 @@ impl ast::Expr {
                 for item in items.iter() {
                     infer.unify(item_type_id, item.type_id())?;
                 }
-                let list_type_info = TypeInfo::List(item_type_id);
-                let list_type_id = infer.insert(list_type_info, self.region());
-                infer.unify(list_type_id, type_id)?;
-                Expr::List(items)
+                (TypeInfo::List(item_type_id), Expr::List(items))
             },
             ast::Expr::Tuple(items) => {
                 let items = items.iter().map(|item| item.to_hir(data, infer, scope)).collect::<Result<Vec<_>, _>>()?;
-                let tuple_type_info = TypeInfo::Tuple(items.iter().map(|item| item.type_id()).collect());
-                let tuple_type_id = infer.insert(tuple_type_info, self.region());
-                infer.unify(tuple_type_id, type_id)?;
-                Expr::Tuple(items)
+                (TypeInfo::Tuple(items.iter().map(|item| item.type_id()).collect()), Expr::Tuple(items))
             },
             ast::Expr::Func(param, param_ty, body) => {
                 let param = param.to_hir(infer)?;
@@ -543,7 +526,7 @@ impl ast::Expr {
                     o: body.type_id(),
                 });
 
-                Expr::Func(param, body)
+                (TypeInfo::Unknown(None), Expr::Func(param, body))
             },
             ast::Expr::Apply(f, arg) => {
                 let f = f.to_hir(data, infer, scope)?;
@@ -553,7 +536,7 @@ impl ast::Expr {
                     i: arg.type_id(),
                     o: type_id,
                 });
-                Expr::Apply(f, arg)
+                (TypeInfo::Unknown(None), Expr::Apply(f, arg))
             },
             ast::Expr::Let(pat, pat_ty, val, then) => {
                 // `let a = b in c` desugars to `b:(a -> c)`
@@ -580,24 +563,28 @@ impl ast::Expr {
                     o: type_id,
                 });
 
-                Expr::Apply(then_func, val)
+                (TypeInfo::Unknown(None), Expr::Apply(then_func, val))
             },
             ast::Expr::If(pred, a, b) => {
-                let pred = pred.to_hir(data, infer, scope)?;
+                let pred_hir = pred.to_hir(data, infer, scope)?;
+                let pred_type_id = infer.insert(TypeInfo::Primitive(Primitive::Boolean), pred.region());
+                infer.unify(pred_hir.type_id(), pred_type_id)?;
+
                 let a = a.to_hir(data, infer, scope)?;
                 let b = b.to_hir(data, infer, scope)?;
-
-                let pred_type_id = infer.insert(TypeInfo::Primitive(Primitive::Boolean), pred.region());
-                infer.unify(pred.type_id(), pred_type_id)?;
                 infer.unify(a.type_id(), b.type_id())?;
+                infer.unify(type_id, a.type_id())?;
 
-                Expr::Match(pred, vec![
-                    (InferNode::new(Pat::Value(Value::Boolean(true)), (a.region(), infer.insert(TypeInfo::Unknown(None), a.region()))), a),
-                    (InferNode::new(Pat::Value(Value::Boolean(false)), (b.region(), infer.insert(TypeInfo::Unknown(None), b.region()))), b),
-                ])
+                (TypeInfo::Unknown(None), Expr::Match(pred_hir, vec![
+                    (InferNode::new(Pat::Value(Value::Boolean(true)), (pred.region(), pred_type_id)), a),
+                    (InferNode::new(Pat::Value(Value::Boolean(false)), (pred.region(), pred_type_id)), b),
+                ]))
             },
             ast_expr => todo!("HIR parsing of {:?}", ast_expr),
         };
+
+        let info_id = infer.insert(info, self.region());
+        infer.unify(info_id, type_id)?;
 
         Ok(InferNode::new(hir_expr, (self.region(), type_id)))
     }
