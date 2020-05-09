@@ -1,1 +1,1 @@
-def main = 2 + 3
+def main = [3, 5, 8, 13]

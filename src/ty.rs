@@ -305,6 +305,11 @@ pub enum Constraint {
         a: TypeId,
         b: TypeId,
     },
+    Func {
+        f: TypeId,
+        i: TypeId,
+        o: TypeId,
+    },
 }
 
 #[derive(Default, Debug)]
@@ -334,10 +339,23 @@ impl InferCtx {
         // }
     }
 
-    fn link(&mut self, a: TypeId, b: TypeId) {
-        *self.types
-            .get_mut(&a)
-            .unwrap() = TypeInfo::Ref(b);
+    fn get_base(&self, id: TypeId) -> TypeId {
+        match self.get(id) {
+            TypeInfo::Ref(id) => self.get_base(id),
+            _ => id,
+        }
+    }
+
+    // Return true if linking inferred new information
+    fn link(&mut self, a: TypeId, b: TypeId) -> bool {
+        if self.get_base(a) != b {
+            *self.types
+                .get_mut(&a)
+                .unwrap() = TypeInfo::Ref(b);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn display_type_info(&self, id: TypeId) -> impl fmt::Display + '_ {
@@ -404,14 +422,12 @@ impl InferCtx {
 
         use TypeInfo::*;
         match (self.get(a), self.get(b)) {
-            (Ref(a), _) => self.unify_inner(iter, a, b),
-            (_, Ref(_)) => self.unify_inner(iter, b, a),
-            (Unknown(_), Unknown(_)) => Ok(false),
+            (Ref(a), _) => self.unify_inner(iter + 1, a, b),
+            (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
             (Unknown(_), _) => {
-                self.link(a, b);
-                Ok(true)
+                Ok(self.link(a, b))
             },
-            (_, Unknown(_)) => self.unify_inner(iter, b, a), // TODO: does ordering matter?
+            (_, Unknown(_)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
             (GenParam(a), GenParam(b)) if a == b => Ok(false),
             (Primitive(a), Primitive(b)) if a == b => Ok(false),
             (Data(a), Data(b)) if a == b => Ok(false),
@@ -564,7 +580,7 @@ impl InferCtx {
                     // Int op Int => Int
                     |this: &Self, out, op, a, b| if
                         this.may_unify_to(TypeInfo::Primitive(Primitive::Number), out)
-                        && (op == BinaryOp::Add || op == BinaryOp::Sub || op == BinaryOp::Mul || op == BinaryOp::Div || op == BinaryOp::Rem)
+                        && [BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul, BinaryOp::Div, BinaryOp::Rem, BinaryOp::Eq, BinaryOp::Less, BinaryOp::More, BinaryOp::LessEq, BinaryOp::MoreEq].contains(&op)
                         && this.may_unify_to(a, TypeInfo::Primitive(Primitive::Number))
                     {
                         Some((TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
@@ -584,6 +600,8 @@ impl InferCtx {
                         .collect::<Vec<_>>()
                 };
 
+                println!("Matches: {:?}", matches);
+
                 if matches.len() == 0 {
                     Err(Error::custom(format!("Cannot apply {} to {} and {}", *op, self.display_type_info(a), self.display_type_info(b)))
                         .with_region(op.region())
@@ -602,7 +620,11 @@ impl InferCtx {
                     Ok(self.unify(out, out_id)? || self.unify(a, a_id)? || self.unify(b, b_id)?)
                 }
             },
-            _ => todo!(),
+            Constraint::Func { f, i, o } => {
+                let f_id = self.insert(TypeInfo::Func(i, o), self.region(f));
+
+                Ok(self.unify(f, f_id)?)
+            },
         }
     }
 
