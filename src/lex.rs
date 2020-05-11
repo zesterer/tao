@@ -19,10 +19,14 @@ pub enum Op {
     Rem,
 
     Eq,
+    NotEq,
     Less,
     More,
     LessEq,
     MoreEq,
+
+    And,
+    Or,
 
     Join,
 
@@ -40,10 +44,13 @@ impl fmt::Display for Op {
             Op::Div => write!(f, "/"),
             Op::Rem => write!(f, "%"),
             Op::Eq => write!(f, "="),
+            Op::NotEq => write!(f, "!="),
             Op::Less => write!(f, "<"),
             Op::More => write!(f, ">"),
             Op::LessEq => write!(f, "<="),
             Op::MoreEq => write!(f, ">="),
+            Op::And => write!(f, "and"),
+            Op::Or => write!(f, "or"),
             Op::Join => write!(f, "++"),
             Op::Not => write!(f, "!"),
             Op::Head => write!(f, "<:"),
@@ -193,10 +200,13 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(just('/').to(Token::Op(Op::Div)))
             .or(just('%').to(Token::Op(Op::Rem)))
             .or(just('=').to(Token::Op(Op::Eq)))
+            .boxed()
+            .or(seq("!=".chars()).to(Token::Op(Op::NotEq)))
             .or(seq("<:".chars()).to(Token::Op(Op::Head)))
             .or(seq(":>".chars()).to(Token::Op(Op::Tail)))
             .or(seq("<=".chars()).to(Token::Op(Op::LessEq)))
             .or(seq(">=".chars()).to(Token::Op(Op::MoreEq)))
+            .boxed()
             .or(just('<').map(|sc| Token::Op(Op::Less)))
             .or(just('>').map(|sc| Token::Op(Op::More)))
             .or(just('!').map(|sc| Token::Op(Op::Not)))
@@ -226,6 +236,8 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .or(seq("of".chars()).to(Token::Of))
             .or(seq("type".chars()).to(Token::Type))
             .or(seq("data".chars()).to(Token::Data))
+            .or(seq("and".chars()).to(Token::Op(Op::And)))
+            .or(seq("or".chars()).to(Token::Op(Op::Or)))
             .or(ident)
             .or(op)
             .or(tree)

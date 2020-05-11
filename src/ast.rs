@@ -74,10 +74,14 @@ pub enum BinaryOp {
     Rem,
 
     Eq,
+    NotEq,
     Less,
     More,
     LessEq,
     MoreEq,
+
+    And,
+    Or,
 
     Join,
 }
@@ -91,10 +95,13 @@ impl fmt::Display for BinaryOp {
             BinaryOp::Div => write!(f, "/"),
             BinaryOp::Rem => write!(f, "%"),
             BinaryOp::Eq => write!(f, "="),
+            BinaryOp::NotEq => write!(f, "!="),
             BinaryOp::Less => write!(f, "<"),
             BinaryOp::More => write!(f, ">"),
             BinaryOp::LessEq => write!(f, "<="),
             BinaryOp::MoreEq => write!(f, ">="),
+            BinaryOp::And => write!(f, "and"),
+            BinaryOp::Or => write!(f, "or"),
             BinaryOp::Join => write!(f, "++"),
         }
     }
@@ -313,14 +320,16 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .fold(f, |f, arg| {
                     let region = f.region().union(arg.region());
                     SrcNode::new(Expr::Apply(f, arg), region)
-                }));
+                }))
+            .boxed();
 
         let infix = application.clone()
             .then(just(Token::Colon).padding_for(application).repeated())
             .reduce_left(|arg, f| {
                 let region = f.region().union(arg.region());
                 SrcNode::new(Expr::Apply(f, arg), region)
-            });
+            })
+            .boxed();
 
         let unary = just(Token::Op(Op::Sub)).to(UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(UnaryOp::Not))
@@ -332,7 +341,8 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .reduce_right(|op, expr| {
                 let region = op.region().union(expr.region());
                 SrcNode::new(Expr::Unary(op, expr), region)
-            });
+            })
+            .boxed();
 
         let product_op = just(Token::Op(Op::Mul)).to(BinaryOp::Mul)
             .or(just(Token::Op(Op::Div)).to(BinaryOp::Div))
@@ -343,7 +353,8 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .reduce_left(|a, (op, b)| {
                 let region = a.region().union(b.region());
                 SrcNode::new(Expr::Binary(op, a, b), region)
-            });
+            })
+            .boxed();
 
         let sum_op = just(Token::Op(Op::Add)).to(BinaryOp::Add)
             .or(just(Token::Op(Op::Sub)).to(BinaryOp::Sub))
@@ -353,7 +364,8 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .reduce_left(|a, (op, b)| {
                 let region = a.region().union(b.region());
                 SrcNode::new(Expr::Binary(op, a, b), region)
-            });
+            })
+            .boxed();
 
         let join_op = just(Token::Op(Op::Join)).to(BinaryOp::Join)
             .map_with_region(|op, region| SrcNode::new(op, region));
@@ -362,9 +374,11 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .reduce_left(|a, (op, b)| {
                 let region = a.region().union(b.region());
                 SrcNode::new(Expr::Binary(op, a, b), region)
-            });
+            })
+            .boxed();
 
         let comparison_op = just(Token::Op(Op::Eq)).to(BinaryOp::Eq)
+            .or(just(Token::Op(Op::NotEq)).to(BinaryOp::NotEq))
             .or(just(Token::Op(Op::Less)).to(BinaryOp::Less))
             .or(just(Token::Op(Op::More)).to(BinaryOp::More))
             .or(just(Token::Op(Op::LessEq)).to(BinaryOp::LessEq))
@@ -375,7 +389,19 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .reduce_left(|a, (op, b)| {
                 let region = a.region().union(b.region());
                 SrcNode::new(Expr::Binary(op, a, b), region)
-            });
+            })
+            .boxed();
+
+        let logical_op = just(Token::Op(Op::And)).to(BinaryOp::And)
+            .or(just(Token::Op(Op::Or)).to(BinaryOp::Or))
+            .map_with_region(|op, region| SrcNode::new(op, region));
+        let logical = comparison.clone()
+            .then(logical_op.then(comparison).repeated())
+            .reduce_left(|a, (op, b)| {
+                let region = a.region().union(b.region());
+                SrcNode::new(Expr::Binary(op, a, b), region)
+            })
+            .boxed();
 
         /*
         // :( ambiguities
@@ -398,10 +424,11 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                         .unwrap_or(SrcRegion::none()))
                     .union(body.region());
                 SrcNode::new(Expr::Func(param, param_ty, body), region)
-            });
+            })
+            .boxed();
 
         func
-            .or(comparison)
+            .or(logical)
     })
 }
 

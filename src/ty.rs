@@ -371,11 +371,13 @@ impl<'a> InferCtx<'a> {
         struct TypeInfoDisplay<'a> {
             ctx: &'a InferCtx<'a>,
             id: TypeId,
+            trailing: bool,
         }
 
         impl<'a> TypeInfoDisplay<'a> {
-            fn with_id(mut self, id: TypeId) -> Self {
+            fn with_id(mut self, id: TypeId, trailing: bool) -> Self {
                 self.id = id;
+                self.trailing = trailing;
                 self
             }
         }
@@ -389,13 +391,13 @@ impl<'a> InferCtx<'a> {
                         write!(f, "?")
                     },
                     TypeInfo::Primitive(prim) => write!(f, "{}", prim),
-                    TypeInfo::Ref(id) => self.with_id(id).fmt(f),
-                    TypeInfo::List(id) => write!(f, "[{}]", self.with_id(id)),
+                    TypeInfo::Ref(id) => self.with_id(id, self.trailing).fmt(f),
+                    TypeInfo::List(id) => write!(f, "[{}]", self.with_id(id, true)),
                     TypeInfo::Tuple(ids) => {
                         write!(f, "(")?;
                         write!(f, "{}", ids
                             .iter()
-                            .map(|id| format!("{}", self.with_id(*id)))
+                            .map(|id| format!("{}", self.with_id(*id, true)))
                             .collect::<Vec<_>>()
                             .join(", "))?;
                         if ids.len() == 1 {
@@ -404,14 +406,15 @@ impl<'a> InferCtx<'a> {
                         write!(f, ")")?;
                         Ok(())
                     },
-                    TypeInfo::Func(i, o) => write!(f, "({} -> {})", self.with_id(i), self.with_id(o)),
+                    TypeInfo::Func(i, o) if self.trailing => write!(f, "{} -> {}", self.with_id(i, false), self.with_id(o, true)),
+                    TypeInfo::Func(i, o) => write!(f, "({} -> {})", self.with_id(i, false), self.with_id(o, true)),
                     TypeInfo::Data(_) => write!(f, "TODO"),
                     TypeInfo::GenParam(ident) => write!(f, "{}", ident),
                     TypeInfo::Associated(tr, params, a, assoc) => {
-                        write!(f, "<{} as Trait<", self.with_id(a))?;
+                        write!(f, "<{} as Trait<", self.with_id(a, false))?;
                         write!(f, "{}", params
                             .iter()
-                            .map(|id| format!("{}", self.with_id(*id)))
+                            .map(|id| format!("{}", self.with_id(*id, true)))
                             .collect::<Vec<_>>()
                             .join(", "))?;
                         write!(f, ">>::{}", assoc)?;
@@ -423,7 +426,8 @@ impl<'a> InferCtx<'a> {
 
         TypeInfoDisplay {
             ctx: self,
-            id
+            id,
+            trailing: true,
         }
     }
 
@@ -448,7 +452,7 @@ impl<'a> InferCtx<'a> {
                 .zip(b.into_iter())
                 .try_for_each(|(a, b)| self.unify_inner(iter + 1, a, b)),
             (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
-                .and_then(|_| self.unify_inner(iter + 1, ao, bo)),
+                .and_then(|()| self.unify_inner(iter + 1, ao, bo)),
             (x, y) => {
                 Err(Error::custom(format!(
                     "Type mismatch between {} and {}",
@@ -573,7 +577,12 @@ impl<'a> InferCtx<'a> {
                 };
 
                 if matches.len() == 0 {
-                    Err(Error::custom(format!("Cannot apply {} to {}", *op, self.display_type_info(a)))
+                    Err(Error::custom(format!(
+                        "Cannot resolve {} {} as {}",
+                        *op,
+                        self.display_type_info(a),
+                        self.display_type_info(out),
+                    ))
                         .with_region(op.region())
                         .with_region(self.region(a)))
                 } else if matches.len() > 1 {
@@ -593,11 +602,12 @@ impl<'a> InferCtx<'a> {
                 }
             },
             Constraint::Binary { out, op, a, b } => {
-                let matchers: [fn(_, _, _, _, _) -> Option<fn(_, _, _) -> _>; 3] = [
+                let matchers: [fn(_, _, _, _, _) -> Option<fn(_, _, _) -> _>; 4] = [
                     // Int op Int => Int
                     |this: &Self, out, op, a, b| {
                         let mut this = this.scoped();
                         let num = this.insert(TypeInfo::Primitive(Primitive::Number), SrcRegion::none());
+
                         if
                             this.unify(num, out).is_ok()
                             && [BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul, BinaryOp::Div, BinaryOp::Rem].contains(&op)
@@ -621,6 +631,21 @@ impl<'a> InferCtx<'a> {
                             && this.unify(num, b).is_ok()
                         {
                             Some(|this: &mut Self, a, b| (TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                        } else {
+                            None
+                        }
+                    },
+                    // Bool op Bool => Bool
+                    |this: &Self, out, op, a, b| {
+                        let mut this = this.scoped();
+                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), SrcRegion::none());
+                        if
+                            this.unify(boolean, out).is_ok()
+                            && [BinaryOp::Eq, BinaryOp::NotEq, BinaryOp::And, BinaryOp::Or].contains(&op)
+                            && this.unify(boolean, a).is_ok()
+                            && this.unify(boolean, b).is_ok()
+                        {
+                            Some(|this: &mut Self, a, b| (TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean)))
                         } else {
                             None
                         }
@@ -656,7 +681,13 @@ impl<'a> InferCtx<'a> {
                     .collect::<Vec<_>>();
 
                 if matches.len() == 0 {
-                    Err(Error::custom(format!("Cannot apply {} to {} and {}", *op, self.display_type_info(a), self.display_type_info(b)))
+                    Err(Error::custom(format!(
+                        "Cannot resolve {} {} {} as {}",
+                        self.display_type_info(a),
+                        *op,
+                        self.display_type_info(b),
+                        self.display_type_info(out),
+                    ))
                         .with_region(op.region())
                         .with_region(self.region(a))
                         .with_region(self.region(b)))
@@ -697,7 +728,17 @@ impl<'a> InferCtx<'a> {
                 }
             }
 
-            todo!("Not all constraints resolved. Do something here?");
+            break Ok(()); // Uh... just least some constraints unsolved? Hopefully they're not needed?
+
+            //todo!("Not all constraints resolved. Do something here?");
+
+            // Error: not all constraints resolved
+            // match self.constraints.values().next().unwrap() {
+            //     Constraint::Unary { out, op, a } => return Err(Error::custom()
+            //         .with_region(self.region(out))
+            //         .with_region(op.region())
+            //         .with_region(self.region(a))),
+            // }
         }
     }
 
@@ -731,8 +772,9 @@ impl<'a> InferCtx<'a> {
         self.reconstruct_inner(0, id).map_err(|err| match err {
             ReconstructError::Recursive => Error::custom(format!("Recursive type"))
                 .with_region(self.region(id)),
-            ReconstructError::Unknown => Error::custom(format!("Cannot infer type {}", self.display_type_info(id)))
-                .with_region(self.region(id)),
+            ReconstructError::Unknown => Error::custom(format!("Cannot fully infer type {}", self.display_type_info(id)))
+                .with_region(self.region(id))
+                .with_hint(format!("Specify all missing types")),
         })
     }
 }

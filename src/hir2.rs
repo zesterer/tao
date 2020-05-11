@@ -473,7 +473,9 @@ impl ast::Expr {
                 if let Some(local_id) = scope
                     .get_local(path.base(), infer, self.region())
                 {
-                    (local_id, Expr::Local(path.base()))
+                    let type_id = infer.insert(TypeInfo::Unknown(None), self.region());
+                    infer.unify(type_id, local_id)?;
+                    (type_id, Expr::Local(path.base()))
                 } else if let Some(global_id) = data.get_def_type(path.base(), infer, self.region()) {
                     (global_id, Expr::Global(path.base()))
                 } else {

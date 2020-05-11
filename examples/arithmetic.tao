@@ -10,4 +10,8 @@ def foo = |x of Four, y of Succ (Succ (Succ (Succ Zero)))|
 	# Hacky equivalence check
 	[x] ++ [y]
 
-def main of ? = (|f| f(3))(|y| 0)
+type Universe = ()
+
+given A type IO = Universe -> (A, Universe)
+
+def main = |x, y| if x = y then true else false
