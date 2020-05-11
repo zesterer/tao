@@ -148,7 +148,7 @@ fn run_expr(src: &str) {
 
     let mut prog = hir2::Program::new();
 
-    match prog.insert_def(&ast::Def::main(ast2)) {
+    match prog.insert_def(&[], &ast::Def::main(ast2)) {
         Ok(()) => {},
         Err(err) => {
             print!("AST2: {}", err.in_source(src));

@@ -278,8 +278,20 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             Delimiter::Paren,
         );
 
-        let pat = ident_parser()
-            .map_with_region(|ident, region| SrcNode::new(Pat::Ident(ident), region))
+        let ident_pat = ident_parser()
+            .map(|ident| match ident.as_str() {
+                "_" => Pat::Wildcard,
+                _ => Pat::Ident(ident),
+            });
+
+        let value_pat = number_parser().map(|x| Pat::Literal(Literal::Number(x)))
+            .or(just(Token::Boolean(true)).map(|_| Pat::Literal(Literal::Boolean(true))))
+            .or(just(Token::Boolean(false)).map(|_| Pat::Literal(Literal::Boolean(false))))
+            .or(string_parser().map(|x| Pat::Literal(Literal::String(x))));
+
+        let pat = ident_pat
+            .or(value_pat)
+            .map_with_region(|pat, region| SrcNode::new(pat, region))
             .then(just(Token::Of)
                 .padding_for(type_parser())
                 .or_not());

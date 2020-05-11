@@ -189,8 +189,9 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .map(|chars| Token::String(LocalIntern::new(chars.into_iter().collect())))
             .boxed();
 
-        let ident = permit(|c: &char| c.is_ascii_alphabetic() || *c == '_').once_or_more()
-            .map(|chars| Token::Ident(LocalIntern::new(chars.into_iter().collect())));
+        let ident = permit(|c: &char| c.is_ascii_alphabetic() || *c == '_')
+            .then(permit(|c: &char| c.is_ascii_alphanumeric() || *c == '_').repeated())
+            .map(|(head, tail)| Token::Ident(LocalIntern::new(std::iter::once(head).chain(tail.into_iter()).collect())));
 
         let op = seq("->".chars()).to(Token::RArrow)
             .or(seq("++".chars()).to(Token::Op(Op::Join)))

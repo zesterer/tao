@@ -510,29 +510,6 @@ impl<'a> InferCtx<'a> {
         self.instantiate_ty_inner(&get_generic, ty, region)
     }
 
-    pub fn may_unify_with(&self, from: TypeInfo, to: TypeInfo) -> bool {
-        use TypeInfo::*;
-        match (&from, &to) {
-            (Ref(from), _) => self.may_unify_with(self.get(*from), to),
-            (_, Ref(to)) => self.may_unify_with(from, self.get(*to)),
-            (Unknown(_), _) => true,
-            (_, Unknown(_)) => true,
-            (Primitive(a), Primitive(b)) => a == b,
-            (List(from), List(to)) => self.may_unify_with(self.get(*from), self.get(*to)),
-            (Tuple(froms), Tuple(tos)) if froms.len() == tos.len() => froms
-                .iter()
-                .zip(tos.iter())
-                .all(|(from, to)| self.may_unify_with(self.get(*from), self.get(*to))),
-            (Func(fromi, fromo), Func(toi, too)) => {
-                self.may_unify_with(self.get(*fromi), self.get(*toi)) &&
-                self.may_unify_with(self.get(*fromo), self.get(*too))
-            },
-            (Data(a), Data(b)) => a == b,
-            (GenParam(a), GenParam(b)) => a == b,
-            _ => false,
-        }
-    }
-
     pub fn add_constraint(&mut self, constraint: Constraint) -> ConstraintId {
         self.constraint_id_counter += 1;
         self.constraints.insert(self.constraint_id_counter, constraint);
@@ -545,36 +522,39 @@ impl<'a> InferCtx<'a> {
             Constraint::Unary { out, op, a } => {
                 let matchers: [fn(_, _, _, _) -> _; 2] = [
                     // -Int => Int
-                    |this: &Self, out, op, a| if
-                        this.may_unify_with(TypeInfo::Primitive(Primitive::Number), out)
-                        && op == UnaryOp::Neg
-                        && this.may_unify_with(a, TypeInfo::Primitive(Primitive::Number))
-                    {
-                        Some((TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
-                    } else {
-                        None
+                    |this: &Self, out, op, a| {
+                        let mut this = this.scoped();
+                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), SrcRegion::none());
+                        if
+                            this.unify(num, out).is_ok()
+                            && op == UnaryOp::Neg
+                            && this.unify(num, a).is_ok()
+                        {
+                            Some((TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                        } else {
+                            None
+                        }
                     },
                     // !Bool => Bool
-                    |this: &Self, out, op, a| if
-                        this.may_unify_with(TypeInfo::Primitive(Primitive::Boolean), out)
-                        && op == UnaryOp::Not
-                        && this.may_unify_with(a, TypeInfo::Primitive(Primitive::Boolean))
-                    {
-                        Some((TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean)))
-                    } else {
-                        None
+                    |this: &Self, out, op, a| {
+                        let mut this = this.scoped();
+                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), SrcRegion::none());
+                        if
+                            this.unify(boolean, out).is_ok()
+                            && op == UnaryOp::Not
+                            && this.unify(boolean, a).is_ok()
+                        {
+                            Some((TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean)))
+                        } else {
+                            None
+                        }
                     },
                 ];
 
-                let mut matches = {
-                    let out_info = self.get(out);
-                    let a_info = self.get(a);
-
-                    matchers
-                        .iter()
-                        .filter_map(|matcher| matcher(self, out_info.clone(), *op, a_info.clone()))
-                        .collect::<Vec<_>>()
-                };
+                let mut matches = matchers
+                    .iter()
+                    .filter_map(|matcher| matcher(self, out, *op, a))
+                    .collect::<Vec<_>>();
 
                 if matches.len() == 0 {
                     Err(Error::custom(format!(
@@ -728,17 +708,7 @@ impl<'a> InferCtx<'a> {
                 }
             }
 
-            break Ok(()); // Uh... just least some constraints unsolved? Hopefully they're not needed?
-
-            //todo!("Not all constraints resolved. Do something here?");
-
-            // Error: not all constraints resolved
-            // match self.constraints.values().next().unwrap() {
-            //     Constraint::Unary { out, op, a } => return Err(Error::custom()
-            //         .with_region(self.region(out))
-            //         .with_region(op.region())
-            //         .with_region(self.region(a))),
-            // }
+            break Ok(());
         }
     }
 

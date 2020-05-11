@@ -72,6 +72,15 @@ impl InferNode<Pat> {
     }
 }
 
+impl TypedPat {
+    fn is_refutable(&self) -> bool {
+        match &**self {
+            Pat::Wildcard | Pat::Ident(_) => false,
+            Pat::Value(_) => true,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Expr<M> {
     Value(Value),
@@ -132,8 +141,8 @@ pub struct DataCtx<'a> {
     core: &'a Core,
     generics: HashMap<Ident, TypeId>,
 
-    // TODO: Separate out into `DataCtx` and `ValueCtx: Deref<DataCtx>`
-    this: Option<Ident>,
+    // TODO: Include type hint information
+    globals: &'a [Ident],
 }
 
 impl<'a> DataCtx<'a> {
@@ -181,11 +190,13 @@ impl<'a> DataCtx<'a> {
     }
 
     fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
-        if Some(ident) == self.this {
-            Some(infer.insert(TypeInfo::Unknown(None), region))
-        } else {
-            self.module.get_def_type(ident, infer, region)
-        }
+        self.module
+            .get_def_type(ident, infer, region)
+            .or_else(|| if self.globals.contains(&ident) {
+                Some(infer.insert(TypeInfo::Unknown(None), region))
+            } else {
+                None
+            })
     }
 }
 
@@ -238,14 +249,58 @@ impl Program {
 
     pub fn new_root(module: &SrcNode<ast::Module>) -> Result<Self, Error> {
         let mut this = Self::new();
+        // Collect list of globals
+        let globals = module.decls
+            .iter()
+            .filter_map(|decl| match &**decl {
+                ast::Decl::Def(def) => Some(*def.name),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
         for decl in module.decls.iter() {
             match &**decl {
-                ast::Decl::Def(def) => this.insert_def(def)?,
-                ast::Decl::TypeAlias(type_alias) => this.insert_type_alias(type_alias)?,
+                ast::Decl::Def(def) => this.insert_def(&globals, def)?,
+                ast::Decl::TypeAlias(type_alias) => this.insert_type_alias(&globals, type_alias)?,
                 ast::Decl::Data(_) => todo!("Data types"),
             }
         }
+
+        this.type_check()?;
+
         Ok(this)
+    }
+
+    fn type_check(&self) -> Result<(), Error> {
+        // Go through globals, ensuring they type-check recursively
+        for (name, def) in self.root.defs.iter() {
+            // Ensure that all self-references in the body match with the inferred definition
+            // This is a halfway-house solution that allows recursion without proper damas-HM inference
+            def.body
+                .visit()
+                .try_for_each(|expr| match &**expr {
+                    Expr::Global(ident) => {
+                        let mut infer = InferCtx::default();
+                        let global = &self.root.defs[ident];
+                        let definition = infer.instantiate_ty(&global.generics, global.body.ty(), global.body.ty().region());
+                        // TODO: Put the usage region in here
+                        let usage = infer.instantiate_ty(&def.generics, expr.ty(), expr.ty().region());
+                        infer.unify(usage, definition)
+                    },
+                    _ => Ok(()),
+                })?;
+
+            // Type-check pattern refutability
+            def.body
+                .visit()
+                .try_for_each(|expr| match &**expr {
+                    Expr::Func(param, _) if param.is_refutable() => Err(Error::custom(format!("Refutable pattern may not be used here"))
+                        .with_region(param.ty().region())),
+                    _ => Ok(()),
+                })?;
+        }
+
+        Ok(())
     }
 
     pub fn root(&self) -> &Module {
@@ -256,8 +311,7 @@ impl Program {
         Scope::Root
     }
 
-
-    pub fn insert_def(&mut self, ast_def: &ast::Def) -> Result<(), Error> {
+    pub fn insert_def(&mut self, globals: &[Ident], ast_def: &ast::Def) -> Result<(), Error> {
         // Check for double declaration
         if let Some(existing_def) = self.root.defs.get(&**ast_def.name) {
             return Err(Error::custom(format!("Definition with name '{}' already exists", **ast_def.name))
@@ -274,7 +328,7 @@ impl Program {
                 .iter()
                 .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.region())))
                 .collect(),
-            this: Some(*ast_def.name),
+            globals,
         };
         let scope = self.create_scope();
 
@@ -289,20 +343,6 @@ impl Program {
             infer.solve_all()?;
             body.into_checked(&mut infer)?
         };
-
-        // Ensure that all self-references in the body match with the inferred definition
-        // This is a halfway-house solution that allows recursion without proper damas-HM inference
-        body
-            .visit()
-            .try_for_each(|expr| match &**expr {
-                Expr::Global(ident) if *ident == *ast_def.name => {
-                    let definition = infer.instantiate_ty(&ast_def.generics, body.ty(), ast_def.body.region());
-                    // TODO: Put the usage region in here
-                    let usage = infer.instantiate_ty(&ast_def.generics, expr.ty(), SrcRegion::none());
-                    infer.unify(usage, definition)
-                },
-                _ => Ok(()),
-            })?;
 
         let generics = ast_def.generics
             .iter()
@@ -333,7 +373,7 @@ impl Program {
         Ok(())
     }
 
-    pub fn insert_type_alias(&mut self, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
+    pub fn insert_type_alias(&mut self, globals: &[Ident], ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
         let mut infer = InferCtx::default();
         let data = DataCtx {
             module: &self.root,
@@ -343,7 +383,7 @@ impl Program {
                 .iter()
                 .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.region())))
                 .collect(),
-            this: None,
+            globals,
         };
 
         let region = ast_type_alias.ty.region();
@@ -417,6 +457,11 @@ impl ast::Pat {
         let (type_id, hir_pat) = match &**self {
             ast::Pat::Ident(ident) => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Ident(*ident)),
             ast::Pat::Wildcard => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Wildcard),
+            ast::Pat::Literal(litr) => {
+                let val = litr.to_hir()?;
+                let val_type_info = val.get_type_info(infer);
+                (infer.insert(val_type_info, self.region()), Pat::Value(val))
+            },
             _ => todo!(),
         };
 
