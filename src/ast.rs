@@ -513,14 +513,13 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
             // Optional type annotation
             .then(just(Token::Of)
                 .padding_for(type_parser())
-                .or_not()
-                .map(|ty_hint| ty_hint.unwrap_or_else(|| SrcNode::new(Type::Unknown, SrcRegion::none()))))
+                .or_not())
             .padded_by(just(Token::Op(Op::Eq)))
             .then(expr_parser())
             .map_with_region(|(((generics, name), ty), body), region| Decl::Def(Def {
                 generics,
+                ty: ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, name.region())),
                 name,
-                ty,
                 body,
             }));
 

@@ -306,11 +306,6 @@ pub enum Constraint {
         a: TypeId,
         b: TypeId,
     },
-    Func {
-        f: TypeId,
-        i: TypeId,
-        o: TypeId,
-    },
 }
 
 #[derive(Default, Debug)]
@@ -349,16 +344,12 @@ impl<'a> InferCtx<'a> {
     }
 
     pub fn region(&self, id: TypeId) -> SrcRegion {
+        //let id = self.get_base(id);
         self.regions
             .get(&id)
             .cloned()
             .or_else(|| self.parent.map(|p| p.region(id)))
             .unwrap()
-        // Follow the chain of references
-        // match self.get(id) {
-        //     TypeInfo::Ref(a) => self.region(a),
-        //     _ => self.regions[&id].clone(),
-        // }
     }
 
     fn get_base(&self, id: TypeId) -> TypeId {
@@ -369,12 +360,9 @@ impl<'a> InferCtx<'a> {
     }
 
     // Return true if linking inferred new information
-    fn link(&mut self, a: TypeId, b: TypeId) -> bool {
+    fn link(&mut self, a: TypeId, b: TypeId) {
         if self.get_base(a) != self.get_base(b) {
             self.types.insert(a, TypeInfo::Ref(b));
-            true
-        } else {
-            false
         }
     }
 
@@ -398,7 +386,7 @@ impl<'a> InferCtx<'a> {
                     TypeInfo::Unknown(ty) => if let Some(ty) = ty {
                         write!(f, "{}", ty)
                     } else {
-                        write!(f, "_")
+                        write!(f, "?")
                     },
                     TypeInfo::Primitive(prim) => write!(f, "{}", prim),
                     TypeInfo::Ref(id) => self.with_id(id).fmt(f),
@@ -439,7 +427,7 @@ impl<'a> InferCtx<'a> {
         }
     }
 
-    fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<bool, Error> {
+    fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<(), Error> {
         const MAX_UNIFICATION_DEPTH: usize = 1024;
         if iter > MAX_UNIFICATION_DEPTH {
             panic!("Maximum unification depth reached (this error should not occur without extremely large types)");
@@ -449,20 +437,18 @@ impl<'a> InferCtx<'a> {
         match (self.get(a), self.get(b)) {
             (Ref(a), _) => self.unify_inner(iter + 1, a, b),
             (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
-            (Unknown(_), _) => {
-                Ok(self.link(a, b))
-            },
+            (Unknown(_), _) => Ok(self.link(a, b)),
             (_, Unknown(_)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
-            (GenParam(a), GenParam(b)) if a == b => Ok(false),
-            (Primitive(a), Primitive(b)) if a == b => Ok(false),
-            (Data(a), Data(b)) if a == b => Ok(false),
+            (GenParam(a), GenParam(b)) if a == b => Ok(()),
+            (Primitive(a), Primitive(b)) if a == b => Ok(()),
+            (Data(a), Data(b)) if a == b => Ok(()),
             (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
             (Tuple(a), Tuple(b)) if a.len() == b.len() => a
                 .into_iter()
                 .zip(b.into_iter())
-                .try_fold(false, |new_info, (a, b)| Ok(new_info || self.unify_inner(iter + 1, a, b)?)),
+                .try_for_each(|(a, b)| self.unify_inner(iter + 1, a, b)),
             (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
-                .and_then(|new_info| Ok(new_info || self.unify_inner(iter + 1, ao, bo)?)),
+                .and_then(|_| self.unify_inner(iter + 1, ao, bo)),
             (x, y) => {
                 Err(Error::custom(format!(
                     "Type mismatch between {} and {}",
@@ -476,7 +462,7 @@ impl<'a> InferCtx<'a> {
     }
 
     // Returns true if new information was inferred
-    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<bool, Error> {
+    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
         self.unify_inner(0, a, b)
     }
 
@@ -607,7 +593,7 @@ impl<'a> InferCtx<'a> {
                 }
             },
             Constraint::Binary { out, op, a, b } => {
-                let matchers: [fn(_, _, _, _, _) -> Option<fn(_) -> _>; 3] = [
+                let matchers: [fn(_, _, _, _, _) -> Option<fn(_, _, _) -> _>; 3] = [
                     // Int op Int => Int
                     |this: &Self, out, op, a, b| {
                         let mut this = this.scoped();
@@ -618,7 +604,7 @@ impl<'a> InferCtx<'a> {
                             && this.unify(num, a).is_ok()
                             && this.unify(num, b).is_ok()
                         {
-                            Some(|this: &mut Self| (TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                            Some(|this: &mut Self, a, b| (TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
                         } else {
                             None
                         }
@@ -634,7 +620,7 @@ impl<'a> InferCtx<'a> {
                             && this.unify(num, a).is_ok()
                             && this.unify(num, b).is_ok()
                         {
-                            Some(|this: &mut Self| (TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
+                            Some(|this: &mut Self, a, b| (TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Number), TypeInfo::Primitive(Primitive::Number)))
                         } else {
                             None
                         }
@@ -650,9 +636,9 @@ impl<'a> InferCtx<'a> {
                             && this.unify(list_ty, a).is_ok()
                             && this.unify(list_ty, b).is_ok()
                         {
-                            Some(|this: &mut Self| {
+                            Some(|this: &mut Self, a, b| {
                                 let item_ty = this.insert(TypeInfo::Unknown(None), SrcRegion::none()); // A free type term for the list item type
-                                let list_ty = this.insert(TypeInfo::List(item_ty), SrcRegion::none());
+                                let list_ty = this.insert(TypeInfo::List(item_ty), this.region(a));
 
                                 (TypeInfo::Ref(list_ty), TypeInfo::Ref(list_ty), TypeInfo::Ref(list_ty))
                             })
@@ -678,7 +664,7 @@ impl<'a> InferCtx<'a> {
                     // Still ambiguous, so we can't infer anything
                     Ok(false)
                 } else {
-                    let (out_info, a_info, b_info) = (matches.remove(0))(self);
+                    let (out_info, a_info, b_info) = (matches.remove(0))(self, a, b);
 
                     let out_id = self.insert(out_info, self.region(out));
                     let a_id = self.insert(a_info, self.region(a));
@@ -691,12 +677,6 @@ impl<'a> InferCtx<'a> {
                     // Constraint is solved
                     Ok(true)
                 }
-            },
-            Constraint::Func { f, i, o } => {
-                let f_id = self.insert(TypeInfo::Func(i, o), self.region(f));
-
-                self.unify(f, f_id)?;
-                Ok(true)
             },
         }
     }
@@ -716,6 +696,8 @@ impl<'a> InferCtx<'a> {
                     continue 'solver;
                 }
             }
+
+            todo!("Not all constraints resolved. Do something here?");
         }
     }
 
@@ -723,22 +705,15 @@ impl<'a> InferCtx<'a> {
         &self,
         iter: usize,
         id: TypeId,
-    ) -> Result<SrcNode<Type>, Error> {
+    ) -> Result<SrcNode<Type>, ReconstructError> {
         const MAX_RECONSTRUCTION_DEPTH: usize = 1024;
         if iter > MAX_RECONSTRUCTION_DEPTH {
-            return Err(Error::custom(format!("Recursive type"))
-                .with_region(self.region(id)));
+            return Err(ReconstructError::Recursive);
         }
 
         use TypeInfo::*;
         let ty = match self.get(id) {
-            Unknown(ty) => return if let Some(ty) = ty {
-                Err(Error::custom(format!("Cannot infer type {}", ty))
-                    .with_region(self.region(id)))
-            } else {
-                Err(Error::custom(format!("Cannot infer type"))
-                    .with_region(self.region(id)))
-            },
+            Unknown(ty) => return Err(ReconstructError::Unknown),
             Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
             GenParam(name) => Type::GenParam(name),
             Primitive(prim) => Type::Primitive(prim),
@@ -747,21 +722,24 @@ impl<'a> InferCtx<'a> {
             Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
             Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),
             Associated(_, _, _, _) => todo!("Query trait engine to determine type of associated type"),
-            // Unary(op, a) => return Err(Error::custom(format!("Ambiguous operation: {} {}", *op, self.display_type_info(a)))
-            //     .with_region(op.region())
-            //     .with_region(self.region(a))),
-            // Binary(op, a, b) => return Err(Error::custom(format!("Ambiguous operation: {} {} {}", self.display_type_info(a), *op, self.display_type_info(b)))
-            //     .with_region(self.region(a))
-            //     .with_region(op.region())
-            //     .with_region(self.region(b))),
         };
 
         Ok(SrcNode::new(ty, self.region(id)))
     }
 
     pub fn reconstruct(&self, id: TypeId) -> Result<SrcNode<Type>, Error> {
-        self.reconstruct_inner(0, id)
+        self.reconstruct_inner(0, id).map_err(|err| match err {
+            ReconstructError::Recursive => Error::custom(format!("Recursive type"))
+                .with_region(self.region(id)),
+            ReconstructError::Unknown => Error::custom(format!("Cannot infer type {}", self.display_type_info(id)))
+                .with_region(self.region(id)),
+        })
     }
+}
+
+enum ReconstructError {
+    Unknown,
+    Recursive,
 }
 
 #[cfg(test)]

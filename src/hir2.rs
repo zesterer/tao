@@ -57,6 +57,7 @@ impl Path {
 }
 
 pub enum Pat { // TODO: <M>
+    Wildcard,
     Value(Value),
     Ident(Ident),
 }
@@ -64,7 +65,7 @@ pub enum Pat { // TODO: <M>
 impl InferNode<Pat> {
     fn ident_types(&self) -> HashMap<Ident, TypeId> {
         match &**self {
-            Pat::Value(_) => HashMap::default(),
+            Pat::Wildcard | Pat::Value(_) => HashMap::default(),
             Pat::Ident(ident) => std::iter::once((*ident, self.type_id())).collect(),
         }
     }
@@ -409,13 +410,18 @@ impl Module {
 // AST to HIR conversions
 
 impl ast::Pat {
-    fn to_hir(self: &SrcNode<Self>, ctx: &mut InferCtx) -> Result<InferNode<Pat>, Error> {
-        let hir_pat = match &**self {
-            ast::Pat::Ident(ident) => Pat::Ident(*ident),
-            ast_pat => todo!("HIR parsing of {:?}", ast_pat),
+    fn to_hir(self: &SrcNode<Self>, infer: &mut InferCtx) -> Result<InferNode<Pat>, Error> {
+        let (type_id, hir_pat) = match &**self {
+            ast::Pat::Ident(ident) => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Ident(*ident)),
+            ast::Pat::Wildcard => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Wildcard),
+            // ast::Pat::Value(x) => {
+            //     let type_info = x.get_type_info(infer);
+            //     (infer.insert(type_info, self.region()), Pat::Value(x))
+            // },
+            _ => todo!(),
         };
 
-        Ok(InferNode::new(hir_pat, (self.region(), ctx.insert(TypeInfo::Unknown(None), self.region()))))
+        Ok(InferNode::new(hir_pat, (self.region(), type_id)))
     }
 }
 
@@ -457,19 +463,19 @@ impl ast::Type {
 
 impl ast::Expr {
     fn to_hir(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx, scope: &Scope) -> Result<InferExpr, Error> {
-        let type_id = infer.insert(TypeInfo::Unknown(None), self.region());
-        let (info, hir_expr) = match &**self {
+        let (type_id, hir_expr) = match &**self {
             ast::Expr::Literal(litr) => {
                 let val = litr.to_hir()?;
-                (val.get_type_info(infer), Expr::Value(val))
+                let ty_info = val.get_type_info(infer);
+                (infer.insert(ty_info, self.region()), Expr::Value(val))
             },
             ast::Expr::Path(path) => if path.len() == 1 {
                 if let Some(local_id) = scope
                     .get_local(path.base(), infer, self.region())
                 {
-                    (TypeInfo::Ref(local_id), Expr::Local(path.base()))
+                    (local_id, Expr::Local(path.base()))
                 } else if let Some(global_id) = data.get_def_type(path.base(), infer, self.region()) {
-                    (TypeInfo::Ref(global_id), Expr::Global(path.base()))
+                    (global_id, Expr::Global(path.base()))
                 } else {
                     return Err(Error::no_such_binding(path.base().to_string(), self.region()));
                 }
@@ -478,23 +484,25 @@ impl ast::Expr {
             },
             ast::Expr::Unary(op, a) => {
                 let a = a.to_hir(data, infer, scope)?;
+                let type_id = infer.insert(TypeInfo::Unknown(None), self.region());
                 infer.add_constraint(Constraint::Unary {
                     out: type_id,
                     op: op.clone(),
                     a: a.type_id(),
                 });
-                (TypeInfo::Unknown(None), Expr::Unary(op.clone(), a))
+                (type_id, Expr::Unary(op.clone(), a))
             },
             ast::Expr::Binary(op, a, b) => {
                 let a = a.to_hir(data, infer, scope)?;
                 let b = b.to_hir(data, infer, scope)?;
+                let type_id = infer.insert(TypeInfo::Unknown(None), self.region());
                 infer.add_constraint(Constraint::Binary {
                     out: type_id,
                     op: op.clone(),
                     a: a.type_id(),
                     b: b.type_id(),
                 });
-                (TypeInfo::Unknown(None), Expr::Binary(op.clone(), a, b))
+                (type_id, Expr::Binary(op.clone(), a, b))
             },
             ast::Expr::List(items) => {
                 let items = items.iter().map(|item| item.to_hir(data, infer, scope)).collect::<Result<Vec<_>, _>>()?;
@@ -502,11 +510,13 @@ impl ast::Expr {
                 for item in items.iter() {
                     infer.unify(item_type_id, item.type_id())?;
                 }
-                (TypeInfo::List(item_type_id), Expr::List(items))
+                let type_id = infer.insert(TypeInfo::List(item_type_id), self.region());
+                (type_id, Expr::List(items))
             },
             ast::Expr::Tuple(items) => {
                 let items = items.iter().map(|item| item.to_hir(data, infer, scope)).collect::<Result<Vec<_>, _>>()?;
-                (TypeInfo::Tuple(items.iter().map(|item| item.type_id()).collect()), Expr::Tuple(items))
+                let type_id = infer.insert(TypeInfo::Tuple(items.iter().map(|item| item.type_id()).collect()), self.region());
+                (type_id, Expr::Tuple(items))
             },
             ast::Expr::Func(param, param_ty, body) => {
                 let param = param.to_hir(infer)?;
@@ -520,23 +530,16 @@ impl ast::Expr {
                 let body_scope = scope.with_many(param.ident_types());
                 let body = body.to_hir(data, infer, &body_scope)?;
 
-                infer.add_constraint(Constraint::Func {
-                    f: type_id,
-                    i: param.type_id(),
-                    o: body.type_id(),
-                });
-
-                (TypeInfo::Unknown(None), Expr::Func(param, body))
+                let type_id = infer.insert(TypeInfo::Func(param.type_id(), body.type_id()), self.region());
+                (type_id, Expr::Func(param, body))
             },
             ast::Expr::Apply(f, arg) => {
                 let f = f.to_hir(data, infer, scope)?;
                 let arg = arg.to_hir(data, infer, scope)?;
-                infer.add_constraint(Constraint::Func {
-                    f: f.type_id(),
-                    i: arg.type_id(),
-                    o: type_id,
-                });
-                (TypeInfo::Unknown(None), Expr::Apply(f, arg))
+                let type_id = infer.insert(TypeInfo::Unknown(None), self.region());
+                let f_type_id = infer.insert(TypeInfo::Func(arg.type_id(), type_id), f.region());
+                infer.unify(f_type_id, f.type_id())?;
+                (type_id, Expr::Apply(f, arg))
             },
             ast::Expr::Let(pat, pat_ty, val, then) => {
                 // `let a = b in c` desugars to `b:(a -> c)`
@@ -553,17 +556,11 @@ impl ast::Expr {
 
                 let then_scope = scope.with_many(pat.ident_types());
                 let then_body = then.to_hir(data, infer, &then_scope)?;
-                infer.unify(type_id, then_body.type_id())?;
+                let then_body_type_id = then_body.type_id();
 
-                let then_func = InferNode::new(Expr::Func(pat, then_body), (then.region(), infer.insert(TypeInfo::Unknown(None), then.region())));
+                let then_func = InferNode::new(Expr::Func(pat, then_body), (then.region(), infer.insert(TypeInfo::Func(val.type_id(), then_body_type_id), then.region())));
 
-                infer.add_constraint(Constraint::Func {
-                    f: then_func.type_id(),
-                    i: val.type_id(),
-                    o: type_id,
-                });
-
-                (TypeInfo::Unknown(None), Expr::Apply(then_func, val))
+                (then_body_type_id, Expr::Apply(then_func, val))
             },
             ast::Expr::If(pred, a, b) => {
                 let pred_hir = pred.to_hir(data, infer, scope)?;
@@ -573,9 +570,8 @@ impl ast::Expr {
                 let a = a.to_hir(data, infer, scope)?;
                 let b = b.to_hir(data, infer, scope)?;
                 infer.unify(a.type_id(), b.type_id())?;
-                infer.unify(type_id, a.type_id())?;
 
-                (TypeInfo::Unknown(None), Expr::Match(pred_hir, vec![
+                (a.type_id(), Expr::Match(pred_hir, vec![
                     (InferNode::new(Pat::Value(Value::Boolean(true)), (pred.region(), pred_type_id)), a),
                     (InferNode::new(Pat::Value(Value::Boolean(false)), (pred.region(), pred_type_id)), b),
                 ]))
@@ -583,32 +579,16 @@ impl ast::Expr {
             ast_expr => todo!("HIR parsing of {:?}", ast_expr),
         };
 
-        let info_id = infer.insert(info, self.region());
-        infer.unify(info_id, type_id)?;
-
         Ok(InferNode::new(hir_expr, (self.region(), type_id)))
     }
 }
 
 impl Pat {
-    fn infer(self: &mut InferNode<Self>, data: &DataCtx, infer: &mut InferCtx) -> Result<(), Error> {
-        let type_id = match &mut **self {
-            Pat::Value(x) => {
-                let type_info = x.get_type_info(infer);
-                infer.insert(type_info, self.region())
-            },
-            Pat::Ident(ident) => infer.insert(TypeInfo::Unknown(None), self.region()),
-        };
-
-        infer.unify(self.type_id(), type_id)?;
-
-        Ok(())
-    }
-
     fn into_checked(self: InferNode<Self>, infer: &InferCtx) -> Result<TypedPat, Error> {
         let meta = infer.reconstruct(self.type_id())?;
 
         Ok(TypeNode::new(match self.into_inner() {
+            Pat::Wildcard => Pat::Wildcard,
             Pat::Value(val) => Pat::Value(val),
             Pat::Ident(ident) => Pat::Ident(ident),
         }, meta))

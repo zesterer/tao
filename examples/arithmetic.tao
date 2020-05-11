@@ -6,6 +6,8 @@ type Two = Succ One
 type Three = Succ Two
 type Four = Succ Three
 
-def main = |x of Four, y of Succ (Succ (Succ (Succ Zero)))|
+def foo = |x of Four, y of Succ (Succ (Succ (Succ Zero)))|
 	# Hacky equivalence check
 	[x] ++ [y]
+
+def main of ? = (|f| f(3))(|y| 0)
