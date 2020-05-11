@@ -26,7 +26,7 @@ impl<T> Node<T, (SrcRegion, TypeId)> {
 pub enum Data {}
 pub enum Trait {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Number(f64),
     String(LocalIntern<String>),
@@ -56,6 +56,7 @@ impl Path {
     }
 }
 
+#[derive(Debug)]
 pub enum Pat { // TODO: <M>
     Wildcard,
     Value(Value),
@@ -71,6 +72,7 @@ impl InferNode<Pat> {
     }
 }
 
+#[derive(Debug)]
 pub enum Expr<M> {
     Value(Value),
     Local(Ident),
@@ -91,18 +93,12 @@ pub type TypedPat = TypeNode<Pat>;
 
 #[derive(Clone)]
 pub enum Scope<'a> {
-    //Module(&'a Module),
     Root,
-    Def(SrcNode<Ident>, Vec<SrcNode<Ident>>, Option<SrcNode<Type>>, &'a Self),
     Local(Ident, TypeId, &'a Self),
     Many(HashMap<Ident, TypeId>, &'a Self),
 }
 
 impl<'a> Scope<'a> {
-    fn with_def<'b>(&'b self, ident: SrcNode<Ident>, generics: Vec<SrcNode<Ident>>, ty: Option<SrcNode<Type>>) -> Scope<'b> where 'a: 'b {
-        Scope::Def(ident, generics, ty, self)
-    }
-
     fn with<'b>(&'b self, ident: Ident, ty: TypeId) -> Scope<'b> where 'a: 'b {
         Scope::Local(ident, ty, self)
     }
@@ -116,25 +112,15 @@ impl<'a> Scope<'a> {
         }
     }
 
-    fn get_local(&self, ident: Ident, ctx: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
+    fn get_local(&self, ident: Ident, infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
         match self {
             Scope::Local(local, ty, parent) => Some(*ty)
                 .filter(|_| local == &ident)
-                .or_else(|| parent.get_local(ident, ctx, region)),
+                .or_else(|| parent.get_local(ident, infer, region)),
             Scope::Many(locals, parent) => locals
                 .get(&ident)
                 .copied()
-                .or_else(|| parent.get_local(ident, ctx, region)),
-            Scope::Def(def, generics, ty, parent) => if **def == ident {
-                if let Some(ty) = ty {
-                    Some(ctx.instantiate_ty(generics, ty, region))
-                } else {
-                    // TODO: Is this correct? Can this lead to incorrect typing?
-                    Some(ctx.insert(TypeInfo::Unknown(None), def.region()))
-                }
-            } else {
-                parent.get_local(ident, ctx, region)
-            },
+                .or_else(|| parent.get_local(ident, infer, region)),
             Scope::Root => None,
         }
     }
@@ -145,6 +131,9 @@ pub struct DataCtx<'a> {
     module: &'a Module,
     core: &'a Core,
     generics: HashMap<Ident, TypeId>,
+
+    // TODO: Separate out into `DataCtx` and `ValueCtx: Deref<DataCtx>`
+    this: Option<Ident>,
 }
 
 impl<'a> DataCtx<'a> {
@@ -192,7 +181,11 @@ impl<'a> DataCtx<'a> {
     }
 
     fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, region: SrcRegion) -> Option<TypeId> {
-        self.module.get_def_type(ident, infer, region)
+        if Some(ident) == self.this {
+            Some(infer.insert(TypeInfo::Unknown(None), region))
+        } else {
+            self.module.get_def_type(ident, infer, region)
+        }
     }
 }
 
@@ -281,14 +274,9 @@ impl Program {
                 .iter()
                 .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.region())))
                 .collect(),
+            this: Some(*ast_def.name),
         };
         let scope = self.create_scope();
-
-        // Attempt to fully infer just from the type signature - needed for recursive definitions!
-        let scope = scope.with_def(ast_def.name.clone(), ast_def.generics.clone(), {
-            let ty_id = ast_def.ty.to_type_id(&data, &mut infer)?;
-            infer.reconstruct(ty_id).ok()
-        });
 
         let body = {
             let mut body = ast_def.body.to_hir(&data, &mut infer, &scope)?;
@@ -301,6 +289,20 @@ impl Program {
             infer.solve_all()?;
             body.into_checked(&mut infer)?
         };
+
+        // Ensure that all self-references in the body match with the inferred definition
+        // This is a halfway-house solution that allows recursion without proper damas-HM inference
+        body
+            .visit()
+            .try_for_each(|expr| match &**expr {
+                Expr::Global(ident) if *ident == *ast_def.name => {
+                    let definition = infer.instantiate_ty(&ast_def.generics, body.ty(), ast_def.body.region());
+                    // TODO: Put the usage region in here
+                    let usage = infer.instantiate_ty(&ast_def.generics, expr.ty(), SrcRegion::none());
+                    infer.unify(usage, definition)
+                },
+                _ => Ok(()),
+            })?;
 
         let generics = ast_def.generics
             .iter()
@@ -341,6 +343,7 @@ impl Program {
                 .iter()
                 .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.region())))
                 .collect(),
+            this: None,
         };
 
         let region = ast_type_alias.ty.region();
@@ -414,10 +417,6 @@ impl ast::Pat {
         let (type_id, hir_pat) = match &**self {
             ast::Pat::Ident(ident) => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Ident(*ident)),
             ast::Pat::Wildcard => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Wildcard),
-            // ast::Pat::Value(x) => {
-            //     let type_info = x.get_type_info(infer);
-            //     (infer.insert(type_info, self.region()), Pat::Value(x))
-            // },
             _ => todo!(),
         };
 
@@ -640,8 +639,51 @@ impl Expr<(SrcRegion, TypeId)> {
                     })
                     .collect::<Result<_, _>>()?,
             ),
-            _ => todo!(),
         }, meta))
     }
 }
 
+impl TypeExpr {
+    fn visit(&self) -> impl Iterator<Item=&Self> + '_ {
+        let mut stack = vec![self];
+        std::iter::from_fn(move || stack
+            .pop()
+            .map(|expr| {
+                match &**expr {
+                    Expr::Value(_) => {},
+                    Expr::Local(_) => {},
+                    Expr::Global(_) => {},
+                    Expr::Unary(_, x) => stack.push(x),
+                    Expr::Binary(_, x, y) => {
+                        stack.push(x);
+                        stack.push(y);
+                    },
+                    Expr::List(items) => {
+                        for item in items.iter() {
+                            stack.push(item);
+                        }
+                    },
+                    Expr::Tuple(items) => {
+                        for item in items.iter() {
+                            stack.push(item);
+                        }
+                    },
+                    Expr::Func(_, body) => {
+                        stack.push(body);
+                    },
+                    Expr::Apply(f, i) => {
+                        stack.push(f);
+                        stack.push(i);
+                    },
+                    Expr::Match(pred, arms) => {
+                        stack.push(pred);
+                        for (_, arm) in arms.iter() {
+                            stack.push(arm);
+                        }
+                    },
+                }
+
+                expr
+            }))
+    }
+}

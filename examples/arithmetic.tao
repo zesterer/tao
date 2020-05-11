@@ -6,12 +6,18 @@ type Two = Succ One
 type Three = Succ Two
 type Four = Succ Three
 
-def foo = |x of Four, y of Succ (Succ (Succ (Succ Zero)))|
-	# Hacky equivalence check
-	[x] ++ [y]
+#def foo = |x of Four, y of Succ (Succ (Succ (Succ Zero)))|
+#	# Hacky equivalence check
+#	[x] ++ [y]
 
 type Universe = ()
 
 given A type IO = Universe -> (A, Universe)
 
-def main = |x, y| if x = y then true else false
+given A def rec of ? -> Num = |x of Succ A| rec(())
+
+def factorial = |x| if x = 0
+	then 1
+	else x * factorial(x - 1)
+
+def main = factorial(10)
