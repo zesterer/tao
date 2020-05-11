@@ -742,9 +742,15 @@ impl<'a> InferCtx<'a> {
         self.reconstruct_inner(0, id).map_err(|err| match err {
             ReconstructError::Recursive => Error::custom(format!("Recursive type"))
                 .with_region(self.region(id)),
-            ReconstructError::Unknown => Error::custom(format!("Cannot fully infer type {}", self.display_type_info(id)))
-                .with_region(self.region(id))
-                .with_hint(format!("Specify all missing types")),
+            ReconstructError::Unknown => {
+                let msg = match self.get(self.get_base(id)) {
+                    TypeInfo::Unknown(_) => format!("Cannot infer type"),
+                    _ => format!("Cannot fully infer type {}", self.display_type_info(id)),
+                };
+                Error::custom(msg)
+                    .with_region(self.region(id))
+                    .with_hint(format!("Specify all missing types"))
+            },
         })
     }
 }

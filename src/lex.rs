@@ -191,7 +191,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
 
         let ident = permit(|c: &char| c.is_ascii_alphabetic() || *c == '_')
             .then(permit(|c: &char| c.is_ascii_alphanumeric() || *c == '_').repeated())
-            .map(|(head, tail)| Token::Ident(LocalIntern::new(std::iter::once(head).chain(tail.into_iter()).collect())));
+            .map(|(head, tail)| std::iter::once(head).chain(tail.into_iter()).collect());
 
         let op = seq("->".chars()).to(Token::RArrow)
             .or(seq("++".chars()).to(Token::Op(Op::Join)))
@@ -224,22 +224,24 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
 
         let token = number
             .or(string)
-            .or(seq("true".chars()).to(Token::Boolean(true)))
-            .or(seq("false".chars()).to(Token::Boolean(false)))
-            .or(seq("null".chars()).to(Token::Null))
-            .or(seq("let".chars()).to(Token::Let))
-            .or(seq("if".chars()).to(Token::If))
-            .or(seq("then".chars()).to(Token::Then))
-            .or(seq("else".chars()).to(Token::Else))
-            .or(seq("def".chars()).to(Token::Def))
-            .or(seq("given".chars()).to(Token::Given))
-            .or(seq("in".chars()).to(Token::In))
-            .or(seq("of".chars()).to(Token::Of))
-            .or(seq("type".chars()).to(Token::Type))
-            .or(seq("data".chars()).to(Token::Data))
-            .or(seq("and".chars()).to(Token::Op(Op::And)))
-            .or(seq("or".chars()).to(Token::Op(Op::Or)))
-            .or(ident)
+            .or(ident.map(|s: String| match s.as_str() {
+                "true" => Token::Boolean(true),
+                "false" => Token::Boolean(false),
+                "null" => Token::Null,
+                "let" => Token::Let,
+                "if" => Token::If,
+                "then" => Token::Then,
+                "else" => Token::Else,
+                "def" => Token::Def,
+                "given" => Token::Given,
+                "in" => Token::In,
+                "of" => Token::Of,
+                "type" => Token::Type,
+                "data" => Token::Data,
+                "and" => Token::Op(Op::And),
+                "or" => Token::Op(Op::Or),
+                _ => Token::Ident(LocalIntern::new(s)),
+            }))
             .or(op)
             .or(tree)
             .map_with_region(|token, region| token.at(region))

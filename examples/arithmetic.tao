@@ -16,7 +16,9 @@ given A type IO = Universe -> (A, Universe)
 
 #given A def bad_rec of ? -> Num = |x of Succ A| bad_rec(())
 
-def loop0 of Num = loop1
+given A def invent of A = invent
+
+def loop0 of Bool -> Num = loop1
 
 def loop1 = loop0
 
