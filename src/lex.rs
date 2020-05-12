@@ -29,6 +29,7 @@ pub enum Op {
     Or,
 
     Join,
+    Ellipsis,
 
     Not,
     Head,
@@ -52,6 +53,7 @@ impl fmt::Display for Op {
             Op::And => write!(f, "and"),
             Op::Or => write!(f, "or"),
             Op::Join => write!(f, "++"),
+            Op::Ellipsis => write!(f, "..."),
             Op::Not => write!(f, "!"),
             Op::Head => write!(f, "<:"),
             Op::Tail => write!(f, ":>"),
@@ -95,6 +97,7 @@ pub enum Token {
     Tree(Delimiter, Vec<Node<Token>>),
 
     RArrow,
+    RMap,
     Comma,
     Colon,
     Dot,
@@ -103,6 +106,7 @@ pub enum Token {
 
     Let,
     If,
+    Match,
     Then,
     Else,
     Def,
@@ -136,6 +140,7 @@ impl fmt::Display for Token {
             Token::Op(op) => write!(f, "{}", op),
             Token::Tree(delim, tokens) => write!(f, "{}...{}", delim.left(), delim.right()),
             Token::RArrow => write!(f, "->"),
+            Token::RMap => write!(f, "=>"),
             Token::Comma => write!(f, ","),
             Token::Colon => write!(f, ":"),
             Token::Dot => write!(f, "."),
@@ -143,6 +148,7 @@ impl fmt::Display for Token {
             Token::Pipe => write!(f, "|"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
+            Token::Match => write!(f, "match"),
             Token::Then => write!(f, "then"),
             Token::Else => write!(f, "else"),
             Token::Def => write!(f, "def"),
@@ -194,7 +200,9 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
             .map(|(head, tail)| std::iter::once(head).chain(tail.into_iter()).collect());
 
         let op = seq("->".chars()).to(Token::RArrow)
+            .or(seq("=>".chars()).to(Token::RMap))
             .or(seq("++".chars()).to(Token::Op(Op::Join)))
+            .or(seq("...".chars()).to(Token::Op(Op::Ellipsis)))
             .or(just('+').to(Token::Op(Op::Add)))
             .or(just('-').to(Token::Op(Op::Sub)))
             .or(just('*').to(Token::Op(Op::Mul)))
@@ -230,6 +238,7 @@ pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
                 "null" => Token::Null,
                 "let" => Token::Let,
                 "if" => Token::If,
+                "match" => Token::Match,
                 "then" => Token::Then,
                 "else" => Token::Else,
                 "def" => Token::Def,

@@ -57,26 +57,68 @@ impl Path {
 }
 
 #[derive(Debug)]
-pub enum Pat { // TODO: <M>
+pub enum Pat<M> {
     Wildcard,
     Value(Value),
-    Ident(Ident),
+    Inner(Node<Binding<M>, M>),
+    List(Vec<Node<Binding<M>, M>>),
+    ListFront(Vec<Node<Binding<M>, M>>, Option<SrcNode<Ident>>),
+    Tuple(Vec<Node<Binding<M>, M>>),
 }
 
-impl InferNode<Pat> {
-    fn ident_types(&self) -> HashMap<Ident, TypeId> {
-        match &**self {
-            Pat::Wildcard | Pat::Value(_) => HashMap::default(),
-            Pat::Ident(ident) => std::iter::once((*ident, self.type_id())).collect(),
+type InferBinding = InferNode<Binding<(SrcRegion, TypeId)>>;
+type InferPat = SrcNode<Pat<(SrcRegion, TypeId)>>;
+pub type TypeBinding = TypeNode<Binding<SrcNode<Type>>>;
+pub type TypePat = SrcNode<Pat<SrcNode<Type>>>;
+
+#[derive(Debug)]
+pub struct Binding<M> {
+    pat: SrcNode<Pat<M>>,
+    binding: Option<SrcNode<Ident>>,
+}
+
+impl InferBinding {
+    fn get_binding_idents(&self, idents: &mut HashMap<Ident, TypeId>) {
+        match &*self.pat {
+            Pat::Wildcard | Pat::Value(_) => {},
+            Pat::Inner(inner) => inner.get_binding_idents(idents),
+            Pat::List(items) => items
+                .iter()
+                .for_each(|item| item.get_binding_idents(idents)),
+            Pat::ListFront(items, tail) => {
+                items
+                    .iter()
+                    .for_each(|item| item.get_binding_idents(idents));
+                if let Some(ident) = tail {
+                    idents.insert(**ident, self.type_id());
+                }
+            },
+            Pat::Tuple(items) => items
+                .iter()
+                .for_each(|item| item.get_binding_idents(idents)),
         }
+
+        if let Some(ident) = &self.binding {
+            idents.insert(**ident, self.type_id());
+        }
+    }
+
+    fn binding_idents(&self) -> HashMap<Ident, TypeId> {
+        let mut idents = HashMap::default();
+        self.get_binding_idents(&mut idents);
+        idents
     }
 }
 
-impl TypedPat {
+impl TypePat {
     fn is_refutable(&self) -> bool {
         match &**self {
-            Pat::Wildcard | Pat::Ident(_) => false,
+            Pat::Wildcard => false,
             Pat::Value(_) => true,
+            Pat::Inner(inner) => inner.pat.is_refutable(),
+            Pat::List(items) => true, // List could be different size
+            Pat::ListFront(items, _) => items.iter().any(|item| item.pat.is_refutable()),
+            Pat::Tuple(items) => items.iter().any(|item| item.pat.is_refutable()),
         }
     }
 }
@@ -90,15 +132,13 @@ pub enum Expr<M> {
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
     List(Vec<Node<Self, M>>),
     Tuple(Vec<Node<Self, M>>),
-    Func(Node<Pat, M>, Node<Self, M>),
+    Func(Node<Binding<M>, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>), // TODO: Should application be a binary operator?
-    Match(Node<Self, M>, Vec<(Node<Pat, M>, Node<Self, M>)>),
+    Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
 }
 
 type InferExpr = InferNode<Expr<(SrcRegion, TypeId)>>;
-type InferPat = InferNode<Pat>;
 pub type TypeExpr = TypeNode<Expr<SrcNode<Type>>>;
-pub type TypedPat = TypeNode<Pat>;
 
 #[derive(Clone)]
 pub enum Scope<'a> {
@@ -294,8 +334,8 @@ impl Program {
             def.body
                 .visit()
                 .try_for_each(|expr| match &**expr {
-                    Expr::Func(param, _) if param.is_refutable() => Err(Error::custom(format!("Refutable pattern may not be used here"))
-                        .with_region(param.ty().region())),
+                    Expr::Func(param, _) if param.pat.is_refutable() => Err(Error::custom(format!("Refutable pattern may not be used here"))
+                        .with_region(param.pat.region())),
                     _ => Ok(()),
                 })?;
         }
@@ -452,20 +492,62 @@ impl Module {
 
 // AST to HIR conversions
 
-impl ast::Pat {
-    fn to_hir(self: &SrcNode<Self>, infer: &mut InferCtx) -> Result<InferNode<Pat>, Error> {
-        let (type_id, hir_pat) = match &**self {
-            ast::Pat::Ident(ident) => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Ident(*ident)),
+impl ast::Binding {
+    fn to_hir(self: &SrcNode<Self>, infer: &mut InferCtx) -> Result<InferBinding, Error> {
+        let (type_id, pat) = match &*self.pat {
             ast::Pat::Wildcard => (infer.insert(TypeInfo::Unknown(None), self.region()), Pat::Wildcard),
             ast::Pat::Literal(litr) => {
                 let val = litr.to_hir()?;
                 let val_type_info = val.get_type_info(infer);
                 (infer.insert(val_type_info, self.region()), Pat::Value(val))
             },
+            ast::Pat::Inner(inner) => {
+                let inner = inner.to_hir(infer)?;
+                (inner.type_id(), Pat::Inner(inner))
+            },
+            ast::Pat::List(items) => {
+                let item_type_id = infer.insert(TypeInfo::Unknown(None), self.region());
+                let items = items
+                    .iter()
+                    .map(|item| {
+                        let item = item.to_hir(infer)?;
+                        infer.unify(item.type_id(), item_type_id)?;
+                        Ok(item)
+                    })
+                    .collect::<Result<_, _>>()?;
+                (infer.insert(TypeInfo::List(item_type_id), self.region()), Pat::List(items))
+            },
+            ast::Pat::ListFront(items, tail) => {
+                let item_type_id = infer.insert(TypeInfo::Unknown(None), self.region());
+                let items = items
+                    .iter()
+                    .map(|item| {
+                        let item = item.to_hir(infer)?;
+                        infer.unify(item.type_id(), item_type_id)?;
+                        Ok(item)
+                    })
+                    .collect::<Result<_, _>>()?;
+                (infer.insert(TypeInfo::List(item_type_id), self.region()), Pat::ListFront(items, tail.clone()))
+            },
+            ast::Pat::Tuple(items) => {
+                let mut item_type_ids = Vec::new();
+                let items = items
+                    .iter()
+                    .map(|item| {
+                        let item = item.to_hir(infer)?;
+                        item_type_ids.push(item.type_id());
+                        Ok(item)
+                    })
+                    .collect::<Result<_, _>>()?;
+                (infer.insert(TypeInfo::Tuple(item_type_ids), self.region()), Pat::Tuple(items))
+            },
             _ => todo!(),
         };
 
-        Ok(InferNode::new(hir_pat, (self.region(), type_id)))
+        Ok(InferNode::new(Binding {
+            pat: SrcNode::new(pat, self.pat.region()),
+            binding: self.binding.clone(),
+        }, (self.region(), type_id)))
     }
 }
 
@@ -573,7 +655,7 @@ impl ast::Expr {
                     infer.unify(param.type_id(), param_ty_id)?;
                 }
 
-                let body_scope = scope.with_many(param.ident_types());
+                let body_scope = scope.with_many(param.binding_idents());
                 let body = body.to_hir(data, infer, &body_scope)?;
 
                 let type_id = infer.insert(TypeInfo::Func(param.type_id(), body.type_id()), self.region());
@@ -589,6 +671,7 @@ impl ast::Expr {
             },
             ast::Expr::Let(pat, pat_ty, val, then) => {
                 // `let a = b in c` desugars to `b:(a -> c)`
+                // TODO: Desugar to `match b in a => c` instead?
                 let pat = pat.to_hir(infer)?;
 
                 // Unify pattern with type hint
@@ -600,7 +683,7 @@ impl ast::Expr {
                 let val = val.to_hir(data, infer, scope)?;
                 infer.unify(pat.type_id(), val.type_id())?;
 
-                let then_scope = scope.with_many(pat.ident_types());
+                let then_scope = scope.with_many(pat.binding_idents());
                 let then_body = then.to_hir(data, infer, &then_scope)?;
                 let then_body_type_id = then_body.type_id();
 
@@ -618,31 +701,92 @@ impl ast::Expr {
                 infer.unify(a.type_id(), b.type_id())?;
 
                 (a.type_id(), Expr::Match(pred_hir, vec![
-                    (InferNode::new(Pat::Value(Value::Boolean(true)), (pred.region(), pred_type_id)), a),
-                    (InferNode::new(Pat::Value(Value::Boolean(false)), (pred.region(), pred_type_id)), b),
+                    (InferNode::new(Binding {
+                        pat: SrcNode::new(Pat::Value(Value::Boolean(true)), SrcRegion::none()),
+                        binding: None,
+                    }, (pred.region(), pred_type_id)), a),
+                    (InferNode::new(Binding {
+                        pat: SrcNode::new(Pat::Value(Value::Boolean(false)), SrcRegion::none()),
+                        binding: None,
+                    }, (pred.region(), pred_type_id)), b),
                 ]))
             },
-            ast_expr => todo!("HIR parsing of {:?}", ast_expr),
+            ast::Expr::Match(pred, arms) => {
+                let pred = pred.to_hir(data, infer, scope)?;
+
+                let match_type_id = infer.insert(TypeInfo::Unknown(None), self.region());
+
+                let arms = arms
+                    .iter()
+                    .map(|((pat, pat_ty), body)| {
+                        let pat = pat.to_hir(infer)?;
+
+                        // Unify pattern with type hint
+                        if let Some(pat_ty) = pat_ty {
+                            let pat_ty_id = pat_ty.to_type_id(data, infer)?;
+                            infer.unify(pat.type_id(), pat_ty_id)?;
+                        }
+
+                        infer.unify(pat.type_id(), pred.type_id())?;
+
+                        let body_scope = scope.with_many(pat.binding_idents());
+                        let body = body.to_hir(data, infer, &body_scope)?;
+
+                        infer.unify(match_type_id, body.type_id())?;
+
+                        Ok((pat, body))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                (match_type_id, Expr::Match(pred, arms))
+            },
         };
 
         Ok(InferNode::new(hir_expr, (self.region(), type_id)))
     }
 }
 
-impl Pat {
-    fn into_checked(self: InferNode<Self>, infer: &InferCtx) -> Result<TypedPat, Error> {
-        let meta = infer.reconstruct(self.type_id())?;
+impl InferPat {
+    fn into_checked(self, infer: &InferCtx) -> Result<TypePat, Error> {
+        let region = self.region();
 
-        Ok(TypeNode::new(match self.into_inner() {
+        let pat = match self.into_inner() {
             Pat::Wildcard => Pat::Wildcard,
             Pat::Value(val) => Pat::Value(val),
-            Pat::Ident(ident) => Pat::Ident(ident),
+            Pat::List(items) => Pat::List(items
+                .into_iter()
+                .map(|item| item.into_checked(infer))
+                .collect::<Result<_, _>>()?),
+            Pat::ListFront(items, tail) => Pat::ListFront(items
+                .into_iter()
+                .map(|item| item.into_checked(infer))
+                .collect::<Result<_, _>>()?, tail),
+            Pat::Tuple(items) => Pat::Tuple(items
+                .into_iter()
+                .map(|item| item.into_checked(infer))
+                .collect::<Result<_, _>>()?),
+            _ => todo!(),
+        };
+
+        Ok(SrcNode::new(pat, region))
+    }
+}
+
+impl InferBinding {
+    fn into_checked(self, infer: &InferCtx) -> Result<TypeBinding, Error> {
+        let meta = infer.reconstruct(self.type_id())?;
+
+        let this = self.into_inner();
+
+        Ok(TypeNode::new(Binding {
+            pat: this.pat.into_checked(infer)?,
+            binding: this.binding,
         }, meta))
     }
 }
 
-impl Expr<(SrcRegion, TypeId)> {
-    fn into_checked(self: InferNode<Self>, infer: &InferCtx) -> Result<TypeExpr, Error> {
+impl InferExpr {
+    fn into_checked(self, infer: &InferCtx) -> Result<TypeExpr, Error> {
         let meta = infer.reconstruct(self.type_id())?;
 
         Ok(TypeNode::new(match self.into_inner() {

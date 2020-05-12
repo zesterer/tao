@@ -111,11 +111,16 @@ impl fmt::Display for BinaryOp {
 pub enum Pat {
     Wildcard,
     Literal(Literal),
-    Ident(Ident),
-    List(Vec<SrcNode<Pat>>),
-    ListFront(Vec<SrcNode<Pat>>),
-    ListBack(Vec<SrcNode<Pat>>),
-    Tuple(Vec<SrcNode<Pat>>),
+    Inner(SrcNode<Binding>),
+    List(Vec<SrcNode<Binding>>),
+    ListFront(Vec<SrcNode<Binding>>, Option<SrcNode<Ident>>),
+    Tuple(Vec<SrcNode<Binding>>),
+}
+
+#[derive(Debug)]
+pub struct Binding {
+    pub pat: SrcNode<Pat>,
+    pub binding: Option<SrcNode<Ident>>,
 }
 
 #[derive(Clone, Debug)]
@@ -134,10 +139,10 @@ pub enum Expr {
     Unary(SrcNode<UnaryOp>, SrcNode<Self>),
     Binary(SrcNode<BinaryOp>, SrcNode<Self>, SrcNode<Self>),
     If(SrcNode<Self>, SrcNode<Self>, SrcNode<Self>),
-    Match(SrcNode<Self>, Vec<(SrcNode<Pat>, SrcNode<Self>)>),
-    Func(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Self>),
+    Match(SrcNode<Self>, Vec<((SrcNode<Binding>, Option<SrcNode<Type>>), SrcNode<Self>)>),
+    Func(SrcNode<Binding>, Option<SrcNode<Type>>, SrcNode<Self>),
     Apply(SrcNode<Self>, SrcNode<Self>),
-    Let(SrcNode<Pat>, Option<SrcNode<Type>>, SrcNode<Self>, SrcNode<Self>),
+    Let(SrcNode<Binding>, Option<SrcNode<Type>>, SrcNode<Self>, SrcNode<Self>),
     List(Vec<SrcNode<Self>>),
     Tuple(Vec<SrcNode<Self>>),
 }
@@ -248,6 +253,63 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
     })
 }
 
+fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Binding>>, Error> {
+    recursive(|binding| {
+        let binding = binding.link();
+
+        let litr_pat = number_parser().map(|x| Pat::Literal(Literal::Number(x)))
+            .or(just(Token::Boolean(true)).map(|_| Pat::Literal(Literal::Boolean(true))))
+            .or(just(Token::Boolean(false)).map(|_| Pat::Literal(Literal::Boolean(false))))
+            .or(string_parser().map(|x| Pat::Literal(Literal::String(x))))
+            .map_with_region(|pat, region| SrcNode::new(pat, region));
+
+        let tuple_pat = nested_parser(
+            binding.clone().separated_by(just(Token::Comma)),
+            Delimiter::Paren,
+        )
+            .map_with_region(|items, region| SrcNode::new(Pat::Tuple(items), region));
+
+        let list_pat = nested_parser(
+            binding.clone().separated_by(just(Token::Comma)),
+            Delimiter::Brack,
+        )
+            .map_with_region(|items, region| SrcNode::new(Pat::List(items), region));
+
+        let list_front_pat = nested_parser(
+            binding.clone().padded_by(just(Token::Comma)).repeated()
+                .padded_by(just(Token::Op(Op::Ellipsis)))
+                .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)).or_not()),
+            Delimiter::Brack,
+        )
+            .map_with_region(|(items, tail), region| SrcNode::new(Pat::ListFront(items, tail), region));
+
+        let free_binding = ident_parser()
+            .map_with_region(|ident, region| Binding {
+                pat: SrcNode::new(Pat::Wildcard, region),
+                binding: match ident.as_str() {
+                    "_" => None,
+                    _ => Some(SrcNode::new(ident, region)),
+                }
+            })
+            .map_with_region(|pat, region| SrcNode::new(pat, region));
+
+        litr_pat
+            .or(nested_parser(binding.clone(), Delimiter::Paren)
+                .map_with_region(|inner, region| SrcNode::new(Pat::Inner(inner), region)))
+            .or(tuple_pat)
+            .or(list_pat)
+            .or(list_front_pat)
+            .then(just(Token::Colon)
+                .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+                .or_not())
+            .map_with_region(|(pat, binding), region| SrcNode::new(Binding {
+                pat,
+                binding,
+            }, region))
+            .or(free_binding)
+    })
+}
+
 fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Expr>>, Error> {
     recursive(|expr| {
         let expr = expr.link();
@@ -265,33 +327,16 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .map_with_region(|litr, region| SrcNode::new(litr, region));
 
         let brack_expr_list = nested_parser(
-            expr
-                .clone()
-                .separated_by(just(Token::Comma)),
+            expr.clone().separated_by(just(Token::Comma)),
             Delimiter::Brack,
         );
 
         let paren_expr_list = nested_parser(
-            expr
-                .clone()
-                .separated_by(just(Token::Comma)),
+            expr.clone().separated_by(just(Token::Comma)),
             Delimiter::Paren,
         );
 
-        let ident_pat = ident_parser()
-            .map(|ident| match ident.as_str() {
-                "_" => Pat::Wildcard,
-                _ => Pat::Ident(ident),
-            });
-
-        let value_pat = number_parser().map(|x| Pat::Literal(Literal::Number(x)))
-            .or(just(Token::Boolean(true)).map(|_| Pat::Literal(Literal::Boolean(true))))
-            .or(just(Token::Boolean(false)).map(|_| Pat::Literal(Literal::Boolean(false))))
-            .or(string_parser().map(|x| Pat::Literal(Literal::String(x))));
-
-        let pat = ident_pat
-            .or(value_pat)
-            .map_with_region(|pat, region| SrcNode::new(pat, region))
+        let binding = binding_parser()
             .then(just(Token::Of)
                 .padding_for(type_parser())
                 .or_not());
@@ -308,7 +353,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .map_with_region(|items, region| SrcNode::new(Expr::Tuple(items), region)))
             // Let
             .or(just(Token::Let)
-                .padding_for(pat.clone())
+                .padding_for(binding.clone())
                 .padded_by(just(Token::Op(Op::Eq)))
                 .then(expr.clone())
                 .map_with_region(|(pat, expr), region| ((pat, expr), region))
@@ -323,6 +368,15 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .padded_by(just(Token::Else))
                 .then(expr.clone())
                 .map_with_region(|((pred, a), b), region| SrcNode::new(Expr::If(pred, a, b), region)))
+            .or(just(Token::Match)
+                .padding_for(expr.clone())
+                .padded_by(just(Token::In))
+                .then(just(Token::Pipe)
+                    .padding_for(binding.clone())
+                    .padded_by(just(Token::RMap))
+                    .then(expr.clone())
+                    .repeated())
+                .map_with_region(|(pred, arms), region| SrcNode::new(Expr::Match(pred, arms), region)))
             .boxed();
 
         let application = atom
@@ -424,7 +478,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         */
 
         let func = just(Token::Pipe)
-            .padding_for(pat.separated_by(just(Token::Comma)))
+            .padding_for(binding.separated_by(just(Token::Comma)))
             .padded_by(just(Token::Pipe))
             .then(expr)
             .reduce_right(|(param, param_ty), body| {
