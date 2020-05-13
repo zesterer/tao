@@ -29,10 +29,11 @@ def factorial = |x| match x in
 def first A, B = |(a, b) of (A, B)| a
 
 def list_identity A = |xs of [A]| match xs in
-	| [head, ...tail] => (match tail in
-		| [head2, ...tail] => [head, head2] ++ tail
-		| [] => [head])
-	| [] => []
+	[head, ...tail] => match tail in (
+		[head2, ...tail] => [head, head2] ++ tail,
+		[] => [head],
+	),
+	[] => [],
 
 def len A = |xs of [A]| match xs in
 	| [] => 0

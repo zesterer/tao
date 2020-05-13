@@ -85,7 +85,7 @@ impl parze::error::Error<SrcNode<Token>> for Error {
     type Context = ();
 
     fn unexpected_sym(sym: &SrcNode<Token>, region: SrcRegion) -> Self {
-        Self::custom(format!("Unexpected character '{}'", **sym))
+        Self::custom(format!("Unexpected token '{}'", **sym))
             .with_region(sym.region())
             .with_region(region)
     }
@@ -169,7 +169,7 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
             Ok(())
         };
 
-        write!(f, "Error: ")?;
+        writeln!(f, "Error: {}", self.error.msg)?;
         highlight_regions(f, &[])?;
 
         for hint in self.error.hints.iter() {
