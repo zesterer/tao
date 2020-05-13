@@ -1,4 +1,7 @@
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    fmt,
+};
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 use im_rc::Vector;
@@ -30,6 +33,21 @@ impl Value {
             _ => unreachable!(),
             #[cfg(not(debug_assertions))]
             _ => unsafe { unreachable_unchecked() },
+        }
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::Number(x) => write!(f, "{}", x),
+            Value::Boolean(x) => write!(f, "{}", x),
+            Value::String(x) => write!(f, "\"{}\"", x),
+            Value::List(xs) => write!(f, "[{}]", xs
+                .iter()
+                .map(|x| format!("{}", x))
+                .collect::<Vec<_>>()
+                .join(", ")),
         }
     }
 }

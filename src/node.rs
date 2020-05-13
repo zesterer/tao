@@ -4,13 +4,13 @@ use std::{
     cmp::{PartialEq, Eq},
 };
 use crate::{
-    src::SrcRegion,
+    src::Span,
     ty::Type,
     mir::RawType,
 };
 
 #[derive(Clone, Hash)]
-pub struct Node<T, U = SrcRegion>(Box<T>, U);
+pub struct Node<T, U = Span>(Box<T>, U);
 
 impl<T, U> Node<T, U> {
     pub fn new(item: T, attr: U) -> Self {
@@ -76,10 +76,10 @@ impl<T: Eq, U> Eq for Node<T, U> {}
 
 // SrcNode
 
-pub type SrcNode<T> = Node<T, SrcRegion>;
+pub type SrcNode<T> = Node<T, Span>;
 
-impl<T> Node<T, SrcRegion> {
-    pub fn region(&self) -> SrcRegion {
+impl<T> Node<T, Span> {
+    pub fn span(&self) -> Span {
         *self.attr()
     }
 }

@@ -18,10 +18,6 @@ type IO A = Universe -> (A, Universe)
 
 def invent A of A = invent
 
-def loop0 of Bool -> Num = loop1
-
-def loop1 = loop0
-
 def factorial = |x| match x in
 	| 0 => 1
 	| _ => x * factorial(x - 1)
@@ -29,11 +25,10 @@ def factorial = |x| match x in
 def first A, B = |(a, b) of (A, B)| a
 
 def list_identity A = |xs of [A]| match xs in
-	[head, ...tail] => match tail in (
-		[head2, ...tail] => [head, head2] ++ tail,
-		[] => [head],
-	),
-	[] => [],
+	| [head, ...tail] => (match tail in
+		| [head2, ...tail] => [head, head2] ++ tail
+		| [] => [head])
+	| [] => []
 
 def len A = |xs of [A]| match xs in
 	| [] => 0

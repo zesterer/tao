@@ -6,7 +6,7 @@ use crate::{
     lex::{Token, Delimiter, Op},
     error::Error,
     node::SrcNode,
-    src::SrcRegion,
+    src::Span,
 };
 
 type Ident = LocalIntern<String>;
@@ -196,7 +196,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 let atom = atom.link();
 
                 let ident = ident_parser()
-                    .map_with_region(|ident, region| SrcNode::new(Type::Data(SrcNode::new(ident, region), Vec::new()), region));
+                    .map_with_span(|ident, span| SrcNode::new(Type::Data(SrcNode::new(ident, span), Vec::new()), span));
 
                 let list = nested_parser(
                     ty.clone(),
@@ -230,24 +230,24 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                     .or(list
                         .or(tuple)
                         .or(unknown)
-                        .map_with_region(|ty, region| SrcNode::new(ty, region)));
+                        .map_with_span(|ty, span| SrcNode::new(ty, span)));
 
                 atom
             })
         };
 
         let data = ident_parser()
-            .map_with_region(|name, region| SrcNode::new(name, region))
+            .map_with_span(|name, span| SrcNode::new(name, span))
             .then(atom.clone().repeated())
             .map(|(data, params)| Type::Data(data, params))
-            .map_with_region(|ty, region| SrcNode::new(ty, region))
+            .map_with_span(|ty, span| SrcNode::new(ty, span))
             .or(atom);
 
         data.clone()
             .then(just(Token::RArrow).padding_for(ty.clone()).repeated())
             .reduce_left(|i, o| {
-                let region = i.region().union(o.region());
-                SrcNode::new(Type::Func(i, o), region)
+                let span = i.span().union(o.span());
+                SrcNode::new(Type::Func(i, o), span)
             })
             .or(data)
     })
@@ -261,51 +261,51 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
             .or(just(Token::Boolean(true)).map(|_| Pat::Literal(Literal::Boolean(true))))
             .or(just(Token::Boolean(false)).map(|_| Pat::Literal(Literal::Boolean(false))))
             .or(string_parser().map(|x| Pat::Literal(Literal::String(x))))
-            .map_with_region(|pat, region| SrcNode::new(pat, region));
+            .map_with_span(|pat, span| SrcNode::new(pat, span));
 
         let tuple_pat = nested_parser(
             binding.clone().separated_by(just(Token::Comma)),
             Delimiter::Paren,
         )
-            .map_with_region(|items, region| SrcNode::new(Pat::Tuple(items), region));
+            .map_with_span(|items, span| SrcNode::new(Pat::Tuple(items), span));
 
         let list_pat = nested_parser(
             binding.clone().separated_by(just(Token::Comma)),
             Delimiter::Brack,
         )
-            .map_with_region(|items, region| SrcNode::new(Pat::List(items), region));
+            .map_with_span(|items, span| SrcNode::new(Pat::List(items), span));
 
         let list_front_pat = nested_parser(
             binding.clone().padded_by(just(Token::Comma)).repeated()
                 .padded_by(just(Token::Op(Op::Ellipsis)))
-                .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)).or_not()),
+                .then(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)).or_not()),
             Delimiter::Brack,
         )
-            .map_with_region(|(items, tail), region| SrcNode::new(Pat::ListFront(items, tail), region));
+            .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span));
 
         let free_binding = ident_parser()
-            .map_with_region(|ident, region| Binding {
-                pat: SrcNode::new(Pat::Wildcard, region),
+            .map_with_span(|ident, span| Binding {
+                pat: SrcNode::new(Pat::Wildcard, span),
                 binding: match ident.as_str() {
                     "_" => None,
-                    _ => Some(SrcNode::new(ident, region)),
+                    _ => Some(SrcNode::new(ident, span)),
                 }
             })
-            .map_with_region(|pat, region| SrcNode::new(pat, region));
+            .map_with_span(|pat, span| SrcNode::new(pat, span));
 
         litr_pat
             .or(nested_parser(binding.clone(), Delimiter::Paren)
-                .map_with_region(|inner, region| SrcNode::new(Pat::Inner(inner), region)))
+                .map_with_span(|inner, span| SrcNode::new(Pat::Inner(inner), span)))
             .or(tuple_pat)
             .or(list_pat)
             .or(list_front_pat)
             .then(just(Token::Colon)
-                .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+                .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
                 .or_not())
-            .map_with_region(|(pat, binding), region| SrcNode::new(Binding {
+            .map_with_span(|(pat, binding), span| SrcNode::new(Binding {
                 pat,
                 binding,
-            }, region))
+            }, span))
             .or(free_binding)
     })
 }
@@ -324,7 +324,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(number)
             .or(boolean)
             .or(string)
-            .map_with_region(|litr, region| SrcNode::new(litr, region));
+            .map_with_span(|litr, span| SrcNode::new(litr, span));
 
         let brack_expr_list = nested_parser(
             expr.clone().separated_by(just(Token::Comma)),
@@ -346,20 +346,20 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(nested_parser(expr.clone(), Delimiter::Paren))
             // Lists
             .or(brack_expr_list
-                .map_with_region(|items, region| SrcNode::new(Expr::List(items), region)))
+                .map_with_span(|items, span| SrcNode::new(Expr::List(items), span)))
             // Tuples
             .or(paren_expr_list
                 .clone()
-                .map_with_region(|items, region| SrcNode::new(Expr::Tuple(items), region)))
+                .map_with_span(|items, span| SrcNode::new(Expr::Tuple(items), span)))
             // Let
             .or(just(Token::Let)
                 .padding_for(binding.clone())
                 .padded_by(just(Token::Op(Op::Eq)))
                 .then(expr.clone())
-                .map_with_region(|(pat, expr), region| ((pat, expr), region))
+                .map_with_span(|(pat, expr), span| ((pat, expr), span))
                 .padded_by(just(Token::In))
                 .then(expr.clone())
-                .map(|((((pat, pat_ty), expr), region), then)| SrcNode::new(Expr::Let(pat, pat_ty, expr, then), region)))
+                .map(|((((pat, pat_ty), expr), span), then)| SrcNode::new(Expr::Let(pat, pat_ty, expr, then), span)))
             // If
             .or(just(Token::If)
                 .padding_for(expr.clone())
@@ -367,7 +367,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .then(expr.clone())
                 .padded_by(just(Token::Else))
                 .then(expr.clone())
-                .map_with_region(|((pred, a), b), region| SrcNode::new(Expr::If(pred, a, b), region)))
+                .map_with_span(|((pred, a), b), span| SrcNode::new(Expr::If(pred, a, b), span)))
             .or(just(Token::Match)
                 .padding_for(expr.clone())
                 .padded_by(just(Token::In))
@@ -376,7 +376,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                     .padded_by(just(Token::RMap))
                     .then(expr.clone())
                     .repeated())
-                .map_with_region(|(pred, arms), region| SrcNode::new(Expr::Match(pred, arms), region)))
+                .map_with_span(|(pred, arms), span| SrcNode::new(Expr::Match(pred, arms), span)))
             .boxed();
 
         let application = atom
@@ -384,16 +384,16 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .reduce_left(|f, args| args
                 .into_iter()
                 .fold(f, |f, arg| {
-                    let region = f.region().union(arg.region());
-                    SrcNode::new(Expr::Apply(f, arg), region)
+                    let span = f.span().union(arg.span());
+                    SrcNode::new(Expr::Apply(f, arg), span)
                 }))
             .boxed();
 
         let infix = application.clone()
             .then(just(Token::Colon).padding_for(application).repeated())
             .reduce_left(|arg, f| {
-                let region = f.region().union(arg.region());
-                SrcNode::new(Expr::Apply(f, arg), region)
+                let span = f.span().union(arg.span());
+                SrcNode::new(Expr::Apply(f, arg), span)
             })
             .boxed();
 
@@ -401,45 +401,45 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(just(Token::Op(Op::Not)).to(UnaryOp::Not))
             .or(just(Token::Op(Op::Head)).to(UnaryOp::Head))
             .or(just(Token::Op(Op::Tail)).to(UnaryOp::Tail))
-            .map_with_region(|op, region| SrcNode::new(op, region))
+            .map_with_span(|op, span| SrcNode::new(op, span))
             .repeated()
             .then(infix)
             .reduce_right(|op, expr| {
-                let region = op.region().union(expr.region());
-                SrcNode::new(Expr::Unary(op, expr), region)
+                let span = op.span().union(expr.span());
+                SrcNode::new(Expr::Unary(op, expr), span)
             })
             .boxed();
 
         let product_op = just(Token::Op(Op::Mul)).to(BinaryOp::Mul)
             .or(just(Token::Op(Op::Div)).to(BinaryOp::Div))
             .or(just(Token::Op(Op::Rem)).to(BinaryOp::Rem))
-            .map_with_region(|op, region| SrcNode::new(op, region));
+            .map_with_span(|op, span| SrcNode::new(op, span));
         let product = unary.clone()
             .then(product_op.then(unary).repeated())
             .reduce_left(|a, (op, b)| {
-                let region = a.region().union(b.region());
-                SrcNode::new(Expr::Binary(op, a, b), region)
+                let span = a.span().union(b.span());
+                SrcNode::new(Expr::Binary(op, a, b), span)
             })
             .boxed();
 
         let sum_op = just(Token::Op(Op::Add)).to(BinaryOp::Add)
             .or(just(Token::Op(Op::Sub)).to(BinaryOp::Sub))
-            .map_with_region(|op, region| SrcNode::new(op, region));
+            .map_with_span(|op, span| SrcNode::new(op, span));
         let sum = product.clone()
             .then(sum_op.then(product).repeated())
             .reduce_left(|a, (op, b)| {
-                let region = a.region().union(b.region());
-                SrcNode::new(Expr::Binary(op, a, b), region)
+                let span = a.span().union(b.span());
+                SrcNode::new(Expr::Binary(op, a, b), span)
             })
             .boxed();
 
         let join_op = just(Token::Op(Op::Join)).to(BinaryOp::Join)
-            .map_with_region(|op, region| SrcNode::new(op, region));
+            .map_with_span(|op, span| SrcNode::new(op, span));
         let join = sum.clone()
             .then(join_op.then(sum).repeated())
             .reduce_left(|a, (op, b)| {
-                let region = a.region().union(b.region());
-                SrcNode::new(Expr::Binary(op, a, b), region)
+                let span = a.span().union(b.span());
+                SrcNode::new(Expr::Binary(op, a, b), span)
             })
             .boxed();
 
@@ -449,23 +449,23 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(just(Token::Op(Op::More)).to(BinaryOp::More))
             .or(just(Token::Op(Op::LessEq)).to(BinaryOp::LessEq))
             .or(just(Token::Op(Op::MoreEq)).to(BinaryOp::MoreEq))
-            .map_with_region(|op, region| SrcNode::new(op, region));
+            .map_with_span(|op, span| SrcNode::new(op, span));
         let comparison = join.clone()
             .then(comparison_op.then(join).repeated())
             .reduce_left(|a, (op, b)| {
-                let region = a.region().union(b.region());
-                SrcNode::new(Expr::Binary(op, a, b), region)
+                let span = a.span().union(b.span());
+                SrcNode::new(Expr::Binary(op, a, b), span)
             })
             .boxed();
 
         let logical_op = just(Token::Op(Op::And)).to(BinaryOp::And)
             .or(just(Token::Op(Op::Or)).to(BinaryOp::Or))
-            .map_with_region(|op, region| SrcNode::new(op, region));
+            .map_with_span(|op, span| SrcNode::new(op, span));
         let logical = comparison.clone()
             .then(logical_op.then(comparison).repeated())
             .reduce_left(|a, (op, b)| {
-                let region = a.region().union(b.region());
-                SrcNode::new(Expr::Binary(op, a, b), region)
+                let span = a.span().union(b.span());
+                SrcNode::new(Expr::Binary(op, a, b), span)
             })
             .boxed();
 
@@ -474,7 +474,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         let func = pat
             .padded_by(just(Token::RArrow))
             .then(expr)
-            .map_with_region(|((param, param_ty), body), region| SrcNode::new(Expr::Func(param, param_ty, body), region));
+            .map_with_span(|((param, param_ty), body), span| SrcNode::new(Expr::Func(param, param_ty, body), span));
         */
 
         let func = just(Token::Pipe)
@@ -482,14 +482,14 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .padded_by(just(Token::Pipe))
             .then(expr)
             .reduce_right(|(param, param_ty), body| {
-                let region = param
-                    .region()
+                let span = param
+                    .span()
                     .union(param_ty
                         .as_ref()
-                        .map(|t| t.region())
-                        .unwrap_or(SrcRegion::none()))
-                    .union(body.region());
-                SrcNode::new(Expr::Func(param, param_ty, body), region)
+                        .map(|t| t.span())
+                        .unwrap_or(Span::none()))
+                    .union(body.span());
+                SrcNode::new(Expr::Func(param, param_ty, body), span)
             })
             .boxed();
 
@@ -506,10 +506,10 @@ pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Err
 
 fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<DataType>>, Error> {
     let variant = ident_parser()
-        .map_with_region(|ident, region| SrcNode::new(ident, region))
+        .map_with_span(|ident, span| SrcNode::new(ident, span))
         .then(type_parser()
             .or_not()
-            .map(|ty| ty.unwrap_or_else(|| SrcNode::new(Type::Tuple(vec![]), SrcRegion::none()))));
+            .map(|ty| ty.unwrap_or_else(|| SrcNode::new(Type::Tuple(vec![]), Span::none()))));
 
     let sum = just(Token::Pipe)
         .or_not()
@@ -520,16 +520,16 @@ fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Out
                 variants.push(variant);
                 variants
             }))
-        .map_with_region(|variants, region| SrcNode::new(DataType::Sum(variants), region));
+        .map_with_span(|variants, span| SrcNode::new(DataType::Sum(variants), span));
 
     let field = ident_parser()
-        .map_with_region(|ident, region| SrcNode::new(ident, region))
+        .map_with_span(|ident, span| SrcNode::new(ident, span))
         .then(type_parser());
 
     let product = just(Token::Dot)
         .padding_for(field)
         .repeated()
-        .map_with_region(|fields, region| SrcNode::new(DataType::Product(fields), region));
+        .map_with_span(|fields, span| SrcNode::new(DataType::Product(fields), span));
 
     sum.or(product)
 }
@@ -552,8 +552,8 @@ impl Def {
     pub fn main(body: SrcNode<Expr>) -> Self {
         Self {
             generics: Vec::new(),
-            name: SrcNode::new(LocalIntern::new("main".to_string()), SrcRegion::none()),
-            ty: SrcNode::new(Type::Unknown, SrcRegion::none()),
+            name: SrcNode::new(LocalIntern::new("main".to_string()), Span::none()),
+            ty: SrcNode::new(Type::Unknown, Span::none()),
             body,
         }
     }
@@ -590,7 +590,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
         let module = module.link();
 
         let generics = ident_parser()
-            .map_with_region(|ident, region| SrcNode::new(ident, region))
+            .map_with_span(|ident, span| SrcNode::new(ident, span))
             .separated_by(just(Token::Comma));
 
         // let typeparams = just(Token::Given)
@@ -600,7 +600,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
 
         let def = just(Token::Def)
             // Name
-            .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
             // Generic parameters
             .then(generics.clone())
             // Optional type annotation
@@ -609,21 +609,21 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
                 .or_not())
             .padded_by(just(Token::Op(Op::Eq)))
             .then(expr_parser())
-            .map_with_region(|(((name, generics), ty), body), region| Decl::Def(Def {
+            .map_with_span(|(((name, generics), ty), body), span| Decl::Def(Def {
                 generics,
-                ty: ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, name.region())),
+                ty: ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, name.span())),
                 name,
                 body,
             }));
 
         let type_alias = just(Token::Type)
             // Name
-            .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
             // Generic parameters
             .then(generics.clone())
             .padded_by(just(Token::Op(Op::Eq)))
             .then(type_parser())
-            .map_with_region(|((name, generics), ty), region| Decl::TypeAlias(TypeAlias {
+            .map_with_span(|((name, generics), ty), span| Decl::TypeAlias(TypeAlias {
                 generics,
                 name,
                 ty,
@@ -631,12 +631,12 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
 
         let data = just(Token::Data)
             // Name
-            .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
             // Generic parameters
             .then(generics)
             .padded_by(just(Token::Op(Op::Eq)))
             .then(data_type_parser())
-            .map_with_region(|((name, generics), data_ty), region| Decl::Data(Data {
+            .map_with_span(|((name, generics), data_ty), span| Decl::Data(Data {
                 generics,
                 name,
                 data_ty,
@@ -645,11 +645,11 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
         let decl = def
             .or(type_alias)
             .or(data)
-            .map_with_region(|decl, region| SrcNode::new(decl, region));
+            .map_with_span(|decl, span| SrcNode::new(decl, span));
 
         decl
             .repeated()
-            .map_with_region(|decls, region| SrcNode::new(Module { decls }, region))
+            .map_with_span(|decls, span| SrcNode::new(Module { decls }, span))
     })
 }
 

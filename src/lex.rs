@@ -5,7 +5,7 @@ use std::{
 use parze::prelude::*;
 use internment::LocalIntern;
 use crate::{
-    src::SrcRegion,
+    src::Span,
     node::SrcNode,
     error::Error,
 };
@@ -118,8 +118,8 @@ pub enum Token {
 }
 
 impl Token {
-    fn at(self, region: SrcRegion) -> SrcNode<Self> {
-        SrcNode::new(self, region)
+    fn at(self, span: Span) -> SrcNode<Self> {
+        SrcNode::new(self, span)
     }
 }
 
@@ -253,7 +253,7 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             }))
             .or(op)
             .or(tree)
-            .map_with_region(|token, region| token.at(region))
+            .map_with_span(|token, span| token.at(span))
             .padded_by(space.clone());
 
         space.padding_for(token.repeated())

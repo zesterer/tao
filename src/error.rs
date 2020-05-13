@@ -1,6 +1,6 @@
 use std::fmt;
 use crate::{
-    src::{SrcLoc, SrcRegion},
+    src::{Loc, Span},
     lex::Token,
     node::SrcNode,
 };
@@ -8,7 +8,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Error {
     msg: String,
-    regions: Vec<SrcRegion>,
+    spans: Vec<Span>,
     hints: Vec<String>,
 }
 
@@ -17,7 +17,7 @@ impl Error {
     pub fn custom(msg: String) -> Self {
         Self {
             msg,
-            regions: Vec::new(),
+            spans: Vec::new(),
             hints: Vec::new(),
         }
     }
@@ -29,8 +29,8 @@ impl Error {
         }
     }
 
-    pub fn at(mut self, region: SrcRegion) -> Self {
-        // TODO: More region information
+    pub fn at(mut self, span: Span) -> Self {
+        // TODO: More span information
         self
     }
 
@@ -39,8 +39,8 @@ impl Error {
         self
     }
 
-    pub fn with_region(mut self, region: SrcRegion) -> Self {
-        self.regions.push(region);
+    pub fn with_span(mut self, span: Span) -> Self {
+        self.spans.push(span);
         self
     }
 
@@ -51,22 +51,22 @@ impl Error {
 }
 
 impl parze::error::Error<char> for Error {
-    type Region = SrcRegion;
+    type Span = Span;
     type Thing = Thing;
     type Context = ();
 
-    fn unexpected_sym(c: &char, region: SrcRegion) -> Self {
+    fn unexpected_sym(c: &char, span: Span) -> Self {
         Self::custom(format!("Unexpected character '{}'", c))
-            .with_region(region)
+            .with_span(span)
     }
 
     fn unexpected_end() -> Self {
         Self::custom(format!("Unexpected end of input"))
     }
 
-    fn expected_end(c: &char, region: SrcRegion) -> Self {
+    fn expected_end(c: &char, span: Span) -> Self {
         Self::custom(format!("Expected end of input, found '{}'", c))
-            .with_region(region)
+            .with_span(span)
     }
 
     fn expected(mut self, thing: Self::Thing) -> Self {
@@ -80,24 +80,24 @@ impl parze::error::Error<char> for Error {
 }
 
 impl parze::error::Error<SrcNode<Token>> for Error {
-    type Region = SrcRegion;
+    type Span = Span;
     type Thing = Thing;
     type Context = ();
 
-    fn unexpected_sym(sym: &SrcNode<Token>, region: SrcRegion) -> Self {
+    fn unexpected_sym(sym: &SrcNode<Token>, span: Span) -> Self {
         Self::custom(format!("Unexpected token '{}'", **sym))
-            .with_region(sym.region())
-            .with_region(region)
+            .with_span(sym.span())
+            .with_span(span)
     }
 
     fn unexpected_end() -> Self {
         Self::custom(format!("Unexpected end of input"))
     }
 
-    fn expected_end(sym: &SrcNode<Token>, region: SrcRegion) -> Self {
+    fn expected_end(sym: &SrcNode<Token>, span: Span) -> Self {
         Self::custom(format!("Expected end of input, found '{}'", **sym))
-            .with_region(sym.region())
-            .with_region(region)
+            .with_span(sym.span())
+            .with_span(span)
     }
 
     fn expected(mut self, thing: Self::Thing) -> Self {
@@ -117,14 +117,14 @@ pub struct ErrorInSrc<'a> {
 
 impl<'a> fmt::Display for ErrorInSrc<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let highlight_regions = |f: &mut fmt::Formatter, regions: &[_]| {
-            let region_iter = regions
+        let highlight_spans = |f: &mut fmt::Formatter, spans: &[_]| {
+            let span_iter = spans
                 .iter()
-                .chain(self.error.regions.iter());
+                .chain(self.error.spans.iter());
 
-            if let Some(((start_line, start_col), (end_line, end_col))) = region_iter
+            if let Some(((start_line, start_col), (end_line, end_col))) = span_iter
                 .clone()
-                .fold(SrcRegion::none(), |a, x| a.union(*x))
+                .fold(Span::none(), |a, x| a.union(*x))
                 .in_context(self.src)
             {
                 writeln!(f, "-> line {}, column {}", start_line + 1, start_col + 1)?;
@@ -134,20 +134,20 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                 let mut char_pos = 0;
                 for (i, line) in lines.iter().enumerate() {
                     if i >= start_line && i <= end_line {
-                        let line_region = SrcRegion::range(
-                            SrcLoc::at(char_pos),
-                            SrcLoc::at(char_pos + line.len()),
+                        let line_span = Span::range(
+                            Loc::at(char_pos),
+                            Loc::at(char_pos + line.len()),
                         );
 
                         writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
 
                         // Underline
-                        if region_iter
+                        if span_iter
                             .clone()
-                            .any(|r| r.intersects(line_region)) {
+                            .any(|r| r.intersects(line_span)) {
                             write!(f, "       ")?;
                             for _ in 0..line.len() {
-                                if region_iter.clone().any(|r| r.contains(SrcLoc::at(char_pos))) {
+                                if span_iter.clone().any(|r| r.contains(Loc::at(char_pos))) {
                                     write!(f, "^")?;
                                 } else {
                                     write!(f, " ")?;
@@ -170,7 +170,7 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
         };
 
         writeln!(f, "Error: {}", self.error.msg)?;
-        highlight_regions(f, &[])?;
+        highlight_spans(f, &[])?;
 
         for hint in self.error.hints.iter() {
             writeln!(f, "Hint: {}", hint)?;

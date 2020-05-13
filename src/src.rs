@@ -2,13 +2,13 @@ use std::{
     ops::Range,
     fmt,
 };
-use parze::region::Region;
+use parze::span::Span as ParzeSpan;
 use crate::node::SrcNode;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
-pub struct SrcLoc(usize);
+pub struct Loc(usize);
 
-impl SrcLoc {
+impl Loc {
     pub const fn start() -> Self {
         Self(0)
     }
@@ -49,89 +49,89 @@ impl SrcLoc {
     }
 }
 
-impl fmt::Debug for SrcLoc {
+impl fmt::Debug for Loc {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
 
-impl From<usize> for SrcLoc {
+impl From<usize> for Loc {
     fn from(pos: usize) -> Self {
         Self(pos)
     }
 }
 
-impl From<u64> for SrcLoc {
+impl From<u64> for Loc {
     fn from(pos: u64) -> Self {
         Self(pos as usize)
     }
 }
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
-pub enum SrcRegion {
+pub enum Span {
     None,
-    Range(SrcLoc, SrcLoc),
+    Range(Loc, Loc),
 }
 
-impl SrcRegion {
+impl Span {
     pub const fn none() -> Self {
-        SrcRegion::None
+        Span::None
     }
 
-    pub const fn single(loc: SrcLoc) -> Self {
-        SrcRegion::Range(loc, loc.next())
+    pub const fn single(loc: Loc) -> Self {
+        Span::Range(loc, loc.next())
     }
 
-    pub fn range(from: SrcLoc, until: SrcLoc) -> Self {
+    pub fn range(from: Loc, until: Loc) -> Self {
         if from.0 < until.0 {
-            SrcRegion::Range(from, until)
+            Span::Range(from, until)
         } else {
-            SrcRegion::None
+            Span::None
         }
     }
 
-    pub fn contains(self, loc: SrcLoc) -> bool {
+    pub fn contains(self, loc: Loc) -> bool {
         match self {
-            SrcRegion::None => false,
-            SrcRegion::Range(from, until) => from.0 <= loc.0 && until.0 > loc.0,
+            Span::None => false,
+            Span::Range(from, until) => from.0 <= loc.0 && until.0 > loc.0,
         }
     }
 
     pub fn intersects(self, other: Self) -> bool {
         match (self, other) {
-            (SrcRegion::Range(from_a, until_a), SrcRegion::Range(from_b, until_b)) =>
+            (Span::Range(from_a, until_a), Span::Range(from_b, until_b)) =>
                 !(until_a.0 <= from_b.0 || from_a.0 >= until_b.0),
             _ => false,
         }
     }
 
-    pub fn extend_to(self, limit: SrcLoc) -> Self {
+    pub fn extend_to(self, limit: Loc) -> Self {
         match self {
-            SrcRegion::None => SrcRegion::None,
-            SrcRegion::Range(from, until) => SrcRegion::Range(from, until.max(limit)),
+            Span::None => Span::None,
+            Span::Range(from, until) => Span::Range(from, until.max(limit)),
         }
     }
 
     pub fn union(self, other: Self) -> Self {
         match (self, other) {
-            (SrcRegion::None, b) => b,
-            (a, SrcRegion::None) => a,
-            (SrcRegion::Range(from_a, until_a), SrcRegion::Range(from_b, until_b)) =>
-                SrcRegion::Range(from_a.min(from_b), until_a.max(until_b)),
+            (Span::None, b) => b,
+            (a, Span::None) => a,
+            (Span::Range(from_a, until_a), Span::Range(from_b, until_b)) =>
+                Span::Range(from_a.min(from_b), until_a.max(until_b)),
         }
     }
 
     pub fn homogenize(self, other: Self) -> Self {
         match (self, other) {
-            (SrcRegion::None, other) => other,
-            (this, SrcRegion::None) => this,
+            (Span::None, other) => other,
+            (this, Span::None) => this,
             (this, _) => this,
         }
     }
 
     pub fn later_than(self, other: Self) -> bool {
         match (self, other) {
-            (SrcRegion::Range(from_a, until_a), SrcRegion::Range(from_b, until_b)) =>
+            (Span::Range(from_a, until_a), Span::Range(from_b, until_b)) =>
                 until_a.later_than(until_b),
             _ => false,
         }
@@ -139,7 +139,7 @@ impl SrcRegion {
 
     pub fn earliest(self, other: Self) -> Self {
         match (self, other) {
-            (SrcRegion::Range(a, _), SrcRegion::Range(b, _)) => if a.later_than(b) {
+            (Span::Range(a, _), Span::Range(b, _)) => if a.later_than(b) {
                 other
             } else {
                 self
@@ -150,46 +150,46 @@ impl SrcRegion {
 
     pub fn in_context(&self, code: &str) -> Option<((usize, usize), (usize, usize))> {
         match self {
-            SrcRegion::Range(from, until) => Some((from.in_context(code), until.in_context(code))),
-            SrcRegion::None => None,
+            Span::Range(from, until) => Some((from.in_context(code), until.in_context(code))),
+            Span::None => None,
         }
     }
 }
 
-impl fmt::Debug for SrcRegion {
+impl fmt::Debug for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SrcRegion::None => write!(f, "<none>"),
-            SrcRegion::Range(from, to) => write!(f, "{:?}:{:?}", from, to),
+            Span::None => write!(f, "<none>"),
+            Span::Range(from, to) => write!(f, "{:?}:{:?}", from, to),
         }
     }
 }
 
-impl From<usize> for SrcRegion {
+impl From<usize> for Span {
     fn from(pos: usize) -> Self {
-        SrcRegion::Range(SrcLoc::from(pos), SrcLoc::from(pos + 1))
+        Span::Range(Loc::from(pos), Loc::from(pos + 1))
     }
 }
 
-impl From<(usize, usize)> for SrcRegion {
+impl From<(usize, usize)> for Span {
     fn from((from, to): (usize, usize)) -> Self {
-        SrcRegion::Range(SrcLoc::from(from), SrcLoc::from(to))
+        Span::Range(Loc::from(from), Loc::from(to))
     }
 }
 
-impl<T: Into<SrcLoc>> From<Range<T>> for SrcRegion {
+impl<T: Into<Loc>> From<Range<T>> for Span {
     fn from(range: Range<T>) -> Self {
         Self::range(range.start.into(), range.end.into())
     }
 }
 
-impl Region<char> for SrcRegion {
+impl ParzeSpan<char> for Span {
     fn none() -> Self {
-        SrcRegion::none()
+        Span::none()
     }
 
     fn single(index: usize, _sym: &char) -> Self {
-        SrcRegion::single(index.into())
+        Span::single(index.into())
     }
 
     fn group(_syms: &[char], range: Range<usize>) -> Self {
@@ -197,23 +197,23 @@ impl Region<char> for SrcRegion {
     }
 }
 
-impl<T> Region<SrcNode<T>> for SrcRegion {
+impl<T> ParzeSpan<SrcNode<T>> for Span {
     fn none() -> Self {
-        SrcRegion::none()
+        Span::none()
     }
 
     fn single(index: usize, sym: &SrcNode<T>) -> Self {
-        sym.region()
+        sym.span()
     }
 
     fn group(syms: &[SrcNode<T>], _range: Range<usize>) -> Self {
         syms
             .first()
-            .map(|s| s.region())
-            .unwrap_or(SrcRegion::none())
+            .map(|s| s.span())
+            .unwrap_or(Span::none())
             .union(syms
                 .last()
-                .map(|s| s.region())
-                .unwrap_or(SrcRegion::none()))
+                .map(|s| s.span())
+                .unwrap_or(Span::none()))
     }
 }

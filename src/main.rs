@@ -18,127 +18,49 @@ use std::{
 };
 use internment::LocalIntern;
 use rustyline::Editor;
+use crate::error::Error;
 
-fn run_module(src: &str) {
-    let tokens = match lex::lex(&src) {
-        Ok(tokens) => tokens,
-        Err(errs) => {
-            for err in errs {
-                print!("{}", err.in_source(src));
-            }
-            return;
-        },
-    };
-
-    let mut ast = match ast::parse_module(&tokens) {
-        Ok(ast) => ast,
-        Err(errs) => {
-            for err in errs {
-                print!("{}", err.in_source(src));
-            }
-            return;
-        },
-    };
-    println!("AST: {:#?}", ast);
-
-    let hir_prog = match hir::Program::new_root(&ast) {
-        Ok(hir_prog) => hir_prog,
-        Err(err) => {
-            print!("{}", err.in_source(src));
-            return;
-        },
-    };
+fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
+    let tokens = lex::lex(&src)?;
+    let ast = ast::parse_module(&tokens)?;
+    let hir_prog = hir::Program::new_root(&ast).map_err(|e| vec![e])?;
 
     let main_ident = LocalIntern::new("main".to_string());
     println!("TYPE: {}", **hir_prog.root().def(main_ident).unwrap().body.ty());
 
-    let mir_prog = match mir::Program::from_hir(&hir_prog, main_ident) {
-        Ok(mir_prog) => mir_prog,
-        Err(err) => {
-            print!("{}", err.in_source(src));
-            return;
-        },
-    };
+    let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
+    let prog = mir_prog.compile().map_err(|e| vec![e])?;
 
-    let prog = match mir_prog.compile() {
-        Ok(prog) => prog,
-        Err(err) => {
-            print!("{}", err.in_source(src));
-            return;
-        },
-    };
-
-    let output = vm::Vm::default()
-        .execute(&prog);
-
-    println!("Output: {:?}", output);
+    Ok(vm::Vm::default().execute(&prog))
 }
 
-fn run_expr(src: &str) {
-    let tokens = match lex::lex(&src) {
-        Ok(tokens) => tokens,
-        Err(errs) => {
-            for err in errs {
-                print!("{}", err.in_source(src));
-            }
-            return;
-        },
-    };
-
-    let mut ast = match ast::parse_expr(&tokens) {
-        Ok(ast) => ast,
-        Err(errs) => {
-            for err in errs {
-                print!("AST: {}", err.in_source(src));
-            }
-            return;
-        },
-    };
-    println!("AST: {:#?}", ast);
+fn run_expr(src: &str) -> Result<vm::Value, Vec<Error>> {
+    let tokens = lex::lex(&src)?;
+    let ast = ast::parse_expr(&tokens)?;
 
     let mut hir_prog = hir::Program::new();
-
-    match hir_prog.insert_def(&[], &ast::Def::main(ast)) {
-        Ok(()) => {},
-        Err(err) => {
-            print!("AST: {}", err.in_source(src));
-            return;
-        },
-    };
+    hir_prog.insert_def(&[], &ast::Def::main(ast)).map_err(|e| vec![e])?;
 
     let main_ident = LocalIntern::new("main".to_string());
-    println!("TYPE: {:?}", hir_prog.root().def(main_ident).unwrap().body.ty());
+    println!("TYPE: {}", **hir_prog.root().def(main_ident).unwrap().body.ty());
 
-    let mir_prog = match mir::Program::from_hir(&hir_prog, main_ident) {
-        Ok(mir_prog) => mir_prog,
-        Err(err) => {
-            print!("{}", err.in_source(src));
-            return;
-        },
-    };
+    let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
+    let prog = mir_prog.compile().map_err(|e| vec![e])?;
 
-    let prog = match mir_prog.compile() {
-        Ok(prog) => prog,
-        Err(err) => {
-            print!("{}", err.in_source(src));
-            return;
-        },
-    };
-
-    let output = vm::Vm::default()
-        .execute(&prog);
-
-    println!("Output: {:?}", output);
+    Ok(vm::Vm::default().execute(&prog))
 }
 
 fn main() {
     if let Some(filename) = env::args().nth(1) {
-        let mut buf = String::new();
+        let mut src = String::new();
         File::open(&filename)
-            .and_then(|mut file| file.read_to_string(&mut buf))
+            .and_then(|mut file| file.read_to_string(&mut src))
             .unwrap_or_else(|err| panic!("Could not read file '{}': {:?}", filename, err));
 
-        run_module(&buf);
+        match run_module(&src) {
+            Ok(val) => println!("{}", val),
+            Err(errs) => errs.iter().for_each(|err| print!("{}", err.in_source(&src))),
+        };
     } else {
         let mut rl = Editor::<()>::new();
 
@@ -147,7 +69,11 @@ fn main() {
             match line {
                 Ok(line) => {
                     rl.add_history_entry(&line);
-                    run_expr(&line);
+
+                    match run_expr(&line) {
+                        Ok(val) => println!("{}", val),
+                        Err(errs) => errs.iter().for_each(|err| print!("{}", err.in_source(&line))),
+                    };
                 },
                 Err(_) => break,
             }

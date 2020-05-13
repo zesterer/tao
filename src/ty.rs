@@ -5,7 +5,7 @@ use std::{
 use internment::LocalIntern;
 use crate::{
     error::Error,
-    src::SrcRegion,
+    src::Span,
     node::SrcNode,
     ast::{UnaryOp, BinaryOp},
 };
@@ -312,7 +312,7 @@ pub struct InferCtx<'a> {
     parent: Option<&'a Self>,
     id_counter: TypeId,
     types: HashMap<TypeId, TypeInfo>,
-    regions: HashMap<TypeId, SrcRegion>,
+    spans: HashMap<TypeId, Span>,
     constraint_id_counter: ConstraintId,
     constraints: HashMap<ConstraintId, Constraint>,
 }
@@ -323,7 +323,7 @@ impl<'a> InferCtx<'a> {
             parent: Some(self),
             id_counter: self.id_counter,
             types: HashMap::default(),
-            regions: HashMap::default(),
+            spans: HashMap::default(),
             constraint_id_counter: self.constraint_id_counter,
             constraints: HashMap::default(),
         }
@@ -342,12 +342,12 @@ impl<'a> InferCtx<'a> {
             .unwrap()
     }
 
-    pub fn region(&self, id: TypeId) -> SrcRegion {
+    pub fn span(&self, id: TypeId) -> Span {
         //let id = self.get_base(id);
-        self.regions
+        self.spans
             .get(&id)
             .cloned()
-            .or_else(|| self.parent.map(|p| p.region(id)))
+            .or_else(|| self.parent.map(|p| p.span(id)))
             .unwrap()
     }
 
@@ -458,8 +458,8 @@ impl<'a> InferCtx<'a> {
                     self.display_type_info(a),
                     self.display_type_info(b),
                 ))
-                    .with_region(self.region(a))
-                    .with_region(self.region(b)))
+                    .with_span(self.span(a))
+                    .with_span(self.span(b)))
             },
         }
     }
@@ -469,44 +469,44 @@ impl<'a> InferCtx<'a> {
         self.unify_inner(0, a, b)
     }
 
-    pub fn insert(&mut self, ty: impl Into<TypeInfo>, region: SrcRegion) -> TypeId {
+    pub fn insert(&mut self, ty: impl Into<TypeInfo>, span: Span) -> TypeId {
         let id = self.new_id();
         self.types.insert(id, ty.into());
-        self.regions.insert(id, region);
+        self.spans.insert(id, span);
         id
     }
 
-    pub fn instantiate_ty_inner(&mut self, get_generic: &impl Fn(Ident) -> Option<TypeId>, ty: &SrcNode<Type>, region: SrcRegion) -> TypeId {
+    pub fn instantiate_ty_inner(&mut self, get_generic: &impl Fn(Ident) -> Option<TypeId>, ty: &SrcNode<Type>, span: Span) -> TypeId {
         let info = match &**ty {
             Type::GenParam(ident) => TypeInfo::Ref(get_generic(*ident)
                 .expect("Generic type without matching generic parameter found in concrete type")),
             Type::Primitive(prim) => TypeInfo::Primitive(prim.clone()),
             Type::Data(data) => TypeInfo::Data(*data),
-            Type::List(item) => TypeInfo::List(self.instantiate_ty_inner(get_generic, item, region)),
+            Type::List(item) => TypeInfo::List(self.instantiate_ty_inner(get_generic, item, span)),
             Type::Tuple(items) => TypeInfo::Tuple(
-                items.iter().map(|item| self.instantiate_ty_inner(get_generic, item, region)).collect(),
+                items.iter().map(|item| self.instantiate_ty_inner(get_generic, item, span)).collect(),
             ),
             Type::Func(i, o) => TypeInfo::Func(
-                self.instantiate_ty_inner(get_generic, i, region),
-                self.instantiate_ty_inner(get_generic, o, region),
+                self.instantiate_ty_inner(get_generic, i, span),
+                self.instantiate_ty_inner(get_generic, o, span),
             ),
         };
 
-        self.insert(info, region)
+        self.insert(info, span)
     }
 
-    pub fn instantiate_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>, region: SrcRegion) -> TypeId {
+    pub fn instantiate_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>, span: Span) -> TypeId {
         // Turn generics into types the `InferCtx` can understand
         let generic_type_ids = generics
             .iter()
-            .map(|g| (**g, self.insert(TypeInfo::Unknown(Some(Type::GenParam(**g))), region)))
+            .map(|g| (**g, self.insert(TypeInfo::Unknown(Some(Type::GenParam(**g))), span)))
             .collect::<Vec<_>>();
         let get_generic = |ident| generic_type_ids
             .iter()
             .find(|(name, _)| *name == ident)
             .map(|(_, id)| *id);
 
-        self.instantiate_ty_inner(&get_generic, ty, region)
+        self.instantiate_ty_inner(&get_generic, ty, span)
     }
 
     pub fn add_constraint(&mut self, constraint: Constraint) -> ConstraintId {
@@ -523,7 +523,7 @@ impl<'a> InferCtx<'a> {
                     // -Int => Int
                     |this: &Self, out, op, a| {
                         let mut this = this.scoped();
-                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), SrcRegion::none());
+                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), Span::none());
                         if
                             this.unify(num, out).is_ok()
                             && op == UnaryOp::Neg
@@ -537,7 +537,7 @@ impl<'a> InferCtx<'a> {
                     // !Bool => Bool
                     |this: &Self, out, op, a| {
                         let mut this = this.scoped();
-                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), SrcRegion::none());
+                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), Span::none());
                         if
                             this.unify(boolean, out).is_ok()
                             && op == UnaryOp::Not
@@ -562,16 +562,16 @@ impl<'a> InferCtx<'a> {
                         self.display_type_info(a),
                         self.display_type_info(out),
                     ))
-                        .with_region(op.region())
-                        .with_region(self.region(a)))
+                        .with_span(op.span())
+                        .with_span(self.span(a)))
                 } else if matches.len() > 1 {
                     // Still ambiguous, so we can't infer anything
                     Ok(false)
                 } else {
                     let (out_info, a_info) = matches.remove(0);
 
-                    let out_id = self.insert(out_info, self.region(out));
-                    let a_id = self.insert(a_info, self.region(a));
+                    let out_id = self.insert(out_info, self.span(out));
+                    let a_id = self.insert(a_info, self.span(a));
 
                     self.unify(out, out_id)?;
                     self.unify(a, a_id)?;
@@ -585,7 +585,7 @@ impl<'a> InferCtx<'a> {
                     // Int op Int => Int
                     |this: &Self, out, op, a, b| {
                         let mut this = this.scoped();
-                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), SrcRegion::none());
+                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), Span::none());
 
                         if
                             this.unify(num, out).is_ok()
@@ -601,8 +601,8 @@ impl<'a> InferCtx<'a> {
                     // Int op Int => Bool
                     |this: &Self, out, op, a, b| {
                         let mut this = this.scoped();
-                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), SrcRegion::none());
-                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), SrcRegion::none());
+                        let num = this.insert(TypeInfo::Primitive(Primitive::Number), Span::none());
+                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), Span::none());
                         if
                             this.unify(boolean, out).is_ok()
                             && [BinaryOp::Eq, BinaryOp::Less, BinaryOp::More, BinaryOp::LessEq, BinaryOp::MoreEq].contains(&op)
@@ -617,7 +617,7 @@ impl<'a> InferCtx<'a> {
                     // Bool op Bool => Bool
                     |this: &Self, out, op, a, b| {
                         let mut this = this.scoped();
-                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), SrcRegion::none());
+                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), Span::none());
                         if
                             this.unify(boolean, out).is_ok()
                             && [BinaryOp::Eq, BinaryOp::NotEq, BinaryOp::And, BinaryOp::Or].contains(&op)
@@ -632,8 +632,8 @@ impl<'a> InferCtx<'a> {
                     // [A] ++ [A] => [A]
                     |this: &Self, out, op, a, b| {
                         let mut this = this.scoped();
-                        let item_ty = this.insert(TypeInfo::Unknown(None), SrcRegion::none()); // A free type term for the list item type
-                        let list_ty = this.insert(TypeInfo::List(item_ty), SrcRegion::none());
+                        let item_ty = this.insert(TypeInfo::Unknown(None), Span::none()); // A free type term for the list item type
+                        let list_ty = this.insert(TypeInfo::List(item_ty), Span::none());
 
                         if this.unify(list_ty, out).is_ok()
                             && [BinaryOp::Join].contains(&op)
@@ -641,8 +641,8 @@ impl<'a> InferCtx<'a> {
                             && this.unify(list_ty, b).is_ok()
                         {
                             Some(|this: &mut Self, a, b| {
-                                let item_ty = this.insert(TypeInfo::Unknown(None), SrcRegion::none()); // A free type term for the list item type
-                                let list_ty = this.insert(TypeInfo::List(item_ty), this.region(a));
+                                let item_ty = this.insert(TypeInfo::Unknown(None), Span::none()); // A free type term for the list item type
+                                let list_ty = this.insert(TypeInfo::List(item_ty), this.span(a));
 
                                 (TypeInfo::Ref(list_ty), TypeInfo::Ref(list_ty), TypeInfo::Ref(list_ty))
                             })
@@ -667,18 +667,18 @@ impl<'a> InferCtx<'a> {
                         self.display_type_info(b),
                         self.display_type_info(out),
                     ))
-                        .with_region(op.region())
-                        .with_region(self.region(a))
-                        .with_region(self.region(b)))
+                        .with_span(op.span())
+                        .with_span(self.span(a))
+                        .with_span(self.span(b)))
                 } else if matches.len() > 1 {
                     // Still ambiguous, so we can't infer anything
                     Ok(false)
                 } else {
                     let (out_info, a_info, b_info) = (matches.remove(0))(self, a, b);
 
-                    let out_id = self.insert(out_info, self.region(out));
-                    let a_id = self.insert(a_info, self.region(a));
-                    let b_id = self.insert(b_info, self.region(b));
+                    let out_id = self.insert(out_info, self.span(out));
+                    let a_id = self.insert(a_info, self.span(a));
+                    let b_id = self.insert(b_info, self.span(b));
 
                     self.unify(out, out_id)?;
                     self.unify(a, a_id)?;
@@ -734,20 +734,20 @@ impl<'a> InferCtx<'a> {
             Associated(_, _, _, _) => todo!("Query trait engine to determine type of associated type"),
         };
 
-        Ok(SrcNode::new(ty, self.region(id)))
+        Ok(SrcNode::new(ty, self.span(id)))
     }
 
     pub fn reconstruct(&self, id: TypeId) -> Result<SrcNode<Type>, Error> {
         self.reconstruct_inner(0, id).map_err(|err| match err {
             ReconstructError::Recursive => Error::custom(format!("Recursive type"))
-                .with_region(self.region(id)),
+                .with_span(self.span(id)),
             ReconstructError::Unknown => {
                 let msg = match self.get(self.get_base(id)) {
                     TypeInfo::Unknown(_) => format!("Cannot infer type"),
                     _ => format!("Cannot fully infer type {}", self.display_type_info(id)),
                 };
                 Error::custom(msg)
-                    .with_region(self.region(id))
+                    .with_span(self.span(id))
                     .with_hint(format!("Specify all missing types"))
             },
         })
@@ -771,17 +771,17 @@ mod tests {
         let number: DataId = 0;
         let boolean: DataId = 1;
 
-        let a = ctx.insert(number, SrcRegion::none());
-        let b = ctx.insert(TypeInfo::Unknown, SrcRegion::none());
-        let c = ctx.insert(TypeInfo::Func(a, b), SrcRegion::none());
-        let d = ctx.insert(boolean, SrcRegion::none());
+        let a = ctx.insert(number, Span::none());
+        let b = ctx.insert(TypeInfo::Unknown, Span::none());
+        let c = ctx.insert(TypeInfo::Func(a, b), Span::none());
+        let d = ctx.insert(boolean, Span::none());
         ctx.unify(b, d);
 
         assert_eq!(
             ctx.reconstruct(c).unwrap().into_inner(),
             Type::Func(
-                SrcNode::new(Type::Data(number), SrcRegion::none()),
-                SrcNode::new(Type::Data(boolean), SrcRegion::none()),
+                SrcNode::new(Type::Data(number), Span::none()),
+                SrcNode::new(Type::Data(boolean), Span::none()),
             ),
         );
     }
@@ -793,16 +793,16 @@ mod tests {
         // Create some types
         let number: DataId = 0;
 
-        let a = ctx.insert(TypeInfo::Unknown, SrcRegion::none());
-        let b = ctx.insert(TypeInfo::Unknown, SrcRegion::none());
-        let c = ctx.insert(number, SrcRegion::none());
-        let d = ctx.insert(TypeInfo::List(a), SrcRegion::none());
+        let a = ctx.insert(TypeInfo::Unknown, Span::none());
+        let b = ctx.insert(TypeInfo::Unknown, Span::none());
+        let c = ctx.insert(number, Span::none());
+        let d = ctx.insert(TypeInfo::List(a), Span::none());
         ctx.unify(a, b);
         ctx.unify(b, c);
 
         assert_eq!(
             ctx.reconstruct(d).unwrap().into_inner(),
-            Type::List(SrcNode::new(Type::Data(number), SrcRegion::none())),
+            Type::List(SrcNode::new(Type::Data(number), Span::none())),
         );
     }
 }
