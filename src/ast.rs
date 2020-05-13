@@ -47,11 +47,7 @@ impl fmt::Debug for Path {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum UnaryOp {
     Neg,
-
     Not,
-
-    Head,
-    Tail,
 }
 
 impl fmt::Display for UnaryOp {
@@ -59,8 +55,6 @@ impl fmt::Display for UnaryOp {
         match self {
             UnaryOp::Neg => write!(f, "-"),
             UnaryOp::Not => write!(f, "!"),
-            UnaryOp::Head => write!(f, "<:"),
-            UnaryOp::Tail => write!(f, ":>"),
         }
     }
 }
@@ -399,8 +393,6 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
 
         let unary = just(Token::Op(Op::Sub)).to(UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(UnaryOp::Not))
-            .or(just(Token::Op(Op::Head)).to(UnaryOp::Head))
-            .or(just(Token::Op(Op::Tail)).to(UnaryOp::Tail))
             .map_with_span(|op, span| SrcNode::new(op, span))
             .repeated()
             .then(infix)

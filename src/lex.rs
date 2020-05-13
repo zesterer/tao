@@ -32,8 +32,6 @@ pub enum Op {
     Ellipsis,
 
     Not,
-    Head,
-    Tail,
 }
 
 impl fmt::Display for Op {
@@ -55,8 +53,6 @@ impl fmt::Display for Op {
             Op::Join => write!(f, "++"),
             Op::Ellipsis => write!(f, "..."),
             Op::Not => write!(f, "!"),
-            Op::Head => write!(f, "<:"),
-            Op::Tail => write!(f, ":>"),
         }
     }
 }
@@ -211,8 +207,6 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(just('=').to(Token::Op(Op::Eq)))
             .boxed()
             .or(seq("!=".chars()).to(Token::Op(Op::NotEq)))
-            .or(seq("<:".chars()).to(Token::Op(Op::Head)))
-            .or(seq(":>".chars()).to(Token::Op(Op::Tail)))
             .or(seq("<=".chars()).to(Token::Op(Op::LessEq)))
             .or(seq(">=".chars()).to(Token::Op(Op::MoreEq)))
             .boxed()
