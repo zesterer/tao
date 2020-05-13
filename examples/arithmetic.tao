@@ -1,4 +1,4 @@
-given A type Succ = (A, ())
+type Succ A = (A, ())
 
 type Zero = Succ ()
 type One = Succ Zero
@@ -12,11 +12,11 @@ type Four = Succ Three
 
 type Universe = ()
 
-given A type IO = Universe -> (A, Universe)
+type IO A = Universe -> (A, Universe)
 
-#given A def bad_rec of ? -> Num = |x of Succ A| bad_rec(())
+#def bad_rec A of ? -> Num = |x of Succ A| bad_rec(())
 
-given A def invent of A = invent
+def invent A of A = invent
 
 def loop0 of Bool -> Num = loop1
 
@@ -26,15 +26,15 @@ def factorial = |x| match x in
 	| 0 => 1
 	| _ => x * factorial(x - 1)
 
-given A, B def first = |(a, b) of (A, B)| a
+def first A, B = |(a, b) of (A, B)| a
 
-given A def identity = |xs of [A]| match xs in
+def list_identity A = |xs of [A]| match xs in
 	| [head, ...tail] => (match tail in
 		| [head2, ...tail] => [head, head2] ++ tail
 		| [] => [head])
 	| [] => []
 
-given A def len = |xs of [A]| match xs in
+def len A = |xs of [A]| match xs in
 	| [] => 0
 	| [_, ...tail] => 1 + tail:len
 

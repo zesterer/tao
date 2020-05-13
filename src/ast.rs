@@ -505,7 +505,6 @@ pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Err
 }
 
 fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<DataType>>, Error> {
-
     let variant = ident_parser()
         .map_with_region(|ident, region| SrcNode::new(ident, region))
         .then(type_parser()
@@ -594,47 +593,50 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
             .map_with_region(|ident, region| SrcNode::new(ident, region))
             .separated_by(just(Token::Comma));
 
-        let given_params = just(Token::Given)
-            .padding_for(generics)
-            .or_not()
-            .map(|gs| gs.unwrap_or_default());
+        // let typeparams = just(Token::Given)
+        //     .padding_for(generics)
+        //     .or_not()
+        //     .map(|gs| gs.unwrap_or_default());
 
-        let def = given_params.clone()
-            .padded_by(just(Token::Def))
+        let def = just(Token::Def)
             // Name
-            .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            // Generic parameters
+            .then(generics.clone())
             // Optional type annotation
             .then(just(Token::Of)
                 .padding_for(type_parser())
                 .or_not())
             .padded_by(just(Token::Op(Op::Eq)))
             .then(expr_parser())
-            .map_with_region(|(((generics, name), ty), body), region| Decl::Def(Def {
+            .map_with_region(|(((name, generics), ty), body), region| Decl::Def(Def {
                 generics,
                 ty: ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, name.region())),
                 name,
                 body,
             }));
 
-        let type_alias = given_params.clone()
-            .padded_by(just(Token::Type))
+        let type_alias = just(Token::Type)
             // Name
-            .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            // Generic parameters
+            .then(generics.clone())
             .padded_by(just(Token::Op(Op::Eq)))
             .then(type_parser())
-            .map_with_region(|((generics, name), ty), region| Decl::TypeAlias(TypeAlias {
+            .map_with_region(|((name, generics), ty), region| Decl::TypeAlias(TypeAlias {
                 generics,
                 name,
                 ty,
             }));
 
-        let data = given_params
-            .padded_by(just(Token::Data))
+        let data = just(Token::Data)
             // Name
-            .then(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            .padding_for(ident_parser().map_with_region(|ident, region| SrcNode::new(ident, region)))
+            // Generic parameters
+            .then(generics)
             .padded_by(just(Token::Op(Op::Eq)))
             .then(data_type_parser())
-            .map_with_region(|((generics, name), data_ty), region| Decl::Data(Data {
+            .map_with_region(|((name, generics), data_ty), region| Decl::Data(Data {
                 generics,
                 name,
                 data_ty,

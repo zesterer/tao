@@ -5,17 +5,9 @@ Tao is a statically-typed functional programming language.
 ## Example
 
 ```
-# Quicksort
-def sort = l ->
-    if l:len <= 1
-    then l
-    else
-        let mid = l:nth(l:len / 2) in
-        l:filter(x -> x < mid):sort ++
-        l:filter(x -> x = mid) ++
-        l:filter(x -> x > mid):sort
-
-[45, 75, 98, 24, 10, 12, 60, 32, 17, 41]:sort
+def len A = |xs of [A]| match xs in
+	| [] => 0
+	| [_, ...tail] => 1 + tail:len
 ```
 
 See `examples/` for more example programs.
@@ -26,7 +18,7 @@ See `examples/` for more example programs.
 - Currying
 - Static type system
 - Hindley-Milney type inference
-- Complex types (lists, tuples, functions)
+- Complex types (lists, tuples, functions, data types)
 - Useful error messages
 - Bytecode compilation
 - Pattern matching (incomplete)
@@ -34,38 +26,49 @@ See `examples/` for more example programs.
 - Type parameters (incomplete)
 - Monadic I/O (incomplete)
 
-## Static typing
+## Status
 
-Tao has a static type system and type inference.
-It supports complex types such as functions and lists.
-Below are some examples of types that can be represented in Tao.
+Tao is currently in heavy development and many aspects (particularly the compiler backend) are very unfinished.
+In addition, the compile codebase is undergoing relatively rapid changes.
 
-- `Num` / `String` / `Bool`
+### What Works
 
-- `Num -> Num` / `String -> Bool -> Num` / `(Num -> Num) -> Bool`
+- Type inference
+- Recursive definitions
+- Declaration of data types
+- Common expression constructs (`if`, `match`, `let`, etc.)
 
-- `List Num` / `List String`
+### What Doesn't Work
 
-- `Num -> List Num -> Bool`
+- Trait system
+- Instantiation / usage of complex data types
+- Compiler backend (the compiler can largely only type-check code right now)
 
-- `(Num, Num)` / `(Str, (Bool, Num -> Num))`
+## Type System
+
+Tao's type system is ML-like and supports functions, lists, tuples, primitives, sum types and product types.
 
 ## Declarations
 
-Tao supports top-level type, data structure, and value definition declarations.
-Note that many of these are not yet supported.
+Tao supports top-level type, data structures, and value definition declarations.
 Below are some examples of these.
 
 *Recursive function*
 
 ```
-def factorial = x ->
+def factorial = |x|
 	if x = 0
 	then 1
 	else x * factorial(x - 1)
 ```
 
-*Maybe type*
+*Type alias*
+
+```
+type NonEmpty A = (A, List A)
+```
+
+*Sum type*
 
 ```
 data Maybe A =
@@ -85,15 +88,9 @@ data List A =
 
 ```
 data Person =
-	.name String,
-	.age  Num,
-	.address Maybe Num,
-```
-
-*Type alias*
-
-```
-type NonEmpty A = (A, List A)
+	.name String
+	.age  Num
+	.address Maybe Num
 ```
 
 ## Error Messages
@@ -113,3 +110,20 @@ Error: No such binding 'bar' in the current scope
    1 | let foo = 5 in foo + bar
                             ^^^
 ```
+
+## Compiler Architecture
+
+Tao's implementation is largely a learning exercise for me.
+As a result, I'm avoiding the use to pre-made compiler components as much as possible for now.
+
+Tao's compiler is written in Rust and is composed of several distinct stages that follow the traditional 'pipeline' compiler architecture closely.
+These stages are listed below. Note that many are unfinished.
+
+1) **Lexing**: Turns an input string into a series of disassociated tokens
+2) **Parsing**: Turns the context-free grammar into an abstract syntax tree (AST)
+3) **Type inference**: Converts the AST into a fully-typed higher-level intermediate representation (HIR) via a brief representation useful for type inference
+4) **Soundness checking**: Ensures that various aspects of the program are well-formed. This includes pattern exhaustion checks, consistency of recursive values, etc.
+5) **Instantiation**: Takes the HIR representation and converts it into a MIR representation where generic functions are instantiated with concrete types
+6) **Optimisation**: Analysis is performed on the MIR and optimisations that are most easily made in tree form are made
+7) **Code generation**: The MIR is converted into a low-level bytecode that may be executed by the bytecode VM. Later stages may transpile to other languages or even to native machine code.
+
