@@ -3,7 +3,7 @@ use std::{
     fmt,
 };
 use parze::region::Region;
-use crate::node::Node;
+use crate::node::SrcNode;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct SrcLoc(usize);
@@ -197,23 +197,23 @@ impl Region<char> for SrcRegion {
     }
 }
 
-impl<T> Region<Node<T>> for SrcRegion {
+impl<T> Region<SrcNode<T>> for SrcRegion {
     fn none() -> Self {
         SrcRegion::none()
     }
 
-    fn single(index: usize, sym: &Node<T>) -> Self {
-        sym.region
+    fn single(index: usize, sym: &SrcNode<T>) -> Self {
+        sym.region()
     }
 
-    fn group(syms: &[Node<T>], _range: Range<usize>) -> Self {
+    fn group(syms: &[SrcNode<T>], _range: Range<usize>) -> Self {
         syms
             .first()
-            .map(|s| s.region)
+            .map(|s| s.region())
             .unwrap_or(SrcRegion::none())
             .union(syms
                 .last()
-                .map(|s| s.region)
+                .map(|s| s.region())
                 .unwrap_or(SrcRegion::none()))
     }
 }

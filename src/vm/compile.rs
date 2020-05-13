@@ -1,12 +1,9 @@
-use std::{
-    collections::HashMap,
-    rc::Rc,
-};
+use std::rc::Rc;
 use crate::{
     error::Error,
     ast::{UnaryOp, BinaryOp},
     ty::Primitive,
-    mir, hir2,
+    mir, hir,
 };
 use super::{
     Instr, Program, Value,
@@ -17,15 +14,15 @@ impl mir::Expr {
     pub fn compile(&self, builder: &mut ProcBuilder) {
         match self {
             mir::Expr::Value(val) => match val {
-                hir2::Value::Number(x) => if x.fract() == 0.0 && *x > i32::MIN as f64 && *x < i32::MAX as f64 {
+                hir::Value::Number(x) => if x.fract() == 0.0 && *x > i32::MIN as f64 && *x < i32::MAX as f64 {
                     builder.emit_instr(Instr::Integer(*x as i32));
                 } else {
                     builder.emit_instr(Instr::Float(*x as f32));
                 },
-                hir2::Value::Boolean(x) => {
+                hir::Value::Boolean(x) => {
                     builder.emit_instr(if *x { Instr::True } else { Instr::False });
                 },
-                hir2::Value::String(x) => {
+                hir::Value::String(x) => {
                     let s = builder.emit_const(Value::String(Rc::new(x.to_string())));
                     builder.emit_instr(Instr::LoadConst(s));
                 },

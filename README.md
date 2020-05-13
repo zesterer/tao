@@ -114,7 +114,7 @@ Error: No such binding 'bar' in the current scope
 ## Compiler Architecture
 
 Tao's implementation is largely a learning exercise for me.
-As a result, I'm avoiding the use to pre-made compiler components as much as possible for now.
+As a result, I'm avoiding the use of pre-made compiler components as much as possible for now.
 
 Tao's compiler is written in Rust and is composed of several distinct stages that follow the traditional 'pipeline' compiler architecture closely.
 These stages are listed below. Note that many are unfinished.

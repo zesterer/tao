@@ -6,7 +6,7 @@ use parze::prelude::*;
 use internment::LocalIntern;
 use crate::{
     src::SrcRegion,
-    node::Node,
+    node::SrcNode,
     error::Error,
 };
 
@@ -94,7 +94,7 @@ pub enum Token {
     Null,
     Ident(LocalIntern<String>),
     Op(Op),
-    Tree(Delimiter, Vec<Node<Token>>),
+    Tree(Delimiter, Vec<SrcNode<Token>>),
 
     RArrow,
     RMap,
@@ -118,14 +118,14 @@ pub enum Token {
 }
 
 impl Token {
-    fn at(self, region: SrcRegion) -> Node<Self> {
-        Node::new(self, region, ())
+    fn at(self, region: SrcRegion) -> SrcNode<Self> {
+        SrcNode::new(self, region)
     }
 }
 
-impl PartialEq<Node<Token>> for Token {
-    fn eq(&self, other: &Node<Token>) -> bool {
-        self == &**other
+impl PartialEq<Token> for SrcNode<Token> {
+    fn eq(&self, other: &Token) -> bool {
+        &**self == other
     }
 }
 
@@ -161,7 +161,7 @@ impl fmt::Display for Token {
     }
 }
 
-pub fn lex(code: &str) -> Result<Vec<Node<Token>>, Vec<Error>> {
+pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
     let tokens = recursive(|tokens| {
         let whitespace = permit(|c: &char| c.is_whitespace()).to(())
             .or(just('#').padding_for(permit(|c: &char| *c != '\n').repeated()).to(()));

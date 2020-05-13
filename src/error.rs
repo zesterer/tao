@@ -1,70 +1,25 @@
-use std::{
-    fmt,
-    collections::HashSet,
-};
+use std::fmt;
 use crate::{
     src::{SrcLoc, SrcRegion},
     lex::Token,
-    parse::{UnaryOp, BinaryOp},
-    hir::TypeInfo,
-    node::Node,
+    node::SrcNode,
 };
 
 #[derive(Debug)]
 pub struct Error {
-    kind: ErrorKind,
+    msg: String,
     regions: Vec<SrcRegion>,
     hints: Vec<String>,
 }
 
 impl Error {
-    fn kind(kind: ErrorKind) -> Self {
+    #[deprecated]
+    pub fn custom(msg: String) -> Self {
         Self {
-            kind,
+            msg,
             regions: Vec::new(),
             hints: Vec::new(),
         }
-    }
-
-    #[deprecated]
-    pub fn custom(s: String) -> Self {
-        Self::kind(ErrorKind::Custom(s))
-    }
-
-    pub fn invalid_unary_op(op: Node<UnaryOp>, a: Node<TypeInfo>) -> Self {
-        Self::kind(ErrorKind::InvalidUnaryOp(op, a))
-    }
-
-    pub fn invalid_binary_op(op: Node<BinaryOp>, a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
-        Self::kind(ErrorKind::InvalidBinaryOp(op, a, b))
-    }
-
-    pub fn cannot_call(region: SrcRegion) -> Self {
-        Self::kind(ErrorKind::CannotCall(region))
-    }
-
-    pub fn not_truthy(region: SrcRegion) -> Self {
-        Self::kind(ErrorKind::NotTruthy(region))
-    }
-
-    pub fn no_such_binding(name: String, region: SrcRegion) -> Self {
-        Self::kind(ErrorKind::NoSuchBinding(name, region))
-    }
-
-    pub fn type_mismatch(a: Node<TypeInfo>, b: Node<TypeInfo>) -> Self {
-        Self::kind(ErrorKind::TypeMismatch(a, b))
-    }
-
-    pub fn cannot_infer_type(a: Node<TypeInfo>) -> Self {
-        Self::kind(ErrorKind::CannotInferType(a))
-    }
-
-    pub fn recursive_type(a: Node<TypeInfo>) -> Self {
-        Self::kind(ErrorKind::RecursiveType(a))
-    }
-
-    pub fn no_main() -> Self {
-        Self::kind(ErrorKind::NoMain)
     }
 
     pub fn in_source<'a>(&'a self, src: &'a str) -> ErrorInSrc<'a> {
@@ -75,21 +30,12 @@ impl Error {
     }
 
     pub fn at(mut self, region: SrcRegion) -> Self {
-        // Bit of a hack
-        match &mut self.kind {
-            ErrorKind::UnexpectedEnd(r) => *r = region,
-            _ => {},
-        }
+        // TODO: More region information
         self
     }
 
     pub fn merge(mut self, mut other: Self) -> Self {
-        match (&mut self.kind, &mut other.kind) {
-            (ErrorKind::FoundExpected(_, _, e_a), ErrorKind::FoundExpected(_, _, e_b)) =>
-                e_a.extend(e_b.iter().cloned()),
-            _ => {},
-        }
-
+        // TODO: Merge errors
         self
     }
 
@@ -110,22 +56,21 @@ impl parze::error::Error<char> for Error {
     type Context = ();
 
     fn unexpected_sym(c: &char, region: SrcRegion) -> Self {
-        Self::kind(ErrorKind::FoundExpected(Thing::Char(*c), region, HashSet::new()))
+        Self::custom(format!("Unexpected character '{}'", c))
+            .with_region(region)
     }
 
     fn unexpected_end() -> Self {
-        Self::kind(ErrorKind::UnexpectedEnd(SrcRegion::none()))
+        Self::custom(format!("Unexpected end of input"))
     }
 
     fn expected_end(c: &char, region: SrcRegion) -> Self {
-        Self::kind(ErrorKind::ExpectedEnd(Thing::Char(*c), region))
+        Self::custom(format!("Expected end of input, found '{}'", c))
+            .with_region(region)
     }
 
     fn expected(mut self, thing: Self::Thing) -> Self {
-        match &mut self.kind {
-            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(thing); },
-            _ => {},
-        }
+        // TODO: Merge error messages
         self
     }
 
@@ -134,52 +79,35 @@ impl parze::error::Error<char> for Error {
     }
 }
 
-impl parze::error::Error<Node<Token>> for Error {
+impl parze::error::Error<SrcNode<Token>> for Error {
     type Region = SrcRegion;
     type Thing = Thing;
     type Context = ();
 
-    fn unexpected_sym(sym: &Node<Token>, region: SrcRegion) -> Self {
-        Self::kind(ErrorKind::FoundExpected(Thing::Token(sym.inner().clone()), region, HashSet::new()))
+    fn unexpected_sym(sym: &SrcNode<Token>, region: SrcRegion) -> Self {
+        Self::custom(format!("Unexpected character '{}'", **sym))
+            .with_region(sym.region())
+            .with_region(region)
     }
 
     fn unexpected_end() -> Self {
-        Self::kind(ErrorKind::UnexpectedEnd(SrcRegion::none()))
+        Self::custom(format!("Unexpected end of input"))
     }
 
-    fn expected_end(sym: &Node<Token>, region: SrcRegion) -> Self {
-        let region = sym.region;
-        Self::kind(ErrorKind::ExpectedEnd(Thing::Token(sym.inner().clone()), region))
+    fn expected_end(sym: &SrcNode<Token>, region: SrcRegion) -> Self {
+        Self::custom(format!("Expected end of input, found '{}'", **sym))
+            .with_region(sym.region())
+            .with_region(region)
     }
 
     fn expected(mut self, thing: Self::Thing) -> Self {
-        match &mut self.kind {
-            ErrorKind::FoundExpected(_, _, expected) => { expected.insert(thing); },
-            _ => {},
-        }
+        // TODO: Merge error messages
         self
     }
 
     fn merge(self, other: Self) -> Self {
         self.merge(other)
     }
-}
-
-#[derive(Debug)]
-pub enum ErrorKind {
-    Custom(String),
-    FoundExpected(Thing, SrcRegion, HashSet<Thing>),
-    UnexpectedEnd(SrcRegion),
-    ExpectedEnd(Thing, SrcRegion),
-    InvalidUnaryOp(Node<UnaryOp>, Node<TypeInfo>),
-    InvalidBinaryOp(Node<BinaryOp>, Node<TypeInfo>, Node<TypeInfo>),
-    CannotCall(SrcRegion),
-    NotTruthy(SrcRegion),
-    NoSuchBinding(String, SrcRegion),
-    TypeMismatch(Node<TypeInfo>, Node<TypeInfo>),
-    CannotInferType(Node<TypeInfo>),
-    RecursiveType(Node<TypeInfo>),
-    NoMain,
 }
 
 pub struct ErrorInSrc<'a> {
@@ -241,69 +169,8 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
             Ok(())
         };
 
-        match self.error.kind {
-            _ => write!(f, "Error")?,
-            // "Warning"
-        };
-        write!(f, ": ")?;
-        match &self.error.kind {
-            ErrorKind::Custom(msg) => {
-                writeln!(f, "{}", msg)?;
-                highlight_regions(f, &[])?;
-            },
-            ErrorKind::FoundExpected(found, region, expected) => {
-                let expected = expected.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join(", ");
-                writeln!(f, "Found {}, expected {}", found, expected)?;
-                highlight_regions(f, &[*region])?;
-            },
-            ErrorKind::UnexpectedEnd(region) => {
-                writeln!(f, "Unexpected end of input")?;
-                highlight_regions(f, &[*region])?;
-            },
-            ErrorKind::ExpectedEnd(found, region) => {
-                writeln!(f, "Expected end of input, found {}", found)?;
-                highlight_regions(f, &[*region])?;
-            },
-            ErrorKind::InvalidUnaryOp(op, a) => {
-                writeln!(f, "Cannot apply '{}' to value of type '{}'", op.inner, a.inner)?;
-                highlight_regions(f, &[op.region, a.region])?;
-            },
-            ErrorKind::InvalidBinaryOp(op, a, b) => {
-                writeln!(f, "Cannot apply '{}' to values of types '{}' and '{}'", op.inner, a.inner, b.inner)?;
-                highlight_regions(f, &[op.region, a.region, b.region])?;
-            },
-            ErrorKind::CannotCall(region) => {
-                writeln!(f, "Value does not support function application")?;
-                highlight_regions(f, &[*region])?;
-            },
-            ErrorKind::NotTruthy(region) => {
-                writeln!(f, "Cannot determine truth of value")?;
-                highlight_regions(f, &[*region])?;
-            },
-            ErrorKind::NoSuchBinding(name, region) => {
-                writeln!(f, "No such binding '{}' in the current scope", name)?;
-                highlight_regions(f, &[*region])?;
-            },
-            ErrorKind::TypeMismatch(a, b) => {
-                if a.region.intersects(b.region) {
-                    writeln!(f, "Conflicting requirements imply value to be of types '{}' and '{}' at once", a.inner(), b.inner())?;
-                } else {
-                    writeln!(f, "Type mismatch between '{}' and '{}'", a.inner(), b.inner())?;
-                }
-                highlight_regions(f, &[a.region, b.region])?;
-            },
-            ErrorKind::CannotInferType(ty) => {
-                writeln!(f, "Insufficient information to fully infer type '{}'", ty.inner)?;
-                highlight_regions(f, &[ty.region])?;
-            },
-            ErrorKind::RecursiveType(ty) => {
-                writeln!(f, "Recursive type detected '{}'", ty.inner)?;
-                highlight_regions(f, &[ty.region])?;
-            },
-            ErrorKind::NoMain => {
-                writeln!(f, "No 'main' definition could be found")?;
-            },
-        }
+        write!(f, "Error: ")?;
+        highlight_regions(f, &[])?;
 
         for hint in self.error.hints.iter() {
             writeln!(f, "Hint: {}", hint)?;
@@ -331,8 +198,8 @@ impl From<Token> for Thing {
     }
 }
 
-impl From<Node<Token>> for Thing {
-    fn from(token: Node<Token>) -> Self {
+impl From<SrcNode<Token>> for Thing {
+    fn from(token: SrcNode<Token>) -> Self {
         Self::from(token.into_inner())
     }
 }

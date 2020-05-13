@@ -4,8 +4,8 @@ use crate::{
     ast,
     ty::{Type, Primitive},
     error::Error,
-    node2::RawTypeNode,
-    hir2::{self, Value},
+    node::RawTypeNode,
+    hir::{self, Value},
 };
 
 type Ident = LocalIntern<String>;
@@ -47,7 +47,7 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn from_hir(prog: &hir2::Program, entry: Ident) -> Result<Self, Error> {
+    pub fn from_hir(prog: &hir::Program, entry: Ident) -> Result<Self, Error> {
         let mut this = Self {
             entry: LocalIntern::new((entry, Vec::new())),
             globals: HashMap::default(),
@@ -58,7 +58,7 @@ impl Program {
         Ok(this)
     }
 
-    fn instantiate_def(&mut self, prog: &hir2::Program, name: Ident, params: Vec<RawType>) -> DefId {
+    fn instantiate_def(&mut self, prog: &hir::Program, name: Ident, params: Vec<RawType>) -> DefId {
         let def_id = LocalIntern::new((name, params.clone()));
 
         if !self.globals.contains_key(&def_id) {
@@ -77,11 +77,11 @@ impl Program {
         def_id
     }
 
-    fn instantiate_expr(&mut self, hir_expr: &hir2::TypeExpr, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawTypeNode<Expr> {
+    fn instantiate_expr(&mut self, hir_expr: &hir::TypeExpr, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawTypeNode<Expr> {
         let expr = match &**hir_expr {
-            hir2::Expr::Value(val) => Expr::Value(val.clone()),
-            hir2::Expr::Unary(op, a) => Expr::Unary(**op, self.instantiate_expr(a, get_generic)),
-            hir2::Expr::Binary(op, a, b) => Expr::Binary(**op, self.instantiate_expr(a, get_generic), self.instantiate_expr(b, get_generic)),
+            hir::Expr::Value(val) => Expr::Value(val.clone()),
+            hir::Expr::Unary(op, a) => Expr::Unary(**op, self.instantiate_expr(a, get_generic)),
+            hir::Expr::Binary(op, a, b) => Expr::Binary(**op, self.instantiate_expr(a, get_generic), self.instantiate_expr(b, get_generic)),
             _ => todo!(),
         };
 

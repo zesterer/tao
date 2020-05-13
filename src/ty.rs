@@ -6,8 +6,7 @@ use internment::LocalIntern;
 use crate::{
     error::Error,
     src::SrcRegion,
-    node2::SrcNode,
-    scope::Scope,
+    node::SrcNode,
     ast::{UnaryOp, BinaryOp},
 };
 

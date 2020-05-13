@@ -5,7 +5,7 @@ use crate::{
     node,
     lex::{Token, Delimiter, Op},
     error::Error,
-    node2::SrcNode,
+    node::SrcNode,
     src::SrcRegion,
 };
 
