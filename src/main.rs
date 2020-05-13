@@ -9,7 +9,6 @@ mod ast;
 mod ty;
 mod hir;
 mod mir;
-mod scope;
 mod vm;
 
 use std::{

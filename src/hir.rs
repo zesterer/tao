@@ -752,6 +752,7 @@ impl InferPat {
         let pat = match self.into_inner() {
             Pat::Wildcard => Pat::Wildcard,
             Pat::Value(val) => Pat::Value(val),
+            Pat::Inner(inner) => Pat::Inner(inner.into_checked(infer)?),
             Pat::List(items) => Pat::List(items
                 .into_iter()
                 .map(|item| item.into_checked(infer))
