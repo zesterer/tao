@@ -20,10 +20,10 @@ See `examples/` for more example programs.
 - Hindley-Milney type inference
 - Complex types (lists, tuples, functions, data types)
 - Useful error messages
+- Type parameters
 - Bytecode compilation
-- Pattern matching (incomplete)
+- Pattern matching (In progress)
 - Sum types (incomplete)
-- Type parameters (incomplete)
 - Monadic I/O (incomplete)
 
 ## Status
