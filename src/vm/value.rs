@@ -16,6 +16,10 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn make_list<I: Iterator<Item=Value>>(iter: I) -> Self {
+        Value::List(Rc::new(iter.collect()))
+    }
+
     pub fn into_number_unchecked(self) -> f64 {
         match self {
             Value::Number(x) => x,
@@ -29,6 +33,16 @@ impl Value {
     pub fn into_boolean_unchecked(self) -> bool {
         match self {
             Value::Boolean(x) => x,
+            #[cfg(debug_assertions)]
+            _ => unreachable!(),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub fn index(self, x: usize) -> Self {
+        match self {
+            Value::List(list) => list[x].clone(),
             #[cfg(debug_assertions)]
             _ => unreachable!(),
             #[cfg(not(debug_assertions))]

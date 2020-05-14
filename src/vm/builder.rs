@@ -21,6 +21,10 @@ impl ProcBuilder {
         self.code[addr as usize] = instr;
     }
 
+    pub fn next_addr(&self) -> CodeAddr {
+        self.code.len() as CodeAddr
+    }
+
     pub fn link(mut self, program: &mut Program) -> CodeAddr {
         // Emit constants
         let const_offset = program.next_const_addr();
@@ -35,7 +39,7 @@ impl ProcBuilder {
             let instr = match instr {
                 Instr::LoadConst(addr) => Instr::LoadConst(const_offset + addr),
                 Instr::Jump(addr) => Instr::Jump(code_offset + addr),
-                Instr::JumpIf(addr) => Instr::JumpIf(code_offset + addr),
+                Instr::JumpIfNot(addr) => Instr::JumpIfNot(code_offset + addr),
                 instr => instr,
             };
             program.emit_instr(instr);

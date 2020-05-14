@@ -5,9 +5,9 @@ pub struct Vm;
 
 impl Vm {
     pub fn execute(mut self, prog: &Program) -> Value {
-        let mut expr_stack = Vec::new();
+        let mut expr_stack = Vec::<Value>::new();
         let mut call_stack = Vec::new();
-        let mut local_stack = Vec::new();
+        let mut local_stack = Vec::<Value>::new();
 
         let mut ip = prog.entry();
 
@@ -16,10 +16,24 @@ impl Vm {
             ip += 1;
 
             match instr {
+                Instr::Nop => {},
+
+                Instr::Dup => expr_stack.push(expr_stack.last().unwrap().clone()),
+                Instr::Pop => { expr_stack.pop().unwrap(); },
+
                 Instr::Integer(x) => expr_stack.push(Value::Number(x as f64)),
                 Instr::Float(x) => expr_stack.push(Value::Number(x as f64)),
                 Instr::True => expr_stack.push(Value::Boolean(true)),
                 Instr::False => expr_stack.push(Value::Boolean(false)),
+
+                Instr::MakeList(n) => {
+                    let list = Value::make_list((0..n).map(|_| expr_stack.pop().unwrap()));
+                    expr_stack.push(list);
+                },
+                Instr::IndexList(x) => {
+                    let item = expr_stack.pop().unwrap().index(x as usize);
+                    expr_stack.push(item);
+                },
 
                 Instr::NegNum => {
                     let x = expr_stack.pop().unwrap().into_number_unchecked();
@@ -54,13 +68,20 @@ impl Vm {
                     let y = expr_stack.pop().unwrap().into_number_unchecked();
                     expr_stack.push(Value::Number(x % y));
                 },
+                Instr::EqNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Boolean(x == y));
+                },
 
                 Instr::LoadConst(addr) => expr_stack.push(prog.fetch_const(addr)),
+                Instr::LoadLocal(offset) => expr_stack.push(local_stack.get(local_stack.len() - 1 - offset as usize).unwrap().clone()),
                 Instr::PushLocal => local_stack.push(expr_stack.pop().unwrap()),
+                Instr::PopLocal => { local_stack.pop().unwrap(); },
 
                 Instr::Jump(addr) => ip = addr,
-                Instr::JumpIf(addr) => {
-                    if matches!(expr_stack.pop().unwrap(), Value::Boolean(true)) {
+                Instr::JumpIfNot(addr) => {
+                    if matches!(expr_stack.pop().unwrap(), Value::Boolean(false)) {
                         ip = addr;
                     }
                 },

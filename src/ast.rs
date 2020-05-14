@@ -105,7 +105,6 @@ impl fmt::Display for BinaryOp {
 pub enum Pat {
     Wildcard,
     Literal(Literal),
-    Inner(SrcNode<Binding>),
     List(Vec<SrcNode<Binding>>),
     ListFront(Vec<SrcNode<Binding>>, Option<SrcNode<Ident>>),
     Tuple(Vec<SrcNode<Binding>>),
@@ -288,8 +287,6 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
             .map_with_span(|pat, span| SrcNode::new(pat, span));
 
         litr_pat
-            .or(nested_parser(binding.clone(), Delimiter::Paren)
-                .map_with_span(|inner, span| SrcNode::new(Pat::Inner(inner), span)))
             .or(tuple_pat)
             .or(list_pat)
             .or(list_front_pat)

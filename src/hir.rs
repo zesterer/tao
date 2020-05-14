@@ -59,7 +59,6 @@ impl Path {
 pub enum Pat<M> {
     Wildcard,
     Value(Value),
-    Inner(Node<Binding<M>, M>),
     List(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<SrcNode<Ident>>),
     Tuple(Vec<Node<Binding<M>, M>>),
@@ -72,15 +71,14 @@ pub type TypePat = SrcNode<Pat<SrcNode<Type>>>;
 
 #[derive(Debug)]
 pub struct Binding<M> {
-    pat: SrcNode<Pat<M>>,
-    binding: Option<SrcNode<Ident>>,
+    pub pat: SrcNode<Pat<M>>,
+    pub binding: Option<SrcNode<Ident>>,
 }
 
 impl InferBinding {
     fn get_binding_idents(&self, idents: &mut HashMap<Ident, TypeId>) {
         match &*self.pat {
             Pat::Wildcard | Pat::Value(_) => {},
-            Pat::Inner(inner) => inner.get_binding_idents(idents),
             Pat::List(items) => items
                 .iter()
                 .for_each(|item| item.get_binding_idents(idents)),
@@ -114,7 +112,6 @@ impl TypePat {
         match &**self {
             Pat::Wildcard => false,
             Pat::Value(_) => true,
-            Pat::Inner(inner) => inner.pat.is_refutable(),
             Pat::List(items) => true, // List could be different size
             Pat::ListFront(items, _) => items.iter().any(|item| item.pat.is_refutable()),
             Pat::Tuple(items) => items.iter().any(|item| item.pat.is_refutable()),
@@ -500,10 +497,6 @@ impl ast::Binding {
                 let val_type_info = val.get_type_info(infer);
                 (infer.insert(val_type_info, self.span()), Pat::Value(val))
             },
-            ast::Pat::Inner(inner) => {
-                let inner = inner.to_hir(infer)?;
-                (inner.type_id(), Pat::Inner(inner))
-            },
             ast::Pat::List(items) => {
                 let item_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                 let items = items
@@ -680,15 +673,15 @@ impl ast::Expr {
                 }
 
                 let val = val.to_hir(data, infer, scope)?;
+                let val_type_id = val.type_id();
                 infer.unify(pat.type_id(), val.type_id())?;
 
                 let then_scope = scope.with_many(pat.binding_idents());
                 let then_body = then.to_hir(data, infer, &then_scope)?;
-                let then_body_type_id = then_body.type_id();
 
-                let then_func = InferNode::new(Expr::Func(pat, then_body), (then.span(), infer.insert(TypeInfo::Func(val.type_id(), then_body_type_id), then.span())));
-
-                (then_body_type_id, Expr::Apply(then_func, val))
+                (then_body.type_id(), Expr::Match(val, vec![
+                    (pat, then_body)
+                ]))
             },
             ast::Expr::If(pred, a, b) => {
                 let pred_hir = pred.to_hir(data, infer, scope)?;
@@ -752,7 +745,6 @@ impl InferPat {
         let pat = match self.into_inner() {
             Pat::Wildcard => Pat::Wildcard,
             Pat::Value(val) => Pat::Value(val),
-            Pat::Inner(inner) => Pat::Inner(inner.into_checked(infer)?),
             Pat::List(items) => Pat::List(items
                 .into_iter()
                 .map(|item| item.into_checked(infer))
