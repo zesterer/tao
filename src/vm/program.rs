@@ -98,6 +98,7 @@ fn size() {
 pub struct Program {
     code: Vec<Instr>,
     consts: Vec<Value>,
+    debug: Vec<(CodeAddr, String)>,
     entry: CodeAddr,
 }
 
@@ -136,17 +137,25 @@ impl Program {
     pub fn next_const_addr(&self) -> ConstAddr {
         self.consts.len() as ConstAddr
     }
+
+    pub fn emit_debug(&mut self, addr: CodeAddr, s: String) {
+        self.debug.push((addr, s));
+    }
 }
 
 impl fmt::Debug for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "-- Data --")?;
-        for (i, val) in self.consts.iter().enumerate() {
-            writeln!(f, "{:X<4} | {:X?}", i, val)?;
-        }
         writeln!(f, "-- Code --")?;
-        for (i, instr) in self.code.iter().enumerate() {
-            writeln!(f, "{:>#5X} | {:#X?}", i, instr)?;
+        for (addr, instr) in self.code.iter().enumerate() {
+            writeln!(f, "{:>#5X} | {:#X?}", addr, instr)?;
+        }
+        writeln!(f, "-- Data --")?;
+        for (addr, val) in self.consts.iter().enumerate() {
+            writeln!(f, "{:>#5X} | {:#X?}", addr, val)?;
+        }
+        writeln!(f, "-- Debug --")?;
+        for (addr, s) in self.debug.iter() {
+            writeln!(f, "{:>#5X} | {}", addr, s)?;
         }
         Ok(())
     }

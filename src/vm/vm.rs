@@ -13,6 +13,8 @@ impl Vm {
 
         loop {
             let instr = unsafe { prog.fetch_instr_unchecked(ip) };
+            println!("{:>#5X} => {:?}", ip, instr);
+
             ip += 1;
 
             match instr {

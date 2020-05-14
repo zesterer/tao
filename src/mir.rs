@@ -119,6 +119,16 @@ pub enum Matcher {
     Tuple(Vec<Matcher>),
 }
 
+impl Matcher {
+    pub fn is_refutable(&self) -> bool {
+        match self {
+            Matcher::Wildcard => false,
+            Matcher::Exactly(_) => true,
+            Matcher::Tuple(items) => items.iter().any(|item| item.is_refutable()),
+        }
+    }
+}
+
 // enum ListMatcher {
 //     Wildcard,
 //     Len(usize),

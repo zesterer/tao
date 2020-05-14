@@ -77,8 +77,8 @@ impl mir::Expr {
             mir::Expr::MatchValue(pred, arms) => {
                 pred.compile(scope, builder);
                 let mut exit_jumps = Vec::new();
-                for (matcher, extractor, body) in arms.iter() {
-                    if matches!(matcher, mir::Matcher::Wildcard) || arms.len() == 1 {
+                for (i, (matcher, extractor, body)) in arms.iter().enumerate() {
+                    if !matcher.is_refutable() || arms.len() == 1 {
                         extractor.compile(builder);
                         let bindings = extractor.get_bindings();
                         bindings.iter().for_each(|b| scope.push(*b)); // Push locals
@@ -89,9 +89,13 @@ impl mir::Expr {
                         });
                         break; // This arm matches everything, so no need to continue
                     } else {
-                        builder.emit_instr(Instr::Dup); // Duplicate predicate
-                        matcher.compile(builder);
-                        let fail_jump_addr = builder.emit_instr(Instr::Nop); // To be patched later
+                        let fail_jump_addr = if i < arms.len() - 1 { // Don't check for last arm
+                            builder.emit_instr(Instr::Dup); // Duplicate predicate if it's needed later during extraction
+                            matcher.compile(builder);
+                            Some(builder.emit_instr(Instr::Nop)) // To be patched later
+                        } else {
+                            None
+                        };
 
                         extractor.compile(builder);
                         let bindings = extractor.get_bindings();
@@ -101,9 +105,14 @@ impl mir::Expr {
                             scope.pop();
                             builder.emit_instr(Instr::PopLocal);
                         });
-                        let exit_jump_addr = builder.emit_instr(Instr::Nop); // To be patched later
-                        exit_jumps.push(exit_jump_addr);
-                        builder.patch_instr(fail_jump_addr, Instr::JumpIfNot(builder.next_addr()));
+                        // Don't jump for the last arm, since we'd be jumping to the next instr anyway
+                        if i < arms.len() - 1 {
+                            exit_jumps.push(builder.emit_instr(Instr::Nop)); // To be patched later
+                        }
+
+                        if let Some(fail_jump_addr) = fail_jump_addr {
+                            builder.patch_instr(fail_jump_addr, Instr::JumpIfNot(builder.next_addr()));
+                        }
                     }
                 }
                 for exit_jump in exit_jumps {
@@ -132,7 +141,38 @@ impl mir::Matcher {
                 },
                 hir::Value::String(x) => todo!(),
             },
-            mir::Matcher::Tuple(_) => todo!(),
+            mir::Matcher::Tuple(items) => {
+                let mut fail_jumps = Vec::new();
+                let refutable_items = items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.is_refutable())
+                    .collect::<Vec<_>>();
+                for (i, item) in refutable_items.iter() {
+                    builder.emit_instr(Instr::Dup);
+
+                    builder.emit_instr(Instr::IndexList(*i as u32));
+
+                    item.compile(builder);
+
+                    fail_jumps.push(builder.emit_instr(Instr::Nop));
+                }
+                builder.emit_instr(Instr::Pop); // Pop matched value
+                builder.emit_instr(Instr::True);
+
+                // If any of the tuples failed to match
+                if fail_jumps.len() > 0 {
+                    let true_jump = builder.emit_instr(Instr::Nop);
+
+                    for addr in fail_jumps {
+                        builder.patch_instr(addr, Instr::JumpIfNot(builder.next_addr()));
+                    }
+                    builder.emit_instr(Instr::Pop); // Pop matched value
+                    builder.emit_instr(Instr::False);
+
+                    builder.patch_instr(true_jump, Instr::Jump(builder.next_addr()));
+                }
+            },
         }
     }
 }
