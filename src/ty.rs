@@ -440,10 +440,10 @@ impl<'a> InferCtx<'a> {
         match (self.get(a), self.get(b)) {
             (Ref(a), _) => self.unify_inner(iter + 1, a, b),
             (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
-            (Unknown(None), _) => Ok(self.link(a, b)),
-            (_, Unknown(None)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
+            (Unknown(_), Unknown(Some(_))) => Ok(self.link(a, b)),
             (Unknown(Some(_)), Unknown(_)) => Ok(self.link(b, a)),
-            (Unknown(_), Unknown(_)) => Ok(self.link(a, b)),
+            (Unknown(_), _) => Ok(self.link(a, b)),
+            (_, Unknown(_)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
             (GenParam(a), GenParam(b)) if a == b => Ok(()),
             (Primitive(a), Primitive(b)) if a == b => Ok(()),
             (Data(a), Data(b)) if a == b => Ok(()),

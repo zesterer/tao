@@ -258,7 +258,7 @@ impl mir::Program {
 
         let globals = self
             .globals()
-            .map(|(name, global)| {
+            .map(|(id, global)| {
                 let mut builder = ProcBuilder::default();
 
                 let mut scope = (
@@ -266,7 +266,7 @@ impl mir::Program {
                     |global_addr, id| global_refs.push((global_addr, id)),
                     Vec::new(),
                 );
-                builder.emit_debug(format!("GLOBAL: {:?}", global.ty().mangle()));
+                builder.emit_debug(format!(":: {} {} of {}", id.0, id.1.iter().map(|ty| ty.mangle()).collect::<Vec<_>>().join(", "), global.ty().mangle()));
                 global.compile(&mut program, &mut scope, &mut builder);
                 builder.emit_instr(Instr::Return(0));
                 let (global_addr, global_calls) = builder.link(&mut program);
@@ -277,7 +277,7 @@ impl mir::Program {
                     global_refs.push((addr, id));
                 }
 
-                (name, global_addr)
+                (id, global_addr)
             })
             .collect::<HashMap<_, _>>();
 
