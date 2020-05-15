@@ -107,9 +107,9 @@ impl InferBinding {
     }
 }
 
-impl TypePat {
+impl<M> Pat<M> {
     fn is_refutable(&self) -> bool {
-        match &**self {
+        match &*self {
             Pat::Wildcard => false,
             Pat::Value(_) => true,
             Pat::List(items) => true, // List could be different size
@@ -123,7 +123,7 @@ impl TypePat {
 pub enum Expr<M> {
     Value(Value),
     Local(Ident),
-    Global(Ident),
+    Global(Ident, Vec<(SrcNode<Ident>, M)>),
     Unary(SrcNode<ast::UnaryOp>, Node<Self, M>),
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
     List(Vec<Node<Self, M>>),
@@ -178,7 +178,7 @@ pub struct DataCtx<'a> {
     generics: HashMap<Ident, TypeId>,
 
     // TODO: Include type hint information
-    globals: &'a [Ident],
+    globals: &'a HashMap<Ident, Vec<SrcNode<Ident>>>,
 }
 
 impl<'a> DataCtx<'a> {
@@ -225,11 +225,14 @@ impl<'a> DataCtx<'a> {
         }
     }
 
-    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Option<TypeId> {
+    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)> {
         self.module
             .get_def_type(ident, infer, span)
-            .or_else(|| if self.globals.contains(&ident) {
-                Some(infer.insert(TypeInfo::Unknown(None), span))
+            .or_else(|| if let Some(generics) = self.globals.get(&ident) {
+                Some((
+                    infer.insert(TypeInfo::Unknown(None), span),
+                    generics.iter().map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span))).collect(),
+                ))
             } else {
                 None
             })
@@ -289,10 +292,10 @@ impl Program {
         let globals = module.decls
             .iter()
             .filter_map(|decl| match &**decl {
-                ast::Decl::Def(def) => Some(*def.name),
+                ast::Decl::Def(def) => Some((*def.name, def.generics.clone())),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect();
 
         for decl in module.decls.iter() {
             match &**decl {
@@ -315,12 +318,12 @@ impl Program {
             def.body
                 .visit()
                 .try_for_each(|expr| match &**expr {
-                    Expr::Global(ident) => {
+                    Expr::Global(ident, _) => {
                         let mut infer = InferCtx::default();
                         let global = &self.root.defs[ident];
-                        let definition = infer.instantiate_ty(&global.generics, global.body.ty(), global.body.ty().span());
+                        let definition = infer.instantiate_ty(&global.generics, global.body.ty(), global.body.ty().span()).0;
                         // TODO: Put the usage span in here
-                        let usage = infer.instantiate_ty(&def.generics, expr.ty(), expr.ty().span());
+                        let usage = infer.instantiate_ty(&def.generics, expr.ty(), expr.ty().span()).0;
                         infer.unify(usage, definition)
                     },
                     _ => Ok(()),
@@ -347,7 +350,7 @@ impl Program {
         Scope::Root
     }
 
-    pub fn insert_def(&mut self, globals: &[Ident], ast_def: &ast::Def) -> Result<(), Error> {
+    pub fn insert_def(&mut self, globals: &HashMap<Ident, Vec<SrcNode<Ident>>>, ast_def: &ast::Def) -> Result<(), Error> {
         // Check for double declaration
         if let Some(existing_def) = self.root.defs.get(&**ast_def.name) {
             return Err(Error::custom(format!("Definition with name '{}' already exists", **ast_def.name))
@@ -409,7 +412,7 @@ impl Program {
         Ok(())
     }
 
-    pub fn insert_type_alias(&mut self, globals: &[Ident], ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
+    pub fn insert_type_alias(&mut self, globals: &HashMap<Ident, Vec<SrcNode<Ident>>>, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
         let mut infer = InferCtx::default();
         let data = DataCtx {
             module: &self.root,
@@ -472,7 +475,7 @@ impl Module {
         self.defs.get(&name)
     }
 
-    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Option<TypeId> {
+    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)> {
         self.defs
             .get(&ident)
             .map(|def| infer.instantiate_ty(&def.generics, def.body.ty(), span))
@@ -593,8 +596,9 @@ impl ast::Expr {
                     let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                     infer.unify(type_id, local_id)?;
                     (type_id, Expr::Local(path.base()))
-                } else if let Some(global_id) = data.get_def_type(path.base(), infer, self.span()) {
-                    (global_id, Expr::Global(path.base()))
+                } else if let Some((global_id, generics)) = data.get_def_type(path.base(), infer, self.span()) {
+                    let generics = generics.into_iter().map(|(ident, ty)| (ident.clone(), (ident.span(), ty))).collect();
+                    (global_id, Expr::Global(path.base(), generics))
                 } else {
                     return Err(Error::custom(format!("No such binding '{}' in scope", path.base().to_string()))
                         .with_span(self.span()));
@@ -730,6 +734,14 @@ impl ast::Expr {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
+                if !arms
+                    .iter()
+                    .any(|(binding, _)| binding.pat.is_refutable())
+                {
+                    return Err(Error::custom(format!("Match requires irrefutable pattern somewhere (TODO: Implement proper exhaustivity checks)"))
+                        .with_span(self.span()));
+                }
+
                 (match_type_id, Expr::Match(pred, arms))
             },
         };
@@ -783,7 +795,13 @@ impl InferExpr {
         Ok(TypeNode::new(match self.into_inner() {
             Expr::Value(val) => Expr::Value(val),
             Expr::Local(ident) => Expr::Local(ident),
-            Expr::Global(ident) => Expr::Global(ident),
+            Expr::Global(ident, generics) => Expr::Global(
+                ident,
+                generics
+                    .into_iter()
+                    .map(|(ident, (span, type_id))| Ok((ident, infer.reconstruct(type_id).map_err(|err| err.with_span(span))?)))
+                    .collect::<Result<_, _>>()?,
+            ),
             Expr::Unary(op, x) => Expr::Unary(
                 op,
                 x.into_checked(infer)?,
@@ -832,7 +850,7 @@ impl TypeExpr {
                 match &**expr {
                     Expr::Value(_) => {},
                     Expr::Local(_) => {},
-                    Expr::Global(_) => {},
+                    Expr::Global(_, _) => {},
                     Expr::Unary(_, x) => stack.push(x),
                     Expr::Binary(_, x, y) => {
                         stack.push(x);

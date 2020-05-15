@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use super::{Instr, Program, Value};
 
 #[derive(Default)]
@@ -13,7 +14,7 @@ impl Vm {
 
         loop {
             let instr = unsafe { prog.fetch_instr_unchecked(ip) };
-            println!("{:>#5X} => {:?}", ip, instr);
+            //println!("{:>#5X} => {:?}", ip, instr);
 
             ip += 1;
 
@@ -28,6 +29,14 @@ impl Vm {
                 Instr::True => expr_stack.push(Value::Boolean(true)),
                 Instr::False => expr_stack.push(Value::Boolean(false)),
 
+                Instr::MakeFunc(addr) => {
+                    expr_stack.push(Value::Func(addr));
+                },
+                Instr::ApplyFunc => {
+                    let addr = expr_stack.pop().unwrap().into_func_unchecked();
+                    call_stack.push(ip);
+                    ip = addr;
+                },
                 Instr::MakeList(n) => {
                     let list = Value::make_list((0..n).map(|_| expr_stack.pop().unwrap()));
                     expr_stack.push(list);
@@ -75,6 +84,11 @@ impl Vm {
                     let y = expr_stack.pop().unwrap().into_number_unchecked();
                     expr_stack.push(Value::Boolean(x == y));
                 },
+                Instr::JoinList => {
+                    let mut x = (*expr_stack.pop().unwrap().into_list_unchecked()).clone();
+                    x.append((*expr_stack.pop().unwrap().into_list_unchecked()).clone());
+                    expr_stack.push(Value::List(Rc::new(x)));
+                },
 
                 Instr::LoadConst(addr) => expr_stack.push(prog.fetch_const(addr)),
                 Instr::LoadLocal(offset) => expr_stack.push(local_stack.get(local_stack.len() - 1 - offset as usize).unwrap().clone()),
@@ -87,12 +101,16 @@ impl Vm {
                         ip = addr;
                     }
                 },
+                Instr::Call(addr) => {
+                    call_stack.push(ip);
+                    ip = addr;
+                },
                 Instr::Return(n) => {
                     let ret_val = expr_stack.pop().unwrap();
                     expr_stack.truncate(expr_stack.len() - n as usize);
                     if let Some(ret_addr) = call_stack.pop() {
-                        ip = ret_addr;
                         expr_stack.push(ret_val);
+                        ip = ret_addr;
                     } else {
                         return ret_val;
                     }

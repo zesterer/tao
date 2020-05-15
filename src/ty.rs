@@ -440,8 +440,10 @@ impl<'a> InferCtx<'a> {
         match (self.get(a), self.get(b)) {
             (Ref(a), _) => self.unify_inner(iter + 1, a, b),
             (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
-            (Unknown(_), _) => Ok(self.link(a, b)),
-            (_, Unknown(_)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
+            (Unknown(None), _) => Ok(self.link(a, b)),
+            (_, Unknown(None)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
+            (Unknown(Some(_)), Unknown(_)) => Ok(self.link(b, a)),
+            (Unknown(_), Unknown(_)) => Ok(self.link(a, b)),
             (GenParam(a), GenParam(b)) if a == b => Ok(()),
             (Primitive(a), Primitive(b)) if a == b => Ok(()),
             (Data(a), Data(b)) if a == b => Ok(()),
@@ -495,18 +497,18 @@ impl<'a> InferCtx<'a> {
         self.insert(info, span)
     }
 
-    pub fn instantiate_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>, span: Span) -> TypeId {
+    pub fn instantiate_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>, span: Span) -> (TypeId, Vec<(SrcNode<Ident>, TypeId)>) {
         // Turn generics into types the `InferCtx` can understand
         let generic_type_ids = generics
             .iter()
-            .map(|g| (**g, self.insert(TypeInfo::Unknown(Some(Type::GenParam(**g))), span)))
+            .map(|g| (g.clone(), self.insert(TypeInfo::Unknown(Some(Type::GenParam(**g))), span)))
             .collect::<Vec<_>>();
         let get_generic = |ident| generic_type_ids
             .iter()
-            .find(|(name, _)| *name == ident)
+            .find(|(name, _)| **name == ident)
             .map(|(_, id)| *id);
 
-        self.instantiate_ty_inner(&get_generic, ty, span)
+        (self.instantiate_ty_inner(&get_generic, ty, span), generic_type_ids)
     }
 
     pub fn add_constraint(&mut self, constraint: Constraint) -> ConstraintId {

@@ -24,7 +24,11 @@ pub enum Instr {
     /// Push `false`
     False,
 
-    /// Make a list from the last N items on the stack (reversed)
+    // Push a function that points to the given address
+    MakeFunc(u32),
+    // Apply the argument one below the top of the stack to the function at the top of the stack
+    ApplyFunc,
+    /// Push a list made from the last N items on the stack (reversed)
     MakeList(u32),
     // Index the list at the top of the stack
     IndexList(u32),
@@ -39,6 +43,8 @@ pub enum Instr {
 
     EqNum,
 
+    JoinList,
+
     /// Load a constant from the program constants
     LoadConst(ConstAddr),
     /// Push a copy of the local with the given offset on to the stack
@@ -52,6 +58,8 @@ pub enum Instr {
     Jump(u32),
     /// Jump to the address if the last value in the stack is `false`
     JumpIfNot(u32),
+    // Call the given address
+    Call(CodeAddr),
     /// Pop the top value in the stack, consider this a return value
     /// Then, pop N additional items and return to the last pushed
     /// address, and push the return value
@@ -68,6 +76,8 @@ impl fmt::Debug for Instr {
             Instr::Float(x) => write!(f, "float {}", x),
             Instr::True => write!(f, "true"),
             Instr::False => write!(f, "false"),
+            Instr::MakeFunc(addr) => write!(f, "func.make {:#X}", addr),
+            Instr::ApplyFunc => write!(f, "func.apply"),
             Instr::MakeList(n) => write!(f, "list.make {}", n),
             Instr::IndexList(x) => write!(f, "list.index {}", x),
             Instr::NegNum => write!(f, "num.neg"),
@@ -78,12 +88,14 @@ impl fmt::Debug for Instr {
             Instr::DivNum => write!(f, "num.div"),
             Instr::RemNum => write!(f, "num.rem"),
             Instr::EqNum => write!(f, "num.eq"),
+            Instr::JoinList => write!(f, "list.join"),
             Instr::LoadConst(addr) => write!(f, "const {:#X}", addr),
             Instr::LoadLocal(offset) => write!(f, "load_local {}", offset),
             Instr::PushLocal => write!(f, "push_local"),
             Instr::PopLocal => write!(f, "pop_local"),
             Instr::Jump(addr) => write!(f, "jump {:#X}", addr),
             Instr::JumpIfNot(addr) => write!(f, "jump_if_not {:#X}", addr),
+            Instr::Call(addr) => write!(f, "call {:#X}", addr),
             Instr::Return(n) => write!(f, "return {}", n),
         }
     }
@@ -126,6 +138,11 @@ impl Program {
         (self.code.len() - 1) as CodeAddr
     }
 
+    pub fn patch_instr(&mut self, addr: CodeAddr, instr: Instr) {
+        debug_assert!(matches!(self.code[addr as usize], Instr::Nop));
+        self.code[addr as usize] = instr;
+    }
+
     pub fn set_entry(&mut self, addr: CodeAddr) {
         self.entry = addr;
     }
@@ -147,7 +164,12 @@ impl fmt::Debug for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "-- Code --")?;
         for (addr, instr) in self.code.iter().enumerate() {
-            writeln!(f, "{:>#5X} | {:#X?}", addr, instr)?;
+            let debug = if let Some((_, s)) = self.debug.iter().find(|(a, _)| *a == addr as u32) {
+                &*s
+            } else {
+                ""
+            };
+            writeln!(f, "{:>#5X} | {:#X?} {}", addr, instr, debug)?;
         }
         writeln!(f, "-- Data --")?;
         for (addr, val) in self.consts.iter().enumerate() {
@@ -157,6 +179,7 @@ impl fmt::Debug for Program {
         for (addr, s) in self.debug.iter() {
             writeln!(f, "{:>#5X} | {}", addr, s)?;
         }
+        writeln!(f, "Entry: {:#X}", self.entry())?;
         Ok(())
     }
 }

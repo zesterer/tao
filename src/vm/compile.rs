@@ -1,4 +1,7 @@
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    collections::HashMap,
+};
 use internment::LocalIntern;
 use crate::{
     error::Error,
@@ -7,7 +10,7 @@ use crate::{
     mir, hir,
 };
 use super::{
-    Instr, Program, Value,
+    CodeAddr, Instr, Program, Value,
     builder::ProcBuilder,
 };
 
@@ -24,7 +27,7 @@ fn push_constant_num(x: f64) -> Instr {
 }
 
 impl mir::Expr {
-    pub fn compile(&self, scope: &mut Vec<Ident>, builder: &mut ProcBuilder) {
+    pub fn compile(&self, program: &mut Program, scope: &mut (&mir::Program, impl FnMut(CodeAddr, mir::DefId), Vec<Ident>), builder: &mut ProcBuilder) {
         match self {
             mir::Expr::Value(val) => match val {
                 hir::Value::Number(x) => {
@@ -39,16 +42,18 @@ impl mir::Expr {
                 },
             },
             mir::Expr::GetLocal(local) => {
-                let offset = scope
+                let offset = scope.2
                     .iter()
                     .rev()
                     .enumerate()
                     .find(|(_, ident)| *ident == local)
                     .unwrap().0 as u32;
+
                 builder.emit_instr(Instr::LoadLocal(offset));
             },
+            mir::Expr::GetGlobal(global) => builder.emit_global_call(*global),
             mir::Expr::Unary(op, a) => {
-                a.compile(scope, builder);
+                a.compile(program, scope, builder);
                 match (op, a.ty()) {
                     (UnaryOp::Neg, mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::NegNum),
                     (UnaryOp::Not, mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::NotBool),
@@ -56,8 +61,8 @@ impl mir::Expr {
                 };
             },
             mir::Expr::Binary(op, a, b) => {
-                b.compile(scope, builder);
-                a.compile(scope, builder);
+                b.compile(program, scope, builder);
+                a.compile(program, scope, builder);
                 match (op, a.ty(), b.ty()) {
                     (BinaryOp::Add, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::AddNum),
                     (BinaryOp::Sub, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::SubNum),
@@ -65,26 +70,33 @@ impl mir::Expr {
                     (BinaryOp::Div, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::DivNum),
                     (BinaryOp::Rem, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::RemNum),
                     (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::EqNum),
+                    (BinaryOp::Join, mir::RawType::List(_), mir::RawType::List(_)) => builder.emit_instr(Instr::JoinList),
                     _ => todo!(),
                 };
             },
             mir::Expr::MakeTuple(items) => {
                 for item in items.iter().rev() {
-                    item.compile(scope, builder);
+                    item.compile(program, scope, builder);
+                }
+                builder.emit_instr(Instr::MakeList(items.len() as u32));
+            },
+            mir::Expr::MakeList(items) => {
+                for item in items.iter().rev() {
+                    item.compile(program, scope, builder);
                 }
                 builder.emit_instr(Instr::MakeList(items.len() as u32));
             },
             mir::Expr::MatchValue(pred, arms) => {
-                pred.compile(scope, builder);
+                pred.compile(program, scope, builder);
                 let mut exit_jumps = Vec::new();
                 for (i, (matcher, extractor, body)) in arms.iter().enumerate() {
                     if !matcher.is_refutable() || arms.len() == 1 {
                         extractor.compile(builder);
                         let bindings = extractor.get_bindings();
-                        bindings.iter().for_each(|b| scope.push(*b)); // Push locals
-                        body.compile(scope, builder);
+                        bindings.iter().for_each(|b| scope.2.push(*b)); // Push locals
+                        body.compile(program, scope, builder);
                         bindings.iter().for_each(|_| { // Pop locals
-                            scope.pop();
+                            scope.2.pop();
                             builder.emit_instr(Instr::PopLocal);
                         });
                         break; // This arm matches everything, so no need to continue
@@ -99,10 +111,10 @@ impl mir::Expr {
 
                         extractor.compile(builder);
                         let bindings = extractor.get_bindings();
-                        bindings.iter().for_each(|b| scope.push(*b)); // Push locals
-                        body.compile(scope, builder);
+                        bindings.iter().for_each(|b| scope.2.push(*b)); // Push locals
+                        body.compile(program, scope, builder);
                         bindings.iter().for_each(|_| { // Pop locals
-                            scope.pop();
+                            scope.2.pop();
                             builder.emit_instr(Instr::PopLocal);
                         });
                         // Don't jump for the last arm, since we'd be jumping to the next instr anyway
@@ -119,7 +131,40 @@ impl mir::Expr {
                     builder.patch_instr(exit_jump, Instr::Jump(builder.next_addr()));
                 }
             },
-            _ => todo!(),
+            mir::Expr::MakeFunc(extractor, body) => {
+                // Create body
+                let func_addr = {
+                    let mut builder = ProcBuilder::default();
+
+                    builder.emit_debug(format!("FUNC"));
+
+                    extractor.compile(&mut builder);
+                    let bindings = extractor.get_bindings();
+                    bindings.iter().for_each(|b| scope.2.push(*b)); // Push locals
+                    body.compile(program, scope, &mut builder);
+                    bindings.iter().for_each(|_| { // Pop locals
+                        scope.2.pop();
+                        builder.emit_instr(Instr::PopLocal);
+                    });
+                    builder.emit_instr(Instr::Return(0));
+
+                    let (global_addr, global_calls) = builder.link(program);
+
+                    for (addr, id) in global_calls {
+                        (scope.1)(addr, id);
+                    }
+
+                    global_addr
+                };
+
+                builder.emit_instr(Instr::MakeFunc(func_addr));
+            },
+            mir::Expr::Apply(f, arg) => {
+                arg.compile(program, scope, builder);
+                f.compile(program, scope, builder);
+                builder.emit_instr(Instr::ApplyFunc);
+            },
+            expr => todo!("{:?}", expr),
         }
     }
 }
@@ -209,16 +254,40 @@ impl mir::Program {
     pub fn compile(&self) -> Result<Program, Error> {
         let mut program = Program::default();
 
-        //let mut global_refs = HashMap::default();
+        let mut global_refs = Vec::new();
 
-        self.globals
-            .iter()
-            .for_each(|(name, expr)| {
+        let globals = self
+            .globals()
+            .map(|(name, global)| {
                 let mut builder = ProcBuilder::default();
-                let mut scope = Vec::new();
-                expr.compile(&mut scope, &mut builder);
-                builder.link(&mut program);
-            });
+
+                let mut scope = (
+                    self,
+                    |global_addr, id| global_refs.push((global_addr, id)),
+                    Vec::new(),
+                );
+                builder.emit_debug(format!("GLOBAL: {:?}", global.ty().mangle()));
+                global.compile(&mut program, &mut scope, &mut builder);
+                builder.emit_instr(Instr::Return(0));
+                let (global_addr, global_calls) = builder.link(&mut program);
+
+                for (addr, id) in global_calls {
+                    //println!("global_addr: {:#X}", global_addr);
+                    //println!("local_addr: {:#X}", local_addr);
+                    global_refs.push((addr, id));
+                }
+
+                (name, global_addr)
+            })
+            .collect::<HashMap<_, _>>();
+
+        for (addr, id) in global_refs {
+            //println!("ADDR: {:#X}", addr);
+            //println!("{:?}", program);
+            program.patch_instr(addr, Instr::Call(globals[&id]));
+        }
+
+        program.set_entry(globals[&self.entry]);
 
         Ok(program)
     }

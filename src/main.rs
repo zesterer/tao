@@ -44,7 +44,7 @@ fn run_expr(src: &str) -> Result<vm::Value, Vec<Error>> {
     let ast = ast::parse_expr(&tokens)?;
 
     let mut hir_prog = hir::Program::new();
-    hir_prog.insert_def(&[], &ast::Def::main(ast)).map_err(|e| vec![e])?;
+    hir_prog.insert_def(&Default::default(), &ast::Def::main(ast)).map_err(|e| vec![e])?;
 
     // TODO: Get rid of this
     let main_ident = LocalIntern::new("main".to_string());

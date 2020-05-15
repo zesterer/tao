@@ -5,6 +5,7 @@ use std::{
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 use im_rc::Vector;
+use super::CodeAddr;
 
 #[derive(Clone, Debug)]
 #[repr(u8)]
@@ -13,6 +14,7 @@ pub enum Value {
     Boolean(bool),
     String(Rc<String>),
     List(Rc<Vector<Value>>),
+    Func(CodeAddr),
 }
 
 impl Value {
@@ -33,6 +35,26 @@ impl Value {
     pub fn into_boolean_unchecked(self) -> bool {
         match self {
             Value::Boolean(x) => x,
+            #[cfg(debug_assertions)]
+            _ => unreachable!(),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub fn into_func_unchecked(self) -> CodeAddr {
+        match self {
+            Value::Func(addr) => addr,
+            #[cfg(debug_assertions)]
+            _ => unreachable!(),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub fn into_list_unchecked(self) -> Rc<Vector<Value>> {
+        match self {
+            Value::List(list) => list,
             #[cfg(debug_assertions)]
             _ => unreachable!(),
             #[cfg(not(debug_assertions))]
@@ -62,6 +84,7 @@ impl fmt::Display for Value {
                 .map(|x| format!("{}", x))
                 .collect::<Vec<_>>()
                 .join(", ")),
+            Value::Func(addr) => write!(f, "<func {:#X}>", addr),
         }
     }
 }

@@ -1,3 +1,27 @@
-def main = if true
-	then 13
-	else 42
+def fizzbuzz = |x| match (x % 3, x % 5) in
+    | (0, 0) => "FizzBuzz"
+    | (0, _) => "Fizz"
+    | (_, 0) => "Buzz"
+    | (_, _) => "Number"
+
+def xy =
+	let x = 3 in
+	let y = 5 in
+	match (x, y) in
+	| (5, _) => "x is 5!"
+	| (_, 5) => "y is 5!"
+	| _ => "something else!"
+
+def factorial = |x| if x = 0
+	then 1
+	else x * factorial(x - 1)
+
+def sum = |x| if x = 0
+	then 1
+	else sum(x - 1) + sum(x - 1)
+
+def range of (Num, Num) -> [Num] = |(x, y)| if x = y
+	then []
+	else [x] ++ range((x + 1, y))
+
+def main = range((0, 10))

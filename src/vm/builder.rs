@@ -1,16 +1,26 @@
 use super::{Instr, CodeAddr, ConstAddr, Program, Value};
+use crate::mir;
 
 #[derive(Default)]
 pub struct ProcBuilder {
     code: Vec<Instr>,
     consts: Vec<Value>,
     debug: Vec<(CodeAddr, String)>,
+    global_calls: Vec<(CodeAddr, mir::DefId)>,
 }
 
 impl ProcBuilder {
     pub fn emit_instr(&mut self, instr: Instr) -> CodeAddr {
         self.code.push(instr);
         (self.code.len() - 1) as CodeAddr
+    }
+
+    pub fn emit_global_call(&mut self, id: mir::DefId) {
+        self.code.push(Instr::Nop);
+        self.global_calls.push((
+            (self.code.len() - 1) as CodeAddr,
+            id,
+        ));
     }
 
     pub fn emit_const(&mut self, c: Value) -> ConstAddr {
@@ -30,7 +40,7 @@ impl ProcBuilder {
         self.code.len() as CodeAddr
     }
 
-    pub fn link(mut self, program: &mut Program) -> CodeAddr {
+    pub fn link(mut self, program: &mut Program) -> (CodeAddr, Vec<(CodeAddr, mir::DefId)>) {
         // Emit constants
         let const_offset = program.next_const_addr();
         for c in self.consts.into_iter() {
@@ -54,8 +64,12 @@ impl ProcBuilder {
             program.emit_debug(code_offset + addr, s);
         }
 
-        program.emit_instr(Instr::Return(0));
-
-        code_offset
+        (
+            code_offset,
+            self.global_calls
+                .into_iter()
+                .map(|(addr, id)| (code_offset + addr, id))
+                .collect(),
+        )
     }
 }
