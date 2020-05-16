@@ -430,7 +430,7 @@ impl<'a> InferCtx<'a> {
         }
     }
 
-    fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<(), Error> {
+    fn unify_inner(&mut self, iter: usize, a: TypeId, b: TypeId) -> Result<(), (TypeId, TypeId)> {
         const MAX_UNIFICATION_DEPTH: usize = 1024;
         if iter > MAX_UNIFICATION_DEPTH {
             panic!("Maximum unification depth reached (this error should not occur without extremely large types)");
@@ -454,21 +454,19 @@ impl<'a> InferCtx<'a> {
                 .try_for_each(|(a, b)| self.unify_inner(iter + 1, a, b)),
             (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
                 .and_then(|()| self.unify_inner(iter + 1, ao, bo)),
-            (x, y) => {
-                Err(Error::custom(format!(
-                    "Type mismatch between {} and {}",
-                    self.display_type_info(a),
-                    self.display_type_info(b),
-                ))
-                    .with_span(self.span(a))
-                    .with_span(self.span(b)))
-            },
+            (_, _) => Err((a, b)),
         }
     }
 
     // Returns true if new information was inferred
     pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
-        self.unify_inner(0, a, b)
+        self.unify_inner(0, a, b).map_err(|(x, y)| Error::custom(format!(
+                "Type mismatch between {} and {}",
+                self.display_type_info(a),
+                self.display_type_info(b),
+            ))
+                .with_span(self.span(x).homogenize(self.span(a)))
+                .with_span(self.span(y).homogenize(self.span(b))))
     }
 
     pub fn insert(&mut self, ty: impl Into<TypeInfo>, span: Span) -> TypeId {

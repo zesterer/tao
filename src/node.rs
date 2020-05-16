@@ -78,7 +78,7 @@ impl<T: Eq, U> Eq for Node<T, U> {}
 
 pub type SrcNode<T> = Node<T, Span>;
 
-impl<T> Node<T, Span> {
+impl<T> SrcNode<T> {
     pub fn span(&self) -> Span {
         *self.attr()
     }
@@ -86,20 +86,28 @@ impl<T> Node<T, Span> {
 
 // TypeNode
 
-pub type TypeNode<T> = Node<T, SrcNode<Type>>;
+pub type TypeNode<T> = Node<T, (Span, SrcNode<Type>)>;
 
-impl<T> Node<T, SrcNode<Type>> {
+impl<T> TypeNode<T> {
     pub fn ty(&self) -> &SrcNode<Type> {
-        self.attr()
+        &self.attr().1
+    }
+
+    pub fn span(&self) -> Span {
+        self.attr().0
     }
 }
 
 // RawTypeNode
 
-pub type RawTypeNode<T> = Node<T, RawType>;
+pub type RawTypeNode<T> = Node<T, (Span, RawType)>;
 
-impl<T> Node<T, RawType> {
+impl<T> RawTypeNode<T> {
     pub fn ty(&self) -> &RawType {
-        self.attr()
+        &self.attr().1
+    }
+
+    pub fn span(&self) -> Span {
+        self.attr().0
     }
 }

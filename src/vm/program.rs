@@ -169,16 +169,16 @@ impl fmt::Debug for Program {
             } else {
                 ""
             };
-            writeln!(f, "{:>#5X} | {:#X?} {}", addr, instr, debug)?;
+            writeln!(f, "{:>#5X} | {:?} {}", addr, instr, debug)?;
         }
         writeln!(f, "-- Data --")?;
         for (addr, val) in self.consts.iter().enumerate() {
             writeln!(f, "{:>#5X} | {:#X?}", addr, val)?;
         }
-        writeln!(f, "-- Debug --")?;
-        for (addr, s) in self.debug.iter() {
-            writeln!(f, "{:>#5X} | {}", addr, s)?;
-        }
+        // writeln!(f, "-- Debug --")?;
+        // for (addr, s) in self.debug.iter() {
+        //     writeln!(f, "{:>#5X} | {}", addr, s)?;
+        // }
         writeln!(f, "Entry: {:#X}", self.entry())?;
         Ok(())
     }

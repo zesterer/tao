@@ -124,7 +124,6 @@ impl Span {
     pub fn homogenize(self, other: Self) -> Self {
         match (self, other) {
             (Span::None, other) => other,
-            (this, Span::None) => this,
             (this, _) => this,
         }
     }

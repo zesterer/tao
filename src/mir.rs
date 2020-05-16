@@ -236,7 +236,7 @@ impl Program {
             hir::Expr::Value(val) => Expr::Value(val.clone()),
             hir::Expr::Local(local) => Expr::GetLocal(*local),
             hir::Expr::Global(global, generics) => {
-                let generics = generics.iter().map(|(_, ty)| self.instantiate_type(ty, get_generic)).collect::<Vec<_>>();
+                let generics = generics.iter().map(|(_, (_, ty))| self.instantiate_type(ty, get_generic)).collect::<Vec<_>>();
                 let def = self.instantiate_def(prog, *global, generics);
                 Expr::GetGlobal(def)
             },
@@ -264,7 +264,7 @@ impl Program {
 
         let ty = self.instantiate_type(hir_expr.ty(), get_generic);
 
-        RawTypeNode::new(expr, ty)
+        RawTypeNode::new(expr, (hir_expr.span(), ty))
     }
 
     fn instantiate_match(

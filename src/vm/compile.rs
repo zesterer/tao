@@ -6,6 +6,7 @@ use internment::LocalIntern;
 use crate::{
     error::Error,
     ast::{UnaryOp, BinaryOp},
+    node::RawTypeNode,
     ty::Primitive,
     mir, hir,
 };
@@ -26,9 +27,15 @@ fn push_constant_num(x: f64) -> Instr {
     }
 }
 
-impl mir::Expr {
+const DEBUG: bool = true;
+
+impl RawTypeNode<mir::Expr> {
     pub fn compile(&self, program: &mut Program, scope: &mut (&mir::Program, impl FnMut(CodeAddr, mir::DefId), Vec<Ident>), builder: &mut ProcBuilder) {
-        match self {
+        if DEBUG {
+            builder.emit_debug(format!("{:?}", self.span()));
+        }
+
+        match &**self {
             mir::Expr::Value(val) => match val {
                 hir::Value::Number(x) => {
                     builder.emit_instr(push_constant_num(*x));
@@ -135,8 +142,6 @@ impl mir::Expr {
                 // Create body
                 let func_addr = {
                     let mut builder = ProcBuilder::default();
-
-                    builder.emit_debug(format!("FUNC"));
 
                     extractor.compile(&mut builder);
                     let bindings = extractor.get_bindings();
@@ -261,12 +266,16 @@ impl mir::Program {
             .map(|(id, global)| {
                 let mut builder = ProcBuilder::default();
 
+                if DEBUG {
+                    builder.emit_debug(format!(":: {} {} of {}", id.0, id.1.iter().map(|ty| ty.mangle()).collect::<Vec<_>>().join(", "), global.ty().mangle()));
+                }
+
                 let mut scope = (
                     self,
                     |global_addr, id| global_refs.push((global_addr, id)),
                     Vec::new(),
                 );
-                builder.emit_debug(format!(":: {} {} of {}", id.0, id.1.iter().map(|ty| ty.mangle()).collect::<Vec<_>>().join(", "), global.ty().mangle()));
+
                 global.compile(&mut program, &mut scope, &mut builder);
                 builder.emit_instr(Instr::Return(0));
                 let (global_addr, global_calls) = builder.link(&mut program);

@@ -66,8 +66,8 @@ pub enum Pat<M> {
 
 type InferBinding = InferNode<Binding<(Span, TypeId)>>;
 type InferPat = SrcNode<Pat<(Span, TypeId)>>;
-pub type TypeBinding = TypeNode<Binding<SrcNode<Type>>>;
-pub type TypePat = SrcNode<Pat<SrcNode<Type>>>;
+pub type TypeBinding = TypeNode<Binding<(Span, SrcNode<Type>)>>;
+pub type TypePat = SrcNode<Pat<(Span, SrcNode<Type>)>>;
 
 #[derive(Debug)]
 pub struct Binding<M> {
@@ -134,7 +134,7 @@ pub enum Expr<M> {
 }
 
 type InferExpr = InferNode<Expr<(Span, TypeId)>>;
-pub type TypeExpr = TypeNode<Expr<SrcNode<Type>>>;
+pub type TypeExpr = TypeNode<Expr<(Span, SrcNode<Type>)>>;
 
 #[derive(Clone)]
 pub enum Scope<'a> {
@@ -778,19 +778,21 @@ impl InferPat {
 impl InferBinding {
     fn into_checked(self, infer: &InferCtx) -> Result<TypeBinding, Error> {
         let meta = infer.reconstruct(self.type_id())?;
+        let span = self.span();
 
         let this = self.into_inner();
 
         Ok(TypeNode::new(Binding {
             pat: this.pat.into_checked(infer)?,
             binding: this.binding,
-        }, meta))
+        }, (span, meta)))
     }
 }
 
 impl InferExpr {
     fn into_checked(self, infer: &InferCtx) -> Result<TypeExpr, Error> {
         let meta = infer.reconstruct(self.type_id())?;
+        let span = self.span();
 
         Ok(TypeNode::new(match self.into_inner() {
             Expr::Value(val) => Expr::Value(val),
@@ -799,7 +801,7 @@ impl InferExpr {
                 ident,
                 generics
                     .into_iter()
-                    .map(|(ident, (span, type_id))| Ok((ident, infer.reconstruct(type_id).map_err(|err| err.with_span(span))?)))
+                    .map(|(ident, (span, type_id))| Ok((ident, (span, infer.reconstruct(type_id).map_err(|err| err.with_span(span))?))))
                     .collect::<Result<_, _>>()?,
             ),
             Expr::Unary(op, x) => Expr::Unary(
@@ -837,7 +839,7 @@ impl InferExpr {
                     })
                     .collect::<Result<_, _>>()?,
             ),
-        }, meta))
+        }, (span, meta)))
     }
 }
 
