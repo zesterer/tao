@@ -98,10 +98,20 @@ data Person =
 Tao aims to have useful error messages. Below are a few examples.
 
 ```
-Error: Type mismatch between 'Num' and 'String'
+Error: Type mismatch between 'Num' and 'Str'
 -> line 1, column 2
    1 | (x -> x + 3)("test")
         ^           ^^^^^^
+```
+
+```
+Error: Cannot fully infer type [A] -> Num
+-> line 1, column 5
+   1 | def len A = |xs of [A]| match xs in
+           ---
+   5 | def main = []:len
+                     ^^^
+Hint: Specify all missing types
 ```
 
 ```

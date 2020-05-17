@@ -113,7 +113,7 @@ impl<M> Pat<M> {
             Pat::Wildcard => false,
             Pat::Value(_) => true,
             Pat::List(items) => true, // List could be different size
-            Pat::ListFront(items, _) => items.iter().any(|item| item.pat.is_refutable()),
+            Pat::ListFront(items, _) => items.len() > 0,
             Pat::Tuple(items) => items.iter().any(|item| item.pat.is_refutable()),
         }
     }
@@ -736,9 +736,9 @@ impl ast::Expr {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
-                if !arms
+                if arms
                     .iter()
-                    .any(|(binding, _)| binding.pat.is_refutable())
+                    .all(|(binding, _)| binding.pat.is_refutable())
                 {
                     return Err(Error::custom(format!("Match requires irrefutable pattern somewhere (TODO: Implement proper exhaustivity checks)"))
                         .with_span(self.span()));

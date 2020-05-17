@@ -6,6 +6,7 @@ def last = |xs of [Num]| match xs in
 | [] => magic
 | [last] => last
 | [_, ...tail] => tail:last
+| _ => magic
 
 # Problem 2
 
@@ -26,12 +27,14 @@ def kth = |k, xs of [Num]| match (k, xs) in
 def len = |xs of [Num]| match xs in
 | [] => 0
 | [_, ...tail] => 1 + tail:len
+| _ => magic
 
 # Problem 5
 
 def rev = |xs of [Num]| match xs in
 | [] => []
 | [head, ...tail] => tail:rev ++ [head]
+| _ => []
 
 # Problem 6
 
