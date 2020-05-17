@@ -22,7 +22,7 @@ See `examples/` for more example programs.
 - Useful error messages
 - Type parameters
 - Bytecode compilation
-- Pattern matching (In progress)
+- Pattern matching
 - Sum types (incomplete)
 - Monadic I/O (incomplete)
 
@@ -36,13 +36,18 @@ In addition, the compile codebase is undergoing relatively rapid changes.
 - Type inference
 - Recursive definitions
 - Declaration of data types
+- Generics
+- Bytecode compilation
+- Bytecode VM execution
+- Pattern-matching
 - Common expression constructs (`if`, `match`, `let`, etc.)
 
 ### What Doesn't Work
 
 - Trait system
-- Instantiation / usage of complex data types
-- Compiler backend (the compiler can largely only type-check code right now)
+- Data types
+- HKTs
+- Standard library / prelude
 
 ## Type System
 
@@ -118,7 +123,7 @@ Hint: Specify all missing types
 Error: No such binding 'bar' in the current scope
 -> line 1, column 22
    1 | let foo = 5 in foo + bar
-                            ^^^
+                            ^^^﻿
 ```
 
 ## Compiler Architecture
