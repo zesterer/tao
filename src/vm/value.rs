@@ -14,7 +14,7 @@ pub enum Value {
     Boolean(bool),
     String(Rc<String>),
     List(Rc<Vector<Value>>),
-    Func(CodeAddr),
+    Func(Rc<(CodeAddr, Vec<Value>)>),
 }
 
 impl Value {
@@ -42,7 +42,7 @@ impl Value {
         }
     }
 
-    pub fn into_func_unchecked(self) -> CodeAddr {
+    pub fn into_func_unchecked(self) -> Rc<(CodeAddr, Vec<Value>)> {
         match self {
             Value::Func(addr) => addr,
             #[cfg(debug_assertions)]
@@ -84,7 +84,7 @@ impl fmt::Display for Value {
                 .map(|x| format!("{}", x))
                 .collect::<Vec<_>>()
                 .join(", ")),
-            Value::Func(addr) => write!(f, "<func {:#X}>", addr),
+            Value::Func(addr) => write!(f, "<func {:#X}>", addr.0),
         }
     }
 }

@@ -30,7 +30,7 @@ fn push_constant_num(x: f64) -> Instr {
 const DEBUG: bool = true;
 
 impl RawTypeNode<mir::Expr> {
-    pub fn compile(&self, program: &mut Program, scope: &mut (&mir::Program, impl FnMut(CodeAddr, mir::DefId), Vec<Ident>), builder: &mut ProcBuilder) {
+    pub fn compile(&self, program: &mut Program, scope: &mut (&mir::Program, &mut impl FnMut(CodeAddr, mir::DefId), Vec<Ident>), builder: &mut ProcBuilder) {
         if DEBUG {
             builder.emit_debug(format!("{:?}", self.span()));
         }
@@ -77,6 +77,9 @@ impl RawTypeNode<mir::Expr> {
                     (BinaryOp::Div, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::DivNum),
                     (BinaryOp::Rem, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::RemNum),
                     (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::EqNum),
+                    (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::EqBool),
+                    (BinaryOp::And, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::AndBool),
+                    (BinaryOp::Or, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::OrBool),
                     (BinaryOp::Join, mir::RawType::List(_), mir::RawType::List(_)) => builder.emit_instr(Instr::JoinList),
                     _ => todo!(),
                 };
@@ -138,17 +141,20 @@ impl RawTypeNode<mir::Expr> {
                     builder.patch_instr(exit_jump, Instr::Jump(builder.next_addr()));
                 }
             },
-            mir::Expr::MakeFunc(extractor, body) => {
+            mir::Expr::MakeFunc(extractor, env, body) => {
                 // Create body
                 let func_addr = {
                     let mut builder = ProcBuilder::default();
 
                     extractor.compile(&mut builder);
                     let bindings = extractor.get_bindings();
-                    bindings.iter().for_each(|b| scope.2.push(*b)); // Push locals
-                    body.compile(program, scope, &mut builder);
-                    bindings.iter().for_each(|_| { // Pop locals
-                        scope.2.pop();
+                    let mut func_scope = env.clone();
+                    bindings.iter().for_each(|b| func_scope.push(*b)); // Push locals
+                    body.compile(program, &mut (scope.0, scope.1, func_scope), &mut builder);
+                    bindings.iter().for_each(|_| { // Pop pattern locals
+                        builder.emit_instr(Instr::PopLocal);
+                    });
+                    env.iter().for_each(|_| { // Pop environment
                         builder.emit_instr(Instr::PopLocal);
                     });
                     builder.emit_instr(Instr::Return(0));
@@ -162,7 +168,18 @@ impl RawTypeNode<mir::Expr> {
                     global_addr
                 };
 
-                builder.emit_instr(Instr::MakeFunc(func_addr));
+                for local in env.iter().rev() {
+                    let offset = scope.2
+                        .iter()
+                        .rev()
+                        .enumerate()
+                        .find(|(_, ident)| *ident == local)
+                        .unwrap().0 as u32;
+
+                    builder.emit_instr(Instr::LoadLocal(offset));
+                }
+
+                builder.emit_instr(Instr::MakeFunc(env.len() as u16, func_addr));
             },
             mir::Expr::Apply(f, arg) => {
                 arg.compile(program, scope, builder);
@@ -358,7 +375,7 @@ impl mir::Program {
 
                 let mut scope = (
                     self,
-                    |global_addr, id| global_refs.push((global_addr, id)),
+                    &mut |global_addr, id| global_refs.push((global_addr, id)),
                     Vec::new(),
                 );
 

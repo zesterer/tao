@@ -5,7 +5,7 @@ pub type CodeAddr = u32;
 pub type ConstAddr = u32;
 
 #[derive(Copy, Clone)]
-#[repr(u32)]
+#[repr(u8)]
 pub enum Instr {
     Nop = 0,
 
@@ -24,8 +24,8 @@ pub enum Instr {
     /// Push `false`
     False,
 
-    // Push a function that points to the given address
-    MakeFunc(u32),
+    // Push a function that points to the given address with the environment of the last N stack items
+    MakeFunc(u16, u32),
     // Apply the argument one below the top of the stack to the function at the top of the stack
     ApplyFunc,
     /// Push a list made from the last N items on the stack (reversed)
@@ -40,14 +40,17 @@ pub enum Instr {
     LenMoreEqList(u32),
 
     NegNum,
-    NotBool,
     AddNum,
     SubNum,
     MulNum,
     DivNum,
     RemNum,
-
     EqNum,
+
+    NotBool,
+    EqBool,
+    AndBool,
+    OrBool,
 
     JoinList,
 
@@ -82,7 +85,7 @@ impl fmt::Debug for Instr {
             Instr::Float(x) => write!(f, "float {}", x),
             Instr::True => write!(f, "true"),
             Instr::False => write!(f, "false"),
-            Instr::MakeFunc(addr) => write!(f, "func.make {:#X}", addr),
+            Instr::MakeFunc(n, addr) => write!(f, "func.make {} {:#X}", n, addr),
             Instr::ApplyFunc => write!(f, "func.apply"),
             Instr::MakeList(n) => write!(f, "list.make {}", n),
             Instr::IndexList(x) => write!(f, "list.index {}", x),
@@ -90,13 +93,16 @@ impl fmt::Debug for Instr {
             Instr::LenEqList(n) => write!(f, "list.len_eq {}", n),
             Instr::LenMoreEqList(n) => write!(f, "list.len_more_eq {}", n),
             Instr::NegNum => write!(f, "num.neg"),
-            Instr::NotBool => write!(f, "bool.not"),
             Instr::AddNum => write!(f, "num.add"),
             Instr::SubNum => write!(f, "num.sub"),
             Instr::MulNum => write!(f, "num.mul"),
             Instr::DivNum => write!(f, "num.div"),
             Instr::RemNum => write!(f, "num.rem"),
             Instr::EqNum => write!(f, "num.eq"),
+            Instr::NotBool => write!(f, "bool.not"),
+            Instr::EqBool => write!(f, "bool.eq"),
+            Instr::AndBool => write!(f, "bool.and"),
+            Instr::OrBool => write!(f, "bool.or"),
             Instr::JoinList => write!(f, "list.join"),
             Instr::LoadConst(addr) => write!(f, "const {:#X}", addr),
             Instr::LoadLocal(offset) => write!(f, "load_local {}", offset),

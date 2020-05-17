@@ -141,9 +141,62 @@ pub enum Expr {
     // Apply a value to a function
     Apply(RawTypeNode<Expr>, RawTypeNode<Expr>),
     // Create a function with the given parameter extractor and body
-    MakeFunc(Extractor, RawTypeNode<Expr>),
+    MakeFunc(Extractor, Vec<Ident>, RawTypeNode<Expr>),
     // Make a flat value against a series of arms
     MatchValue(RawTypeNode<Expr>, Vec<(Matcher, Extractor, RawTypeNode<Expr>)>),
+}
+
+impl Expr {
+    fn get_env_inner(&self, scope: &mut Vec<Ident>, env: &mut Vec<Ident>) {
+        match self {
+            Expr::Value(_) => {},
+            Expr::GetGlobal(_) => {},
+            Expr::GetLocal(ident) => {
+                if !scope.contains(ident) {
+                    env.push(*ident);
+                }
+            },
+            Expr::Unary(_, a) => a.get_env_inner(scope, env),
+            Expr::Binary(_, a, b) => {
+                a.get_env_inner(scope, env);
+                b.get_env_inner(scope, env);
+            },
+            Expr::MakeTuple(items) => for item in items.iter() {
+                item.get_env_inner(scope, env);
+            },
+            Expr::MakeList(items) => for item in items.iter() {
+                item.get_env_inner(scope, env);
+            },
+            Expr::Apply(f, arg) => {
+                f.get_env_inner(scope, env);
+                arg.get_env_inner(scope, env);
+            },
+            Expr::MakeFunc(extractor, f_env, _) => {
+                for ident in f_env.iter() {
+                    if !scope.contains(ident) {
+                        env.push(*ident);
+                    }
+                }
+            },
+            Expr::MatchValue(pred, arms) => {
+                pred.get_env_inner(scope, env);
+                for (_, extractor, body) in arms.iter() {
+                    let mut bindings = extractor.get_bindings();
+                    let scope_len = scope.len();
+                    scope.append(&mut bindings);
+                    body.get_env_inner(scope, env);
+                    scope.truncate(scope_len);
+                }
+            },
+        }
+    }
+
+    fn get_env(&self) -> Vec<Ident> {
+        let mut scope = Vec::new();
+        let mut env = Vec::new();
+        self.get_env_inner(&mut scope, &mut env);
+        env
+    }
 }
 
 #[derive(Debug)]
@@ -186,9 +239,7 @@ impl Extractor {
             Extractor::ListFront(x, items, tail) => x.is_some() || tail.is_some() || items.iter().any(|item| item.extracts_anything()),
         }
     }
-}
 
-impl Extractor {
     fn bindings(&self, bindings: &mut Vec<Ident>) {
         let (this, children, tail) = match self {
             Extractor::Just(x) => (x, None, None),
@@ -283,7 +334,13 @@ impl Program {
                 .iter()
                 .map(|item| self.instantiate_expr(prog, item, get_generic))
                 .collect()),
-            hir::Expr::Func(binding, body) => Expr::MakeFunc(binding.make_extractor(), self.instantiate_expr(prog, body, get_generic)),
+            hir::Expr::Func(binding, body) => {
+                let body = self.instantiate_expr(prog, body, get_generic);
+                let extractor = binding.make_extractor();
+                let e_bindings = extractor.get_bindings();
+                let env = body.get_env().into_iter().filter(|ident| !e_bindings.contains(ident)).collect();
+                Expr::MakeFunc(extractor, env, body)
+            },
             hir::Expr::Apply(f, arg) => Expr::Apply(
                 self.instantiate_expr(prog, f, get_generic),
                 self.instantiate_expr(prog, arg, get_generic),

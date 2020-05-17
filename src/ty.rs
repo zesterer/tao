@@ -775,13 +775,13 @@ mod tests {
         let boolean: DataId = 1;
 
         let a = ctx.insert(number, Span::none());
-        let b = ctx.insert(TypeInfo::Unknown, Span::none());
+        let b = ctx.insert(TypeInfo::Unknown(None), Span::none());
         let c = ctx.insert(TypeInfo::Func(a, b), Span::none());
         let d = ctx.insert(boolean, Span::none());
         ctx.unify(b, d);
 
         assert_eq!(
-            ctx.reconstruct(c).unwrap().into_inner(),
+            ctx.reconstruct(c, Span::none()).unwrap().into_inner(),
             Type::Func(
                 SrcNode::new(Type::Data(number), Span::none()),
                 SrcNode::new(Type::Data(boolean), Span::none()),
@@ -796,15 +796,15 @@ mod tests {
         // Create some types
         let number: DataId = 0;
 
-        let a = ctx.insert(TypeInfo::Unknown, Span::none());
-        let b = ctx.insert(TypeInfo::Unknown, Span::none());
+        let a = ctx.insert(TypeInfo::Unknown(None), Span::none());
+        let b = ctx.insert(TypeInfo::Unknown(None), Span::none());
         let c = ctx.insert(number, Span::none());
         let d = ctx.insert(TypeInfo::List(a), Span::none());
         ctx.unify(a, b);
         ctx.unify(b, c);
 
         assert_eq!(
-            ctx.reconstruct(d).unwrap().into_inner(),
+            ctx.reconstruct(d, Span::none()).unwrap().into_inner(),
             Type::List(SrcNode::new(Type::Data(number), Span::none())),
         );
     }

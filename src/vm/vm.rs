@@ -29,13 +29,17 @@ impl Vm {
                 Instr::True => expr_stack.push(Value::Boolean(true)),
                 Instr::False => expr_stack.push(Value::Boolean(false)),
 
-                Instr::MakeFunc(addr) => {
-                    expr_stack.push(Value::Func(addr));
+                Instr::MakeFunc(n, addr) => {
+                    let mut env = (0..n).map(|_| expr_stack.pop().unwrap()).collect();
+                    expr_stack.push(Value::Func(Rc::new((addr, env))));
                 },
                 Instr::ApplyFunc => {
-                    let addr = expr_stack.pop().unwrap().into_func_unchecked();
+                    let mut func = expr_stack.pop().unwrap().into_func_unchecked();
+                    Rc::make_mut(&mut func).1
+                        .drain(..)
+                        .for_each(|env| local_stack.push(env));
                     call_stack.push(ip);
-                    ip = addr;
+                    ip = func.0;
                 },
                 Instr::MakeList(n) => {
                     let list = Value::make_list((0..n).map(|_| expr_stack.pop().unwrap()));
@@ -61,10 +65,6 @@ impl Vm {
                 Instr::NegNum => {
                     let x = expr_stack.pop().unwrap().into_number_unchecked();
                     expr_stack.push(Value::Number(-x));
-                },
-                Instr::NotBool => {
-                    let x = expr_stack.pop().unwrap().into_boolean_unchecked();
-                    expr_stack.push(Value::Boolean(!x));
                 },
                 Instr::AddNum => {
                     let x = expr_stack.pop().unwrap().into_number_unchecked();
@@ -95,6 +95,25 @@ impl Vm {
                     let x = expr_stack.pop().unwrap().into_number_unchecked();
                     let y = expr_stack.pop().unwrap().into_number_unchecked();
                     expr_stack.push(Value::Boolean(x == y));
+                },
+                Instr::NotBool => {
+                    let x = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    expr_stack.push(Value::Boolean(!x));
+                },
+                Instr::EqBool => {
+                    let x = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    let y = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    expr_stack.push(Value::Boolean(x == y));
+                },
+                Instr::AndBool => {
+                    let x = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    let y = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    expr_stack.push(Value::Boolean(x && y));
+                },
+                Instr::OrBool => {
+                    let x = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    let y = expr_stack.pop().unwrap().into_boolean_unchecked();
+                    expr_stack.push(Value::Boolean(x || y));
                 },
                 Instr::JoinList => {
                     let mut x = (*expr_stack.pop().unwrap().into_list_unchecked()).clone();
