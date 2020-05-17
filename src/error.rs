@@ -8,7 +8,8 @@ use crate::{
 #[derive(Debug)]
 pub struct Error {
     msg: String,
-    spans: Vec<Span>,
+    primary_spans: Vec<Span>,
+    secondary_spans: Vec<Span>,
     hints: Vec<String>,
 }
 
@@ -17,7 +18,8 @@ impl Error {
     pub fn custom(msg: String) -> Self {
         Self {
             msg,
-            spans: Vec::new(),
+            primary_spans: Vec::new(),
+            secondary_spans: Vec::new(),
             hints: Vec::new(),
         }
     }
@@ -40,7 +42,12 @@ impl Error {
     }
 
     pub fn with_span(mut self, span: Span) -> Self {
-        self.spans.push(span);
+        self.primary_spans.push(span);
+        self
+    }
+
+    pub fn with_secondary_span(mut self, span: Span) -> Self {
+        self.secondary_spans.push(span);
         self
     }
 
@@ -120,11 +127,13 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
         let highlight_spans = |f: &mut fmt::Formatter, spans: &[_]| {
             let span_iter = spans
                 .iter()
-                .chain(self.error.spans.iter());
+                .cloned()
+                .chain(self.error.primary_spans.iter().map(|s| (*s, true)))
+                .chain(self.error.secondary_spans.iter().map(|s| (*s, false)));
 
             if let Some(((start_line, start_col), (end_line, end_col))) = span_iter
                 .clone()
-                .fold(Span::none(), |a, x| a.union(*x))
+                .fold(Span::none(), |a, (s, _)| a.union(s))
                 .in_context(self.src)
             {
                 writeln!(f, "-> line {}, column {}", start_line + 1, start_col + 1)?;
@@ -139,16 +148,21 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                             Loc::at(char_pos + line.len()),
                         );
 
-                        writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
 
                         // Underline
                         if span_iter
                             .clone()
-                            .any(|r| r.intersects(line_span)) {
+                            .any(|(s, _)| s.intersects(line_span))
+                        {
+                            writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
+
                             write!(f, "       ")?;
                             for _ in 0..line.len() {
-                                if span_iter.clone().any(|r| r.contains(Loc::at(char_pos))) {
-                                    write!(f, "^")?;
+                                if let Some((span, is_primary)) = span_iter
+                                    .clone()
+                                    .find(|(s, _)| s.contains(Loc::at(char_pos)))
+                                {
+                                    write!(f, "{}", if is_primary { '^' } else { '-' })?;
                                 } else {
                                     write!(f, " ")?;
                                 }

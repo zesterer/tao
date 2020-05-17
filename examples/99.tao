@@ -1,0 +1,8 @@
+def magic of Num = magic
+
+def last = |xs of [Num]| match xs in
+| [] => magic
+| [last] => last
+| [_, ...tail] => tail:last
+
+def main = [5, 2, 7, 9, 4]:last

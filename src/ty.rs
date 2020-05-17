@@ -462,11 +462,13 @@ impl<'a> InferCtx<'a> {
     pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
         self.unify_inner(0, a, b).map_err(|(x, y)| Error::custom(format!(
                 "Type mismatch between {} and {}",
-                self.display_type_info(a),
-                self.display_type_info(b),
+                self.display_type_info(x),
+                self.display_type_info(y),
             ))
-                .with_span(self.span(x).homogenize(self.span(a)))
-                .with_span(self.span(y).homogenize(self.span(b))))
+                .with_span(self.span(x))
+                .with_secondary_span(self.span(a))
+                .with_span(self.span(y))
+                .with_secondary_span(self.span(b)))
     }
 
     pub fn insert(&mut self, ty: impl Into<TypeInfo>, span: Span) -> TypeId {
@@ -476,23 +478,23 @@ impl<'a> InferCtx<'a> {
         id
     }
 
-    pub fn instantiate_ty_inner(&mut self, get_generic: &impl Fn(Ident) -> Option<TypeId>, ty: &SrcNode<Type>, span: Span) -> TypeId {
+    pub fn instantiate_ty_inner(&mut self, get_generic: &impl Fn(Ident) -> Option<TypeId>, ty: &SrcNode<Type>) -> TypeId {
         let info = match &**ty {
             Type::GenParam(ident) => TypeInfo::Ref(get_generic(*ident)
                 .expect("Generic type without matching generic parameter found in concrete type")),
             Type::Primitive(prim) => TypeInfo::Primitive(prim.clone()),
             Type::Data(data) => TypeInfo::Data(*data),
-            Type::List(item) => TypeInfo::List(self.instantiate_ty_inner(get_generic, item, span)),
+            Type::List(item) => TypeInfo::List(self.instantiate_ty_inner(get_generic, item)),
             Type::Tuple(items) => TypeInfo::Tuple(
-                items.iter().map(|item| self.instantiate_ty_inner(get_generic, item, span)).collect(),
+                items.iter().map(|item| self.instantiate_ty_inner(get_generic, item)).collect(),
             ),
             Type::Func(i, o) => TypeInfo::Func(
-                self.instantiate_ty_inner(get_generic, i, span),
-                self.instantiate_ty_inner(get_generic, o, span),
+                self.instantiate_ty_inner(get_generic, i),
+                self.instantiate_ty_inner(get_generic, o),
             ),
         };
 
-        self.insert(info, span)
+        self.insert(info, ty.span())
     }
 
     pub fn instantiate_ty(&mut self, generics: &[SrcNode<Ident>], ty: &SrcNode<Type>, span: Span) -> (TypeId, Vec<(SrcNode<Ident>, TypeId)>) {
@@ -506,7 +508,7 @@ impl<'a> InferCtx<'a> {
             .find(|(name, _)| **name == ident)
             .map(|(_, id)| *id);
 
-        (self.instantiate_ty_inner(&get_generic, ty, span), generic_type_ids)
+        (self.instantiate_ty_inner(&get_generic, ty), generic_type_ids)
     }
 
     pub fn add_constraint(&mut self, constraint: Constraint) -> ConstraintId {
@@ -737,7 +739,7 @@ impl<'a> InferCtx<'a> {
         Ok(SrcNode::new(ty, self.span(id)))
     }
 
-    pub fn reconstruct(&self, id: TypeId) -> Result<SrcNode<Type>, Error> {
+    pub fn reconstruct(&self, id: TypeId, span: Span) -> Result<SrcNode<Type>, Error> {
         self.reconstruct_inner(0, id).map_err(|err| match err {
             ReconstructError::Recursive => Error::custom(format!("Recursive type"))
                 .with_span(self.span(id)),
@@ -747,7 +749,8 @@ impl<'a> InferCtx<'a> {
                     _ => format!("Cannot fully infer type {}", self.display_type_info(id)),
                 };
                 Error::custom(msg)
-                    .with_span(self.span(id))
+                    .with_span(span)
+                    .with_secondary_span(self.span(id))
                     .with_hint(format!("Specify all missing types"))
             },
         })

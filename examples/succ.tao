@@ -4,7 +4,17 @@ def factorial = |x| if x = 0
 
 def join A = |(xs, ys) of ([A], ?)| xs ++ ys
 
-def main = (
+def joined = (
 	join(([1, 2, 3], [4, 5, 6])),
 	join(([false, true, false], [true, false, true])),
 )
+
+def len = |xs of [()]| match xs in
+| [] => 0
+| [_, ...tail] => 1 + tail:len
+
+def sum = |xs of [Num]| match xs in
+| [] => 0
+| [head, ...tail] => head + tail:sum
+
+def main = [4, 5, 6, 7]:sum

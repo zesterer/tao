@@ -200,11 +200,76 @@ impl mir::Matcher {
                     .collect::<Vec<_>>();
                 for (i, item) in refutable_items.iter() {
                     builder.emit_instr(Instr::Dup);
-
                     builder.emit_instr(Instr::IndexList(*i as u32));
-
                     item.compile(builder);
+                    fail_jumps.push(builder.emit_instr(Instr::Nop));
+                }
+                builder.emit_instr(Instr::Pop); // Pop matched value
+                builder.emit_instr(Instr::True);
 
+                // If any of the tuples failed to match
+                if fail_jumps.len() > 0 {
+                    let true_jump = builder.emit_instr(Instr::Nop);
+
+                    for addr in fail_jumps {
+                        builder.patch_instr(addr, Instr::JumpIfNot(builder.next_addr()));
+                    }
+                    builder.emit_instr(Instr::Pop); // Pop matched value
+                    builder.emit_instr(Instr::False);
+
+                    builder.patch_instr(true_jump, Instr::Jump(builder.next_addr()));
+                }
+            },
+            mir::Matcher::List(items) => {
+                let mut fail_jumps = Vec::new();
+
+                builder.emit_instr(Instr::Dup);
+                builder.emit_instr(Instr::LenEqList(items.len() as u32));
+                fail_jumps.push(builder.emit_instr(Instr::Nop));
+
+                let refutable_items = items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.is_refutable())
+                    .collect::<Vec<_>>();
+                for (i, item) in refutable_items.iter() {
+                    builder.emit_instr(Instr::Dup);
+                    builder.emit_instr(Instr::IndexList(*i as u32));
+                    item.compile(builder);
+                    fail_jumps.push(builder.emit_instr(Instr::Nop));
+                }
+                builder.emit_instr(Instr::Pop); // Pop matched value
+                builder.emit_instr(Instr::True);
+
+                // If any of the tuples failed to match
+                if fail_jumps.len() > 0 {
+                    let true_jump = builder.emit_instr(Instr::Nop);
+
+                    for addr in fail_jumps {
+                        builder.patch_instr(addr, Instr::JumpIfNot(builder.next_addr()));
+                    }
+                    builder.emit_instr(Instr::Pop); // Pop matched value
+                    builder.emit_instr(Instr::False);
+
+                    builder.patch_instr(true_jump, Instr::Jump(builder.next_addr()));
+                }
+            },
+            mir::Matcher::ListFront(items) => {
+                let mut fail_jumps = Vec::new();
+
+                builder.emit_instr(Instr::Dup);
+                builder.emit_instr(Instr::LenMoreEqList(items.len() as u32));
+                fail_jumps.push(builder.emit_instr(Instr::Nop));
+
+                let refutable_items = items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.is_refutable())
+                    .collect::<Vec<_>>();
+                for (i, item) in refutable_items.iter() {
+                    builder.emit_instr(Instr::Dup);
+                    builder.emit_instr(Instr::IndexList(*i as u32));
+                    item.compile(builder);
                     fail_jumps.push(builder.emit_instr(Instr::Nop));
                 }
                 builder.emit_instr(Instr::Pop); // Pop matched value
@@ -235,9 +300,30 @@ impl mir::Extractor {
             } else {
                 builder.emit_instr(Instr::Pop);
             },
-            mir::Extractor::Tuple(this, items) => {
+            mir::Extractor::Tuple(this, items) | mir::Extractor::List(this, items) => {
                 if this.is_some() {
                     builder.emit_instr(Instr::Dup);
+                    builder.emit_instr(Instr::PushLocal);
+                }
+
+                for (i, item) in items.iter().enumerate() {
+                    if item.extracts_anything() {
+                        builder.emit_instr(Instr::Dup);
+                        builder.emit_instr(Instr::IndexList(i as u32));
+                        item.compile(builder);
+                    }
+                }
+
+                builder.emit_instr(Instr::Pop);
+            },
+            mir::Extractor::ListFront(this, items, tail) => {
+                if this.is_some() {
+                    builder.emit_instr(Instr::Dup);
+                    builder.emit_instr(Instr::PushLocal);
+                }
+                if tail.is_some() {
+                    builder.emit_instr(Instr::Dup);
+                    builder.emit_instr(Instr::TailList(items.len() as u32));
                     builder.emit_instr(Instr::PushLocal);
                 }
 

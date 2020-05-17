@@ -32,6 +32,12 @@ pub enum Instr {
     MakeList(u32),
     // Index the list at the top of the stack
     IndexList(u32),
+    // Find the tail of the list at the top of the stack, with the first N items removed
+    TailList(u32),
+    // If the list has the given length, push true to the stack
+    LenEqList(u32),
+    // If the list has the given length or more, push true to the stack
+    LenMoreEqList(u32),
 
     NegNum,
     NotBool,
@@ -80,6 +86,9 @@ impl fmt::Debug for Instr {
             Instr::ApplyFunc => write!(f, "func.apply"),
             Instr::MakeList(n) => write!(f, "list.make {}", n),
             Instr::IndexList(x) => write!(f, "list.index {}", x),
+            Instr::TailList(x) => write!(f, "list.tail {}", x),
+            Instr::LenEqList(n) => write!(f, "list.len_eq {}", n),
+            Instr::LenMoreEqList(n) => write!(f, "list.len_more_eq {}", n),
             Instr::NegNum => write!(f, "num.neg"),
             Instr::NotBool => write!(f, "bool.not"),
             Instr::AddNum => write!(f, "num.add"),

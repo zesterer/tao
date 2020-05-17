@@ -45,6 +45,18 @@ impl Vm {
                     let item = expr_stack.pop().unwrap().index(x as usize);
                     expr_stack.push(item);
                 },
+                Instr::TailList(x) => {
+                    let list = expr_stack.pop().unwrap().into_list_unchecked();
+                    expr_stack.push(Value::List(Rc::new((*list).clone().skip(x as usize))));
+                },
+                Instr::LenEqList(n) => {
+                    let len = expr_stack.pop().unwrap().into_list_unchecked().len();
+                    expr_stack.push(Value::Boolean(len == n as usize));
+                },
+                Instr::LenMoreEqList(n) => {
+                    let len = expr_stack.pop().unwrap().into_list_unchecked().len();
+                    expr_stack.push(Value::Boolean(len >= n as usize));
+                },
 
                 Instr::NegNum => {
                     let x = expr_stack.pop().unwrap().into_number_unchecked();

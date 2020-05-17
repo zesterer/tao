@@ -87,6 +87,14 @@ impl hir::TypeBinding {
                 .iter()
                 .map(|item| item.make_matcher())
                 .collect()),
+            hir::Pat::List(items) => Matcher::List(items
+                .iter()
+                .map(|item| item.make_matcher())
+                .collect()),
+            hir::Pat::ListFront(items, _) => Matcher::ListFront(items
+                .iter()
+                .map(|item| item.make_matcher())
+                .collect()),
             _ => unreachable!(),
         }
     }
@@ -98,6 +106,15 @@ impl hir::TypeBinding {
             hir::Pat::Tuple(items) => Extractor::Tuple(
                 self.binding.as_ref().map(|ident| **ident),
                 items.iter().map(|item| item.make_extractor()).collect(),
+            ),
+            hir::Pat::List(items) => Extractor::List(
+                self.binding.as_ref().map(|ident| **ident),
+                items.iter().map(|item| item.make_extractor()).collect(),
+            ),
+            hir::Pat::ListFront(items, tail) => Extractor::ListFront(
+                self.binding.as_ref().map(|ident| **ident),
+                items.iter().map(|item| item.make_extractor()).collect(),
+                tail.as_ref().map(|ident| **ident),
             ),
             _ => todo!(),
         }
@@ -134,6 +151,8 @@ pub enum Matcher {
     Wildcard,
     Exactly(Value),
     Tuple(Vec<Matcher>),
+    List(Vec<Matcher>),
+    ListFront(Vec<Matcher>),
 }
 
 impl Matcher {
@@ -142,6 +161,8 @@ impl Matcher {
             Matcher::Wildcard => false,
             Matcher::Exactly(_) => true,
             Matcher::Tuple(items) => items.iter().any(|item| item.is_refutable()),
+            Matcher::List(_) => true,
+            Matcher::ListFront(items) => items.len() == 0 // List matches everything
         }
     }
 }
@@ -152,7 +173,8 @@ impl Matcher {
 pub enum Extractor {
     Just(Option<Ident>),
     Tuple(Option<Ident>, Vec<Extractor>),
-    // TODO: Lists
+    List(Option<Ident>, Vec<Extractor>),
+    ListFront(Option<Ident>, Vec<Extractor>, Option<Ident>),
 }
 
 impl Extractor {
@@ -160,18 +182,25 @@ impl Extractor {
         match self {
             Extractor::Just(x) => x.is_some(),
             Extractor::Tuple(x, items) => x.is_some() || items.iter().any(|item| item.extracts_anything()),
+            Extractor::List(x, items) => x.is_some() || items.iter().any(|item| item.extracts_anything()),
+            Extractor::ListFront(x, items, tail) => x.is_some() || tail.is_some() || items.iter().any(|item| item.extracts_anything()),
         }
     }
 }
 
 impl Extractor {
     fn bindings(&self, bindings: &mut Vec<Ident>) {
-        let (this, children) = match self {
-            Extractor::Just(x) => (x, None),
-            Extractor::Tuple(x, xs) => (x, Some(xs)),
+        let (this, children, tail) = match self {
+            Extractor::Just(x) => (x, None, None),
+            Extractor::Tuple(x, xs) => (x, Some(xs), None),
+            Extractor::List(x, xs) => (x, Some(xs), None),
+            Extractor::ListFront(x, xs, tail) => (x, Some(xs), *tail),
         };
         if let Some(this) = this {
             bindings.push(*this);
+        }
+        if let Some(tail) = tail {
+            bindings.push(tail);
         }
         for child in children.map(|xs| xs.iter()).into_iter().flatten() {
             child.bindings(bindings);
@@ -275,7 +304,7 @@ impl Program {
         get_generic: &mut impl FnMut(Ident) -> RawType,
     ) -> Expr {
         match pred.ty() {
-            RawType::Primitive(_) | RawType::Product(_) => {
+            RawType::Primitive(_) | RawType::Product(_) | RawType::List(_) => {
                 let arms = arms
                     .iter()
                     .map(|(binding, body)| (

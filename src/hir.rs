@@ -178,7 +178,7 @@ pub struct DataCtx<'a> {
     generics: HashMap<Ident, TypeId>,
 
     // TODO: Include type hint information
-    globals: &'a HashMap<Ident, Vec<SrcNode<Ident>>>,
+    globals: &'a HashMap<Ident, (Span, Vec<SrcNode<Ident>>)>,
 }
 
 impl<'a> DataCtx<'a> {
@@ -214,7 +214,7 @@ impl<'a> DataCtx<'a> {
                         .iter()
                         .zip(params.iter())
                         .find(|(gen, _)| ***gen == name)
-                        .map(|(_, ty)| *ty), ty, span))
+                        .map(|(_, ty)| *ty), ty))
                 })
             {
                 res
@@ -228,9 +228,9 @@ impl<'a> DataCtx<'a> {
     fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)> {
         self.module
             .get_def_type(ident, infer, span)
-            .or_else(|| if let Some(generics) = self.globals.get(&ident) {
+            .or_else(|| if let Some((global_span, generics)) = self.globals.get(&ident) {
                 Some((
-                    infer.insert(TypeInfo::Unknown(None), span),
+                    infer.insert(TypeInfo::Unknown(None), *global_span),
                     generics.iter().map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span))).collect(),
                 ))
             } else {
@@ -292,7 +292,7 @@ impl Program {
         let globals = module.decls
             .iter()
             .filter_map(|decl| match &**decl {
-                ast::Decl::Def(def) => Some((*def.name, def.generics.clone())),
+                ast::Decl::Def(def) => Some((*def.name, (def.name.span(), def.generics.clone()))),
                 _ => None,
             })
             .collect();
@@ -350,7 +350,7 @@ impl Program {
         Scope::Root
     }
 
-    pub fn insert_def(&mut self, globals: &HashMap<Ident, Vec<SrcNode<Ident>>>, ast_def: &ast::Def) -> Result<(), Error> {
+    pub fn insert_def(&mut self, globals: &HashMap<Ident, (Span, Vec<SrcNode<Ident>>)>, ast_def: &ast::Def) -> Result<(), Error> {
         // Check for double declaration
         if let Some(existing_def) = self.root.defs.get(&**ast_def.name) {
             return Err(Error::custom(format!("Definition with name '{}' already exists", **ast_def.name))
@@ -381,6 +381,8 @@ impl Program {
 
             infer.solve_all()?;
             body.into_checked(&mut infer)?
+                // Use the def name as the type's span
+                .map_meta(|(span, ty)| (span, ty.map_meta(|_| ast_def.name.span())))
         };
 
         let generics = ast_def.generics
@@ -412,7 +414,7 @@ impl Program {
         Ok(())
     }
 
-    pub fn insert_type_alias(&mut self, globals: &HashMap<Ident, Vec<SrcNode<Ident>>>, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
+    pub fn insert_type_alias(&mut self, globals: &HashMap<Ident, (Span, Vec<SrcNode<Ident>>)>, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
         let mut infer = InferCtx::default();
         let data = DataCtx {
             module: &self.root,
@@ -434,7 +436,7 @@ impl Program {
         let ty_id = ast_type_alias.ty.to_type_id(&data, &mut infer)?;
 
         infer.solve_all()?;
-        let ty = infer.reconstruct(ty_id)?;
+        let ty = infer.reconstruct(ty_id, span)?;
 
         // Ensure that all generic parameters are in use
         for gen in generics.iter() {
@@ -478,7 +480,7 @@ impl Module {
     fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)> {
         self.defs
             .get(&ident)
-            .map(|def| infer.instantiate_ty(&def.generics, def.body.ty(), span))
+            .map(|def| infer.instantiate_ty(&def.generics, def.body.ty(), def.name.span()))
     }
 
     fn get_data_type(&self, ident: Ident) -> Option<(&SrcNode<Type>, &[SrcNode<Ident>])> {
@@ -777,8 +779,8 @@ impl InferPat {
 
 impl InferBinding {
     fn into_checked(self, infer: &InferCtx) -> Result<TypeBinding, Error> {
-        let meta = infer.reconstruct(self.type_id())?;
         let span = self.span();
+        let meta = infer.reconstruct(self.type_id(), span)?;
 
         let this = self.into_inner();
 
@@ -791,8 +793,8 @@ impl InferBinding {
 
 impl InferExpr {
     fn into_checked(self, infer: &InferCtx) -> Result<TypeExpr, Error> {
-        let meta = infer.reconstruct(self.type_id())?;
         let span = self.span();
+        let meta = infer.reconstruct(self.type_id(), span)?;
 
         Ok(TypeNode::new(match self.into_inner() {
             Expr::Value(val) => Expr::Value(val),
@@ -801,7 +803,7 @@ impl InferExpr {
                 ident,
                 generics
                     .into_iter()
-                    .map(|(ident, (span, type_id))| Ok((ident, (span, infer.reconstruct(type_id).map_err(|err| err.with_span(span))?))))
+                    .map(|(ident, (span, type_id))| Ok((ident, (span, infer.reconstruct(type_id, span)?))))
                     .collect::<Result<_, _>>()?,
             ),
             Expr::Unary(op, x) => Expr::Unary(
