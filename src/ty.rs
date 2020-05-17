@@ -725,7 +725,7 @@ impl<'a> InferCtx<'a> {
 
         use TypeInfo::*;
         let ty = match self.get(id) {
-            Unknown(ty) => return Err(ReconstructError::Unknown),
+            Unknown(ty) => return Err(ReconstructError::Unknown(id)),
             Ref(id) => self.reconstruct_inner(iter + 1, id)?.into_inner(),
             GenParam(name) => Type::GenParam(name),
             Primitive(prim) => Type::Primitive(prim),
@@ -743,10 +743,10 @@ impl<'a> InferCtx<'a> {
         self.reconstruct_inner(0, id).map_err(|err| match err {
             ReconstructError::Recursive => Error::custom(format!("Recursive type"))
                 .with_span(self.span(id)),
-            ReconstructError::Unknown => {
+            ReconstructError::Unknown(a) => {
                 let msg = match self.get(self.get_base(id)) {
                     TypeInfo::Unknown(_) => format!("Cannot infer type"),
-                    _ => format!("Cannot fully infer type {}", self.display_type_info(id)),
+                    _ => format!("Cannot fully infer type {} in {}", self.display_type_info(a), self.display_type_info(id)),
                 };
                 Error::custom(msg)
                     .with_span(span)
@@ -758,7 +758,7 @@ impl<'a> InferCtx<'a> {
 }
 
 enum ReconstructError {
-    Unknown,
+    Unknown(TypeId),
     Recursive,
 }
 

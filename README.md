@@ -105,7 +105,7 @@ Error: Type mismatch between 'Num' and 'Str'
 ```
 
 ```
-Error: Cannot fully infer type [A] -> Num
+Error: Cannot fully infer type A in [A] -> Num
 -> line 1, column 5
    1 | def len A = |xs of [A]| match xs in
            ---
