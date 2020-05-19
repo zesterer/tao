@@ -1,0 +1,8 @@
+def record of (.foo: Num, .bar: Str) = (
+	.foo: 5,
+	.bar: "test",
+)
+
+def main = match (.a: 5, .b: 3) in
+| (.a: 3, .b: 5) => (a, b)
+| (.a, .b) => (a, b)

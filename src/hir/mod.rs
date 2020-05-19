@@ -1,3 +1,6 @@
+// pub mod val;
+// pub mod data;
+
 use std::collections::HashMap;
 use internment::LocalIntern;
 use crate::{
@@ -62,6 +65,7 @@ pub enum Pat<M> {
     List(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<SrcNode<Ident>>),
     Tuple(Vec<Node<Binding<M>, M>>),
+    Record(Vec<(SrcNode<Ident>, Node<Binding<M>, M>)>),
 }
 
 type InferBinding = InferNode<Binding<(Span, TypeId)>>;
@@ -93,6 +97,9 @@ impl InferBinding {
             Pat::Tuple(items) => items
                 .iter()
                 .for_each(|item| item.get_binding_idents(idents)),
+            Pat::Record(fields) => fields
+                .iter()
+                .for_each(|(_, field)| field.get_binding_idents(idents)),
         }
 
         if let Some(ident) = &self.binding {
@@ -115,6 +122,7 @@ impl<M> Pat<M> {
             Pat::List(items) => true, // List could be different size
             Pat::ListFront(items, _) => items.len() > 0,
             Pat::Tuple(items) => items.iter().any(|item| item.pat.is_refutable()),
+            Pat::Record(fields) => fields.iter().any(|(_, field)| field.pat.is_refutable()),
         }
     }
 }
@@ -128,6 +136,7 @@ pub enum Expr<M> {
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
     List(Vec<Node<Self, M>>),
     Tuple(Vec<Node<Self, M>>),
+    Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
     Func(Node<Binding<M>, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>), // TODO: Should application be a binary operator?
     Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
@@ -538,6 +547,18 @@ impl ast::Binding {
                     .collect::<Result<_, _>>()?;
                 (infer.insert(TypeInfo::Tuple(item_type_ids), self.span()), Pat::Tuple(items))
             },
+            ast::Pat::Record(fields) => {
+                let mut field_type_ids = Vec::new();
+                let fields = fields
+                    .iter()
+                    .map(|(name, field)| {
+                        let field = field.to_hir(infer)?;
+                        field_type_ids.push((name.clone(), field.type_id()));
+                        Ok((name.clone(), field))
+                    })
+                    .collect::<Result<_, _>>()?;
+                (infer.insert(TypeInfo::Record(field_type_ids), self.span()), Pat::Record(fields))
+            },
         };
 
         Ok(InferNode::new(Binding {
@@ -572,6 +593,10 @@ impl ast::Type {
             ast::Type::Tuple(items) => TypeInfo::Tuple(items
                 .iter()
                 .map(|item| item.to_type_id(data, infer))
+                .collect::<Result<_, _>>()?),
+            ast::Type::Record(fields) => TypeInfo::Record(fields
+                .iter()
+                .map(|(name, field)| Ok((name.clone(), field.to_type_id(data, infer)?)))
                 .collect::<Result<_, _>>()?),
             ast::Type::Func(i, o) => TypeInfo::Func(
                 i.to_type_id(data, infer)?,
@@ -640,9 +665,20 @@ impl ast::Expr {
                 (type_id, Expr::List(items))
             },
             ast::Expr::Tuple(items) => {
-                let items = items.iter().map(|item| item.to_hir(data, infer, scope)).collect::<Result<Vec<_>, _>>()?;
+                let items = items
+                    .iter()
+                    .map(|item| item.to_hir(data, infer, scope))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let type_id = infer.insert(TypeInfo::Tuple(items.iter().map(|item| item.type_id()).collect()), self.span());
                 (type_id, Expr::Tuple(items))
+            },
+            ast::Expr::Record(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, value)| Ok((name.clone(), value.to_hir(data, infer, scope)?)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let type_id = infer.insert(TypeInfo::Record(fields.iter().map(|(name, value)| (name.clone(), value.type_id())).collect()), self.span());
+                (type_id, Expr::Record(fields))
             },
             ast::Expr::Func(param, param_ty, body) => {
                 let param = param.to_hir(infer)?;
@@ -746,6 +782,7 @@ impl ast::Expr {
 
                 (match_type_id, Expr::Match(pred, arms))
             },
+            expr => todo!("HIR for {:?}", expr),
         };
 
         Ok(InferNode::new(hir_expr, (self.span(), type_id)))
@@ -770,6 +807,14 @@ impl InferPat {
             Pat::Tuple(items) => Pat::Tuple(items
                 .into_iter()
                 .map(|item| item.into_checked(infer))
+                .collect::<Result<_, _>>()?),
+            Pat::Tuple(items) => Pat::Tuple(items
+                .into_iter()
+                .map(|item| item.into_checked(infer))
+                .collect::<Result<_, _>>()?),
+            Pat::Record(fields) => Pat::Record(fields
+                .into_iter()
+                .map(|(name, field)| Ok((name, field.into_checked(infer)?)))
                 .collect::<Result<_, _>>()?),
         };
 
@@ -815,12 +860,18 @@ impl InferExpr {
                 x.into_checked(infer)?,
                 y.into_checked(infer)?,
             ),
-            Expr::List(items) => Expr::List(
-                items.into_iter().map(|item| item.into_checked(infer)).collect::<Result<_, _>>()?,
-            ),
-            Expr::Tuple(items) => Expr::Tuple(
-                items.into_iter().map(|item| item.into_checked(infer)).collect::<Result<_, _>>()?,
-            ),
+            Expr::List(items) => Expr::List(items
+                .into_iter()
+                .map(|item| item.into_checked(infer))
+                .collect::<Result<_, _>>()?),
+            Expr::Tuple(items) => Expr::Tuple(items
+                .into_iter()
+                .map(|item| item.into_checked(infer))
+                .collect::<Result<_, _>>()?),
+            Expr::Record(fields) => Expr::Record(fields
+                .into_iter()
+                .map(|(name, value)| Ok((name, value.into_checked(infer)?)))
+                .collect::<Result<_, _>>()?),
             Expr::Func(param, body) => Expr::Func(
                 param.into_checked(infer)?,
                 body.into_checked(infer)?,
@@ -868,6 +919,11 @@ impl TypeExpr {
                     Expr::Tuple(items) => {
                         for item in items.iter() {
                             stack.push(item);
+                        }
+                    },
+                    Expr::Record(fields) => {
+                        for (_, value) in fields.iter() {
+                            stack.push(value);
                         }
                     },
                     Expr::Func(_, body) => {

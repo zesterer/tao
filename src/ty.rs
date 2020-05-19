@@ -35,6 +35,7 @@ pub enum Type {
     Data(DataId),
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
+    Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Func(SrcNode<Self>, SrcNode<Self>),
     GenParam(Ident),
 }
@@ -48,6 +49,9 @@ impl Type {
             Type::Tuple(items) => items
                 .iter()
                 .for_each(|item| item.visit(f)),
+            Type::Record(fields) => fields
+                .iter()
+                .for_each(|(_, ty)| ty.visit(f)),
             Type::Func(i, o) => {
                 i.visit(f);
                 o.visit(f);
@@ -66,6 +70,9 @@ impl Type {
             Type::Tuple(items) => items
                 .iter_mut()
                 .for_each(|item| item.visit_mut(f)),
+            Type::Record(fields) => fields
+                .iter_mut()
+                .for_each(|(_, ty)| ty.visit_mut(f)),
             Type::Func(i, o) => {
                 i.visit_mut(f);
                 o.visit_mut(f);
@@ -98,6 +105,15 @@ impl fmt::Display for Type {
                 items
                     .iter()
                     .map(|item| write!(f, "{}, ", **item))
+                    .collect::<Result<_, _>>()?;
+                write!(f, ")")?;
+                Ok(())
+            },
+            Type::Record(fields) => {
+                write!(f, "(")?;
+                fields
+                    .iter()
+                    .map(|(name, ty)| write!(f, "{}: {}, ", name.as_str(), **ty))
                     .collect::<Result<_, _>>()?;
                 write!(f, ")")?;
                 Ok(())
@@ -280,6 +296,7 @@ pub enum TypeInfo {
     Primitive(Primitive),
     List(TypeId),
     Tuple(Vec<TypeId>),
+    Record(Vec<(SrcNode<Ident>, TypeId)>),
     Func(TypeId, TypeId),
     Data(DataId),
     GenParam(Ident),
@@ -405,6 +422,16 @@ impl<'a> InferCtx<'a> {
                         write!(f, ")")?;
                         Ok(())
                     },
+                    TypeInfo::Record(fields) => {
+                        write!(f, "(")?;
+                        write!(f, "{}", fields
+                            .iter()
+                            .map(|(name, ty)| format!("{}: {}", name.as_str(), self.with_id(*ty, true)))
+                            .collect::<Vec<_>>()
+                            .join(", "))?;
+                        write!(f, ")")?;
+                        Ok(())
+                    },
                     TypeInfo::Func(i, o) if self.trailing => write!(f, "{} -> {}", self.with_id(i, false), self.with_id(o, true)),
                     TypeInfo::Func(i, o) => write!(f, "({} -> {})", self.with_id(i, false), self.with_id(o, true)),
                     TypeInfo::Data(_) => write!(f, "TODO"),
@@ -440,8 +467,8 @@ impl<'a> InferCtx<'a> {
         match (self.get(a), self.get(b)) {
             (Ref(a), _) => self.unify_inner(iter + 1, a, b),
             (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
-            (Unknown(_), Unknown(Some(_))) => Ok(self.link(a, b)),
-            (Unknown(Some(_)), Unknown(_)) => Ok(self.link(b, a)),
+            (Unknown(Some(_)), Unknown(_)) => Ok(self.link(a, b)),
+            (Unknown(_), Unknown(Some(_))) => Ok(self.link(b, a)),
             (Unknown(_), _) => Ok(self.link(a, b)),
             (_, Unknown(_)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
             (GenParam(a), GenParam(b)) if a == b => Ok(()),
@@ -452,6 +479,14 @@ impl<'a> InferCtx<'a> {
                 .into_iter()
                 .zip(b.into_iter())
                 .try_for_each(|(a, b)| self.unify_inner(iter + 1, a, b)),
+            (Record(a_fields), Record(b_fields)) if a_fields.len() == b_fields.len() => a_fields
+                .into_iter()
+                .zip(b_fields.into_iter())
+                .try_for_each(|((a_name, a_field), (b_name, b_field))| if *a_name == *b_name {
+                    self.unify_inner(iter + 1, a_field, b_field)
+                } else {
+                    Err((a, b))
+                }),
             (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
                 .and_then(|()| self.unify_inner(iter + 1, ao, bo)),
             (_, _) => Err((a, b)),
@@ -485,9 +520,14 @@ impl<'a> InferCtx<'a> {
             Type::Primitive(prim) => TypeInfo::Primitive(prim.clone()),
             Type::Data(data) => TypeInfo::Data(*data),
             Type::List(item) => TypeInfo::List(self.instantiate_ty_inner(get_generic, item)),
-            Type::Tuple(items) => TypeInfo::Tuple(
-                items.iter().map(|item| self.instantiate_ty_inner(get_generic, item)).collect(),
-            ),
+            Type::Tuple(items) => TypeInfo::Tuple(items
+                .iter()
+                .map(|item| self.instantiate_ty_inner(get_generic, item))
+                .collect()),
+            Type::Record(fields) => TypeInfo::Record(fields
+                .iter()
+                .map(|(name, field)| (name.clone(), self.instantiate_ty_inner(get_generic, field)))
+                .collect()),
             Type::Func(i, o) => TypeInfo::Func(
                 self.instantiate_ty_inner(get_generic, i),
                 self.instantiate_ty_inner(get_generic, o),
@@ -731,7 +771,14 @@ impl<'a> InferCtx<'a> {
             Primitive(prim) => Type::Primitive(prim),
             Data(data) => Type::Data(data),
             List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
-            Tuple(a) => Type::Tuple(a.into_iter().map(|a| self.reconstruct_inner(iter + 1, a)).collect::<Result<_, _>>()?),
+            Tuple(items) => Type::Tuple(items
+                .into_iter()
+                .map(|a| self.reconstruct_inner(iter + 1, a))
+                .collect::<Result<_, _>>()?),
+            Record(fields) => Type::Record(fields
+                .into_iter()
+                .map(|(name, ty)| Ok((name, self.reconstruct_inner(iter + 1, ty)?)))
+                .collect::<Result<_, _>>()?),
             Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),
             Associated(_, _, _, _) => todo!("Query trait engine to determine type of associated type"),
         };
@@ -746,7 +793,7 @@ impl<'a> InferCtx<'a> {
             ReconstructError::Unknown(a) => {
                 let msg = match self.get(self.get_base(id)) {
                     TypeInfo::Unknown(_) => format!("Cannot infer type"),
-                    _ => format!("Cannot fully infer type {} in {}", self.display_type_info(a), self.display_type_info(id)),
+                    _ => format!("Cannot infer type {} in {}", self.display_type_info(a), self.display_type_info(id)),
                 };
                 Error::custom(msg)
                     .with_span(span)

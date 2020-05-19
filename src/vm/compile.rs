@@ -208,7 +208,7 @@ impl mir::Matcher {
                 },
                 hir::Value::String(x) => todo!(),
             },
-            mir::Matcher::Tuple(items) => {
+            mir::Matcher::Product(items) => {
                 let mut fail_jumps = Vec::new();
                 let refutable_items = items
                     .iter()
@@ -317,7 +317,7 @@ impl mir::Extractor {
             } else {
                 builder.emit_instr(Instr::Pop);
             },
-            mir::Extractor::Tuple(this, items) | mir::Extractor::List(this, items) => {
+            mir::Extractor::Product(this, items) | mir::Extractor::List(this, items) => {
                 if this.is_some() {
                     builder.emit_instr(Instr::Dup);
                     builder.emit_instr(Instr::PushLocal);

@@ -83,9 +83,13 @@ impl hir::TypeBinding {
         match &*self.pat {
             hir::Pat::Wildcard => Matcher::Wildcard,
             hir::Pat::Value(val) => Matcher::Exactly(val.clone()),
-            hir::Pat::Tuple(items) => Matcher::Tuple(items
+            hir::Pat::Tuple(items) => Matcher::Product(items
                 .iter()
                 .map(|item| item.make_matcher())
+                .collect()),
+            hir::Pat::Record(fields) => Matcher::Product(fields
+                .iter()
+                .map(|(_, field)| field.make_matcher())
                 .collect()),
             hir::Pat::List(items) => Matcher::List(items
                 .iter()
@@ -95,7 +99,6 @@ impl hir::TypeBinding {
                 .iter()
                 .map(|item| item.make_matcher())
                 .collect()),
-            _ => unreachable!(),
         }
     }
 
@@ -103,9 +106,13 @@ impl hir::TypeBinding {
         match &*self.pat {
             hir::Pat::Wildcard | hir::Pat::Value(_) =>
                 Extractor::Just(self.binding.as_ref().map(|ident| **ident)),
-            hir::Pat::Tuple(items) => Extractor::Tuple(
+            hir::Pat::Tuple(items) => Extractor::Product(
                 self.binding.as_ref().map(|ident| **ident),
                 items.iter().map(|item| item.make_extractor()).collect(),
+            ),
+            hir::Pat::Record(fields) => Extractor::Product(
+                self.binding.as_ref().map(|ident| **ident),
+                fields.iter().map(|(_, field)| field.make_extractor()).collect(),
             ),
             hir::Pat::List(items) => Extractor::List(
                 self.binding.as_ref().map(|ident| **ident),
@@ -116,7 +123,6 @@ impl hir::TypeBinding {
                 items.iter().map(|item| item.make_extractor()).collect(),
                 tail.as_ref().map(|ident| **ident),
             ),
-            _ => todo!(),
         }
     }
 }
@@ -203,7 +209,7 @@ impl Expr {
 pub enum Matcher {
     Wildcard,
     Exactly(Value),
-    Tuple(Vec<Matcher>),
+    Product(Vec<Matcher>),
     List(Vec<Matcher>),
     ListFront(Vec<Matcher>),
 }
@@ -213,7 +219,7 @@ impl Matcher {
         match self {
             Matcher::Wildcard => false,
             Matcher::Exactly(_) => true,
-            Matcher::Tuple(items) => items.iter().any(|item| item.is_refutable()),
+            Matcher::Product(items) => items.iter().any(|item| item.is_refutable()),
             Matcher::List(_) => true,
             Matcher::ListFront(items) => items.len() == 0 // List matches everything
         }
@@ -225,7 +231,7 @@ impl Matcher {
 #[derive(Debug)]
 pub enum Extractor {
     Just(Option<Ident>),
-    Tuple(Option<Ident>, Vec<Extractor>),
+    Product(Option<Ident>, Vec<Extractor>),
     List(Option<Ident>, Vec<Extractor>),
     ListFront(Option<Ident>, Vec<Extractor>, Option<Ident>),
 }
@@ -234,7 +240,7 @@ impl Extractor {
     pub fn extracts_anything(&self) -> bool {
         match self {
             Extractor::Just(x) => x.is_some(),
-            Extractor::Tuple(x, items) => x.is_some() || items.iter().any(|item| item.extracts_anything()),
+            Extractor::Product(x, items) => x.is_some() || items.iter().any(|item| item.extracts_anything()),
             Extractor::List(x, items) => x.is_some() || items.iter().any(|item| item.extracts_anything()),
             Extractor::ListFront(x, items, tail) => x.is_some() || tail.is_some() || items.iter().any(|item| item.extracts_anything()),
         }
@@ -243,7 +249,7 @@ impl Extractor {
     fn bindings(&self, bindings: &mut Vec<Ident>) {
         let (this, children, tail) = match self {
             Extractor::Just(x) => (x, None, None),
-            Extractor::Tuple(x, xs) => (x, Some(xs), None),
+            Extractor::Product(x, xs) => (x, Some(xs), None),
             Extractor::List(x, xs) => (x, Some(xs), None),
             Extractor::ListFront(x, xs, tail) => (x, Some(xs), *tail),
         };
@@ -330,6 +336,10 @@ impl Program {
                 .iter()
                 .map(|item| self.instantiate_expr(prog, item, get_generic))
                 .collect()),
+            hir::Expr::Record(fields) => Expr::MakeTuple(fields
+                .iter()
+                .map(|(_, field)| self.instantiate_expr(prog, field, get_generic))
+                .collect()),
             hir::Expr::List(items) => Expr::MakeList(items
                 .iter()
                 .map(|item| self.instantiate_expr(prog, item, get_generic))
@@ -384,6 +394,10 @@ impl Program {
             Type::Tuple(items) => RawType::Product(items
                 .iter()
                 .map(|item| self.instantiate_type(item, get_generic))
+                .collect()),
+            Type::Record(fields) => RawType::Product(fields
+                .iter()
+                .map(|(_, field)| self.instantiate_type(field, get_generic))
                 .collect()),
             Type::List(item) => RawType::List(Box::new(self.instantiate_type(item, get_generic))),
             Type::Func(i, o) => RawType::Func(

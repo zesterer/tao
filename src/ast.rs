@@ -108,6 +108,7 @@ pub enum Pat {
     List(Vec<SrcNode<Binding>>),
     ListFront(Vec<SrcNode<Binding>>, Option<SrcNode<Ident>>),
     Tuple(Vec<SrcNode<Binding>>),
+    Record(Vec<(SrcNode<Ident>, SrcNode<Binding>)>),
 }
 
 #[derive(Debug)]
@@ -121,6 +122,7 @@ pub enum Type {
     Unknown,
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
+    Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Func(SrcNode<Self>, SrcNode<Self>),
     Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
 }
@@ -138,6 +140,8 @@ pub enum Expr {
     Let(SrcNode<Binding>, Option<SrcNode<Type>>, SrcNode<Self>, SrcNode<Self>),
     List(Vec<SrcNode<Self>>),
     Tuple(Vec<SrcNode<Self>>),
+    Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
+    Constructor(SrcNode<Ident>, SrcNode<Self>),
 }
 
 fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Ident>, Error> {
@@ -201,7 +205,18 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                     ty.clone().separated_by(just(Token::Comma)),
                     Delimiter::Paren,
                 )
-                    .map(|ty| Type::Tuple(ty));
+                    .map(|tys| Type::Tuple(tys));
+
+                let record = nested_parser(
+                    just(Token::Dot)
+                        .padding_for(ident_parser())
+                        .map_with_span(|ty, span| SrcNode::new(ty, span))
+                        .padded_by(just(Token::Colon))
+                        .then(ty.clone())
+                        .separated_by(just(Token::Comma)),
+                    Delimiter::Paren,
+                )
+                    .map(|tys| Type::Record(tys));
 
                 let unknown = just(Token::QuestionMark)
                     .map(|_| Type::Unknown);
@@ -222,6 +237,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                     .or(ident)
                     .or(list
                         .or(tuple)
+                        .or(record)
                         .or(unknown)
                         .map_with_span(|ty, span| SrcNode::new(ty, span)));
 
@@ -250,31 +266,58 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
     recursive(|binding| {
         let binding = binding.link();
 
-        let litr_pat = number_parser().map(|x| Pat::Literal(Literal::Number(x)))
-            .or(just(Token::Boolean(true)).map(|_| Pat::Literal(Literal::Boolean(true))))
-            .or(just(Token::Boolean(false)).map(|_| Pat::Literal(Literal::Boolean(false))))
-            .or(string_parser().map(|x| Pat::Literal(Literal::String(x))))
-            .map_with_span(|pat, span| SrcNode::new(pat, span));
+        let pat = recursive(move |pat| {
+            let pat = pat.link();
 
-        let tuple_pat = nested_parser(
-            binding.clone().separated_by(just(Token::Comma)),
-            Delimiter::Paren,
-        )
-            .map_with_span(|items, span| SrcNode::new(Pat::Tuple(items), span));
+            let litr_pat = number_parser().map(|x| Pat::Literal(Literal::Number(x)))
+                .or(just(Token::Boolean(true)).map(|_| Pat::Literal(Literal::Boolean(true))))
+                .or(just(Token::Boolean(false)).map(|_| Pat::Literal(Literal::Boolean(false))))
+                .or(string_parser().map(|x| Pat::Literal(Literal::String(x))))
+                .map_with_span(|pat, span| SrcNode::new(pat, span));
 
-        let list_pat = nested_parser(
-            binding.clone().separated_by(just(Token::Comma)),
-            Delimiter::Brack,
-        )
-            .map_with_span(|items, span| SrcNode::new(Pat::List(items), span));
+            let tuple_pat = nested_parser(
+                binding.clone().separated_by(just(Token::Comma)),
+                Delimiter::Paren,
+            )
+                .map_with_span(|items, span| SrcNode::new(Pat::Tuple(items), span));
 
-        let list_front_pat = nested_parser(
-            binding.clone().padded_by(just(Token::Comma)).repeated()
-                .padded_by(just(Token::Op(Op::Ellipsis)))
-                .then(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)).or_not()),
-            Delimiter::Brack,
-        )
-            .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span));
+            let record_pat = nested_parser(
+                just(Token::Dot)
+                    .padding_for(ident_parser())
+                    .map_with_span(|ty, span| SrcNode::new(ty, span))
+                    .then(just(Token::Colon).padding_for(pat.clone()).or_not())
+                    .map_with_span(|(ident, pat), span| (ident.clone(), SrcNode::new(Binding {
+                        pat: pat.unwrap_or(SrcNode::new(Pat::Wildcard, ident.span())),
+                        binding: Some(ident)
+                    }, span)))
+                    .separated_by(just(Token::Comma)),
+                Delimiter::Paren,
+            )
+                .map_with_span(|fields, span| SrcNode::new(Pat::Record(fields), span));
+
+            let list_pat = nested_parser(
+                binding.clone().separated_by(just(Token::Comma)),
+                Delimiter::Brack,
+            )
+                .map_with_span(|items, span| SrcNode::new(Pat::List(items), span));
+
+            let list_front_pat = nested_parser(
+                binding.clone().padded_by(just(Token::Comma)).repeated()
+                    .then(ident_parser()
+                        .padded_by(just(Token::Colon))
+                        .map_with_span(|ident, span| SrcNode::new(ident, span))
+                        .or_not())
+                    .padded_by(just(Token::Op(Op::Ellipsis))),
+                Delimiter::Brack,
+            )
+                .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span));
+
+            litr_pat
+                .or(tuple_pat)
+                .or(record_pat)
+                .or(list_pat)
+                .or(list_front_pat)
+        });
 
         let free_binding = ident_parser()
             .map_with_span(|ident, span| Binding {
@@ -286,17 +329,18 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
             })
             .map_with_span(|pat, span| SrcNode::new(pat, span));
 
-        litr_pat
-            .or(tuple_pat)
-            .or(list_pat)
-            .or(list_front_pat)
+        ident_parser()
+            .map_with_span(|ident, span| SrcNode::new(ident, span))
             .then(just(Token::Colon)
-                .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
-                .or_not())
-            .map_with_span(|(pat, binding), span| SrcNode::new(Binding {
+                .padding_for(pat.clone()))
+            .map_with_span(|(binding, pat), span| SrcNode::new(Binding {
                 pat,
-                binding,
+                binding: Some(binding),
             }, span))
+            .or(pat.map_with_span(|pat, span| SrcNode::new(Binding {
+                pat,
+                binding: None,
+            }, span)))
             .or(free_binding)
     })
 }
@@ -327,6 +371,16 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             Delimiter::Paren,
         );
 
+        let paren_field_list = nested_parser(
+            just(Token::Dot)
+                .padding_for(ident_parser())
+                .map_with_span(|ident, span| SrcNode::new(ident, span))
+                .padded_by(just(Token::Colon))
+                .then(expr.clone())
+                .separated_by(just(Token::Comma)),
+            Delimiter::Paren,
+        );
+
         let binding = binding_parser()
             .then(just(Token::Of)
                 .padding_for(type_parser())
@@ -342,6 +396,10 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .or(paren_expr_list
                 .clone()
                 .map_with_span(|items, span| SrcNode::new(Expr::Tuple(items), span)))
+            // Records
+            .or(paren_field_list
+                .clone()
+                .map_with_span(|fields, span| SrcNode::new(Expr::Record(fields), span)))
             // Let
             .or(just(Token::Let)
                 .padding_for(binding.clone())
