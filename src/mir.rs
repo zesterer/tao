@@ -288,10 +288,6 @@ impl Program {
         Ok(this)
     }
 
-    pub fn global(&self, id: DefId) -> &RawTypeNode<Expr> {
-        self.globals[&id].as_ref().unwrap()
-    }
-
     pub fn globals(&self) -> impl Iterator<Item=(DefId, &RawTypeNode<Expr>)> {
         self.globals.iter().map(|(id, g)| (*id, g.as_ref().unwrap()))
     }

@@ -14,7 +14,7 @@ pub struct Error {
 }
 
 impl Error {
-    #[deprecated]
+    //#[deprecated]
     pub fn custom(msg: String) -> Self {
         Self {
             msg,

@@ -1,9 +1,29 @@
-def empty_list_of_numbers = []
+type Pet = (
+	.name: Str,
+)
+
+type Person = (
+	.name: Str,
+	.age: Num,
+	.pet: Pet,
+)
+
+#data Result A, E =
+#	| Ok A
+#	| Err E
+
+#data Maybe A =
+#	| Just A
+#	| Nil
 
 def record of (.foo: Num, .bar: Str) = (
 	.foo: 5,
 	.bar: "test",
 )
+
+def len A of [A] -> ? = |xs| match xs in
+| [_, tail: ...] => 1 + tail:len
+| _ => 0
 
 def main = match (.a: 5, .b: 3) in
 | (.a: 3, .b: 5) => (a, b)

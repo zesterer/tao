@@ -39,21 +39,23 @@ fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
     Ok(vm::Vm::default().execute(&prog))
 }
 
-fn run_expr(src: &str) -> Result<vm::Value, Vec<Error>> {
+fn run_expr(src: &str) -> Result<(ty::Type, vm::Value), Vec<Error>> {
     let tokens = lex::lex(&src)?;
     let ast = ast::parse_expr(&tokens)?;
 
     let mut hir_prog = hir::Program::new();
-    hir_prog.insert_def(&Default::default(), &ast::Def::main(ast)).map_err(|e| vec![e])?;
+    hir_prog.insert_def(&ast::Def::main(ast)).map_err(|e| vec![e])?;
 
     // TODO: Get rid of this
     let main_ident = LocalIntern::new("main".to_string());
-    println!("TYPE: {}", **hir_prog.root().def(main_ident).unwrap().body.ty());
 
     let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
     let prog = mir_prog.compile().map_err(|e| vec![e])?;
 
-    Ok(vm::Vm::default().execute(&prog))
+    Ok((
+        hir_prog.root().def(main_ident).unwrap().body.ty().inner().clone(),
+        vm::Vm::default().execute(&prog),
+    ))
 }
 
 fn main() {
@@ -71,13 +73,13 @@ fn main() {
         let mut rl = Editor::<()>::new();
 
         loop {
-            let line = rl.readline(">> ");
+            let line = rl.readline("\n>> ");
             match line {
                 Ok(line) => {
                     rl.add_history_entry(&line);
 
                     match run_expr(&line) {
-                        Ok(val) => println!("{}", val),
+                        Ok((ty, val)) => println!("{} of {}", val, ty),
                         Err(errs) => errs.iter().for_each(|err| print!("{}", err.in_source(&line))),
                     };
                 },

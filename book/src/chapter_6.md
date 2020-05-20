@@ -53,8 +53,9 @@ match (x % 3 = 0, x % 5 = 0) in
 ## Match Bindings
 
 `match` isn't just for checking patterns. It can also be used to destructure
-values elements and bind them in a similar manner to `let` function parameters.
-It is also possible to perform a value check *at the same time* as binding.
+values elements and bind them in a similar manner to `let` and function
+parameters. It is also possible to perform a value check *at the same time* as
+binding.
 
 ```
 let axis = |x, y| match (x, y) in
