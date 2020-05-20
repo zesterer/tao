@@ -1,6 +1,6 @@
 # Welcome to Tao
 
-Tao is a function, pure, statically-typed programming language.
+Tao is a functional, pure, statically-typed programming language.
 
 ## Installing
 

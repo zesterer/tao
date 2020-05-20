@@ -1,4 +1,4 @@
-# Chapter 3: Binding and Patterns
+# Chapter 3: Bindings and Patterns
 
 In the last chapter we covered ways to manipulate expressions.
 In this chapter we will discuss some constructs that Tao provides to structure more complex programs.
@@ -20,8 +20,8 @@ Obviously, this will just evaluate to the value `5`.
 Although this example is trivial, `let` expressions permit the construction of complex programs.
 
 ```
-let input_fahrenheit = 10 in
-(input_fahrenheit - 32) / 1.8
+let input = 10 in
+(input - 32) / 1.8
 ```
 
 This program may be used to convert an inferior unit of measurement to a superior one.
@@ -36,9 +36,9 @@ The general rule for `let` is as follows.
 let <pattern> = <expression> in <expression>
 ```
 
-Here, `<pattern>` denoted a construct that may be used to disassemble a complex value into simpler parts.
+Here, `<pattern>` denotes a construct that may be used to disassemble a complex value into simpler parts.
 This is known as 'destructuring'.
-For example, we can use `let` to destructure a tuple into its internal elements, binding them to identifiers as we do so.
+For example, we can use `let` to destructure a tuple into its internal elements, binding them to identifiers at the same time.
 
 ```
 let (x, y) = (4, 5) in
