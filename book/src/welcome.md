@@ -57,3 +57,11 @@ $ tao hello.tao
 ```
 
 Tao code written in code form is strictly more powerful (in fact, REPL Tao does not support recursion and so is not Turing-complete).
+
+## Comments
+
+In Tao, anything on a line of code following a `#` is considered a comment (unless that `#` is inside a string literal).
+
+```
+# This book will contain comments within examples to help explain them.
+```

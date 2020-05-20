@@ -1,4 +1,4 @@
-# Chapter 1: Values
+# Values
 
 Perhaps the most fundamental construct in Tao is the **expression**. Expressions
 come in many forms but all represent some value that may be evaluated.

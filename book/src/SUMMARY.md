@@ -1,8 +1,9 @@
 # Summary
 
 - [Welcome to Tao](./welcome.md)
-- [Chapter 1: Basic Expressions](./chapter_1.md)
-- [Chapter 2: Complex Expressions](./chapter_2.md)
-- [Chapter 3: Bindings and Patterns](./chapter_3.md)
-- [Chapter 4: Functions](./chapter_4.md)
-- [Chapter 5: Definitions and Recursion](./chapter_5.md)
+- [Basic Expressions](./chapter_1.md)
+- [Complex Expressions](./chapter_2.md)
+- [Bindings and Patterns](./chapter_3.md)
+- [Functions](./chapter_4.md)
+- [Definitions and Recursion](./chapter_5.md)
+- [Matching Patterns](./chapter_6.md)

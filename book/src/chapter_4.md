@@ -1,4 +1,4 @@
-# Chapter 4: Functions
+# Functions
 
 In the last chapter we explained how bindings may be used to abstractly
 represent values in a manner that allows the construction of complex programs.

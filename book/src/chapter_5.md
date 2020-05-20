@@ -1,4 +1,4 @@
-# Chapter 5: Definitions and Recursion
+# Definitions and Recursion
 
 In the last chapter, we explained how functions might be built up to abstract
 over classes of behaviours. In this chapter, we will finally deviate from the
@@ -43,8 +43,8 @@ Hint: Specify all missing types
 ```
 
 In this case, we've not provided enough information for Tao to know what type
-we're expecting the list to have since we've not given any examples of elements
-it may contain. To make Tao understand that the list should be known to be a
+we're wanting the list to have since we've not given any examples of elements it
+may contain. To make Tao understand that the list should be known to be a
 numerical list, we can insert a **type hint** that gives Tao enough information
 to make sense of it.
 

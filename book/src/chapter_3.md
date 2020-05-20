@@ -1,4 +1,4 @@
-# Chapter 3: Bindings and Patterns
+# Bindings and Patterns
 
 In the last chapter we covered ways to manipulate expressions. In this chapter
 we will discuss some constructs that Tao provides to structure more complex
@@ -17,7 +17,7 @@ let x = 5 in x
 ```
 
 This expression first bindings the value `5` to `x`, and then goes on the
-evaluate `x`. Obviously, this will just evaluate to the value `5`.
+evaluate `x`. Obviously, this will just evaluate to `5`.
 
 Although this example is trivial, `let` expressions permit the construction of
 complex programs.

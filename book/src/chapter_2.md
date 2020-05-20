@@ -1,4 +1,4 @@
-# Chapter 2: Complex Expressions
+# Complex Expressions
 
 In the last chapter we covered simple expressions such as primitives, lists, and
 tuples. In this chapter we will discover how expressions may be manipulated in
