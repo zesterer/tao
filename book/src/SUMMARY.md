@@ -5,3 +5,4 @@
 - [Chapter 2: Complex Expressions](./chapter_2.md)
 - [Chapter 3: Bindings and Patterns](./chapter_3.md)
 - [Chapter 4: Functions](./chapter_4.md)
+- [Chapter 5: Definitions and Recursion](./chapter_5.md)

@@ -1,3 +1,5 @@
+def empty_list_of_numbers = []
+
 def record of (.foo: Num, .bar: Str) = (
 	.foo: 5,
 	.bar: "test",

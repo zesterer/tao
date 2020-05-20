@@ -1,7 +1,8 @@
 # Chapter 2: Complex Expressions
 
-In the last chapter we covered simple expressions such as primitives, lists, and tuples.
-In this chapter we will discover how expressions may be manipulated in order to produce useful results.
+In the last chapter we covered simple expressions such as primitives, lists, and
+tuples. In this chapter we will discover how expressions may be manipulated in
+order to produce useful results.
 
 ## Operators
 
@@ -54,20 +55,23 @@ The and operator `and` may be applied to values of type `Bool`.
 5 = 8
 ```
 
-The equal operator `=` may be applied to a variety of types to compare equivalence. The result is always a `Bool`.
+The equal operator `=` may be applied to a variety of types to compare
+equivalence. The result is always a `Bool`.
 
 ```
 [1, 2, 3] ++ [4, 5, 6]
 ```
 
-The join operator `++` may be applied to list values, provided the types of their elements are consistent.
+The join operator `++` may be applied to list values, provided the types of
+their elements are consistent.
 
 
 ## Conditionals
 
-It is possible to 'choose' between two different values using an 'if-then-else' expression.
-These expressions evaluate to one of two values depending on the truth of a third value, often referred to as the 'predicate'.
-Predicates must always be of type `Bool`.
+It is possible to 'choose' between two different values using an 'if-then-else'
+expression. These expressions evaluate to one of two values depending on the
+truth of a third value, often referred to as the 'predicate'. Predicates must
+always be of type `Bool`.
 
 ```
 if true then 42 else 13
