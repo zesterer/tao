@@ -8,8 +8,9 @@ supports evaluating expressions.
 
 ## Definitions
 
-Expressions are all well and good, but sometimes we want a more rugged way to
-identify expressions. Definitions allow this.
+`let` bindings are all well and good, but sometimes we want a more rugged way to
+identify expressions in a manner that makes them available to the whole program,
+not just code that happens to follow them. Definitions allow this.
 
 ```
 def one = 1
