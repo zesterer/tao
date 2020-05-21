@@ -41,6 +41,11 @@ pub enum Constraint {
         a: TypeId,
         b: TypeId,
     },
+    Access {
+        out: TypeId,
+        record: TypeId,
+        field: SrcNode<Ident>,
+    },
 }
 
 #[derive(Default, Debug)]
@@ -434,6 +439,32 @@ impl<'a> InferCtx<'a> {
 
                     // Constraint is solved
                     Ok(true)
+                }
+            },
+            Constraint::Access { out, record, field } => {
+                match self.get(record) {
+                    TypeInfo::Unknown(_) => Ok(false), // Can't infer yet
+                    TypeInfo::Record(fields) => if let Some((_, ty)) = fields
+                        .iter()
+                        .find(|(name, _)| **name == *field)
+                    {
+                        self.unify(out, *ty)?;
+                        Ok(true)
+                    } else {
+                        Err(Error::custom(format!(
+                            "No such field '{}' on record {}",
+                            **field,
+                            self.display_type_info(record),
+                        ))
+                            .with_span(field.span())
+                            .with_span(self.span(record)))
+                    },
+                    _ => Err(Error::custom(format!(
+                        "Type {} does not support field access",
+                        self.display_type_info(record),
+                    ))
+                        .with_span(field.span())
+                        .with_span(self.span(record))),
                 }
             },
         }

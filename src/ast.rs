@@ -137,6 +137,7 @@ pub enum Expr {
     Match(SrcNode<Self>, Vec<((SrcNode<Binding>, Option<SrcNode<Type>>), SrcNode<Self>)>),
     Func(SrcNode<Binding>, Option<SrcNode<Type>>, SrcNode<Self>),
     Apply(SrcNode<Self>, SrcNode<Self>),
+    Access(SrcNode<Self>, SrcNode<Ident>),
     Let(SrcNode<Binding>, Option<SrcNode<Type>>, SrcNode<Self>, SrcNode<Self>),
     List(Vec<SrcNode<Self>>),
     Tuple(Vec<SrcNode<Self>>),
@@ -208,13 +209,12 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                     .map(|tys| Type::Tuple(tys));
 
                 let record = nested_parser(
-                    just(Token::Dot)
-                        .padding_for(ident_parser())
+                    ident_parser()
                         .map_with_span(|ty, span| SrcNode::new(ty, span))
                         .padded_by(just(Token::Colon))
                         .then(ty.clone())
                         .separated_by(just(Token::Comma)),
-                    Delimiter::Paren,
+                    Delimiter::Brace,
                 )
                     .map(|tys| Type::Record(tys));
 
@@ -282,8 +282,7 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
                 .map_with_span(|items, span| SrcNode::new(Pat::Tuple(items), span));
 
             let record_pat = nested_parser(
-                just(Token::Dot)
-                    .padding_for(ident_parser())
+                ident_parser()
                     .map_with_span(|ty, span| SrcNode::new(ty, span))
                     .then(just(Token::Colon).padding_for(pat.clone()).or_not())
                     .map_with_span(|(ident, pat), span| (ident.clone(), SrcNode::new(Binding {
@@ -291,7 +290,7 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
                         binding: Some(ident)
                     }, span)))
                     .separated_by(just(Token::Comma)),
-                Delimiter::Paren,
+                Delimiter::Brace,
             )
                 .map_with_span(|fields, span| SrcNode::new(Pat::Record(fields), span));
 
@@ -320,12 +319,11 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
         });
 
         let free_binding = ident_parser()
-            .map_with_span(|ident, span| Binding {
+            .map_with_span(|pat, span| Some(SrcNode::new(pat, span)))
+            .or(just(Token::Wildcard).to(None))
+            .map_with_span(|binding, span| Binding {
                 pat: SrcNode::new(Pat::Wildcard, span),
-                binding: match ident.as_str() {
-                    "_" => None,
-                    _ => Some(SrcNode::new(ident, span)),
-                }
+                binding,
             })
             .map_with_span(|pat, span| SrcNode::new(pat, span));
 
@@ -371,14 +369,17 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             Delimiter::Paren,
         );
 
-        let paren_field_list = nested_parser(
-            just(Token::Dot)
-                .padding_for(ident_parser())
+        let brace_field_list = nested_parser(
+            ident_parser()
                 .map_with_span(|ident, span| SrcNode::new(ident, span))
-                .padded_by(just(Token::Colon))
-                .then(expr.clone())
+                .then(just(Token::Colon)
+                    .padding_for(expr.clone())
+                    .or_not())
+                .map(|(field, val)| (field.clone(), val.unwrap_or_else(|| {
+                    SrcNode::new(Expr::Path(Path(vec![field.clone().into_inner()])), field.span())
+                })))
                 .separated_by(just(Token::Comma)),
-            Delimiter::Paren,
+            Delimiter::Brace,
         );
 
         let binding = binding_parser()
@@ -397,7 +398,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .clone()
                 .map_with_span(|items, span| SrcNode::new(Expr::Tuple(items), span)))
             // Records
-            .or(paren_field_list
+            .or(brace_field_list
                 .clone()
                 .map_with_span(|fields, span| SrcNode::new(Expr::Record(fields), span)))
             // Let
@@ -417,13 +418,14 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .padded_by(just(Token::Else))
                 .then(expr.clone())
                 .map_with_span(|((pred, a), b), span| SrcNode::new(Expr::If(pred, a, b), span)))
+            // Match
             .or(just(Token::Match)
                 .padding_for(expr.clone())
                 .padded_by(just(Token::In))
-                .then(just(Token::Pipe)
-                    .padding_for(binding.clone())
+                .then(binding.clone()
                     .padded_by(just(Token::RMap))
                     .then(expr.clone())
+                    .padded_by(just(Token::Comma))
                     .repeated())
                 .map_with_span(|(pred, arms), span| SrcNode::new(Expr::Match(pred, arms), span)))
             .boxed();
@@ -438,8 +440,19 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 }))
             .boxed();
 
-        let infix = application.clone()
-            .then(just(Token::Colon).padding_for(application).repeated())
+        let access = application.clone()
+            .then(just(Token::Dot)
+                .padding_for(ident_parser()
+                    .map_with_span(|field, span| SrcNode::new(field, span)))
+            .repeated())
+            .reduce_left(|expr, field| {
+                let span = expr.span().union(field.span());
+                SrcNode::new(Expr::Access(expr, field), span)
+            })
+            .boxed();
+
+        let infix = access.clone()
+            .then(just(Token::Colon).padding_for(access).repeated())
             .reduce_left(|arg, f| {
                 let span = f.span().union(arg.span());
                 SrcNode::new(Expr::Apply(f, arg), span)

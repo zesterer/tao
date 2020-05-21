@@ -125,6 +125,7 @@ pub enum Expr<M> {
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
     Func(Node<Binding<M>, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>), // TODO: Should application be a binary operator?
+    Access(Node<Self, M>, SrcNode<Ident>),
     Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
 }
 
@@ -674,6 +675,16 @@ impl ast::Expr {
                 infer.unify(f_type_id, f.type_id())?;
                 (type_id, Expr::Apply(f, arg))
             },
+            ast::Expr::Access(record, field) => {
+                let record = record.to_hir(data, infer, scope)?;
+                let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
+                infer.add_constraint(Constraint::Access {
+                    out: type_id,
+                    record: record.type_id(),
+                    field: field.clone(),
+                });
+                (type_id, Expr::Access(record, field.clone()))
+            },
             ast::Expr::Let(pat, pat_ty, val, then) => {
                 // `let a = b in c` desugars to `b:(a -> c)`
                 // TODO: Desugar to `match b in a => c` instead?
@@ -850,6 +861,10 @@ impl InferExpr {
                 f.into_checked(infer)?,
                 arg.into_checked(infer)?,
             ),
+            Expr::Access(record, field) => Expr::Access(
+                record.into_checked(infer)?,
+                field,
+            ),
             Expr::Match(pred, arms) => Expr::Match(
                 pred.into_checked(infer)?,
                 arms
@@ -903,6 +918,7 @@ impl TypeExpr {
                         stack.push(f);
                         stack.push(i);
                     },
+                    Expr::Access(record, _) => stack.push(record),
                     Expr::Match(pred, arms) => {
                         stack.push(pred);
                         for (_, arm) in arms.iter() {

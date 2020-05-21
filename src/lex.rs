@@ -99,6 +99,7 @@ pub enum Token {
     Dot,
     QuestionMark,
     Pipe,
+    Wildcard,
 
     Let,
     If,
@@ -142,6 +143,7 @@ impl fmt::Display for Token {
             Token::Dot => write!(f, "."),
             Token::QuestionMark => write!(f, "?"),
             Token::Pipe => write!(f, "|"),
+            Token::Wildcard => write!(f, "_"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
             Token::Match => write!(f, "match"),
@@ -222,11 +224,13 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
 
         let tree = just('(').to(Delimiter::Paren).then(tokens.link()).padded_by(just(')'))
             .or(just('[').to(Delimiter::Brack).then(tokens.link()).padded_by(just(']')))
+            .or(just('{').to(Delimiter::Brace).then(tokens.link()).padded_by(just('}')))
             .map(|(delim, tokens)| Token::Tree(delim, tokens));
 
         let token = number
             .or(string)
             .or(ident.map(|s: String| match s.as_str() {
+                "_" => Token::Wildcard,
                 "true" => Token::Boolean(true),
                 "false" => Token::Boolean(false),
                 "null" => Token::Null,

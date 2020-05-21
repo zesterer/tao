@@ -186,6 +186,10 @@ impl RawTypeNode<mir::Expr> {
                 f.compile(program, scope, builder);
                 builder.emit_instr(Instr::ApplyFunc);
             },
+            mir::Expr::Access(tuple, index) => {
+                tuple.compile(program, scope, builder);
+                builder.emit_instr(Instr::IndexList(*index as u32));
+            },
             expr => todo!("{:?}", expr),
         }
     }

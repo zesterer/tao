@@ -146,6 +146,8 @@ pub enum Expr {
     MakeList(Vec<RawTypeNode<Expr>>),
     // Apply a value to a function
     Apply(RawTypeNode<Expr>, RawTypeNode<Expr>),
+    // Access the field of a Tuple
+    Access(RawTypeNode<Expr>, usize),
     // Create a function with the given parameter extractor and body
     MakeFunc(Extractor, Vec<Ident>, RawTypeNode<Expr>),
     // Make a flat value against a series of arms
@@ -177,6 +179,7 @@ impl Expr {
                 f.get_env_inner(scope, env);
                 arg.get_env_inner(scope, env);
             },
+            Expr::Access(record, _) => record.get_env_inner(scope, env),
             Expr::MakeFunc(extractor, f_env, _) => {
                 for ident in f_env.iter() {
                     if !scope.contains(ident) {
@@ -221,7 +224,7 @@ impl Matcher {
             Matcher::Exactly(_) => true,
             Matcher::Product(items) => items.iter().any(|item| item.is_refutable()),
             Matcher::List(_) => true,
-            Matcher::ListFront(items) => items.len() == 0 // List matches everything
+            Matcher::ListFront(items) => items.len() != 0 // List matches everything
         }
     }
 }
@@ -351,6 +354,16 @@ impl Program {
                 self.instantiate_expr(prog, f, get_generic),
                 self.instantiate_expr(prog, arg, get_generic),
             ),
+            hir::Expr::Access(record, field) => match &**record.ty() {
+                Type::Record(fields) => {
+                    let field_idx = fields
+                        .iter()
+                        .enumerate().find(|(_, (name, _))| name == field)
+                        .unwrap().0;
+                    Expr::Access(self.instantiate_expr(prog, record, get_generic), field_idx)
+                },
+                _ => unreachable!(),
+            },
             expr => todo!("{:?}", expr),
         };
 
