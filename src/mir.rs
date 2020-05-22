@@ -137,23 +137,23 @@ pub enum Expr {
     // Get the value of the given local
     GetLocal(Ident),
     // Perform a built-in unary operation
-    Unary(Unary, RawTypeNode<Expr>),
+    Unary(Unary, RawTypeNode<Self>),
     // Perform a built-in binary operation
-    Binary(Binary, RawTypeNode<Expr>, RawTypeNode<Expr>),
+    Binary(Binary, RawTypeNode<Self>, RawTypeNode<Self>),
     // Construct a tuple using the last N values on the stack
-    MakeTuple(Vec<RawTypeNode<Expr>>),
+    MakeTuple(Vec<RawTypeNode<Self>>),
     // Construct a list using the last N values on the stack
-    MakeList(Vec<RawTypeNode<Expr>>),
+    MakeList(Vec<RawTypeNode<Self>>),
     // Apply a value to a function
-    Apply(RawTypeNode<Expr>, RawTypeNode<Expr>),
+    Apply(RawTypeNode<Self>, RawTypeNode<Self>),
     // Access the field of a Tuple
-    Access(RawTypeNode<Expr>, usize),
+    Access(RawTypeNode<Self>, usize),
     // Update the field of a Tuple
-    Update(RawTypeNode<Expr>, usize, Ident, RawTypeNode<Expr>),
+    Update(RawTypeNode<Self>, usize, Ident, RawTypeNode<Self>),
     // Create a function with the given parameter extractor and body
-    MakeFunc(Extractor, Vec<Ident>, RawTypeNode<Expr>),
+    MakeFunc(Extractor, Vec<Ident>, RawTypeNode<Self>),
     // Make a flat value against a series of arms
-    MatchValue(RawTypeNode<Expr>, Vec<(Matcher, Extractor, RawTypeNode<Expr>)>),
+    MatchValue(RawTypeNode<Self>, Vec<(Matcher, Extractor, RawTypeNode<Self>)>),
 }
 
 impl hir::TypeExpr {

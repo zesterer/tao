@@ -1,22 +1,4 @@
-type Out I O = {
-	ok: Bool,
-	rest: [I],
-	out: [O],
-}
-
-def success I O = |rest of [I], out of O| {
-    ok: true,
-    rest,
-    out: [out],
-}
-
-def failure I O of ? -> Out ? O = |rest of [I]| {
-    ok: false,
-    rest,
-    out: [],
-}
-
-type Parser I O = [I] -> Out I O
+# General utility
 
 def contains = |cs of [Char], c of Char| match cs {
 	[c1, cs: ...] => c1 = c or contains(cs, c),
@@ -27,6 +9,19 @@ def len A of [A] -> ? = |xs| match xs {
     [_, xs: ...] => 1 + xs:len,
     _ => 0,
 }
+
+# Parser Things
+
+type Out I O = {
+	ok: Bool,
+	rest: [I],
+	out: [O],
+}
+
+def success I O = |rest of [I], out of O| { ok: true, rest, out: [out] }
+def failure I O of ? -> Out ? O = |rest of [I]| { ok: false, rest, out: [] }
+
+type Parser I O = [I] -> Out I O
 
 def matcher I of (I -> Bool) -> Parser I I = |f, input| match input {
 	[i, rest: ...] => if i:f
