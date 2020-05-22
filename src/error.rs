@@ -5,7 +5,11 @@ use crate::{
     node::SrcNode,
 };
 
+#[cfg(feature = "serde")]
+use serde::Serialize;
+
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Error {
     msg: String,
     primary_spans: Vec<Span>,
@@ -117,6 +121,7 @@ impl parze::error::Error<SrcNode<Token>> for Error {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct ErrorInSrc<'a> {
     error: &'a Error,
     src: &'a str,
