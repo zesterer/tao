@@ -148,14 +148,30 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                             Loc::at(char_pos + line.len()),
                         );
 
+                        let any_intersects = span_iter
+                            .clone()
+                            .any(|(s, _)| s.intersects(line_span));
+
+                        let any_starts_or_ends = span_iter
+                            .clone()
+                            .any(|(s, _)| match s.in_context(self.src) {
+                                Some(((sl, _), (el, _))) => sl == i || el == i,
+                                _ => false,
+                            });
+
+                        // let any_wraps = span_iter
+                        //     .clone()
+                        //     .any(|(s, _)| match s.in_context(self.src) {
+                        //         Some(((sl, _), (el, _))) => sl != el && sl < i && el >= i,
+                        //         _ => false,
+                        //     });
+
+                        if any_intersects {
+                            writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
+                        }
 
                         // Underline
-                        if span_iter
-                            .clone()
-                            .any(|(s, _)| s.intersects(line_span))
-                        {
-                            writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
-
+                        if any_starts_or_ends {
                             write!(f, "       ")?;
                             for _ in 0..line.len() {
                                 if let Some((span, is_primary)) = span_iter

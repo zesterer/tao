@@ -7,16 +7,16 @@ type Ident = LocalIntern<String>;
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Primitive {
     Boolean,
+    Char,
     Number,
-    String,
 }
 
 impl fmt::Display for Primitive {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Primitive::Boolean => write!(f, "Bool"),
+            Primitive::Char => write!(f, "Char"),
             Primitive::Number => write!(f, "Num"),
-            Primitive::String => write!(f, "Str"),
         }
     }
 }
@@ -72,13 +72,13 @@ impl fmt::Display for Type {
                 Ok(())
             },
             Type::Record(fields) => {
-                write!(f, "(")?;
+                write!(f, "{{{}", if fields.len() > 0 { " " } else { "" })?;
                 write!(f, "{}", fields
                     .iter()
-                    .map(|(name, field)| format!(".{}: {}", name.as_str(), **field))
+                    .map(|(name, field)| format!("{}: {}", name.as_str(), **field))
                     .collect::<Vec<_>>()
                     .join(", "))?;
-                write!(f, ")")?;
+                write!(f, "{}}}", if fields.len() > 0 { " " } else { "" })?;
                 Ok(())
             },
             Type::Func(i, o) => write!(f, "({} -> {})", **i, **o),

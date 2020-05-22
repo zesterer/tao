@@ -147,13 +147,13 @@ impl<'a> InferCtx<'a> {
                         Ok(())
                     },
                     TypeInfo::Record(fields) => {
-                        write!(f, "(")?;
+                        write!(f, "{{{}", if fields.len() > 0 { " " } else { "" })?;
                         write!(f, "{}", fields
                             .iter()
                             .map(|(name, ty)| format!("{}: {}", name.as_str(), self.with_id(*ty, true)))
                             .collect::<Vec<_>>()
                             .join(", "))?;
-                        write!(f, ")")?;
+                        write!(f, "{}}}", if fields.len() > 0 { " " } else { "" })?;
                         Ok(())
                     },
                     TypeInfo::Func(i, o) if self.trailing => write!(f, "{} -> {}", self.with_id(i, false), self.with_id(o, true)),
@@ -334,7 +334,7 @@ impl<'a> InferCtx<'a> {
                 }
             },
             Constraint::Binary { out, op, a, b } => {
-                let matchers: [fn(_, _, _, _, _) -> Option<fn(_, _, _) -> _>; 4] = [
+                let matchers: [fn(_, _, _, _, _) -> Option<fn(_, _, _) -> _>; 5] = [
                     // Int op Int => Int
                     |this: &Self, out, op, a, b| {
                         let mut this = this.scoped();
@@ -358,7 +358,7 @@ impl<'a> InferCtx<'a> {
                         let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), Span::none());
                         if
                             this.unify(boolean, out).is_ok()
-                            && [BinaryOp::Eq, BinaryOp::Less, BinaryOp::More, BinaryOp::LessEq, BinaryOp::MoreEq].contains(&op)
+                            && [BinaryOp::Eq, BinaryOp::NotEq, BinaryOp::Less, BinaryOp::More, BinaryOp::LessEq, BinaryOp::MoreEq].contains(&op)
                             && this.unify(num, a).is_ok()
                             && this.unify(num, b).is_ok()
                         {
@@ -378,6 +378,22 @@ impl<'a> InferCtx<'a> {
                             && this.unify(boolean, b).is_ok()
                         {
                             Some(|this: &mut Self, a, b| (TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Boolean)))
+                        } else {
+                            None
+                        }
+                    },
+                    // Char op Char => Bool
+                    |this: &Self, out, op, a, b| {
+                        let mut this = this.scoped();
+                        let boolean = this.insert(TypeInfo::Primitive(Primitive::Boolean), Span::none());
+                        let character = this.insert(TypeInfo::Primitive(Primitive::Char), Span::none());
+                        if
+                            this.unify(boolean, out).is_ok()
+                            && [BinaryOp::Eq, BinaryOp::NotEq].contains(&op)
+                            && this.unify(character, a).is_ok()
+                            && this.unify(character, b).is_ok()
+                        {
+                            Some(|this: &mut Self, a, b| (TypeInfo::Primitive(Primitive::Boolean), TypeInfo::Primitive(Primitive::Char), TypeInfo::Primitive(Primitive::Char)))
                         } else {
                             None
                         }
@@ -442,7 +458,7 @@ impl<'a> InferCtx<'a> {
                 }
             },
             Constraint::Access { out, record, field } => {
-                match self.get(record) {
+                match self.get(self.get_base(record)) {
                     TypeInfo::Unknown(_) => Ok(false), // Can't infer yet
                     TypeInfo::Record(fields) => if let Some((_, ty)) = fields
                         .iter()
@@ -486,7 +502,7 @@ impl<'a> InferCtx<'a> {
                 }
             }
 
-            break Ok(());
+            //break Ok(());
         }
     }
 

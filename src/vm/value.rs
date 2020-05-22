@@ -12,7 +12,7 @@ use super::CodeAddr;
 pub enum Value {
     Number(f64),
     Boolean(bool),
-    String(Rc<String>),
+    Char(char),
     List(Rc<Vector<Value>>),
     Func(Rc<(CodeAddr, Vec<Value>)>),
 }
@@ -26,7 +26,7 @@ impl Value {
         match self {
             Value::Number(x) => x,
             #[cfg(debug_assertions)]
-            _ => unreachable!(),
+            this => unreachable!("Expected number, found {:?}", this),
             #[cfg(not(debug_assertions))]
             _ => unsafe { unreachable_unchecked() },
         }
@@ -36,7 +36,17 @@ impl Value {
         match self {
             Value::Boolean(x) => x,
             #[cfg(debug_assertions)]
-            _ => unreachable!(),
+            this => unreachable!("Expected bool, found {:?}", this),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub fn into_char_unchecked(self) -> char {
+        match self {
+            Value::Char(x) => x,
+            #[cfg(debug_assertions)]
+            this => unreachable!("Expected char, found {:?}", this),
             #[cfg(not(debug_assertions))]
             _ => unsafe { unreachable_unchecked() },
         }
@@ -46,7 +56,7 @@ impl Value {
         match self {
             Value::Func(addr) => addr,
             #[cfg(debug_assertions)]
-            _ => unreachable!(),
+            this => unreachable!("Expected func, found {:?}", this),
             #[cfg(not(debug_assertions))]
             _ => unsafe { unreachable_unchecked() },
         }
@@ -56,7 +66,7 @@ impl Value {
         match self {
             Value::List(list) => list,
             #[cfg(debug_assertions)]
-            _ => unreachable!(),
+            this => unreachable!("Expected list, found {:?}", this),
             #[cfg(not(debug_assertions))]
             _ => unsafe { unreachable_unchecked() },
         }
@@ -66,7 +76,17 @@ impl Value {
         match self {
             Value::List(list) => list[x].clone(),
             #[cfg(debug_assertions)]
-            _ => unreachable!(),
+            this => unreachable!("Expected list, found {:?}", this),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub fn as_list_unchecked_mut(&mut self) -> &mut Vector<Value> {
+        match self {
+            Value::List(list) => Rc::make_mut(list),
+            #[cfg(debug_assertions)]
+            this => unreachable!("Expected list, found {:?}", this),
             #[cfg(not(debug_assertions))]
             _ => unsafe { unreachable_unchecked() },
         }
@@ -77,13 +97,20 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Number(x) => write!(f, "{}", x),
+            Value::Char(x) => write!(f, "'{}'", x),
             Value::Boolean(x) => write!(f, "{}", x),
-            Value::String(x) => write!(f, "\"{}\"", x),
-            Value::List(xs) => write!(f, "[{}]", xs
-                .iter()
-                .map(|x| format!("{}", x))
-                .collect::<Vec<_>>()
-                .join(", ")),
+            Value::List(xs) => match xs.get(0) {
+                Some(Value::Char(_)) => write!(f, "\"{}\"", xs
+                    .iter()
+                    .cloned()
+                    .map(|v| v.into_char_unchecked())
+                    .collect::<String>()),
+                _ => write!(f, "[{}]", xs
+                    .iter()
+                    .map(|x| format!("{}", x))
+                    .collect::<Vec<_>>()
+                    .join(", ")),
+            },
             Value::Func(addr) => write!(f, "<func {:#X}>", addr.0),
         }
     }

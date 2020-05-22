@@ -23,6 +23,8 @@ pub enum Instr {
     True,
     /// Push `false`
     False,
+    /// Push the given character
+    Char(char),
 
     // Push a function that points to the given address with the environment of the last N stack items
     MakeFunc(u16, u32),
@@ -32,6 +34,8 @@ pub enum Instr {
     MakeList(u32),
     // Index the list at the top of the stack
     IndexList(u32),
+    // Set the index of the list one below the top of the stack fo the value at the top
+    SetList(u32),
     // Find the tail of the list at the top of the stack, with the first N items removed
     TailList(u32),
     // If the list has the given length, push true to the stack
@@ -46,11 +50,17 @@ pub enum Instr {
     DivNum,
     RemNum,
     EqNum,
+    MoreNum,
+    LessNum,
+    MoreEqNum,
+    LessEqNum,
 
     NotBool,
     EqBool,
     AndBool,
     OrBool,
+
+    EqChar,
 
     JoinList,
 
@@ -85,10 +95,12 @@ impl fmt::Debug for Instr {
             Instr::Float(x) => write!(f, "float {}", x),
             Instr::True => write!(f, "true"),
             Instr::False => write!(f, "false"),
+            Instr::Char(c) => write!(f, "char '{}'", c),
             Instr::MakeFunc(n, addr) => write!(f, "func.make {} {:#X}", n, addr),
             Instr::ApplyFunc => write!(f, "func.apply"),
             Instr::MakeList(n) => write!(f, "list.make {}", n),
             Instr::IndexList(x) => write!(f, "list.index {}", x),
+            Instr::SetList(x) => write!(f, "list.set {}", x),
             Instr::TailList(x) => write!(f, "list.tail {}", x),
             Instr::LenEqList(n) => write!(f, "list.len_eq {}", n),
             Instr::LenMoreEqList(n) => write!(f, "list.len_more_eq {}", n),
@@ -99,10 +111,15 @@ impl fmt::Debug for Instr {
             Instr::DivNum => write!(f, "num.div"),
             Instr::RemNum => write!(f, "num.rem"),
             Instr::EqNum => write!(f, "num.eq"),
+            Instr::MoreNum => write!(f, "num.more"),
+            Instr::LessNum => write!(f, "num.less"),
+            Instr::MoreEqNum => write!(f, "num.more_eq"),
+            Instr::LessEqNum => write!(f, "num.less_eq"),
             Instr::NotBool => write!(f, "bool.not"),
             Instr::EqBool => write!(f, "bool.eq"),
             Instr::AndBool => write!(f, "bool.and"),
             Instr::OrBool => write!(f, "bool.or"),
+            Instr::EqChar => write!(f, "char.eq"),
             Instr::JoinList => write!(f, "list.join"),
             Instr::LoadConst(addr) => write!(f, "const {:#X}", addr),
             Instr::LoadLocal(offset) => write!(f, "load_local {}", offset),
@@ -188,7 +205,7 @@ impl fmt::Debug for Program {
         }
         writeln!(f, "-- Data --")?;
         for (addr, val) in self.consts.iter().enumerate() {
-            writeln!(f, "{:>#5X} | {:#X?}", addr, val)?;
+            writeln!(f, "{:>#5X} | {}", addr, val)?;
         }
         // writeln!(f, "-- Debug --")?;
         // for (addr, s) in self.debug.iter() {
