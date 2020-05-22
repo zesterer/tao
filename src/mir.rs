@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use internment::LocalIntern;
 use crate::{
-    ast,
+    ast::{self, Literal},
     ty::{Type, Primitive},
     error::Error,
     node::RawTypeNode,
-    hir::{self, Value},
+    hir::self,
 };
 
 type Ident = LocalIntern<String>;
@@ -32,15 +32,15 @@ impl RawType {
                 .iter()
                 .map(|item| item.mangle())
                 .collect::<Vec<_>>()
-                .join("*"),
+                .join(", "),
             ),
             RawType::Sum(items) => format!("({})", items
                 .iter()
                 .map(|item| item.mangle())
                 .collect::<Vec<_>>()
-                .join("|"),
+                .join(" | "),
             ),
-            RawType::Func(i, o) => format!("{}->{}", i.mangle(), o.mangle()),
+            RawType::Func(i, o) => format!("{} -> {}", i.mangle(), o.mangle()),
         }
     }
 
@@ -82,7 +82,7 @@ impl hir::TypeBinding {
     fn make_matcher(&self) -> Matcher {
         match &*self.pat {
             hir::Pat::Wildcard => Matcher::Wildcard,
-            hir::Pat::Value(val) => Matcher::Exactly(val.clone()),
+            hir::Pat::Literal(litr) => Matcher::Exactly(litr.clone()),
             hir::Pat::Tuple(items) => Matcher::Product(items
                 .iter()
                 .map(|item| item.make_matcher())
@@ -104,7 +104,7 @@ impl hir::TypeBinding {
 
     fn make_extractor(&self) -> Extractor {
         match &*self.pat {
-            hir::Pat::Wildcard | hir::Pat::Value(_) =>
+            hir::Pat::Wildcard | hir::Pat::Literal(_) =>
                 Extractor::Just(self.binding.as_ref().map(|ident| **ident)),
             hir::Pat::Tuple(items) => Extractor::Product(
                 self.binding.as_ref().map(|ident| **ident),
@@ -131,7 +131,7 @@ pub type DefId = LocalIntern<(Ident, Vec<RawType>)>;
 
 #[derive(Debug)]
 pub enum Expr {
-    Value(Value),
+    Literal(Literal),
     // Get the value of the given global
     GetGlobal(DefId),
     // Get the value of the given local
@@ -148,49 +148,69 @@ pub enum Expr {
     Apply(RawTypeNode<Expr>, RawTypeNode<Expr>),
     // Access the field of a Tuple
     Access(RawTypeNode<Expr>, usize),
+    // Update the field of a Tuple
+    Update(RawTypeNode<Expr>, usize, Ident, RawTypeNode<Expr>),
     // Create a function with the given parameter extractor and body
     MakeFunc(Extractor, Vec<Ident>, RawTypeNode<Expr>),
     // Make a flat value against a series of arms
     MatchValue(RawTypeNode<Expr>, Vec<(Matcher, Extractor, RawTypeNode<Expr>)>),
 }
 
-impl Expr {
+impl hir::TypeExpr {
     fn get_env_inner(&self, scope: &mut Vec<Ident>, env: &mut Vec<Ident>) {
-        match self {
-            Expr::Value(_) => {},
-            Expr::GetGlobal(_) => {},
-            Expr::GetLocal(ident) => {
+        match &**self {
+            hir::Expr::Literal(_) => {},
+            hir::Expr::Global(_, _) => {},
+            hir::Expr::Local(ident) => {
                 if !scope.contains(ident) {
                     env.push(*ident);
                 }
             },
-            Expr::Unary(_, a) => a.get_env_inner(scope, env),
-            Expr::Binary(_, a, b) => {
+            hir::Expr::Unary(_, a) => a.get_env_inner(scope, env),
+            hir::Expr::Binary(_, a, b) => {
                 a.get_env_inner(scope, env);
                 b.get_env_inner(scope, env);
             },
-            Expr::MakeTuple(items) => for item in items.iter() {
+            hir::Expr::Tuple(items) => for item in items.iter() {
                 item.get_env_inner(scope, env);
             },
-            Expr::MakeList(items) => for item in items.iter() {
+            hir::Expr::Record(fields) => for (_, field) in fields.iter() {
+                field.get_env_inner(scope, env);
+            },
+            hir::Expr::List(items) => for item in items.iter() {
                 item.get_env_inner(scope, env);
             },
-            Expr::Apply(f, arg) => {
+            hir::Expr::Apply(f, arg) => {
                 f.get_env_inner(scope, env);
                 arg.get_env_inner(scope, env);
             },
-            Expr::Access(record, _) => record.get_env_inner(scope, env),
-            Expr::MakeFunc(extractor, f_env, _) => {
-                for ident in f_env.iter() {
-                    if !scope.contains(ident) {
-                        env.push(*ident);
+            hir::Expr::Access(record, _) => record.get_env_inner(scope, env),
+            hir::Expr::Update(record, field, value) => {
+                scope.push(**field);
+                record.get_env_inner(scope, env);
+                value.get_env_inner(scope, env);
+                scope.pop();
+            },
+            hir::Expr::Func(binding, body) => {
+                let mut body_scope = Vec::new();
+                let mut body_env = Vec::new();
+                body.get_env_inner(&mut body_scope, &mut body_env);
+
+                let bindings = binding.binding_idents();
+                for ident in body_env {
+                    if !bindings.contains_key(&ident) {
+                        env.push(ident);
                     }
                 }
             },
-            Expr::MatchValue(pred, arms) => {
+            hir::Expr::Match(pred, arms) => {
                 pred.get_env_inner(scope, env);
-                for (_, extractor, body) in arms.iter() {
-                    let mut bindings = extractor.get_bindings();
+                for (binding, body) in arms.iter() {
+                    let mut bindings = binding
+                        .binding_idents()
+                        .keys()
+                        .copied()
+                        .collect();
                     let scope_len = scope.len();
                     scope.append(&mut bindings);
                     body.get_env_inner(scope, env);
@@ -211,7 +231,7 @@ impl Expr {
 #[derive(Debug)]
 pub enum Matcher {
     Wildcard,
-    Exactly(Value),
+    Exactly(Literal),
     Product(Vec<Matcher>),
     List(Vec<Matcher>),
     ListFront(Vec<Matcher>),
@@ -318,7 +338,7 @@ impl Program {
 
     fn instantiate_expr(&mut self, prog: &hir::Program, hir_expr: &hir::TypeExpr, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawTypeNode<Expr> {
         let expr = match &**hir_expr {
-            hir::Expr::Value(val) => Expr::Value(val.clone()),
+            hir::Expr::Literal(litr) => Expr::Literal(litr.clone()),
             hir::Expr::Local(local) => Expr::GetLocal(*local),
             hir::Expr::Global(global, generics) => {
                 let generics = generics.iter().map(|(_, (_, ty))| self.instantiate_type(ty, get_generic)).collect::<Vec<_>>();
@@ -344,11 +364,10 @@ impl Program {
                 .map(|item| self.instantiate_expr(prog, item, get_generic))
                 .collect()),
             hir::Expr::Func(binding, body) => {
-                let body = self.instantiate_expr(prog, body, get_generic);
                 let extractor = binding.make_extractor();
                 let e_bindings = extractor.get_bindings();
                 let env = body.get_env().into_iter().filter(|ident| !e_bindings.contains(ident)).collect();
-                Expr::MakeFunc(extractor, env, body)
+                Expr::MakeFunc(extractor, env, self.instantiate_expr(prog, body, get_generic))
             },
             hir::Expr::Apply(f, arg) => Expr::Apply(
                 self.instantiate_expr(prog, f, get_generic),
@@ -361,6 +380,21 @@ impl Program {
                         .enumerate().find(|(_, (name, _))| name == field)
                         .unwrap().0;
                     Expr::Access(self.instantiate_expr(prog, record, get_generic), field_idx)
+                },
+                _ => unreachable!(),
+            },
+            hir::Expr::Update(record, field, value) => match &**record.ty() {
+                Type::Record(fields) => {
+                    let field_idx = fields
+                        .iter()
+                        .enumerate().find(|(_, (name, _))| name == field)
+                        .unwrap().0;
+                    Expr::Update(
+                        self.instantiate_expr(prog, record, get_generic),
+                        field_idx,
+                        **field,
+                        self.instantiate_expr(prog, value, get_generic),
+                    )
                 },
                 _ => unreachable!(),
             },
@@ -379,21 +413,16 @@ impl Program {
         arms: &[(hir::TypeBinding, hir::TypeExpr)],
         get_generic: &mut impl FnMut(Ident) -> RawType,
     ) -> Expr {
-        match pred.ty() {
-            RawType::Primitive(_) | RawType::Product(_) | RawType::List(_) => {
-                let arms = arms
-                    .iter()
-                    .map(|(binding, body)| (
-                        binding.make_matcher(),
-                        binding.make_extractor(),
-                        self.instantiate_expr(prog, body, get_generic),
-                    ))
-                    .collect();
+        let arms = arms
+            .iter()
+            .map(|(binding, body)| (
+                binding.make_matcher(),
+                binding.make_extractor(),
+                self.instantiate_expr(prog, body, get_generic),
+            ))
+            .collect();
 
-                Expr::MatchValue(pred, arms)
-            },
-            _ => todo!(),
-        }
+        Expr::MatchValue(pred, arms)
     }
 
     fn instantiate_type(&mut self, ty: &Type, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawType {

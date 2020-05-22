@@ -28,6 +28,7 @@ impl Vm {
                 Instr::Float(x) => expr_stack.push(Value::Number(x as f64)),
                 Instr::True => expr_stack.push(Value::Boolean(true)),
                 Instr::False => expr_stack.push(Value::Boolean(false)),
+                Instr::Char(c) => expr_stack.push(Value::Char(c)),
 
                 Instr::MakeFunc(n, addr) => {
                     let mut env = (0..n).map(|_| expr_stack.pop().unwrap()).collect();
@@ -48,6 +49,10 @@ impl Vm {
                 Instr::IndexList(x) => {
                     let item = expr_stack.pop().unwrap().index(x as usize);
                     expr_stack.push(item);
+                },
+                Instr::SetList(x) => {
+                    let item = expr_stack.pop().unwrap();
+                    expr_stack.last_mut().unwrap().as_list_unchecked_mut()[x as usize] = item;
                 },
                 Instr::TailList(x) => {
                     let list = std::mem::take(Rc::make_mut(&mut expr_stack.pop().unwrap().into_list_unchecked()));
@@ -96,6 +101,27 @@ impl Vm {
                     let y = expr_stack.pop().unwrap().into_number_unchecked();
                     expr_stack.push(Value::Boolean(x == y));
                 },
+                Instr::MoreNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Boolean(x > y));
+                },
+                Instr::LessNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Boolean(x < y));
+                },
+                Instr::MoreEqNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Boolean(x >= y));
+                },
+                Instr::LessEqNum => {
+                    let x = expr_stack.pop().unwrap().into_number_unchecked();
+                    let y = expr_stack.pop().unwrap().into_number_unchecked();
+                    expr_stack.push(Value::Boolean(x <= y));
+                },
+
                 Instr::NotBool => {
                     let x = expr_stack.pop().unwrap().into_boolean_unchecked();
                     expr_stack.push(Value::Boolean(!x));
@@ -115,6 +141,13 @@ impl Vm {
                     let y = expr_stack.pop().unwrap().into_boolean_unchecked();
                     expr_stack.push(Value::Boolean(x || y));
                 },
+
+                Instr::EqChar => {
+                    let x = expr_stack.pop().unwrap().into_char_unchecked();
+                    let y = expr_stack.pop().unwrap().into_char_unchecked();
+                    expr_stack.push(Value::Boolean(x == y));
+                },
+
                 Instr::JoinList => {
                     let mut x = (*expr_stack.pop().unwrap().into_list_unchecked()).clone();
                     x.append((*expr_stack.pop().unwrap().into_list_unchecked()).clone());

@@ -5,10 +5,10 @@ use std::{
 use internment::LocalIntern;
 use crate::{
     error::Error,
-    ast::{UnaryOp, BinaryOp},
+    ast::{UnaryOp, BinaryOp, Literal},
     node::RawTypeNode,
     ty::Primitive,
-    mir, hir,
+    mir,
 };
 use super::{
     CodeAddr, Instr, Program, Value,
@@ -36,15 +36,20 @@ impl RawTypeNode<mir::Expr> {
         }
 
         match &**self {
-            mir::Expr::Value(val) => match val {
-                hir::Value::Number(x) => {
+            mir::Expr::Literal(val) => match val {
+                Literal::Number(x) => {
                     builder.emit_instr(push_constant_num(*x));
                 },
-                hir::Value::Boolean(x) => {
+                Literal::Char(x) => {
+                    builder.emit_instr(Instr::Char(*x));
+                },
+                Literal::Boolean(x) => {
                     builder.emit_instr(if *x { Instr::True } else { Instr::False });
                 },
-                hir::Value::String(x) => {
-                    let s = builder.emit_const(Value::String(Rc::new(x.to_string())));
+                Literal::String(s) => {
+                    let s = builder.emit_const(Value::List(Rc::new(
+                        s.chars().map(Value::Char).collect()
+                    )));
                     builder.emit_instr(Instr::LoadConst(s));
                 },
             },
@@ -71,17 +76,30 @@ impl RawTypeNode<mir::Expr> {
                 b.compile(program, scope, builder);
                 a.compile(program, scope, builder);
                 match (op, a.ty(), b.ty()) {
-                    (BinaryOp::Add, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::AddNum),
-                    (BinaryOp::Sub, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::SubNum),
-                    (BinaryOp::Mul, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::MulNum),
-                    (BinaryOp::Div, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::DivNum),
-                    (BinaryOp::Rem, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::RemNum),
-                    (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => builder.emit_instr(Instr::EqNum),
-                    (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::EqBool),
-                    (BinaryOp::And, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::AndBool),
-                    (BinaryOp::Or, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => builder.emit_instr(Instr::OrBool),
-                    (BinaryOp::Join, mir::RawType::List(_), mir::RawType::List(_)) => builder.emit_instr(Instr::JoinList),
-                    _ => todo!(),
+                    (BinaryOp::Add, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::AddNum); },
+                    (BinaryOp::Sub, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::SubNum); },
+                    (BinaryOp::Mul, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::MulNum); },
+                    (BinaryOp::Div, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::DivNum); },
+                    (BinaryOp::Rem, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::RemNum); },
+                    (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::EqNum); },
+                    (BinaryOp::NotEq, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => {
+                        builder.emit_instr(Instr::EqNum);
+                        builder.emit_instr(Instr::NotBool);
+                    },
+                    (BinaryOp::More, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::MoreNum); },
+                    (BinaryOp::Less, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::LessNum); },
+                    (BinaryOp::MoreEq, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::MoreEqNum); },
+                    (BinaryOp::LessEq, mir::RawType::Primitive(Primitive::Number), mir::RawType::Primitive(Primitive::Number)) => { builder.emit_instr(Instr::LessEqNum); },
+                    (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Char), mir::RawType::Primitive(Primitive::Char)) => { builder.emit_instr(Instr::EqChar); },
+                    (BinaryOp::NotEq, mir::RawType::Primitive(Primitive::Char), mir::RawType::Primitive(Primitive::Char)) => {
+                        builder.emit_instr(Instr::EqChar);
+                        builder.emit_instr(Instr::NotBool);
+                    },
+                    (BinaryOp::Eq, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => { builder.emit_instr(Instr::EqBool); },
+                    (BinaryOp::And, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => { builder.emit_instr(Instr::AndBool); },
+                    (BinaryOp::Or, mir::RawType::Primitive(Primitive::Boolean), mir::RawType::Primitive(Primitive::Boolean)) => { builder.emit_instr(Instr::OrBool); },
+                    (BinaryOp::Join, mir::RawType::List(_), mir::RawType::List(_)) => { builder.emit_instr(Instr::JoinList); },
+                    binary => todo!("Implement binary expression {:?}", binary),
                 };
             },
             mir::Expr::MakeTuple(items) => {
@@ -190,6 +208,23 @@ impl RawTypeNode<mir::Expr> {
                 tuple.compile(program, scope, builder);
                 builder.emit_instr(Instr::IndexList(*index as u32));
             },
+            mir::Expr::Update(record, index, field, value) => {
+                record.compile(program, scope, builder);
+
+                // Push field
+                builder.emit_instr(Instr::Dup);
+                builder.emit_instr(Instr::IndexList(*index as u32));
+                builder.emit_instr(Instr::PushLocal);
+                scope.2.push(*field);
+
+                value.compile(program, scope, builder);
+
+                // Pop field
+                builder.emit_instr(Instr::PopLocal);
+                scope.2.pop();
+
+                builder.emit_instr(Instr::SetList(*index as u32));
+            },
             expr => todo!("{:?}", expr),
         }
     }
@@ -203,14 +238,18 @@ impl mir::Matcher {
             mir::Matcher::Exactly(val) => match val {
                 // If the value is true, and we're looking for true... then we already have the answer
                 // No need to do `if x = true` when you can just do `if x`.
-                hir::Value::Boolean(true) => {},
+                Literal::Boolean(true) => {},
                 // If the value is true and we're looking for false... just negate the result. Easy.
-                hir::Value::Boolean(false) => { builder.emit_instr(Instr::NotBool); },
-                hir::Value::Number(x) => {
+                Literal::Boolean(false) => { builder.emit_instr(Instr::NotBool); },
+                Literal::Char(c) => {
+                    builder.emit_instr(Instr::Char(*c));
+                    builder.emit_instr(Instr::EqChar);
+                },
+                Literal::Number(x) => {
                     builder.emit_instr(push_constant_num(*x));
                     builder.emit_instr(Instr::EqNum);
                 },
-                hir::Value::String(x) => todo!(),
+                Literal::String(x) => todo!(),
             },
             mir::Matcher::Product(items) => {
                 let mut fail_jumps = Vec::new();

@@ -5,7 +5,7 @@ pub mod infer;
 use std::collections::HashMap;
 use internment::LocalIntern;
 use crate::{
-    ast,
+    ast::{self, Literal},
     error::Error,
     src::Span,
     ty::{Primitive, Type},
@@ -27,19 +27,16 @@ impl<T> Node<T, (Span, TypeId)> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum Value {
-    Number(f64),
-    String(LocalIntern<String>),
-    Boolean(bool),
-}
-
-impl Value {
-    pub fn get_type_info(&self, _infer: &mut InferCtx) -> TypeInfo {
+impl ast::Literal {
+    pub fn get_type_info(&self, infer: &mut InferCtx, span: Span) -> TypeInfo {
         match self {
-            Value::Boolean(_) => TypeInfo::Primitive(Primitive::Boolean),
-            Value::Number(_) => TypeInfo::Primitive(Primitive::Number),
-            Value::String(_) => TypeInfo::Primitive(Primitive::String),
+            ast::Literal::Boolean(_) => TypeInfo::Primitive(Primitive::Boolean),
+            ast::Literal::Char(_) => TypeInfo::Primitive(Primitive::Char),
+            ast::Literal::Number(_) => TypeInfo::Primitive(Primitive::Number),
+            ast::Literal::String(_) => {
+                let c = infer.insert(TypeInfo::Primitive(Primitive::Char), span);
+                TypeInfo::List(c)
+            },
         }
     }
 }
@@ -47,7 +44,7 @@ impl Value {
 #[derive(Debug)]
 pub enum Pat<M> {
     Wildcard,
-    Value(Value),
+    Literal(Literal),
     List(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<SrcNode<Ident>>),
     Tuple(Vec<Node<Binding<M>, M>>),
@@ -65,10 +62,10 @@ pub struct Binding<M> {
     pub binding: Option<SrcNode<Ident>>,
 }
 
-impl InferBinding {
-    fn get_binding_idents(&self, idents: &mut HashMap<Ident, TypeId>) {
+impl<M> Node<Binding<M>, M> {
+    fn get_binding_idents<'a>(&'a self, idents: &mut HashMap<Ident, &'a M>) {
         match &*self.pat {
-            Pat::Wildcard | Pat::Value(_) => {},
+            Pat::Wildcard | Pat::Literal(_) => {},
             Pat::List(items) => items
                 .iter()
                 .for_each(|item| item.get_binding_idents(idents)),
@@ -77,7 +74,7 @@ impl InferBinding {
                     .iter()
                     .for_each(|item| item.get_binding_idents(idents));
                 if let Some(ident) = tail {
-                    idents.insert(**ident, self.type_id());
+                    idents.insert(**ident, self.attr());
                 }
             },
             Pat::Tuple(items) => items
@@ -89,11 +86,11 @@ impl InferBinding {
         }
 
         if let Some(ident) = &self.binding {
-            idents.insert(**ident, self.type_id());
+            idents.insert(**ident, self.attr());
         }
     }
 
-    fn binding_idents(&self) -> HashMap<Ident, TypeId> {
+    pub fn binding_idents(&self) -> HashMap<Ident, &M> {
         let mut idents = HashMap::default();
         self.get_binding_idents(&mut idents);
         idents
@@ -104,7 +101,7 @@ impl<M> Pat<M> {
     fn is_refutable(&self) -> bool {
         match &*self {
             Pat::Wildcard => false,
-            Pat::Value(_) => true,
+            Pat::Literal(_) => true,
             Pat::List(_) => true, // List could be different size
             Pat::ListFront(items, _) => items.len() > 0,
             Pat::Tuple(items) => items.iter().any(|item| item.pat.is_refutable()),
@@ -115,7 +112,7 @@ impl<M> Pat<M> {
 
 #[derive(Debug)]
 pub enum Expr<M> {
-    Value(Value),
+    Literal(Literal),
     Local(Ident),
     Global(Ident, Vec<(SrcNode<Ident>, M)>),
     Unary(SrcNode<ast::UnaryOp>, Node<Self, M>),
@@ -126,6 +123,7 @@ pub enum Expr<M> {
     Func(Node<Binding<M>, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>), // TODO: Should application be a binary operator?
     Access(Node<Self, M>, SrcNode<Ident>),
+    Update(Node<Self, M>, SrcNode<Ident>, Node<Self, M>),
     Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
 }
 
@@ -189,7 +187,7 @@ impl<'a> DataCtx<'a> {
         } else if let Some(ty_info) = match name.as_str() {
             "Num" => Some(TypeInfo::Primitive(Primitive::Number)),
             "Bool" => Some(TypeInfo::Primitive(Primitive::Boolean)),
-            "Str" => Some(TypeInfo::Primitive(Primitive::String)),
+            "Char" => Some(TypeInfo::Primitive(Primitive::Char)),
             _ => None,
         } {
             if params.len() == 0 {
@@ -330,7 +328,7 @@ impl Program {
         self.insert_def_inner(GlobalHints(&HashMap::default()), ast_def)
     }
 
-    pub fn insert_def_inner(&mut self, globals: GlobalHints, ast_def: &ast::Def) -> Result<(), Error> {
+    fn insert_def_inner(&mut self, globals: GlobalHints, ast_def: &ast::Def) -> Result<(), Error> {
         // Check for double declaration
         if let Some(existing_def) = self.root.defs.get(&**ast_def.name) {
             return Err(Error::custom(format!("Definition with name '{}' already exists", **ast_def.name))
@@ -393,7 +391,7 @@ impl Program {
         Ok(())
     }
 
-    pub fn insert_type_alias(&mut self, globals: GlobalHints, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
+    fn insert_type_alias(&mut self, globals: GlobalHints, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
         let mut infer = InferCtx::default();
         let data = DataCtx {
             module: &self.root,
@@ -473,9 +471,8 @@ impl ast::Binding {
         let (type_id, pat) = match &*self.pat {
             ast::Pat::Wildcard => (infer.insert(TypeInfo::Unknown(None), self.span()), Pat::Wildcard),
             ast::Pat::Literal(litr) => {
-                let val = litr.to_hir()?;
-                let val_type_info = val.get_type_info(infer);
-                (infer.insert(val_type_info, self.span()), Pat::Value(val))
+                let litr_type_info = litr.get_type_info(infer, self.span());
+                (infer.insert(litr_type_info, self.span()), Pat::Literal(litr.clone()))
             },
             ast::Pat::List(items) => {
                 let item_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
@@ -534,16 +531,6 @@ impl ast::Binding {
     }
 }
 
-impl ast::Literal {
-    fn to_hir(&self) -> Result<Value, Error> {
-        Ok(match self {
-            ast::Literal::Number(x) => Value::Number(*x),
-            ast::Literal::String(x) => Value::String(*x),
-            ast::Literal::Boolean(x) => Value::Boolean(*x),
-        })
-    }
-}
-
 impl ast::Type {
     fn to_type_id(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx, get_generic: &impl Fn(Ident) -> Option<TypeId>) -> Result<TypeId, Error> {
         let info = match &**self {
@@ -584,9 +571,8 @@ impl ast::Expr {
     fn to_hir(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx, scope: &Scope) -> Result<InferExpr, Error> {
         let (type_id, hir_expr) = match &**self {
             ast::Expr::Literal(litr) => {
-                let val = litr.to_hir()?;
-                let ty_info = val.get_type_info(infer);
-                (infer.insert(ty_info, self.span()), Expr::Value(val))
+                let litr_ty_info = litr.get_type_info(infer, self.span());
+                (infer.insert(litr_ty_info, self.span()), Expr::Literal(litr.clone()))
             },
             ast::Expr::Path(path) => if path.len() == 1 {
                 if let Some(local_id) = scope
@@ -597,7 +583,9 @@ impl ast::Expr {
                     (type_id, Expr::Local(path.base()))
                 } else if let Some((global_id, generics)) = data.get_def_type(path.base(), data, infer, self.span())? {
                     let generics = generics.into_iter().map(|(ident, ty)| (ident.clone(), (ident.span(), ty))).collect();
-                    (global_id, Expr::Global(path.base(), generics))
+                    let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
+                    infer.unify(type_id, global_id)?;
+                    (type_id, Expr::Global(path.base(), generics))
                 } else {
                     return Err(Error::custom(format!("No such binding '{}' in scope", path.base().to_string()))
                         .with_span(self.span()));
@@ -661,7 +649,11 @@ impl ast::Expr {
                     infer.unify(param.type_id(), param_ty_id)?;
                 }
 
-                let body_scope = scope.with_many(param.binding_idents());
+                let body_scope = scope.with_many(param
+                    .binding_idents()
+                    .into_iter()
+                    .map(|(ident, (_, ty))| (ident, *ty))
+                    .collect());
                 let body = body.to_hir(data, infer, &body_scope)?;
 
                 let type_id = infer.insert(TypeInfo::Func(param.type_id(), body.type_id()), self.span());
@@ -685,6 +677,22 @@ impl ast::Expr {
                 });
                 (type_id, Expr::Access(record, field.clone()))
             },
+            ast::Expr::Update(record, field, value) => {
+                let record = record.to_hir(data, infer, scope)?;
+
+                let field_ty = infer.insert(TypeInfo::Unknown(None), field.span());
+                let value_scope = scope.with(**field, field_ty);
+                let value = value.to_hir(data, infer, &value_scope)?;
+                infer.unify(field_ty, value.type_id())?;
+
+                infer.add_constraint(Constraint::Access {
+                    out: value.type_id(),
+                    record: record.type_id(),
+                    field: field.clone(),
+                });
+
+                (record.type_id(), Expr::Update(record, field.clone(), value))
+            },
             ast::Expr::Let(pat, pat_ty, val, then) => {
                 // `let a = b in c` desugars to `b:(a -> c)`
                 // TODO: Desugar to `match b in a => c` instead?
@@ -699,7 +707,11 @@ impl ast::Expr {
                 let val = val.to_hir(data, infer, scope)?;
                 infer.unify(pat.type_id(), val.type_id())?;
 
-                let then_scope = scope.with_many(pat.binding_idents());
+                let then_scope = scope.with_many(pat
+                    .binding_idents()
+                    .into_iter()
+                    .map(|(ident, (_, ty))| (ident, *ty))
+                    .collect());
                 let then_body = then.to_hir(data, infer, &then_scope)?;
 
                 (then_body.type_id(), Expr::Match(val, vec![
@@ -717,11 +729,11 @@ impl ast::Expr {
 
                 (a.type_id(), Expr::Match(pred_hir, vec![
                     (InferNode::new(Binding {
-                        pat: SrcNode::new(Pat::Value(Value::Boolean(true)), Span::none()),
+                        pat: SrcNode::new(Pat::Literal(Literal::Boolean(true)), Span::none()),
                         binding: None,
                     }, (pred.span(), pred_type_id)), a),
                     (InferNode::new(Binding {
-                        pat: SrcNode::new(Pat::Value(Value::Boolean(false)), Span::none()),
+                        pat: SrcNode::new(Pat::Literal(Literal::Boolean(false)), Span::none()),
                         binding: None,
                     }, (pred.span(), pred_type_id)), b),
                 ]))
@@ -744,7 +756,11 @@ impl ast::Expr {
 
                         infer.unify(pat.type_id(), pred.type_id())?;
 
-                        let body_scope = scope.with_many(pat.binding_idents());
+                        let body_scope = scope.with_many(pat
+                            .binding_idents()
+                            .into_iter()
+                            .map(|(ident, (_, ty))| (ident, *ty))
+                            .collect());
                         let body = body.to_hir(data, infer, &body_scope)?;
 
                         infer.unify(match_type_id, body.type_id())?;
@@ -776,7 +792,7 @@ impl InferPat {
 
         let pat = match self.into_inner() {
             Pat::Wildcard => Pat::Wildcard,
-            Pat::Value(val) => Pat::Value(val),
+            Pat::Literal(litr) => Pat::Literal(litr),
             Pat::List(items) => Pat::List(items
                 .into_iter()
                 .map(|item| item.into_checked(infer))
@@ -823,7 +839,7 @@ impl InferExpr {
         let meta = infer.reconstruct(self.type_id(), span)?;
 
         Ok(TypeNode::new(match self.into_inner() {
-            Expr::Value(val) => Expr::Value(val),
+            Expr::Literal(litr) => Expr::Literal(litr),
             Expr::Local(ident) => Expr::Local(ident),
             Expr::Global(ident, generics) => Expr::Global(
                 ident,
@@ -865,6 +881,11 @@ impl InferExpr {
                 record.into_checked(infer)?,
                 field,
             ),
+            Expr::Update(record, field, value) => Expr::Update(
+                record.into_checked(infer)?,
+                field,
+                value.into_checked(infer)?,
+            ),
             Expr::Match(pred, arms) => Expr::Match(
                 pred.into_checked(infer)?,
                 arms
@@ -888,7 +909,7 @@ impl TypeExpr {
             .pop()
             .map(|expr| {
                 match &**expr {
-                    Expr::Value(_) => {},
+                    Expr::Literal(_) => {},
                     Expr::Local(_) => {},
                     Expr::Global(_, _) => {},
                     Expr::Unary(_, x) => stack.push(x),
@@ -919,6 +940,10 @@ impl TypeExpr {
                         stack.push(i);
                     },
                     Expr::Access(record, _) => stack.push(record),
+                    Expr::Update(record, _, value) => {
+                        stack.push(record);
+                        stack.push(value);
+                    },
                     Expr::Match(pred, arms) => {
                         stack.push(pred);
                         for (_, arm) in arms.iter() {

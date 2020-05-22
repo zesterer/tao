@@ -13,9 +13,10 @@ type Ident = LocalIntern<String>;
 
 #[derive(Clone, Debug)]
 pub enum Literal {
+    Boolean(bool),
+    Char(char),
     Number(f64),
     String(LocalIntern<String>),
-    Boolean(bool),
 }
 
 #[derive(Clone)]
@@ -142,6 +143,7 @@ pub enum Expr {
     List(Vec<SrcNode<Self>>),
     Tuple(Vec<SrcNode<Self>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
+    Update(SrcNode<Self>, SrcNode<Ident>, SrcNode<Self>),
     Constructor(SrcNode<Ident>, SrcNode<Self>),
 }
 
@@ -155,6 +157,13 @@ fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=
 fn number_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=f64>, Error> {
     permit_map(|token: node::Node<_>| match &*token {
         Token::Number(x) => Some(x.parse().unwrap()),
+        _ => None,
+    })
+}
+
+fn char_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=char>, Error> {
+    permit_map(|token: node::Node<_>| match &*token {
+        Token::Char(x) => Some(*x),
         _ => None,
     })
 }
@@ -262,6 +271,19 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
     })
 }
 
+fn litr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Literal>, Error> {
+    let number = number_parser().map(|x| Literal::Number(x));
+    let boolean = just(Token::Boolean(true)).to(Literal::Boolean(true))
+        .or(just(Token::Boolean(false)).to(Literal::Boolean(false)));
+    let character = char_parser().map(|x| Literal::Char(x));
+    let string = string_parser().map(|x| Literal::String(x));
+
+    number
+        .or(boolean)
+        .or(character)
+        .or(string)
+}
+
 fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Binding>>, Error> {
     recursive(|binding| {
         let binding = binding.link();
@@ -269,11 +291,8 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
         let pat = recursive(move |pat| {
             let pat = pat.link();
 
-            let litr_pat = number_parser().map(|x| Pat::Literal(Literal::Number(x)))
-                .or(just(Token::Boolean(true)).map(|_| Pat::Literal(Literal::Boolean(true))))
-                .or(just(Token::Boolean(false)).map(|_| Pat::Literal(Literal::Boolean(false))))
-                .or(string_parser().map(|x| Pat::Literal(Literal::String(x))))
-                .map_with_span(|pat, span| SrcNode::new(pat, span));
+            let litr_pat = litr_parser()
+                .map_with_span(|pat, span| SrcNode::new(Pat::Literal(pat), span));
 
             let tuple_pat = nested_parser(
                 binding.clone().separated_by(just(Token::Comma)),
@@ -347,18 +366,6 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
     recursive(|expr| {
         let expr = expr.link();
 
-        let ident = ident_parser().map(|ident| Expr::Path(Path(vec![ident])));
-        let number = number_parser().map(|x| Expr::Literal(Literal::Number(x)));
-        let boolean = just(Token::Boolean(true)).to(Literal::Boolean(true))
-            .or(just(Token::Boolean(false)).to(Literal::Boolean(false)))
-            .map(|b| Expr::Literal(b));
-        let string = string_parser().map(|x| Expr::Literal(Literal::String(x)));
-        let literal = ident
-            .or(number)
-            .or(boolean)
-            .or(string)
-            .map_with_span(|litr, span| SrcNode::new(litr, span));
-
         let brack_expr_list = nested_parser(
             expr.clone().separated_by(just(Token::Comma)),
             Delimiter::Brack,
@@ -387,7 +394,22 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .padding_for(type_parser())
                 .or_not());
 
-        let atom = literal
+        let arm_list = nested_parser(
+            binding.clone()
+                .padded_by(just(Token::RMap))
+                .then(expr.clone())
+                .separated_by(just(Token::Comma)),
+            Delimiter::Brace,
+        );
+
+        let litr = litr_parser()
+            .map_with_span(|litr, span| SrcNode::new(Expr::Literal(litr), span));
+
+        let ident = ident_parser()
+            .map_with_span(|ident, span| SrcNode::new(Expr::Path(Path(vec![ident])), span));
+
+        let atom = litr
+            .or(ident)
             // Parenthesised expression
             .or(nested_parser(expr.clone(), Delimiter::Paren))
             // Lists
@@ -421,12 +443,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             // Match
             .or(just(Token::Match)
                 .padding_for(expr.clone())
-                .padded_by(just(Token::In))
-                .then(binding.clone()
-                    .padded_by(just(Token::RMap))
-                    .then(expr.clone())
-                    .padded_by(just(Token::Comma))
-                    .repeated())
+                .then(arm_list)
                 .map_with_span(|(pred, arms), span| SrcNode::new(Expr::Match(pred, arms), span)))
             .boxed();
 
@@ -529,13 +546,16 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             })
             .boxed();
 
-        /*
-        // :( ambiguities
-        let func = pat
-            .padded_by(just(Token::RArrow))
-            .then(expr)
-            .map_with_span(|((param, param_ty), body), span| SrcNode::new(Expr::Func(param, param_ty, body), span));
-        */
+        let update = logical.clone()
+            .then(just(Token::With)
+                .padding_for(brace_field_list)
+                .or_not())
+            .map(|(expr, withs)| (expr, withs.unwrap_or_else(|| Vec::new())))
+            .reduce_left(|expr, (field, value)| {
+                let span = expr.span().union(field.span()).union(value.span());
+                SrcNode::new(Expr::Update(expr, field, value), span)
+            })
+            .boxed();
 
         let func = just(Token::Pipe)
             .padding_for(binding.separated_by(just(Token::Comma)))
@@ -554,7 +574,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             .boxed();
 
         func
-            .or(logical)
+            .or(update)
     })
 }
 
@@ -651,7 +671,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
 
         let generics = ident_parser()
             .map_with_span(|ident, span| SrcNode::new(ident, span))
-            .separated_by(just(Token::Comma));
+            .repeated();
 
         // let typeparams = just(Token::Given)
         //     .padding_for(generics)

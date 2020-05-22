@@ -86,6 +86,7 @@ impl Delimiter {
 pub enum Token {
     Number(LocalIntern<String>),
     Boolean(bool),
+    Char(char),
     String(LocalIntern<String>),
     Null,
     Ident(LocalIntern<String>),
@@ -109,6 +110,8 @@ pub enum Token {
     Def,
     Given,
     In,
+    As,
+    With,
     Of,
     Type,
     Data,
@@ -131,6 +134,7 @@ impl fmt::Display for Token {
         match self {
             Token::Number(x) => write!(f, "{}", x),
             Token::Boolean(x) => write!(f, "{}", x),
+            Token::Char(c) => write!(f, "'{}'", c),
             Token::String(x) => write!(f, "\"{}\"", x),
             Token::Null => write!(f, "null"),
             Token::Ident(i) => write!(f, "{}", i),
@@ -152,6 +156,8 @@ impl fmt::Display for Token {
             Token::Def => write!(f, "def"),
             Token::Given => write!(f, "given"),
             Token::In => write!(f, "in"),
+            Token::As => write!(f, "as"),
+            Token::With => write!(f, "with"),
             Token::Of => write!(f, "of"),
             Token::Type => write!(f, "type"),
             Token::Data => write!(f, "data"),
@@ -187,8 +193,17 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(just('r').to('\r'))
             .or(just('t').to('\t'));
         let escape = just('\\').padding_for(special);
+
+        let char_inner = permit(|c: &char| *c != '\\' && *c != '"').or(escape);
+
+        let character = just('\'')
+            .padding_for(char_inner.clone())
+            .padded_by(just('\''))
+            .map(Token::Char)
+            .boxed();
+
         let string = just('"')
-            .padding_for(permit(|c: &char| *c != '\\' && *c != '"').or(escape).repeated())
+            .padding_for(char_inner.repeated())
             .padded_by(just('"'))
             .map(|chars| Token::String(LocalIntern::new(chars.into_iter().collect())))
             .boxed();
@@ -228,6 +243,7 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .map(|(delim, tokens)| Token::Tree(delim, tokens));
 
         let token = number
+            .or(character)
             .or(string)
             .or(ident.map(|s: String| match s.as_str() {
                 "_" => Token::Wildcard,
@@ -242,6 +258,8 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
                 "def" => Token::Def,
                 "given" => Token::Given,
                 "in" => Token::In,
+                "as" => Token::As,
+                "with" => Token::With,
                 "of" => Token::Of,
                 "type" => Token::Type,
                 "data" => Token::Data,

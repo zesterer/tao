@@ -1,0 +1,69 @@
+type Out I O = {
+	ok: Bool,
+	rest: [I],
+	out: [O],
+}
+
+def success I O = |rest of [I], out of O| {
+    ok: true,
+    rest,
+    out: [out],
+}
+
+def failure I O of ? -> Out ? O = |rest of [I]| {
+    ok: false,
+    rest,
+    out: [],
+}
+
+type Parser I O = [I] -> Out I O
+
+def contains = |cs of [Char], c of Char| match cs {
+	[c1, cs: ...] => c1 = c or contains(cs, c),
+	_ => false,
+}
+
+def len A of [A] -> ? = |xs| match xs {
+    [_, xs: ...] => 1 + xs:len,
+    _ => 0,
+}
+
+def matcher I of (I -> Bool) -> Parser I I = |f, input| match input {
+	[i, rest: ...] => if i:f
+		then success(rest, i)
+		else failure(rest),
+	_ => failure([]),
+}
+
+def digit = matcher(|c| contains("1234567890", c))
+
+def repeated I O of Parser I O -> Parser I [O] = |p, input| match p(input) {
+	{ ok, rest, out: [o] } =>
+	    let { ok, rest, out } = rest:repeated(p) in
+	    match out {
+	        [out] => success(rest, [o] ++ out),
+	        _ => failure(rest),
+	    },
+	{ ok, rest, out } => success(rest, []),
+}
+
+def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
+    let r = input:repeated(p) in
+    match r.out {
+        [xs] => if xs:len >= n
+            then r
+            else failure(r.rest),
+        _ => failure(r.rest),
+    }
+
+def is_success I O = |p of Parser I O, input| match input:p {
+    { ok: true, rest, out } => true,
+    _ => false,
+}
+
+def main =
+	let parser = digit
+		:repeated_at_least(1)
+		:is_success
+	in
+	"456":parser
