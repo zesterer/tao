@@ -140,9 +140,9 @@ pub enum Expr {
     Unary(Unary, RawTypeNode<Self>),
     // Perform a built-in binary operation
     Binary(Binary, RawTypeNode<Self>, RawTypeNode<Self>),
-    // Construct a tuple using the last N values on the stack
+    // Construct a tuple with the given values
     MakeTuple(Vec<RawTypeNode<Self>>),
-    // Construct a list using the last N values on the stack
+    // Construct a list with the given values
     MakeList(Vec<RawTypeNode<Self>>),
     // Apply a value to a function
     Apply(RawTypeNode<Self>, RawTypeNode<Self>),
@@ -162,7 +162,7 @@ impl hir::TypeExpr {
             hir::Expr::Literal(_) => {},
             hir::Expr::Global(_, _) => {},
             hir::Expr::Local(ident) => {
-                if !scope.contains(ident) {
+                if scope.iter().find(|name| *name == ident).is_none() {
                     env.push(*ident);
                 }
             },
@@ -192,13 +192,12 @@ impl hir::TypeExpr {
                 scope.pop();
             },
             hir::Expr::Func(binding, body) => {
-                let mut body_scope = Vec::new();
-                let mut body_env = Vec::new();
-                body.get_env_inner(&mut body_scope, &mut body_env);
-
+                let body_env = body.get_env();
                 let bindings = binding.binding_idents();
                 for ident in body_env {
-                    if !bindings.contains_key(&ident) {
+                    if scope.iter().find(|name| **name == ident).is_none()
+                        && !bindings.contains_key(&ident)
+                    {
                         env.push(ident);
                     }
                 }

@@ -6,9 +6,34 @@ def contains = |cs of [Char], c of Char| match cs {
 }
 
 def len A of [A] -> ? = |xs| match xs {
-    [_, xs: ...] => 1 + xs:len,
-    _ => 0,
+	[_, xs: ...] => 1 + xs:len,
+	_ => 0,
 }
+
+def fold_l A B of ? -> (B -> A -> B) -> ? -> ? = |init, f, xs| match xs {
+	[x, xs: ...] => fold_l(f(init, x), f, xs),
+	_ => init,
+}
+
+def reduce_l A B = |f, (init, xs) of (A, [B])| fold_l(init, f, xs)
+
+def fold_r A B of ? -> (A -> B -> B) -> ? -> ? = |init, f, xs| match xs {
+	[x, xs: ...] => f(x, fold_r(init, f, xs)),
+	_ => init,
+}
+
+def reduce_r A B = |f, (xs, init) of ([B], A)| fold_r(init, f, xs)
+
+def sum = fold_l(0, |a, x| a + x)
+
+def find_char_inner = |x, cs, c of Char| match cs {
+	[c1, cs: ...] => if c1 = c
+		then [x]
+		else find_char_inner(x + 1, cs, c),
+	_ => [],
+}
+
+def find_char = find_char_inner(0)
 
 # Parser Things
 
@@ -26,39 +51,131 @@ type Parser I O = [I] -> Out I O
 def matcher I of (I -> Bool) -> Parser I I = |f, input| match input {
 	[i, rest: ...] => if i:f
 		then success(rest, i)
-		else failure(rest),
+		else failure(input),
 	_ => failure([]),
 }
 
-def digit = matcher(|c| contains("1234567890", c))
+def recurse I O of ([I] -> Out I O) -> Parser I O = |f, input| match input:f {
+	{ ok, rest, out: [o] } => success(rest, o),
+	_ => failure(input),
+}
 
-def repeated I O of Parser I O -> Parser I [O] = |p, input| match p(input) {
+def map I O U of (O -> U) -> Parser I O -> Parser I U = |f, p, input|
+	let r = input:p in
+	match r.out {
+		[o] => success(r.rest, f(o)),
+		_ => failure(r.rest),
+	}
+
+def repeated I O of Parser I O -> Parser I [O] = |p, input| match input:p {
 	{ ok, rest, out: [o] } =>
-	    let { ok, rest, out } = rest:repeated(p) in
-	    match out {
-	        [out] => success(rest, [o] ++ out),
-	        _ => failure(rest),
-	    },
+		let { ok, rest, out } = rest:repeated(p) in
+		match out {
+			[out] => success(rest, [o] ++ out),
+			_ => failure(rest),
+		},
 	{ ok, rest, out } => success(rest, []),
 }
 
 def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
-    let r = input:repeated(p) in
-    match r.out {
-        [xs] => if xs:len >= n
-            then r
-            else failure(r.rest),
-        _ => failure(r.rest),
-    }
+	let r = input:repeated(p) in
+	match r.out {
+		[xs] => if xs:len >= n
+			then r
+			else failure(r.rest),
+		_ => failure(r.rest),
+	}
+
+def and_then I O U of Parser I U -> Parser I O -> Parser I (O, U) = |p1, p0, input|
+	let r = input:p0 in
+	match r.out {
+		[o] => r.rest:map(|u| (o, u), p1),
+		_ => failure(r.rest),
+	}
+
+def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
+	let r = input:p0 in
+	match r.out {
+		[o] => success(r.rest, o),
+		_ => let r = input:p1 in
+		match r.out {
+			[o] => success(r.rest, o),
+			_ => failure(r.rest),
+		},
+	}
 
 def is_success I O = |p of Parser I O, input| match input:p {
-    { ok: true, rest, out } => true,
-    _ => false,
+	{ ok: true, rest, out } => true,
+	_ => false,
 }
 
-def main =
-	let parser = digit
-		:repeated_at_least(1)
-		:is_success
-	in
-	"456":parser
+def char_to_num = |c| match find_char("0123456789", c) {
+	[i] => i,
+	_ => 0,
+}
+
+def padded_by I O U = |p1 of Parser I O, p0 of Parser I U| p0
+	:and_then(p1)
+	:map(|(a, _)| a)
+
+def padding_for I O U = |p1 of Parser I O, p0 of Parser I U| p0
+	:and_then(p1)
+	:map(|(_, b)| b)
+
+def whitespace = matcher(|c| contains(" 	\n", c))
+
+def padded O of Parser Char O -> Parser Char O = |p| p
+	:padded_by(whitespace:repeated)
+
+def char = |c of Char| matcher(|i| c = i)
+
+def op = |c| char(c):padded
+
+def digit = matcher(|c| contains("1234567890", c))
+	:map(char_to_num)
+
+def number = digit
+	:repeated_at_least(1)
+	:map(|xs| xs:fold_l(0, |a, x| a * 10 + x))
+	:padded
+
+def atom = number
+	:or_else(char('(')
+		:padding_for(recurse(|input| input:expr))
+		:padded_by(char(')')))
+
+def unary = op('-')
+	:repeated
+	:and_then(atom)
+	:map(reduce_r(|op, x| match op {
+		'-' => -x,
+		_ => x,
+	}))
+
+def product = unary
+	:and_then(op('*')
+		:or_else(op('/'))
+		:or_else(op('%'))
+		:and_then(unary)
+		:repeated)
+	:map(reduce_l(|a, (op, b)| match op {
+		'*' => a * b,
+		'/' => a / b,
+		'%' => a % b,
+		_ => a,
+	}))
+
+def sum = product
+	:and_then(op('+')
+		:or_else(op('-'))
+		:and_then(product)
+		:repeated)
+	:map(reduce_l(|a, (op, b)| match op {
+		'+' => a + b,
+		'-' => a - b,
+		_ => a,
+	}))
+
+def expr = sum
+
+def main = "-6 + 2 * (4 - 1)":expr

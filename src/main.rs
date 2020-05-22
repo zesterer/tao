@@ -25,6 +25,8 @@ fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
     let ast = ast::parse_module(&tokens)?;
     let hir_prog = hir::Program::new_root(&ast).map_err(|e| vec![e])?;
 
+    //println!("{:?}", hir_prog.root().def(LocalIntern::new("find_char".to_string())));
+
     // TODO: Get rid of this
     let main_ident = LocalIntern::new("main".to_string());
     if let Some(main) = hir_prog.root().def(main_ident) {
@@ -32,6 +34,11 @@ fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
     }
 
     let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
+
+    for global in mir_prog.globals() {
+        //println!("GLOBAL: {:#?}", global);
+    }
+
     let prog = mir_prog.compile().map_err(|e| vec![e])?;
 
     println!("{:?}", prog);

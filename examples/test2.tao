@@ -1,23 +1,6 @@
-#given A data Pair =
-#	.a A
-#	.b A
+def identity A of A -> A = |x| x
 
-#data Person =
-#	.name Str
-#	.age Num
-
-#given A data Maybe = Just A | Nil
-
-#given A def recurse of A -> (A, A) = |x| (recurse(x), recurse(x))
-
-#given A, B type Pair = (A, B)
-
-given I, O type Fn = I -> O
-
-given A def identity = |x of A| x
-
-given A, B def transform of (Fn A B) -> A -> B = |f of A -> B, a of A| a:identity:f
-
-given A def len of [A] -> Num = |l| l:len
-
-def main = (5, "test"):identity
+def main = match [1] {
+	[o] => 1:identity(|x| (x, o)),
+	_ => (0, 4)
+}
