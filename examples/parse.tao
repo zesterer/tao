@@ -60,6 +60,11 @@ def recurse I O of ([I] -> Out I O) -> Parser I O = |f, input| match input:f {
 	_ => failure(input),
 }
 
+def end I of Parser I () = |input| match input {
+	[] => success([], ()),
+	_ => failure([]),
+}
+
 def map I O U of (O -> U) -> Parser I O -> Parser I U = |f, p, input|
 	let r = input:p in
 	match r.out {
@@ -178,4 +183,6 @@ def sum = product
 
 def expr = sum
 
-def main = "-6 + 2 * (4 - 1)":expr
+def full_expr = expr:padded_by(end)
+
+def main = "4 + (5 - 3)":full_expr
