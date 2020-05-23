@@ -3,12 +3,72 @@
   <head>
     <meta charset="UTF-8" />
     <title>Tao playground</title>
-    <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="index.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <script src="index.js"></script>
-    <textarea id="code"></textarea>
-    <div id="output"></div>
-    <button id="run">Run</button>
+    <div class="wrapper">
+      <div class="code-wrapper">
+        <div id="code" contenteditable="true"></div>
+        <div class="toolbar">
+          <button id="run">
+            <svg height="30" width="30">
+              <polygon points="0,0 0,30 30,15" style="fill: black;" />
+            </svg>
+          </button>
+          <button id="save">
+            <svg height="30" width="30">
+              <polygon points="0,0 22,0 30,8 30,30 0,30" style="fill: black;" />
+              <circle cx="15" cy="20" r="5" fill="white" />
+              <polygon points="3,3 20,3 20,8 3,8" style="fill: white;" />
+            </svg>
+          </button>
+          <input type="file" id="load" />
+          <label for="load">
+            <svg height="30" width="30">
+              <polygon
+                points="2,24 28,24 28,30 2,30"
+                style="fill: black; stroke-linejoin: round;"
+              />
+              <defs>
+                <marker
+                  id="arrowhead"
+                  markerWidth="3"
+                  markerHeight="3"
+                  refX="0"
+                  refY="1.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 3 1.5, 0 3" />
+                </marker>
+              </defs>
+              <line
+                x1="15"
+                y1="23"
+                x2="15"
+                y2="8"
+                stroke="#000"
+                stroke-width="3"
+                marker-end="url(#arrowhead)"
+              />
+            </svg>
+          </label>
+          <button id="theme" class="dropdown">
+            <svg height="30" width="30">
+              <polygon
+                points="0,0 30,0 30,30 0,30"
+                style="fill: var(--code-background);"
+              />
+            </svg>
+            <div class="dropdown-content toolbar" id="themes"></div>
+          </button>
+        </div>
+      </div>
+      <div id="output"></div>
+      <script src="index.js"></script>
+    </div>
   </body>
 </html>
