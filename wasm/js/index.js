@@ -1,37 +1,40 @@
 const code = document.querySelector("#code");
 
-import("../pkg/index.js")
-  .then((module) => {
-    document.querySelector("#run").addEventListener("click", () => {
-      document.querySelector("#output").innerHTML = "";
+if (window.Worker) {
+  let worker = new Worker("./worker.js");
 
-      try {
-        document.querySelector("#output").innerHTML += module.run(
-          code.innerText
-        );
-      } catch (errors) {
-        let output = "";
+  worker.onmessage = function (result) {
+    document.querySelector("#output").innerHTML = "";
 
-        output += '<span style="color: red">';
+    if (result.data.errors == null) {
+      document.querySelector("#output").innerHTML += result.data.out;
+    } else {
+      let errors = result.data.errors;
 
-        output += errors.length;
+      handle_errors(errors);
+    }
+  };
 
-        if (errors.length == 1) {
-          output += " error when compiling \n\n";
-        } else {
-          output += " errors when compiling \n\n";
+  document.querySelector("#run").addEventListener("click", () => {
+    worker.postMessage(document.querySelector("#code").innerText);
+  });
+} else {
+  import("../pkg/index.js")
+    .then((module) => {
+      document.querySelector("#run").addEventListener("click", () => {
+        document.querySelector("#output").innerHTML = "";
+
+        try {
+          document.querySelector("#output").innerHTML += module.run(
+            code.innerText
+          );
+        } catch (errors) {
+          handle_errors(errors);
         }
-
-        errors.forEach((err) => {
-          output += err;
-          output += "\n\n";
-        });
-        output += "<span>";
-        document.querySelector("#output").innerHTML = output;
-      }
-    });
-  })
-  .catch(console.error);
+      });
+    })
+    .catch(console.error);
+}
 
 document.querySelector("#save").addEventListener("click", () => {
   save("playground.tao");
@@ -76,6 +79,17 @@ const themes = [
 ];
 const themes_toolbar = document.querySelector("#themes");
 
+if (localStorage.getItem("theme") != null) {
+  document.documentElement.style.setProperty(
+    "--code-background",
+    themes[localStorage.getItem("theme")].background_color
+  );
+  document.documentElement.style.setProperty(
+    "--code-color",
+    themes[localStorage.getItem("theme")].code_color
+  );
+}
+
 for (var i = 0; i < themes.length; i++) {
   let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "theme-btn");
@@ -97,7 +111,70 @@ for (var i = 0; i < themes.length; i++) {
       "--code-color",
       themes[svg.getAttribute("theme")].code_color
     );
+
+    localStorage.setItem("theme", svg.getAttribute("theme"));
   };
 
   themes_toolbar.appendChild(svg);
 }
+
+function handle_errors(errors) {
+  let output = "";
+
+  output += '<span style="color: red">';
+
+  output += errors.length;
+
+  if (errors.length == 1) {
+    output += " error when compiling \n\n";
+  } else {
+    output += " errors when compiling \n\n";
+  }
+
+  errors.forEach((err) => {
+    output += err.msg;
+
+    console.log(err.src);
+
+    output += "\n\n";
+  });
+  output += "<span>";
+  document.querySelector("#output").innerHTML = output;
+}
+
+document.querySelector("#code").onkeydown = function (e) {
+  if (e.keyCode === 9) {
+    // tab key
+    e.preventDefault(); // this will prevent us from tabbing out of the editor
+
+    // now insert four non-breaking spaces for the tab key
+    var editor = document.querySelector("#code");
+    var doc = editor.ownerDocument.defaultView;
+    var sel = doc.getSelection();
+    var range = sel.getRangeAt(0);
+
+    var tabNode = document.createTextNode("\u0009");
+    range.insertNode(tabNode);
+
+    range.setStartAfter(tabNode);
+    range.setEndAfter(tabNode);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else if (e.keyCode === 13) {
+    // enter key
+    e.preventDefault();
+
+    var editor = document.querySelector("#code");
+    var doc = editor.ownerDocument.defaultView;
+    var sel = doc.getSelection();
+    var range = sel.getRangeAt(0);
+
+    var enterNode = document.createElement("br");
+    range.insertNode(enterNode);
+
+    range.setStartAfter(enterNode);
+    range.setEndAfter(enterNode);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+};
