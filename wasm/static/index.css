@@ -12,6 +12,7 @@
   background-color: var(--code-background);
   color: var(--code-color);
   tab-size: 4;
+  -moz-tab-size: 4;
 }
 
 #output {
@@ -39,6 +40,10 @@
   .wrapper {
     grid-template-rows: 100%;
     grid-template-columns: 70% 30%;
+  }
+
+  .toolbar {
+    flex-direction: row;
   }
 }
 
@@ -128,4 +133,15 @@ input[type="file"] {
 
 .dropdown:hover .dropdown-content {
   display: block;
+}
+
+@media (min-width: 1200px) {
+  .wrapper {
+    grid-template-rows: 100%;
+    grid-template-columns: 70% 30%;
+  }
+
+  .toolbar {
+    flex-direction: row;
+  }
 }
