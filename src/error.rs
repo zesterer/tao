@@ -176,7 +176,10 @@ impl<'a> fmt::Display for ErrorInSrc<'a> {
                             for _ in 0..line.len() {
                                 if let Some((span, is_primary)) = span_iter
                                     .clone()
-                                    .find(|(s, _)| s.contains(Loc::at(char_pos)))
+                                    .find(|(s, is_primary)| s.contains(Loc::at(char_pos)) && *is_primary)
+                                    .or_else(|| span_iter
+                                        .clone()
+                                        .find(|(s, _)| s.contains(Loc::at(char_pos))))
                                 {
                                     write!(f, "{}", if is_primary { '^' } else { '-' })?;
                                 } else {

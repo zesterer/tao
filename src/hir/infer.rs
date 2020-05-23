@@ -179,11 +179,11 @@ impl<'a> InferCtx<'a> {
         use TypeInfo::*;
         match (self.get(a), self.get(b)) {
             (Ref(a), _) => self.unify_inner(iter + 1, a, b),
-            (_, Ref(_)) => self.unify_inner(iter + 1, b, a),
+            (_, Ref(b)) => self.unify_inner(iter + 1, a, b),
             (Unknown(Some(_)), Unknown(_)) => Ok(self.link(a, b)),
             (Unknown(_), Unknown(Some(_))) => Ok(self.link(b, a)),
             (Unknown(_), _) => Ok(self.link(a, b)),
-            (_, Unknown(_)) => self.unify_inner(iter + 1, b, a), // TODO: does ordering matter?
+            (_, Unknown(_)) => Ok(self.link(b, a)), // TODO: does ordering matter?
             (GenParam(a), GenParam(b)) if a == b => Ok(()),
             (Primitive(a), Primitive(b)) if a == b => Ok(()),
             (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
@@ -207,15 +207,17 @@ impl<'a> InferCtx<'a> {
 
     // Returns true if new information was inferred
     pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
-        self.unify_inner(0, a, b).map_err(|(x, y)| Error::custom(format!(
+        self.unify_inner(0, a, b).map_err(|(x, y)| {
+            Error::custom(format!(
                 "Type mismatch between {} and {}",
                 self.display_type_info(x),
                 self.display_type_info(y),
             ))
                 .with_span(self.span(x))
-                .with_secondary_span(self.span(a))
                 .with_span(self.span(y))
-                .with_secondary_span(self.span(b)))
+                .with_secondary_span(self.span(a))
+                .with_secondary_span(self.span(b))
+        })
     }
 
     pub fn insert(&mut self, ty: impl Into<TypeInfo>, span: Span) -> TypeId {

@@ -1,6 +1,1 @@
-def identity A of A -> A = |x| x
 
-def main = match [1] {
-	[o] => 1:identity(|x| (x, o)),
-	_ => (0, 4)
-}

@@ -127,7 +127,7 @@ def padding_for I O U = |p1 of Parser I O, p0 of Parser I U| p0
 	:and_then(p1)
 	:map(|(_, b)| b)
 
-def whitespace = matcher(|c| contains(" 	\n", c))
+def whitespace = matcher(|c| contains(" \t\n", c))
 
 def padded O of Parser Char O -> Parser Char O = |p| p
 	:padded_by(whitespace:repeated)

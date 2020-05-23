@@ -1,5 +1,5 @@
 // pub mod val;
-// pub mod data;
+pub mod data;
 pub mod infer;
 
 use std::collections::HashMap;

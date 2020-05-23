@@ -305,7 +305,8 @@ impl Program {
             globals: HashMap::default(),
         };
 
-        let entry = this.instantiate_def(prog, entry, Vec::new());
+        let entry = this.instantiate_def(prog, entry, Vec::new())
+            .ok_or_else(|| Error::custom(format!("Cannot find entry point '{}'", *entry)))?;
 
         Ok(this)
     }
@@ -314,13 +315,13 @@ impl Program {
         self.globals.iter().map(|(id, g)| (*id, g.as_ref().unwrap()))
     }
 
-    fn instantiate_def(&mut self, prog: &hir::Program, name: Ident, params: Vec<RawType>) -> DefId {
+    fn instantiate_def(&mut self, prog: &hir::Program, name: Ident, params: Vec<RawType>) -> Option<DefId> {
         let def_id = LocalIntern::new((name, params.clone()));
 
         if !self.globals.contains_key(&def_id) {
             self.globals.insert(def_id, None); // Insert phoney to keep recursive functions happy
 
-            let def = prog.root.def(name).expect("Expected def to exist");
+            let def = prog.root.def(name)?;
 
             let generics = def.generics
                 .iter()
@@ -332,7 +333,7 @@ impl Program {
             self.globals.insert(def_id, Some(body));
         }
 
-        def_id
+        Some(def_id)
     }
 
     fn instantiate_expr(&mut self, prog: &hir::Program, hir_expr: &hir::TypeExpr, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawTypeNode<Expr> {
@@ -341,7 +342,7 @@ impl Program {
             hir::Expr::Local(local) => Expr::GetLocal(*local),
             hir::Expr::Global(global, generics) => {
                 let generics = generics.iter().map(|(_, (_, ty))| self.instantiate_type(ty, get_generic)).collect::<Vec<_>>();
-                let def = self.instantiate_def(prog, *global, generics);
+                let def = self.instantiate_def(prog, *global, generics).unwrap();
                 Expr::GetGlobal(def)
             },
             hir::Expr::Unary(op, a) => Expr::Unary(**op, self.instantiate_expr(prog, a, get_generic)),
