@@ -19,11 +19,12 @@ that permits us to check a value against one or more potentially invalid
 patterns, then perform a different action in each case.
 
 ```
-match 5 in
-| 1 => "one"
-| 2 => "two"
-| 3 => "three"
-| _ => "something else"
+match 5 {
+	1 => "one",
+	2 => "two",
+	3 => "three",
+	_ => "something else",
+}
 ```
 
 The input value, specified at the top of the construct, is tested against each
@@ -43,11 +44,12 @@ number is divided by another.*
 
 ```
 let x = 15 in
-match (x % 3 = 0, x % 5 = 0) in
-| (true, true) => "FizzBuzz"
-| (true, _) => "Fizz"
-| (_, true) => "Buzz"
-| (_, _) => "something else"
+match (x % 3 = 0, x % 5 = 0) {
+	(true, true) => "FizzBuzz",
+	(true, _) => "Fizz",
+	(_, true) => "Buzz",
+	(_, _) => "something else",
+}
 ```
 
 ## Match Bindings
@@ -58,12 +60,12 @@ parameters. It is also possible to perform a value check *at the same time* as
 binding.
 
 ```
-let axis = |x, y| match (x, y) in
-| (x: 0, y: 0) => ("origin", x, y)
-| (x: 0, y) => ("y axis", x, y)
-| (x, y: 0) => ("x axis", x, y)
-| (x, y) => ("point", x, y)
-in
+let axis = |x, y| match (x, y) {
+	(x: 0, y: 0) => ("origin", x, y),
+	(x: 0, y) => ("y axis", x, y),
+	(x, y: 0) => ("x axis", x, y),
+	(x, y) => ("point", x, y),
+} in
 axis(5, 0)
 ```
 
@@ -74,9 +76,10 @@ previously when concerning patterns. List do indeed work with pattern-matching,
 but require a special syntax since they may have an arbitrary length.
 
 ```
-def reverse = |xs| match xs in
-| [] => []
-| [head, tail: ...] => reverse(tail) ++ [head]
+def reverse = |xs| match xs {
+	[] => [],
+	[head, tail: ...] => reverse(tail) ++ [head],
+}
 
 def main = last_of([4, 7, 3, 9])
 ```
@@ -87,9 +90,10 @@ It matches a list with *at least* one element, `head`, and then binds the rest
 of the list to `tail`.
 
 ```
-let length_of = |xs| match xs in
-| [] => "zero"
-| [_] => "one"
-| [_, _] => "two"
-| [_, _, ...] => "too many for me to count!"
+let length_of = |xs| match xs {
+	[] => "zero",
+	[_] => "one",
+	[_, _] => "two",
+	[_, _, ...] => "too many for me to count!",
+}
 ```
