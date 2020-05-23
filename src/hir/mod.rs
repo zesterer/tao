@@ -1,5 +1,5 @@
 // pub mod val;
-// pub mod data;
+pub mod data;
 pub mod infer;
 
 use std::collections::HashMap;
@@ -237,6 +237,7 @@ impl<'a> DataCtx<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Def {
     pub generics: Vec<SrcNode<Ident>>,
     pub name: SrcNode<Ident>,

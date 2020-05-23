@@ -140,9 +140,9 @@ pub enum Expr {
     Unary(Unary, RawTypeNode<Self>),
     // Perform a built-in binary operation
     Binary(Binary, RawTypeNode<Self>, RawTypeNode<Self>),
-    // Construct a tuple using the last N values on the stack
+    // Construct a tuple with the given values
     MakeTuple(Vec<RawTypeNode<Self>>),
-    // Construct a list using the last N values on the stack
+    // Construct a list with the given values
     MakeList(Vec<RawTypeNode<Self>>),
     // Apply a value to a function
     Apply(RawTypeNode<Self>, RawTypeNode<Self>),
@@ -162,7 +162,7 @@ impl hir::TypeExpr {
             hir::Expr::Literal(_) => {},
             hir::Expr::Global(_, _) => {},
             hir::Expr::Local(ident) => {
-                if !scope.contains(ident) {
+                if scope.iter().find(|name| *name == ident).is_none() {
                     env.push(*ident);
                 }
             },
@@ -192,13 +192,12 @@ impl hir::TypeExpr {
                 scope.pop();
             },
             hir::Expr::Func(binding, body) => {
-                let mut body_scope = Vec::new();
-                let mut body_env = Vec::new();
-                body.get_env_inner(&mut body_scope, &mut body_env);
-
+                let body_env = body.get_env();
                 let bindings = binding.binding_idents();
                 for ident in body_env {
-                    if !bindings.contains_key(&ident) {
+                    if scope.iter().find(|name| **name == ident).is_none()
+                        && !bindings.contains_key(&ident)
+                    {
                         env.push(ident);
                     }
                 }
@@ -306,7 +305,8 @@ impl Program {
             globals: HashMap::default(),
         };
 
-        let entry = this.instantiate_def(prog, entry, Vec::new());
+        let entry = this.instantiate_def(prog, entry, Vec::new())
+            .ok_or_else(|| Error::custom(format!("Cannot find entry point '{}'", *entry)))?;
 
         Ok(this)
     }
@@ -315,13 +315,13 @@ impl Program {
         self.globals.iter().map(|(id, g)| (*id, g.as_ref().unwrap()))
     }
 
-    fn instantiate_def(&mut self, prog: &hir::Program, name: Ident, params: Vec<RawType>) -> DefId {
+    fn instantiate_def(&mut self, prog: &hir::Program, name: Ident, params: Vec<RawType>) -> Option<DefId> {
         let def_id = LocalIntern::new((name, params.clone()));
 
         if !self.globals.contains_key(&def_id) {
             self.globals.insert(def_id, None); // Insert phoney to keep recursive functions happy
 
-            let def = prog.root.def(name).expect("Expected def to exist");
+            let def = prog.root.def(name)?;
 
             let generics = def.generics
                 .iter()
@@ -333,7 +333,7 @@ impl Program {
             self.globals.insert(def_id, Some(body));
         }
 
-        def_id
+        Some(def_id)
     }
 
     fn instantiate_expr(&mut self, prog: &hir::Program, hir_expr: &hir::TypeExpr, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawTypeNode<Expr> {
@@ -342,7 +342,7 @@ impl Program {
             hir::Expr::Local(local) => Expr::GetLocal(*local),
             hir::Expr::Global(global, generics) => {
                 let generics = generics.iter().map(|(_, (_, ty))| self.instantiate_type(ty, get_generic)).collect::<Vec<_>>();
-                let def = self.instantiate_def(prog, *global, generics);
+                let def = self.instantiate_def(prog, *global, generics).unwrap();
                 Expr::GetGlobal(def)
             },
             hir::Expr::Unary(op, a) => Expr::Unary(**op, self.instantiate_expr(prog, a, get_generic)),

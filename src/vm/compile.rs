@@ -427,8 +427,6 @@ impl mir::Program {
                 let (global_addr, global_calls) = builder.link(&mut program);
 
                 for (addr, id) in global_calls {
-                    //println!("global_addr: {:#X}", global_addr);
-                    //println!("local_addr: {:#X}", local_addr);
                     global_refs.push((addr, id));
                 }
 
@@ -437,8 +435,6 @@ impl mir::Program {
             .collect::<HashMap<_, _>>();
 
         for (addr, id) in global_refs {
-            //println!("ADDR: {:#X}", addr);
-            //println!("{:?}", program);
             program.patch_instr(addr, Instr::Call(globals[&id]));
         }
 
