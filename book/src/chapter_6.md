@@ -97,3 +97,9 @@ let length_of = |xs| match xs {
 	[_, _, ...] => "too many for me to count!",
 }
 ```
+
+List patterns, with the exception of the catch-all (and not very useful)
+`[...]`, are **refutable**. This means that they do not exhaustively match all
+type-compatible values (i.e: the suggestion that they may match a value can be
+*refuted*) and therefore cannot be used in `let` expressions or
+function parameters.
