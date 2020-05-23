@@ -2,7 +2,7 @@
 #![feature(arbitrary_self_types, arbitrary_enum_discriminant)]
 
 mod ast;
-mod error;
+pub mod error;
 mod hir;
 mod lex;
 mod mir;
