@@ -93,7 +93,6 @@ impl parze::error::Error<SrcNode<Token>> for Error {
 
     fn unexpected_sym(sym: &SrcNode<Token>, span: Span) -> Self {
         Self::custom(format!("Unexpected token '{}'", **sym))
-            .with_span(sym.span())
             .with_span(span)
     }
 
@@ -103,7 +102,6 @@ impl parze::error::Error<SrcNode<Token>> for Error {
 
     fn expected_end(sym: &SrcNode<Token>, span: Span) -> Self {
         Self::custom(format!("Expected end of input, found '{}'", **sym))
-            .with_span(sym.span())
             .with_span(span)
     }
 
