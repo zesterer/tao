@@ -10,8 +10,5 @@ data Range A = {
 def magic A of A = magic
 
 def main =
-	let x = $Nil in
-	match x {
-		$Just x => x,
-		_ => 42,
-	}
+	let x = $Just { a: 6 } in
+	x.end

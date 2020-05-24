@@ -69,47 +69,46 @@ def end I of Parser I () = |input| match input {
 }
 
 def map I O U of (O -> U) -> Parser I O -> Parser I U = |f, p, input|
-	let $Out { rest, out } = input:p in
-	match out {
-		$Just o => success(rest, f(o)),
-		_ => failure(rest),
+	let r = input:p in
+	match r.out {
+		$Just o => success(r.rest, f(o)),
+		_ => failure(r.rest),
 	}
 
 def repeated I O of Parser I O -> Parser I [O] = |p, input| match input:p {
 	$Out { rest, out: $Just o } =>
-		let $Out { rest, out } = rest:repeated(p) in
-		match out {
-			$Just out => success(rest, [o] ++ out),
-			_ => failure(rest),
+		let r = rest:repeated(p) in
+		match r.out {
+			$Just out => success(r.rest, [o] ++ out),
+			_ => failure(r.rest),
 		},
 	$Out { rest, out } => success(rest, []),
 }
 
 def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
 	let r = input:repeated(p) in
-	let $Out { rest, out } = r in
-	match out {
+	match r.out {
 		$Just xs => if xs:len >= n
 			then r
-			else failure(rest),
-		_ => failure(rest),
+			else failure(r.rest),
+		_ => failure(r.rest),
 	}
 
 def and_then I O U of Parser I U -> Parser I O -> Parser I (O, U) = |p1, p0, input|
-	let $Out { rest, out } = input:p0 in
-	match out {
-		$Just o => rest:map(|u| (o, u), p1),
-		_ => failure(rest),
+	let r = input:p0 in
+	match r.out {
+		$Just o => r.rest:map(|u| (o, u), p1),
+		_ => failure(r.rest),
 	}
 
 def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
-	let $Out { rest, out } = input:p0 in
-	match out {
-		$Just o => success(rest, o),
-		_ => let $Out { rest, out } = input:p1 in
-		match out {
-			$Just o => success(rest, o),
-			_ => failure(rest),
+	let r = input:p0 in
+	match r.out {
+		$Just o => success(r.rest, o),
+		_ => let r = input:p1 in
+		match r.out {
+			$Just o => success(r.rest, o),
+			_ => failure(r.rest),
 		},
 	}
 

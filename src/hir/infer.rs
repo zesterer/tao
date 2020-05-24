@@ -528,9 +528,50 @@ impl<'a> InferCtx<'a> {
                 }
             },
             Constraint::Access { out, record, field } => {
-                match self.get(self.get_base(record)) {
-                    TypeInfo::Unknown(_) => Ok(false), // Can't infer yet
-                    TypeInfo::Record(fields) => if let Some((_, ty)) = fields
+                let fields = match self.get(self.get_base(record)) {
+                    TypeInfo::Unknown(_) => Ok(None), // Can't infer yet
+                    TypeInfo::Record(fields) => Ok(Some(fields)),
+                    // Field access on data types
+                    TypeInfo::Data(data, params) => {
+                        let data = self
+                            .data_ctx()
+                            .get_data(data);
+                        if data.variants.len() == 1 {
+                            let ty_id = self.instantiate_ty_inner(&|name| data.generics
+                                .iter()
+                                .zip(params.iter())
+                                .find(|(gen, _)| ***gen == name)
+                                .map(|(_, param_ty)| *param_ty), &data.variants[0]);
+                            match self.get(ty_id) {
+                                TypeInfo::Record(fields) => Ok(Some(fields)),
+                                ty => Err(Error::custom(format!(
+                                    "Field access is not supported on inner type '{}'",
+                                    self.display_type_info(ty_id),
+                                ))
+                                    .with_span(field.span())
+                                    .with_secondary_span(self.span(ty_id))
+                                    .with_span(self.span(record))),
+                            }
+                        } else {
+                            Err(Error::custom(format!(
+                                "Field access is not supported on datatype with many variants '{}'",
+                                self.display_type_info(record),
+                            ))
+                                .with_span(field.span())
+                                .with_span(self.span(record))
+                                .with_secondary_span(self.span(self.get_base(record))))
+                        }
+                    },
+                    _ => Err(Error::custom(format!(
+                        "Type '{}' does not support field access",
+                        self.display_type_info(record),
+                    ))
+                        .with_span(field.span())
+                        .with_span(self.span(record))),
+                }?;
+
+                if let Some(fields) = fields {
+                    if let Some((_, ty)) = fields
                         .iter()
                         .find(|(name, _)| **name == *field)
                     {
@@ -544,13 +585,9 @@ impl<'a> InferCtx<'a> {
                         ))
                             .with_span(field.span())
                             .with_span(self.span(record)))
-                    },
-                    _ => Err(Error::custom(format!(
-                        "Type '{}' does not support field access",
-                        self.display_type_info(record),
-                    ))
-                        .with_span(field.span())
-                        .with_span(self.span(record))),
+                    }
+                } else {
+                    Ok(false)
                 }
             },
         }

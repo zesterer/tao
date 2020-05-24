@@ -397,15 +397,24 @@ impl Program {
                 self.instantiate_expr(prog, f, get_generic),
                 self.instantiate_expr(prog, arg, get_generic),
             ),
-            hir::Expr::Access(record, field) => match &**record.ty() {
-                Type::Record(fields) => {
-                    let field_idx = fields
-                        .iter()
-                        .enumerate().find(|(_, (name, _))| name == field)
-                        .unwrap().0;
-                    Expr::Access(self.instantiate_expr(prog, record, get_generic), field_idx)
-                },
-                _ => unreachable!(),
+            hir::Expr::Access(record, field) => {
+                let fields = match &**record.ty() {
+                    Type::Record(fields) => fields,
+                    // Proxy types
+                    Type::Data(data, params) => match &*prog.data_ctx
+                        .get_data(**data)
+                        .variants[0]
+                    {
+                        Type::Record(fields) => fields,
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!(),
+                };
+                let field_idx = fields
+                    .iter()
+                    .enumerate().find(|(_, (name, _))| name == field)
+                    .unwrap().0;
+                Expr::Access(self.instantiate_expr(prog, record, get_generic), field_idx)
             },
             hir::Expr::Update(record, field, value) => match &**record.ty() {
                 Type::Record(fields) => {
