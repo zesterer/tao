@@ -16,8 +16,8 @@ pub type DataId = usize;
 #[derive(Debug)]
 pub struct Data {
     span: Span,
-    generics: Vec<SrcNode<Ident>>,
-    variants: Vec<Option<SrcNode<Type>>>,
+    pub generics: Vec<SrcNode<Ident>>,
+    pub variants: Vec<SrcNode<Type>>,
 }
 
 #[derive(Debug)]
@@ -95,7 +95,7 @@ impl DataCtx {
                         .enumerate()
                         .map(|(variant, (name, ty))| {
                             this.constructors.insert(**name, (id, variant));
-                            ty
+                            Ok(ty
                                 .as_ref()
                                 .map(|ty| {
                                     let mut infer = InferCtx::from_data_ctx(&this);
@@ -107,7 +107,8 @@ impl DataCtx {
                                     let type_id = ty.to_type_id(&mut infer, &|_| None)?;
                                     infer.reconstruct(type_id, data.name.span())
                                 })
-                                .transpose()
+                                .transpose()?
+                                .unwrap_or(SrcNode::new(Type::Tuple(Vec::new()), Span::none())))
                         })
                         .collect::<Result<_, Error>>()?,
                     ast::DataType::Product(ty) => {
@@ -119,7 +120,7 @@ impl DataCtx {
                             .iter()
                             .for_each(|name| infer.insert_generic(**name, name.span()));
                         let type_id = ty.to_type_id(&mut infer, &|_| None)?;
-                        vec![Some(infer.reconstruct(type_id, data.name.span())?)]
+                        vec![infer.reconstruct(type_id, data.name.span())?]
                     },
                 };
                 this.data.get_mut(&id).unwrap().variants = variants;
@@ -144,7 +145,47 @@ impl DataCtx {
         self.data.get(&id).unwrap()
     }
 
-    pub fn get_data_type(&self, name: &SrcNode<Ident>, params: &[TypeId], infer: &mut InferCtx, span: Span) -> Result<TypeId, Error> {
+    pub fn get_data_id(&self, constructor: Ident, span: Span) -> Result<(DataId, usize), Error> {
+        self.constructors
+            .get(&constructor)
+            .copied()
+            .ok_or_else(|| Error::custom(format!("No data type with constructor '{}' exists", constructor))
+                .with_span(span))
+    }
+
+    pub fn get_constructor_type(
+        &self,
+        constructor: Ident,
+        infer: &mut InferCtx,
+        span: Span,
+    ) -> Result<(DataId, usize, TypeId, Vec<(SrcNode<Ident>, TypeId)>, TypeId), Error> {
+        let (data_id, variant) = self.get_data_id(constructor, span)?;
+
+        let data = self.get_data(data_id);
+
+        // let generics = data.generics
+        //     .iter()
+        //     .map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span)))
+        //     .collect::<Vec<_>>();
+
+        let (inner_ty, params) = infer.instantiate_ty(&data.generics, &data.variants[variant], span);
+
+        Ok((
+            data_id,
+            variant,
+            infer.insert(TypeInfo::Data(data_id, params.iter().map(|(_, ty)| *ty).collect()), span),
+            params,
+            inner_ty,
+        ))
+    }
+
+    pub fn get_named_type(
+        &self,
+        name: &SrcNode<Ident>,
+        params: &[TypeId],
+        infer: &mut InferCtx,
+        span: Span,
+    ) -> Result<TypeId, Error> {
         if let Some(ty_id) = infer.generic(**name) {
             Ok(ty_id)
         } else if let Some(ty_info) = match name.as_str() {
@@ -190,7 +231,7 @@ impl DataCtx {
             {
                 res
             } else {
-                Err(Error::custom(format!("No such data type '{}'", **name))
+                Err(Error::custom(format!("No such type '{}'", **name))
                     .with_span(name.span()))
             }
         }

@@ -79,50 +79,73 @@ impl hir::TypeBinding {
     //     }
     // }
 
-    fn make_matcher(&self) -> Matcher {
+    fn make_matcher(&self, prog: &hir::Program) -> Matcher {
         match &*self.pat {
             hir::Pat::Wildcard => Matcher::Wildcard,
             hir::Pat::Literal(litr) => Matcher::Exactly(litr.clone()),
             hir::Pat::Tuple(items) => Matcher::Product(items
                 .iter()
-                .map(|item| item.make_matcher())
+                .map(|item| item.make_matcher(prog))
                 .collect()),
             hir::Pat::Record(fields) => Matcher::Product(fields
                 .iter()
-                .map(|(_, field)| field.make_matcher())
+                .map(|(_, field)| field.make_matcher(prog))
                 .collect()),
             hir::Pat::List(items) => Matcher::List(items
                 .iter()
-                .map(|item| item.make_matcher())
+                .map(|item| item.make_matcher(prog))
                 .collect()),
             hir::Pat::ListFront(items, _) => Matcher::ListFront(items
                 .iter()
-                .map(|item| item.make_matcher())
+                .map(|item| item.make_matcher(prog))
                 .collect()),
+            hir::Pat::Deconstruct(data, _, inner) => {
+                if prog.data_ctx.get_data(data.0).variants.len() == 1 {
+                    inner.make_matcher(prog)
+                } else {
+                    Matcher::Product(vec![
+                        Matcher::Exactly(Literal::Number(data.1 as f64)),
+                        inner.make_matcher(prog),
+                    ])
+                }
+            },
         }
     }
 
-    fn make_extractor(&self) -> Extractor {
+    fn make_extractor(&self, prog: &hir::Program) -> Extractor {
         match &*self.pat {
             hir::Pat::Wildcard | hir::Pat::Literal(_) =>
                 Extractor::Just(self.binding.as_ref().map(|ident| **ident)),
             hir::Pat::Tuple(items) => Extractor::Product(
                 self.binding.as_ref().map(|ident| **ident),
-                items.iter().map(|item| item.make_extractor()).collect(),
+                items.iter().map(|item| item.make_extractor(prog)).collect(),
             ),
             hir::Pat::Record(fields) => Extractor::Product(
                 self.binding.as_ref().map(|ident| **ident),
-                fields.iter().map(|(_, field)| field.make_extractor()).collect(),
+                fields.iter().map(|(_, field)| field.make_extractor(prog)).collect(),
             ),
             hir::Pat::List(items) => Extractor::List(
                 self.binding.as_ref().map(|ident| **ident),
-                items.iter().map(|item| item.make_extractor()).collect(),
+                items.iter().map(|item| item.make_extractor(prog)).collect(),
             ),
             hir::Pat::ListFront(items, tail) => Extractor::ListFront(
                 self.binding.as_ref().map(|ident| **ident),
-                items.iter().map(|item| item.make_extractor()).collect(),
+                items.iter().map(|item| item.make_extractor(prog)).collect(),
                 tail.as_ref().map(|ident| **ident),
             ),
+            hir::Pat::Deconstruct(data, _, inner) => {
+                if prog.data_ctx.get_data(data.0).variants.len() == 1 {
+                    inner.make_extractor(prog)
+                } else {
+                    Extractor::Product(
+                        None,
+                        vec![
+                            Extractor::Just(None),
+                            inner.make_extractor(prog),
+                        ],
+                    )
+                }
+            },
         }
     }
 }
@@ -216,6 +239,7 @@ impl hir::TypeExpr {
                     scope.truncate(scope_len);
                 }
             },
+            hir::Expr::Constructor(_, _, inner) => inner.get_env_inner(scope, env),
         }
     }
 
@@ -341,7 +365,7 @@ impl Program {
             hir::Expr::Literal(litr) => Expr::Literal(litr.clone()),
             hir::Expr::Local(local) => Expr::GetLocal(*local),
             hir::Expr::Global(global, generics) => {
-                let generics = generics.iter().map(|(_, (_, ty))| self.instantiate_type(ty, get_generic)).collect::<Vec<_>>();
+                let generics = generics.iter().map(|(_, (_, ty))| self.instantiate_type(prog, ty, get_generic)).collect::<Vec<_>>();
                 let def = self.instantiate_def(prog, *global, generics).unwrap();
                 Expr::GetGlobal(def)
             },
@@ -364,7 +388,7 @@ impl Program {
                 .map(|item| self.instantiate_expr(prog, item, get_generic))
                 .collect()),
             hir::Expr::Func(binding, body) => {
-                let extractor = binding.make_extractor();
+                let extractor = binding.make_extractor(prog);
                 let e_bindings = extractor.get_bindings();
                 let env = body.get_env().into_iter().filter(|ident| !e_bindings.contains(ident)).collect();
                 Expr::MakeFunc(extractor, env, self.instantiate_expr(prog, body, get_generic))
@@ -398,10 +422,25 @@ impl Program {
                 },
                 _ => unreachable!(),
             },
+            hir::Expr::Constructor(data, _, inner) => {
+                // Sum types with one variant don't need a discriminant!
+                let inner = self.instantiate_expr(prog, inner, get_generic);
+                if prog.data_ctx.get_data(data.0).variants.len() == 1 {
+                    return inner;
+                } else {
+                    Expr::MakeTuple(vec![
+                        RawTypeNode::new(
+                            Expr::Literal(Literal::Number(data.1 as f64)),
+                            (data.span(), self.instantiate_type(prog, &Type::Primitive(Primitive::Number), get_generic)),
+                        ),
+                        inner,
+                    ])
+                }
+            },
             expr => todo!("{:?}", expr),
         };
 
-        let ty = self.instantiate_type(hir_expr.ty(), get_generic);
+        let ty = self.instantiate_type(prog, hir_expr.ty(), get_generic);
 
         RawTypeNode::new(expr, (hir_expr.span(), ty))
     }
@@ -416,8 +455,8 @@ impl Program {
         let arms = arms
             .iter()
             .map(|(binding, body)| (
-                binding.make_matcher(),
-                binding.make_extractor(),
+                binding.make_matcher(prog),
+                binding.make_extractor(prog),
                 self.instantiate_expr(prog, body, get_generic),
             ))
             .collect();
@@ -425,23 +464,49 @@ impl Program {
         Expr::MatchValue(pred, arms)
     }
 
-    fn instantiate_type(&mut self, ty: &Type, get_generic: &mut impl FnMut(Ident) -> RawType) -> RawType {
+    fn instantiate_type(&mut self,
+        prog: &hir::Program,
+        ty: &Type,
+        get_generic: &mut dyn FnMut(Ident) -> RawType,
+    ) -> RawType {
         match ty {
             Type::Primitive(prim) => RawType::Primitive(prim.clone()),
             Type::GenParam(ident) => get_generic(*ident),
             Type::Tuple(items) => RawType::Product(items
                 .iter()
-                .map(|item| self.instantiate_type(item, get_generic))
+                .map(|item| self.instantiate_type(prog, item, get_generic))
                 .collect()),
             Type::Record(fields) => RawType::Product(fields
                 .iter()
-                .map(|(_, field)| self.instantiate_type(field, get_generic))
+                .map(|(_, field)| self.instantiate_type(prog, field, get_generic))
                 .collect()),
-            Type::List(item) => RawType::List(Box::new(self.instantiate_type(item, get_generic))),
+            Type::List(item) => RawType::List(Box::new(self.instantiate_type(prog, item, get_generic))),
             Type::Func(i, o) => RawType::Func(
-                Box::new(self.instantiate_type(i, get_generic)),
-                Box::new(self.instantiate_type(o, get_generic)),
+                Box::new(self.instantiate_type(prog, i, get_generic)),
+                Box::new(self.instantiate_type(prog, o, get_generic)),
             ),
+            Type::Data(data, params) => {
+                let data = prog.data_ctx.get_data(**data);
+                let params = params
+                    .iter()
+                    .map(|ty| self.instantiate_type(prog, ty, get_generic))
+                    .collect::<Vec<_>>();
+                let mut get_generic = move |name| data.generics
+                    .iter()
+                    .zip(params.iter())
+                    .find(|(gen, _)| ***gen == name)
+                    .map(|(_, ty)| ty.clone())
+                    .unwrap();
+                // Sum types with one variant don't need a discriminant!
+                if data.variants.len() == 1 {
+                    self.instantiate_type(prog, &data.variants[0], &mut get_generic)
+                } else {
+                    RawType::Sum(data.variants
+                        .iter()
+                        .map(|ty| self.instantiate_type(prog, ty, &mut get_generic))
+                        .collect())
+                }
+            },
             ty => todo!("{:?}", ty),
         }
     }

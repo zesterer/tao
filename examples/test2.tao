@@ -7,4 +7,11 @@ data Range A = {
 	end: A,
 }
 
-def main = |x of Range Num| x
+def magic A of A = magic
+
+def main =
+	let x = $Nil in
+	match x {
+		$Just x => x,
+		_ => 42,
+	}

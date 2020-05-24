@@ -264,18 +264,23 @@ impl<'a> InferCtx<'a> {
         }
     }
 
-    // Returns true if new information was inferred
     pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
         self.unify_inner(0, a, b).map_err(|(x, y)| {
-            Error::custom(format!(
-                "Type mismatch between {} and {}",
+            let x_span = self.span(x);
+            let y_span = self.span(y);
+            let mut err = Error::custom(format!(
+                "Type mismatch between '{}' and '{}'",
                 self.display_type_info(x),
                 self.display_type_info(y),
             ))
-                .with_span(self.span(x))
-                .with_span(self.span(y))
-                .with_secondary_span(self.span(a))
-                .with_secondary_span(self.span(b))
+                .with_span(x_span)
+                .with_span(y_span);
+
+            let a_span = self.span(a);
+            let b_span = self.span(b);
+            let err = if x_span.intersects(a_span) { err } else { err.with_secondary_span(a_span) };
+            let err = if y_span.intersects(b_span) { err } else { err.with_secondary_span(b_span) };
+            err
         })
     }
 
@@ -375,7 +380,7 @@ impl<'a> InferCtx<'a> {
 
                 if matches.len() == 0 {
                     Err(Error::custom(format!(
-                        "Cannot resolve {} {} as {}",
+                        "Cannot resolve {} '{}' as '{}'",
                         *op,
                         self.display_type_info(a),
                         self.display_type_info(out),
@@ -495,7 +500,7 @@ impl<'a> InferCtx<'a> {
 
                 if matches.len() == 0 {
                     Err(Error::custom(format!(
-                        "Cannot resolve {} {} {} as {}",
+                        "Cannot resolve '{}' {} '{}' as '{}'",
                         self.display_type_info(a),
                         *op,
                         self.display_type_info(b),
@@ -533,7 +538,7 @@ impl<'a> InferCtx<'a> {
                         Ok(true)
                     } else {
                         Err(Error::custom(format!(
-                            "No such field '{}' on record {}",
+                            "No such field '{}' in record '{}'",
                             **field,
                             self.display_type_info(record),
                         ))
@@ -541,7 +546,7 @@ impl<'a> InferCtx<'a> {
                             .with_span(self.span(record)))
                     },
                     _ => Err(Error::custom(format!(
-                        "Type {} does not support field access",
+                        "Type '{}' does not support field access",
                         self.display_type_info(record),
                     ))
                         .with_span(field.span())
@@ -615,7 +620,7 @@ impl<'a> InferCtx<'a> {
             ReconstructError::Unknown(a) => {
                 let msg = match self.get(self.get_base(id)) {
                     TypeInfo::Unknown(_) => format!("Cannot infer type"),
-                    _ => format!("Cannot infer type {} in {}", self.display_type_info(a), self.display_type_info(id)),
+                    _ => format!("Cannot infer type '{}' in '{}'", self.display_type_info(a), self.display_type_info(id)),
                 };
                 Error::custom(msg)
                     .with_span(span)

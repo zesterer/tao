@@ -110,6 +110,7 @@ pub enum Pat {
     ListFront(Vec<SrcNode<Binding>>, Option<SrcNode<Ident>>),
     Tuple(Vec<SrcNode<Binding>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Binding>)>),
+    Deconstruct(SrcNode<Ident>, SrcNode<Binding>),
 }
 
 #[derive(Debug)]
@@ -288,8 +289,10 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
     recursive(|binding| {
         let binding = binding.link();
 
+        let binding2 = binding.clone();
         let pat = recursive(move |pat| {
             let pat = pat.link();
+            let binding = binding2;
 
             let litr_pat = litr_parser()
                 .map_with_span(|pat, span| SrcNode::new(Pat::Literal(pat), span));
@@ -330,7 +333,20 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
             )
                 .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span));
 
+            let deconstruct = just(Token::Dollar)
+                .padding_for(ident_parser())
+                .map_with_span(|pat, span| SrcNode::new(pat, span))
+                .then(binding.or_not())
+                .map_with_span(|(data, inner), span| SrcNode::new(
+                    Pat::Deconstruct(data, inner.unwrap_or_else(|| SrcNode::new(Binding {
+                        pat: SrcNode::new(Pat::Wildcard, Span::none()),
+                        binding: None,
+                    }, Span::none()))),
+                    span,
+                ));
+
             litr_pat
+                .or(deconstruct)
                 .or(tuple_pat)
                 .or(record_pat)
                 .or(list_pat)
@@ -408,8 +424,18 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         let ident = ident_parser()
             .map_with_span(|ident, span| SrcNode::new(Expr::Path(Path(vec![ident])), span));
 
+        let constructor = just(Token::Dollar)
+            .padding_for(ident_parser())
+            .map_with_span(|ident, span| SrcNode::new(ident, span))
+            .then(expr.clone().or_not())
+            .map_with_span(|(data, expr), span| SrcNode::new(
+                Expr::Constructor(data, expr.unwrap_or_else(|| SrcNode::new(Expr::Tuple(Vec::new()), Span::none()))),
+                span,
+            ));
+
         let atom = litr
             .or(ident)
+            .or(constructor)
             // Parenthesised expression
             .or(nested_parser(expr.clone(), Delimiter::Paren))
             // Lists
@@ -607,7 +633,8 @@ fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Out
     let product = type_parser()
         .map_with_span(|ty, span| SrcNode::new(DataType::Product(ty), span));
 
-    sum.or(product)
+    // Product first: `data X = Y` should be interpreted as a product!
+    product.or(sum)
 }
 
 #[derive(Clone, Debug)]

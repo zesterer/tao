@@ -91,7 +91,7 @@ impl fmt::Display for Type {
             Type::Func(i, o) => write!(f, "({} -> {})", **i, **o),
             Type::GenParam(ident) => write!(f, "{}", ident),
             Type::Data(data, params) => {
-                write!(f, "{}", **data)?;
+                write!(f, "Data={}", **data)?;
                 params
                     .iter()
                     .try_for_each(|param| write!(f, " {}", **param))?;

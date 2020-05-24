@@ -1,5 +1,9 @@
 # General utility
 
+data Maybe A =
+	| Just A
+	| Nil
+
 def contains = |cs of [Char], c of Char| match cs {
 	[c1, cs: ...] => c1 = c or contains(cs, c),
 	_ => false,
@@ -37,14 +41,13 @@ def find_char = find_char_inner(0)
 
 # Parser Things
 
-type Out I O = {
-	ok: Bool,
+data Out I O = {
 	rest: [I],
-	out: [O],
+	out: Maybe O,
 }
 
-def success I O = |rest of [I], out of O| { ok: true, rest, out: [out] }
-def failure I O of ? -> Out ? O = |rest of [I]| { ok: false, rest, out: [] }
+def success I O = |rest of [I], out of O| $Out { rest, out: $Just out }
+def failure I O of ? -> Out ? O = |rest of [I]| $Out { rest, out: $Nil }
 
 type Parser I O = [I] -> Out I O
 
@@ -56,7 +59,7 @@ def matcher I of (I -> Bool) -> Parser I I = |f, input| match input {
 }
 
 def recurse I O of ([I] -> Out I O) -> Parser I O = |f, input| match input:f {
-	{ ok, rest, out: [o] } => success(rest, o),
+	$Out { rest, out: $Just o } => success(rest, o),
 	_ => failure(input),
 }
 
@@ -66,51 +69,52 @@ def end I of Parser I () = |input| match input {
 }
 
 def map I O U of (O -> U) -> Parser I O -> Parser I U = |f, p, input|
-	let r = input:p in
-	match r.out {
-		[o] => success(r.rest, f(o)),
-		_ => failure(r.rest),
+	let $Out { rest, out } = input:p in
+	match out {
+		$Just o => success(rest, f(o)),
+		_ => failure(rest),
 	}
 
 def repeated I O of Parser I O -> Parser I [O] = |p, input| match input:p {
-	{ ok, rest, out: [o] } =>
-		let { ok, rest, out } = rest:repeated(p) in
+	$Out { rest, out: $Just o } =>
+		let $Out { rest, out } = rest:repeated(p) in
 		match out {
-			[out] => success(rest, [o] ++ out),
+			$Just out => success(rest, [o] ++ out),
 			_ => failure(rest),
 		},
-	{ ok, rest, out } => success(rest, []),
+	$Out { rest, out } => success(rest, []),
 }
 
 def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
 	let r = input:repeated(p) in
-	match r.out {
-		[xs] => if xs:len >= n
+	let $Out { rest, out } = r in
+	match out {
+		$Just xs => if xs:len >= n
 			then r
-			else failure(r.rest),
-		_ => failure(r.rest),
+			else failure(rest),
+		_ => failure(rest),
 	}
 
 def and_then I O U of Parser I U -> Parser I O -> Parser I (O, U) = |p1, p0, input|
-	let r = input:p0 in
-	match r.out {
-		[o] => r.rest:map(|u| (o, u), p1),
-		_ => failure(r.rest),
+	let $Out { rest, out } = input:p0 in
+	match out {
+		$Just o => rest:map(|u| (o, u), p1),
+		_ => failure(rest),
 	}
 
 def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
-	let r = input:p0 in
-	match r.out {
-		[o] => success(r.rest, o),
-		_ => let r = input:p1 in
-		match r.out {
-			[o] => success(r.rest, o),
-			_ => failure(r.rest),
+	let $Out { rest, out } = input:p0 in
+	match out {
+		$Just o => success(rest, o),
+		_ => let $Out { rest, out } = input:p1 in
+		match out {
+			$Just o => success(rest, o),
+			_ => failure(rest),
 		},
 	}
 
 def is_success I O = |p of Parser I O, input| match input:p {
-	{ ok: true, rest, out } => true,
+	$Out { rest, out: $Just _ } => true,
 	_ => false,
 }
 
