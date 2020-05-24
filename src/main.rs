@@ -23,7 +23,7 @@ use crate::error::Error;
 fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
     let tokens = lex::lex(&src)?;
     let ast = ast::parse_module(&tokens)?;
-    let hir_prog = hir::Program::new_root(&ast).map_err(|e| vec![e])?;
+    let hir_prog = hir::Program::new_root(&ast)?;
 
     //println!("{:?}", hir_prog.root().def(LocalIntern::new("find_char".to_string())));
 

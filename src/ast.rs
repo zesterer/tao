@@ -587,9 +587,7 @@ pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Err
 fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<DataType>>, Error> {
     let variant = ident_parser()
         .map_with_span(|ident, span| SrcNode::new(ident, span))
-        .then(type_parser()
-            .or_not()
-            .map(|ty| ty.unwrap_or_else(|| SrcNode::new(Type::Tuple(vec![]), Span::none()))));
+        .then(type_parser().or_not());
 
     let sum = just(Token::Pipe)
         .or_not()
@@ -606,18 +604,16 @@ fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Out
         .map_with_span(|ident, span| SrcNode::new(ident, span))
         .then(type_parser());
 
-    let product = just(Token::Dot)
-        .padding_for(field)
-        .repeated()
-        .map_with_span(|fields, span| SrcNode::new(DataType::Product(fields), span));
+    let product = type_parser()
+        .map_with_span(|ty, span| SrcNode::new(DataType::Product(ty), span));
 
     sum.or(product)
 }
 
 #[derive(Clone, Debug)]
 pub enum DataType {
-    Sum(Vec<(SrcNode<Ident>, SrcNode<Type>)>),
-    Product(Vec<(SrcNode<Ident>, SrcNode<Type>)>),
+    Sum(Vec<(SrcNode<Ident>, Option<SrcNode<Type>>)>),
+    Product(SrcNode<Type>),
 }
 
 #[derive(Debug)]

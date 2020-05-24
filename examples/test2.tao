@@ -1,2 +1,10 @@
+data Maybe A =
+	| Just A
+	| Nil
 
-5
+data Range A = {
+	start: A,
+	end: A,
+}
+
+def main = |x of Range Num| x
