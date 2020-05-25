@@ -231,6 +231,7 @@ dependencies = [
 [[package]]
 name = "parze"
 version = "0.1.0"
+source = "git+https://github.com/zesterer/parze-new.git#d42e00dbd0d6efe083a266d7d456a822440c54e3"
 
 [[package]]
 name = "proc-macro2"
@@ -414,7 +415,7 @@ dependencies = [
  "im-rc 14.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "internment 0.3.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "nanbox 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parze 0.1.0",
+ "parze 0.1.0 (git+https://github.com/zesterer/parze-new.git)",
  "rustyline 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -540,6 +541,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum memchr 2.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "3197e20c7edb283f87c071ddfc7a2cca8f8e0b888c242959846a6fce03c72223"
 "checksum nanbox 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a3f20e8cd9612d0a19390ae9c177cfee599e32d25dd5b4605b6297b2d8df864d"
 "checksum nix 0.14.1 (registry+https://github.com/rust-lang/crates.io-index)" = "6c722bee1037d430d0f8e687bbdbf222f27cc6e4e68d5caf630857bb2b6dbdce"
+"checksum parze 0.1.0 (git+https://github.com/zesterer/parze-new.git)" = "<none>"
 "checksum proc-macro2 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)" = "0319972dcae462681daf4da1adeeaa066e3ebd29c69be96c6abb1259d2ee2bcc"
 "checksum quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "053a8c8bcc71fcce321828dc897a98ab9760bef03a4fc36693c231e5b3216cfe"
 "checksum rand 0.3.23 (registry+https://github.com/rust-lang/crates.io-index)" = "64ac302d8f83c0c1974bf758f6b041c6c8ada916fbb44a609158ca8b064cc76c"

@@ -32,9 +32,9 @@ def sum = fold_l(0, |a, x| a + x)
 
 def find_char_inner = |x, cs, c of Char| match cs {
 	| [c1, cs: ...] => if c1 = c
-		then [x]
+		then $Just x
 		else find_char_inner(x + 1, cs, c)
-	| [] => []
+	| [] => $Nil
 }
 
 def find_char = find_char_inner(0)
@@ -51,10 +51,11 @@ def failure I O of ? -> Out ? O = |rest of [I]| $Out { rest, out: $Nil }
 
 type Parser I O = [I] -> Out I O
 
-def matcher I of (I -> Bool) -> Parser I I = |f, input| match input {
-	| [i, rest: ...] => if i:f
-		then success(rest, i)
-		else failure(input)
+def matcher I O of (I -> Maybe O) -> Parser I O = |f, input| match input {
+	| [i, rest: ...] => match i:f {
+		| $Just o => success(rest, o)
+		| $Nil => failure(input)
+	}
 	| [] => failure([])
 }
 
@@ -91,24 +92,24 @@ def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
 		| $Just xs => if xs:len >= n
 			then r
 			else failure(r.rest)
-		| _ => failure(r.rest)
+		| $Nil => failure(r.rest)
 	}
 
 def and_then I O U of Parser I U -> Parser I O -> Parser I (O, U) = |p1, p0, input|
 	let r = input:p0 in
 	match r.out {
 		| $Just o => r.rest:map(|u| (o, u), p1)
-		| _ => failure(r.rest)
+		| $Nil => failure(r.rest)
 	}
 
 def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
 	let r = input:p0 in
 	match r.out {
 		| $Just o => success(r.rest, o)
-		| _ => let r = input:p1 in
+		| $Nil => let r = input:p1 in
 			match r.out {
 				| $Just o => success(r.rest, o)
-				| _ => failure(r.rest)
+				| $Nil => failure(r.rest)
 			}
 	}
 
@@ -117,10 +118,7 @@ def is_success I O = |p of Parser I O, input| match input:p {
 	| _ => false
 }
 
-def char_to_num = |c| match find_char("0123456789", c) {
-	| [i] => i
-	| _ => 0
-}
+def char_to_num = find_char("0123456789")
 
 def padded_by I O U = |p1 of Parser I O, p0 of Parser I U| p0
 	:and_then(p1)
@@ -130,17 +128,18 @@ def padding_for I O U = |p1 of Parser I O, p0 of Parser I U| p0
 	:and_then(p1)
 	:map(|(_, b)| b)
 
-def whitespace = matcher(|c| contains(" \t\n", c))
+def whitespace = matcher(find_char(" \t\n"))
 
 def padded O of Parser Char O -> Parser Char O = |p| p
 	:padded_by(whitespace:repeated)
 
-def char = |c of Char| matcher(|i| c = i)
+def char = |c of Char| matcher(|i| if c = i
+	then $Just i
+	else $Nil)
 
 def op = |c| char(c):padded
 
-def digit = matcher(|c| contains("1234567890", c))
-	:map(char_to_num)
+def digit = matcher(|c| char_to_num(c))
 
 def number = digit
 	:repeated_at_least(1)
