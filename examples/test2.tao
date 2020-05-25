@@ -2,13 +2,12 @@ data Maybe A =
 	| Just A
 	| Nil
 
-data Range A = {
-	start: A,
-	end: A,
+def len A of [A] -> ? = |xs| match xs {
+  [_, xs: ...] => 1 + xs:len,
+  [] => 0,
 }
 
-def magic A of A = magic
-
-def main =
-	let x = $Just { a: 6 } in
-	x.end
+def main = match $Nil {
+	$Just x => x,
+	$Nil => 0,
+}

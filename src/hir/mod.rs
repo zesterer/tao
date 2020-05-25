@@ -2,7 +2,7 @@
 pub mod data;
 pub mod infer;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use internment::LocalIntern;
 use crate::{
     ast::{self, Literal},
@@ -113,6 +113,81 @@ impl<M> Pat<M> {
             Pat::Record(fields) => fields.iter().any(|(_, field)| field.pat.is_refutable(data_ctx)),
             Pat::Deconstruct(data, _, inner) => data_ctx.get_data(data.0).variants.len() != 1
                 || inner.pat.is_refutable(data_ctx),
+        }
+    }
+}
+
+fn arms_are_exhaustive<'a>(
+    data_ctx: &data::DataCtx,
+    ty: &Type,
+    arms: impl Iterator<Item=&'a TypeBinding> + Clone,
+) -> Result<(), Option<String>> {
+    if arms.clone().any(|binding| !binding.pat.is_refutable(data_ctx)) {
+        Ok(())
+    } else {
+        match ty {
+            Type::List(_) => {
+                let smallest_irrefutable = arms
+                    .clone()
+                    .fold(None, |a, binding| match &*binding.pat {
+                        Pat::ListFront(items, _) if items
+                            .iter()
+                            .all(|item| !item.pat.is_refutable(data_ctx)) => Some(a
+                                .unwrap_or(items.len())
+                                .min(items.len())),
+                        pat if !pat.is_refutable(data_ctx) => Some(0),
+                        _ => a,
+                    })
+                    .ok_or_else(|| Some(format!("[...]")))?;
+                let holes_patched = arms
+                    .filter_map(|binding| match &*binding.pat {
+                        Pat::List(items) if items
+                            .iter()
+                            .all(|item| !item.pat.is_refutable(data_ctx)) => Some(items.len()),
+                        _ => None,
+                    })
+                    .collect::<HashSet<_>>();
+                if holes_patched.len() >= smallest_irrefutable {
+                    Ok(())
+                } else {
+                    let case_n = (0..smallest_irrefutable)
+                        .find(|i| !holes_patched.contains(&i))
+                        .unwrap();
+                    Err(Some(format!("[{}]", (0..case_n).map(|_| "_").collect::<Vec<_>>().join(", "))))
+                }
+            },
+            Type::Primitive(Primitive::Boolean) => {
+                let mut found = [false, false];
+                arms
+                    .for_each(|binding| match &*binding.pat {
+                        Pat::Literal(Literal::Boolean(x)) => found[*x as usize] = true,
+                        _ => {},
+                    });
+                if found == [true, true] {
+                    Ok(())
+                } else {
+                    Err(Some(format!("{}", found[0])))
+                }
+            },
+            Type::Data(data, _) => {
+                let data = data_ctx.get_data(**data);
+                let variants_matched = arms
+                    .filter_map(|binding| match &*binding.pat {
+                        Pat::Deconstruct(data, _, inner) if !inner.pat.is_refutable(data_ctx) =>
+                            Some(data.1),
+                        _ => None,
+                    })
+                    .collect::<HashSet<_>>();
+                if variants_matched.len() == data.variants.len() {
+                    Ok(())
+                } else {
+                    let missing = (0..data.variants.len())
+                        .find(|v| !variants_matched.contains(&v))
+                        .unwrap();
+                    Err(Some(format!("{}", *data.variants[missing].0)))
+                }
+            },
+            _ => Err(None),
         }
     }
 }
@@ -277,6 +352,16 @@ impl Program {
                 .try_for_each(|expr| match &**expr {
                     Expr::Func(param, _) if param.pat.is_refutable(&self.data_ctx) => Err(Error::custom(format!("Refutable pattern may not be used here"))
                         .with_span(param.pat.span())),
+                    Expr::Match(pred, arms) => if let Err(missing_case) = arms_are_exhaustive(&self.data_ctx, pred.ty(), arms.iter().map(|(binding, _)| binding)) {
+                        let hint = missing_case
+                            .map(|case| format!("Case '{}' is not handled", case))
+                            .unwrap_or_else(|| format!("Handle all possible cases"));
+                        Err(Error::custom(format!("Match arms are not exhaustive"))
+                            .with_span(expr.span())
+                            .with_hint(hint))
+                    } else {
+                        Ok(())
+                    },
                     _ => Ok(()),
                 })?;
         }
@@ -713,14 +798,6 @@ impl ast::Expr {
                         Ok((pat, body))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-
-                if arms
-                    .iter()
-                    .all(|(binding, _)| binding.pat.is_refutable(infer.data_ctx()))
-                {
-                    return Err(Error::custom(format!("Match requires irrefutable pattern somewhere (TODO: Implement proper exhaustivity checks)"))
-                        .with_span(self.span()));
-                }
 
                 (match_type_id, Expr::Match(pred, arms))
             },

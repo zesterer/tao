@@ -541,7 +541,7 @@ impl<'a> InferCtx<'a> {
                                 .iter()
                                 .zip(params.iter())
                                 .find(|(gen, _)| ***gen == name)
-                                .map(|(_, param_ty)| *param_ty), &data.variants[0]);
+                                .map(|(_, param_ty)| *param_ty), &data.variants[0].1);
                             match self.get(ty_id) {
                                 TypeInfo::Record(fields) => Ok(Some(fields)),
                                 ty => Err(Error::custom(format!(

@@ -17,7 +17,7 @@ pub type DataId = usize;
 pub struct Data {
     span: Span,
     pub generics: Vec<SrcNode<Ident>>,
-    pub variants: Vec<SrcNode<Type>>,
+    pub variants: Vec<(SrcNode<Ident>, SrcNode<Type>)>,
 }
 
 #[derive(Debug)]
@@ -95,7 +95,7 @@ impl DataCtx {
                         .enumerate()
                         .map(|(variant, (name, ty))| {
                             this.constructors.insert(**name, (id, variant));
-                            Ok(ty
+                            Ok((name.clone(), ty
                                 .as_ref()
                                 .map(|ty| {
                                     let mut infer = InferCtx::from_data_ctx(&this);
@@ -108,7 +108,7 @@ impl DataCtx {
                                     infer.reconstruct(type_id, data.name.span())
                                 })
                                 .transpose()?
-                                .unwrap_or(SrcNode::new(Type::Tuple(Vec::new()), Span::none())))
+                                .unwrap_or_else(|| SrcNode::new(Type::Tuple(Vec::new()), Span::none()))))
                         })
                         .collect::<Result<_, Error>>()?,
                     ast::DataType::Product(ty) => {
@@ -120,7 +120,7 @@ impl DataCtx {
                             .iter()
                             .for_each(|name| infer.insert_generic(**name, name.span()));
                         let type_id = ty.to_type_id(&mut infer, &|_| None)?;
-                        vec![infer.reconstruct(type_id, data.name.span())?]
+                        vec![(data.name.clone(), infer.reconstruct(type_id, data.name.span())?)]
                     },
                 };
                 this.data.get_mut(&id).unwrap().variants = variants;
@@ -168,7 +168,7 @@ impl DataCtx {
         //     .map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span)))
         //     .collect::<Vec<_>>();
 
-        let (inner_ty, params) = infer.instantiate_ty(&data.generics, &data.variants[variant], span);
+        let (inner_ty, params) = infer.instantiate_ty(&data.generics, &data.variants[variant].1, span);
 
         Ok((
             data_id,

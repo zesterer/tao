@@ -21,6 +21,7 @@ pub enum RawType {
     Product(Vec<Self>),
     Sum(Vec<Self>),
     Func(Box<Self>, Box<Self>),
+    Boxed,
 }
 
 impl RawType {
@@ -41,6 +42,7 @@ impl RawType {
                 .join(" | "),
             ),
             RawType::Func(i, o) => format!("{} -> {}", i.mangle(), o.mangle()),
+            RawType::Boxed => format!("<boxed>"),
         }
     }
 
@@ -403,7 +405,7 @@ impl Program {
                     // Proxy types
                     Type::Data(data, params) => match &*prog.data_ctx
                         .get_data(**data)
-                        .variants[0]
+                        .variants[0].1
                     {
                         Type::Record(fields) => fields,
                         _ => unreachable!(),
@@ -508,11 +510,12 @@ impl Program {
                     .unwrap();
                 // Sum types with one variant don't need a discriminant!
                 if data.variants.len() == 1 {
-                    self.instantiate_type(prog, &data.variants[0], &mut get_generic)
+                    //self.instantiate_type(prog, &data.variants[0], &mut get_generic)
+                    RawType::Boxed
                 } else {
                     RawType::Sum(data.variants
                         .iter()
-                        .map(|ty| self.instantiate_type(prog, ty, &mut get_generic))
+                        .map(|ty| RawType::Boxed) // self.instantiate_type(prog, ty, &mut get_generic)
                         .collect())
                 }
             },
