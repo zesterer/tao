@@ -1,3 +1,5 @@
+import "./index.css";
+
 var editor = ace.edit("code");
 editor.setOptions({
   fontFamily: "Fira Code",
@@ -7,6 +9,9 @@ editor.setTheme("ace/theme/monokai");
 editor.session.setNewLineMode("unix");
 editor.setShowPrintMargin(false);
 editor.session.setMode("ace/mode/tao");
+
+var Range = ace.require("ace/range").Range;
+var marker_ids = [];
 
 // String splice polyfill
 String.prototype.splice = function (idx, rem, str) {
@@ -28,13 +33,19 @@ if (window.Worker) {
     }
   };
 
+  worker.onerror = () => {
+    alert("Crash");
+  };
+
   document.querySelector("#run").addEventListener("click", () => {
+    clearMarkers();
     worker.postMessage(editor.getValue());
   });
 } else {
   import("../pkg/index.js")
     .then((module) => {
       document.querySelector("#run").addEventListener("click", () => {
+        clearMarkers();
         document.querySelector("#output").innerHTML = "";
 
         try {
@@ -87,58 +98,54 @@ function save(filename) {
 }
 
 function handle_errors(errors) {
-  let output = "";
+  document.querySelector("#output").innerHTML = "";
 
-  console.log(errors);
+  let span = document.createElement("span");
+  span.style.color = "red";
+  span.style.whiteSpace = "pre-wrap";
 
-  output += '<span style="color: red">';
-
-  output += errors.length;
+  span.innerHTML += errors.length;
 
   if (errors.length == 1) {
-    output += " error when compiling \n\n";
+    span.innerHTML += " error when compiling \n\n";
   } else {
-    output += " errors when compiling \n\n";
+    span.innerHTML += " errors when compiling \n\n";
   }
-
-  //let highlighting_text = document.querySelector("#code").innerText;
 
   for (let i = 0; i < errors.length; i++) {
     const err = errors[i];
 
-    /*     let opening_tag = '<span class="highlight-err">';
-    
-    let closing_tag = "</span>";
+    for (let k = 0; k < err.src.error.primary_spans.length; k++) {
+      const span = err.src.error.primary_spans[k].Range;
 
-    for (let j = 0; j < err.src.error.primary_spans.length; j++) {
-      const range = err.src.error.primary_spans[j].Range;
-      
-      console.log("-------");
-      console.log(range);
-      
-      highlighting_text = highlighting_text.splice(range[0], 0, opening_tag);
-      highlighting_text = highlighting_text.splice(
-        range[1] + opening_tag.length,
-        0,
-        closing_tag
+      let start = editor.session.doc.indexToPosition(span[0]);
+      let end = editor.session.doc.indexToPosition(span[1]);
+
+      marker_ids.push(
+        editor.session.addMarker(
+          new Range(start.row, start.column, end.row, end.column),
+          "error",
+          "line",
+          true
+        )
       );
-      
-      for (let k = j; k < err.src.error.primary_spans.length; k++) {
-        const offset = opening_tag.length + closing_tag.length;
-        console.log(err.src.error.primary_spans[k].Range);
-        err.src.error.primary_spans[k].Range[0] += offset;
-        err.src.error.primary_spans[k].Range[1] += offset;
-        console.log(err.src.error.primary_spans[k].Range);
-      }
-    } */
+    }
 
-    output += err.msg;
+    span.innerText += err.msg;
 
-    output += "\n\n";
+    span.innerHTML += "\n\n";
   }
 
-  output += "<span>";
-  document.querySelector("#output").innerHTML = output;
+  document.querySelector("#output").append(span);
+}
+
+function clearMarkers() {
+  let id = marker_ids.pop();
+
+  while (id != undefined) {
+    editor.session.removeMarker(id);
+    id = marker_ids.pop();
+  }
 }
 
 /* const themes = [

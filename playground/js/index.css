@@ -126,10 +126,6 @@ input[type="file"] {
   display: block;
 }
 
-.highlight-err {
-  text-decoration: underline wavy red;
-}
-
 @media (min-width: 1200px) {
   .wrapper {
     grid-template-rows: 100%;
@@ -139,4 +135,9 @@ input[type="file"] {
   .toolbar {
     flex-direction: row;
   }
+}
+
+.error {
+  border-bottom: 1px solid red;
+  position: absolute;
 }

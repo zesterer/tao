@@ -47,13 +47,13 @@ ace.define(
             regex: "\\d+(?:(?:\\.\\d*)?)?\\b",
           },
           {
-            token: keywordMapper,
-            regex: "[a-zA-Z_][a-zA-Z0-9_]*",
-          },
-          {
             token: "keyword.operator",
             regex:
-              "\\+|\\-|\\/|\\*|\\%|<|>|<=|>=|=>|!=|=|and|or|\\+\\+|\\.\\.\\.|!",
+              "\\+|\\-|\\/|\\*|\\%|<|>|<=|>=|=>|!=|and|or|\\+\\+|\\.\\.\\.|!",
+          },
+          {
+            token: keywordMapper,
+            regex: "[a-zA-Z_][a-zA-Z0-9_]*",
           },
           {
             token: "paren.lparen",
