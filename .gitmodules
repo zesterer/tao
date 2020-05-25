@@ -1,3 +1,3 @@
 [submodule "thread-id"]
 	path = thread-id
-	url = git@github.com:JCapucho/thread-id.git
+	url = https://github.com/JCapucho/thread-id.git
