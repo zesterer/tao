@@ -21,7 +21,7 @@ pub enum RawType {
     Product(Vec<Self>),
     Sum(Vec<Self>),
     Func(Box<Self>, Box<Self>),
-    Boxed,
+    Boxed(Ident, Vec<Self>),
 }
 
 impl RawType {
@@ -42,7 +42,12 @@ impl RawType {
                 .join(" | "),
             ),
             RawType::Func(i, o) => format!("{} -> {}", i.mangle(), o.mangle()),
-            RawType::Boxed => format!("<boxed>"),
+            RawType::Boxed(name, params) => format!("{} {}", name, params
+                .iter()
+                .map(|param| format!(" {}", param.mangle()))
+                .collect::<Vec<_>>()
+                .join(""),
+            ),
         }
     }
 
@@ -496,13 +501,13 @@ impl Program {
                 Box::new(self.instantiate_type(prog, i, get_generic)),
                 Box::new(self.instantiate_type(prog, o, get_generic)),
             ),
-            Type::Data(data, params) => {
-                let data = prog.data_ctx.get_data(**data);
+            Type::Data(data_id, params) => {
+                let data = prog.data_ctx.get_data(**data_id);
                 let params = params
                     .iter()
                     .map(|ty| self.instantiate_type(prog, ty, get_generic))
                     .collect::<Vec<_>>();
-                let mut get_generic = move |name| data.generics
+                let mut get_generic = |name| data.generics
                     .iter()
                     .zip(params.iter())
                     .find(|(gen, _)| ***gen == name)
@@ -511,11 +516,17 @@ impl Program {
                 // Sum types with one variant don't need a discriminant!
                 if data.variants.len() == 1 {
                     //self.instantiate_type(prog, &data.variants[0], &mut get_generic)
-                    RawType::Boxed
+                    RawType::Boxed(
+                        prog.data_ctx.get_data_name(**data_id),
+                        params,
+                    )
                 } else {
                     RawType::Sum(data.variants
                         .iter()
-                        .map(|ty| RawType::Boxed) // self.instantiate_type(prog, ty, &mut get_generic)
+                        .map(|(variant, ty)| RawType::Boxed(
+                            Ident::new(format!("{}::{}", prog.data_ctx.get_data_name(**data_id), **variant)),
+                            params.clone(),
+                        )) // self.instantiate_type(prog, ty, &mut get_generic)
                         .collect())
                 }
             },
