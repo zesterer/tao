@@ -1,2 +1,13 @@
+data Maybe A =
+	| Just A
+	| Nil
 
-5
+def len A of [A] -> ? = |xs| match xs {
+  [_, xs: ...] => 1 + xs:len,
+  [] => 0,
+}
+
+def main = match $Nil {
+	$Just x => x,
+	$Nil => 0,
+}

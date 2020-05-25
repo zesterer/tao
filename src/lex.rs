@@ -100,6 +100,7 @@ pub enum Token {
     Dot,
     QuestionMark,
     Pipe,
+    Dollar,
     Wildcard,
 
     Let,
@@ -147,6 +148,7 @@ impl fmt::Display for Token {
             Token::Dot => write!(f, "."),
             Token::QuestionMark => write!(f, "?"),
             Token::Pipe => write!(f, "|"),
+            Token::Dollar => write!(f, "$"),
             Token::Wildcard => write!(f, "_"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
@@ -235,6 +237,7 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(just('.').map(|sc| Token::Dot))
             .or(just('?').map(|sc| Token::QuestionMark))
             .or(just('|').map(|sc| Token::Pipe))
+            .or(just('$').map(|sc| Token::Dollar))
             .boxed();
 
         let tree = just('(').to(Delimiter::Paren).then(tokens.link()).padded_by(just(')'))

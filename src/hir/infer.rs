@@ -10,6 +10,7 @@ use crate::{
     ast::{UnaryOp, BinaryOp},
     ty::{Type, Primitive},
 };
+use super::data::{DataCtx, DataId};
 
 type Ident = LocalIntern<String>;
 
@@ -26,6 +27,7 @@ pub enum TypeInfo {
     Record(Vec<(SrcNode<Ident>, TypeId)>),
     Func(TypeId, TypeId),
     GenParam(Ident),
+    Data(DataId, Vec<TypeId>),
 }
 
 #[derive(Clone, Debug)]
@@ -48,23 +50,51 @@ pub enum Constraint {
     },
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct InferCtx<'a> {
+    data_ctx: &'a DataCtx,
     parent: Option<&'a Self>,
+
     id_counter: TypeId,
     types: HashMap<TypeId, TypeInfo>,
     spans: HashMap<TypeId, Span>,
+
+    // Generics that are valid in this InferCtx scope
+    // TODO: Should this be going in here?
+    generics: HashMap<Ident, TypeId>,
+
     constraint_id_counter: ConstraintId,
     constraints: HashMap<ConstraintId, Constraint>,
 }
 
 impl<'a> InferCtx<'a> {
+    pub fn from_data_ctx(data_ctx: &'a DataCtx) -> InferCtx<'a> {
+        InferCtx {
+            data_ctx,
+            parent: None,
+
+            id_counter: 0,
+            types: HashMap::default(),
+            spans: HashMap::default(),
+
+            generics: HashMap::default(),
+
+            constraint_id_counter: 0,
+            constraints: HashMap::default(),
+        }
+    }
+
     pub fn scoped(&self) -> InferCtx {
         InferCtx {
+            data_ctx: self.data_ctx,
             parent: Some(self),
+
             id_counter: self.id_counter,
             types: HashMap::default(),
             spans: HashMap::default(),
+
+            generics: HashMap::default(),
+
             constraint_id_counter: self.constraint_id_counter,
             constraints: HashMap::default(),
         }
@@ -75,12 +105,23 @@ impl<'a> InferCtx<'a> {
         self.id_counter
     }
 
+    pub fn data_ctx(&self) -> &'a DataCtx {
+        self.data_ctx
+    }
+
     pub fn get(&self, id: TypeId) -> TypeInfo {
         self.types
             .get(&id)
             .cloned()
             .or_else(|| self.parent.map(|p| p.get(id)))
             .unwrap()
+    }
+
+    fn get_base(&self, id: TypeId) -> TypeId {
+        match self.get(id) {
+            TypeInfo::Ref(id) => self.get_base(id),
+            _ => id,
+        }
     }
 
     pub fn span(&self, id: TypeId) -> Span {
@@ -92,11 +133,18 @@ impl<'a> InferCtx<'a> {
             .unwrap()
     }
 
-    fn get_base(&self, id: TypeId) -> TypeId {
-        match self.get(id) {
-            TypeInfo::Ref(id) => self.get_base(id),
-            _ => id,
-        }
+    // Generics
+
+    pub fn insert_generic(&mut self, name: Ident, span: Span) {
+        let ty_id = self.insert(TypeInfo::GenParam(name), span);
+        self.generics.insert(name, ty_id);
+    }
+
+    pub fn generic(&self, name: Ident) -> Option<TypeId> {
+        self.generics
+            .get(&name)
+            .copied()
+            .or_else(|| self.parent.and_then(|p| p.generic(name)))
     }
 
     // Return true if linking inferred new information
@@ -159,6 +207,13 @@ impl<'a> InferCtx<'a> {
                     TypeInfo::Func(i, o) if self.trailing => write!(f, "{} -> {}", self.with_id(i, false), self.with_id(o, true)),
                     TypeInfo::Func(i, o) => write!(f, "({} -> {})", self.with_id(i, false), self.with_id(o, true)),
                     TypeInfo::GenParam(ident) => write!(f, "{}", ident),
+                    TypeInfo::Data(data, params) => {
+                        write!(f, "{}", self.ctx.data_ctx().get_data_name(data))?;
+                        for param in params.iter() {
+                            write!(f, " {}", self.with_id(*param, false))?;
+                        }
+                        Ok(())
+                    },
                 }
             }
         }
@@ -184,7 +239,6 @@ impl<'a> InferCtx<'a> {
             (Unknown(_), Unknown(Some(_))) => Ok(self.link(b, a)),
             (Unknown(_), _) => Ok(self.link(a, b)),
             (_, Unknown(_)) => Ok(self.link(b, a)), // TODO: does ordering matter?
-            (GenParam(a), GenParam(b)) if a == b => Ok(()),
             (Primitive(a), Primitive(b)) if a == b => Ok(()),
             (List(a), List(b)) => self.unify_inner(iter + 1, a, b),
             (Tuple(a), Tuple(b)) if a.len() == b.len() => a
@@ -201,22 +255,32 @@ impl<'a> InferCtx<'a> {
                 }),
             (Func(ai, ao), Func(bi, bo)) => self.unify_inner(iter + 1, ai, bi)
                 .and_then(|()| self.unify_inner(iter + 1, ao, bo)),
+            (GenParam(a), GenParam(b)) if a == b => Ok(()),
+            (Data(a, a_params), Data(b, b_params)) if a == b => a_params
+                .into_iter()
+                .zip(b_params.into_iter())
+                .try_for_each(|(a, b)| self.unify_inner(iter + 1, a, b)),
             (_, _) => Err((a, b)),
         }
     }
 
-    // Returns true if new information was inferred
     pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<(), Error> {
         self.unify_inner(0, a, b).map_err(|(x, y)| {
-            Error::custom(format!(
-                "Type mismatch between {} and {}",
+            let x_span = self.span(x);
+            let y_span = self.span(y);
+            let mut err = Error::custom(format!(
+                "Type mismatch between '{}' and '{}'",
                 self.display_type_info(x),
                 self.display_type_info(y),
             ))
-                .with_span(self.span(x))
-                .with_span(self.span(y))
-                .with_secondary_span(self.span(a))
-                .with_secondary_span(self.span(b))
+                .with_span(x_span)
+                .with_span(y_span);
+
+            let a_span = self.span(a);
+            let b_span = self.span(b);
+            let err = if x_span.intersects(a_span) { err } else { err.with_secondary_span(a_span) };
+            let err = if y_span.intersects(b_span) { err } else { err.with_secondary_span(b_span) };
+            err
         })
     }
 
@@ -245,6 +309,10 @@ impl<'a> InferCtx<'a> {
                 self.instantiate_ty_inner(get_generic, i),
                 self.instantiate_ty_inner(get_generic, o),
             ),
+            Type::Data(data, params) => TypeInfo::Data(**data, params
+                .iter()
+                .map(|param| self.instantiate_ty_inner(get_generic, param))
+                .collect()),
         };
 
         self.insert(info, ty.span())
@@ -312,7 +380,7 @@ impl<'a> InferCtx<'a> {
 
                 if matches.len() == 0 {
                     Err(Error::custom(format!(
-                        "Cannot resolve {} {} as {}",
+                        "Cannot resolve {} '{}' as '{}'",
                         *op,
                         self.display_type_info(a),
                         self.display_type_info(out),
@@ -432,7 +500,7 @@ impl<'a> InferCtx<'a> {
 
                 if matches.len() == 0 {
                     Err(Error::custom(format!(
-                        "Cannot resolve {} {} {} as {}",
+                        "Cannot resolve '{}' {} '{}' as '{}'",
                         self.display_type_info(a),
                         *op,
                         self.display_type_info(b),
@@ -460,9 +528,50 @@ impl<'a> InferCtx<'a> {
                 }
             },
             Constraint::Access { out, record, field } => {
-                match self.get(self.get_base(record)) {
-                    TypeInfo::Unknown(_) => Ok(false), // Can't infer yet
-                    TypeInfo::Record(fields) => if let Some((_, ty)) = fields
+                let fields = match self.get(self.get_base(record)) {
+                    TypeInfo::Unknown(_) => Ok(None), // Can't infer yet
+                    TypeInfo::Record(fields) => Ok(Some(fields)),
+                    // Field access on data types
+                    TypeInfo::Data(data, params) => {
+                        let data = self
+                            .data_ctx()
+                            .get_data(data);
+                        if data.variants.len() == 1 {
+                            let ty_id = self.instantiate_ty_inner(&|name| data.generics
+                                .iter()
+                                .zip(params.iter())
+                                .find(|(gen, _)| ***gen == name)
+                                .map(|(_, param_ty)| *param_ty), &data.variants[0].1);
+                            match self.get(ty_id) {
+                                TypeInfo::Record(fields) => Ok(Some(fields)),
+                                ty => Err(Error::custom(format!(
+                                    "Field access is not supported on inner type '{}'",
+                                    self.display_type_info(ty_id),
+                                ))
+                                    .with_span(field.span())
+                                    .with_secondary_span(self.span(ty_id))
+                                    .with_span(self.span(record))),
+                            }
+                        } else {
+                            Err(Error::custom(format!(
+                                "Field access is not supported on datatype with many variants '{}'",
+                                self.display_type_info(record),
+                            ))
+                                .with_span(field.span())
+                                .with_span(self.span(record))
+                                .with_secondary_span(self.span(self.get_base(record))))
+                        }
+                    },
+                    _ => Err(Error::custom(format!(
+                        "Type '{}' does not support field access",
+                        self.display_type_info(record),
+                    ))
+                        .with_span(field.span())
+                        .with_span(self.span(record))),
+                }?;
+
+                if let Some(fields) = fields {
+                    if let Some((_, ty)) = fields
                         .iter()
                         .find(|(name, _)| **name == *field)
                     {
@@ -470,19 +579,15 @@ impl<'a> InferCtx<'a> {
                         Ok(true)
                     } else {
                         Err(Error::custom(format!(
-                            "No such field '{}' on record {}",
+                            "No such field '{}' in record '{}'",
                             **field,
                             self.display_type_info(record),
                         ))
                             .with_span(field.span())
                             .with_span(self.span(record)))
-                    },
-                    _ => Err(Error::custom(format!(
-                        "Type {} does not support field access",
-                        self.display_type_info(record),
-                    ))
-                        .with_span(field.span())
-                        .with_span(self.span(record))),
+                    }
+                } else {
+                    Ok(false)
                 }
             },
         }
@@ -527,13 +632,19 @@ impl<'a> InferCtx<'a> {
             List(a) => Type::List(self.reconstruct_inner(iter + 1, a)?),
             Tuple(items) => Type::Tuple(items
                 .into_iter()
-                .map(|a| self.reconstruct_inner(iter + 1, a))
+                .map(|item| self.reconstruct_inner(iter + 1, item))
                 .collect::<Result<_, _>>()?),
             Record(fields) => Type::Record(fields
                 .into_iter()
-                .map(|(name, ty)| Ok((name, self.reconstruct_inner(iter + 1, ty)?)))
+                .map(|(name, field)| Ok((name, self.reconstruct_inner(iter + 1, field)?)))
                 .collect::<Result<_, _>>()?),
             Func(a, b) => Type::Func(self.reconstruct_inner(iter + 1, a)?, self.reconstruct_inner(iter + 1, b)?),
+            // TODO: This actually gets us the wrong span. We want the span for the data itself,
+            // not the whole type including params
+            Data(data, params) => Type::Data(SrcNode::new(data, self.span(id)), params
+                .into_iter()
+                .map(|param| self.reconstruct_inner(iter + 1, param))
+                .collect::<Result<_, _>>()?),
         };
 
         Ok(SrcNode::new(ty, self.span(id)))
@@ -546,7 +657,7 @@ impl<'a> InferCtx<'a> {
             ReconstructError::Unknown(a) => {
                 let msg = match self.get(self.get_base(id)) {
                     TypeInfo::Unknown(_) => format!("Cannot infer type"),
-                    _ => format!("Cannot infer type {} in {}", self.display_type_info(a), self.display_type_info(id)),
+                    _ => format!("Cannot infer type '{}' in '{}'", self.display_type_info(a), self.display_type_info(id)),
                 };
                 Error::custom(msg)
                     .with_span(span)

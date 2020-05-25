@@ -41,11 +41,11 @@ In addition, the compile codebase is undergoing relatively rapid changes.
 - Bytecode VM execution
 - Pattern-matching
 - Common expression constructs (`if`, `match`, `let`, etc.)
+- Datatypes (sum types and product types)
 
 ### What Doesn't Work
 
 - Trait system
-- Data types
 - HKTs
 - Standard library / prelude
 

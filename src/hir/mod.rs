@@ -2,7 +2,7 @@
 pub mod data;
 pub mod infer;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use internment::LocalIntern;
 use crate::{
     ast::{self, Literal},
@@ -11,7 +11,10 @@ use crate::{
     ty::{Primitive, Type},
     node::{Node, SrcNode, TypeNode},
 };
-use self::infer::{TypeId, TypeInfo, Constraint, InferCtx};
+use self::{
+    infer::{TypeId, TypeInfo, Constraint, InferCtx},
+    data::DataId,
+};
 
 type Ident = LocalIntern<String>;
 
@@ -49,6 +52,7 @@ pub enum Pat<M> {
     ListFront(Vec<Node<Binding<M>, M>>, Option<SrcNode<Ident>>),
     Tuple(Vec<Node<Binding<M>, M>>),
     Record(Vec<(SrcNode<Ident>, Node<Binding<M>, M>)>),
+    Deconstruct(SrcNode<(DataId, usize)>, Vec<(SrcNode<Ident>, M)>, Node<Binding<M>, M>),
 }
 
 type InferBinding = InferNode<Binding<(Span, TypeId)>>;
@@ -83,6 +87,7 @@ impl<M> Node<Binding<M>, M> {
             Pat::Record(fields) => fields
                 .iter()
                 .for_each(|(_, field)| field.get_binding_idents(idents)),
+            Pat::Deconstruct(_, _, inner) => inner.get_binding_idents(idents),
         }
 
         if let Some(ident) = &self.binding {
@@ -98,14 +103,91 @@ impl<M> Node<Binding<M>, M> {
 }
 
 impl<M> Pat<M> {
-    fn is_refutable(&self) -> bool {
+    fn is_refutable(&self, data_ctx: &data::DataCtx) -> bool {
         match &*self {
             Pat::Wildcard => false,
             Pat::Literal(_) => true,
             Pat::List(_) => true, // List could be different size
             Pat::ListFront(items, _) => items.len() > 0,
-            Pat::Tuple(items) => items.iter().any(|item| item.pat.is_refutable()),
-            Pat::Record(fields) => fields.iter().any(|(_, field)| field.pat.is_refutable()),
+            Pat::Tuple(items) => items.iter().any(|item| item.pat.is_refutable(data_ctx)),
+            Pat::Record(fields) => fields.iter().any(|(_, field)| field.pat.is_refutable(data_ctx)),
+            Pat::Deconstruct(data, _, inner) => data_ctx.get_data(data.0).variants.len() != 1
+                || inner.pat.is_refutable(data_ctx),
+        }
+    }
+}
+
+fn arms_are_exhaustive<'a>(
+    data_ctx: &data::DataCtx,
+    ty: &Type,
+    arms: impl Iterator<Item=&'a TypeBinding> + Clone,
+) -> Result<(), Option<String>> {
+    if arms.clone().any(|binding| !binding.pat.is_refutable(data_ctx)) {
+        Ok(())
+    } else {
+        match ty {
+            Type::List(_) => {
+                let smallest_irrefutable = arms
+                    .clone()
+                    .fold(None, |a, binding| match &*binding.pat {
+                        Pat::ListFront(items, _) if items
+                            .iter()
+                            .all(|item| !item.pat.is_refutable(data_ctx)) => Some(a
+                                .unwrap_or(items.len())
+                                .min(items.len())),
+                        pat if !pat.is_refutable(data_ctx) => Some(0),
+                        _ => a,
+                    })
+                    .ok_or_else(|| Some(format!("[...]")))?;
+                let holes_patched = arms
+                    .filter_map(|binding| match &*binding.pat {
+                        Pat::List(items) if items
+                            .iter()
+                            .all(|item| !item.pat.is_refutable(data_ctx)) => Some(items.len()),
+                        _ => None,
+                    })
+                    .collect::<HashSet<_>>();
+                if holes_patched.len() >= smallest_irrefutable {
+                    Ok(())
+                } else {
+                    let case_n = (0..smallest_irrefutable)
+                        .find(|i| !holes_patched.contains(&i))
+                        .unwrap();
+                    Err(Some(format!("[{}]", (0..case_n).map(|_| "_").collect::<Vec<_>>().join(", "))))
+                }
+            },
+            Type::Primitive(Primitive::Boolean) => {
+                let mut found = [false, false];
+                arms
+                    .for_each(|binding| match &*binding.pat {
+                        Pat::Literal(Literal::Boolean(x)) => found[*x as usize] = true,
+                        _ => {},
+                    });
+                if found == [true, true] {
+                    Ok(())
+                } else {
+                    Err(Some(format!("{}", found[0])))
+                }
+            },
+            Type::Data(data, _) => {
+                let data = data_ctx.get_data(**data);
+                let variants_matched = arms
+                    .filter_map(|binding| match &*binding.pat {
+                        Pat::Deconstruct(data, _, inner) if !inner.pat.is_refutable(data_ctx) =>
+                            Some(data.1),
+                        _ => None,
+                    })
+                    .collect::<HashSet<_>>();
+                if variants_matched.len() == data.variants.len() {
+                    Ok(())
+                } else {
+                    let missing = (0..data.variants.len())
+                        .find(|v| !variants_matched.contains(&v))
+                        .unwrap();
+                    Err(Some(format!("{}", *data.variants[missing].0)))
+                }
+            },
+            _ => Err(None),
         }
     }
 }
@@ -125,6 +207,7 @@ pub enum Expr<M> {
     Access(Node<Self, M>, SrcNode<Ident>),
     Update(Node<Self, M>, SrcNode<Ident>, Node<Self, M>),
     Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
+    Constructor(SrcNode<(DataId, usize)>, Vec<(SrcNode<Ident>, M)>, Node<Self, M>),
 }
 
 type InferExpr = InferNode<Expr<(Span, TypeId)>>;
@@ -171,64 +254,23 @@ pub struct GlobalHints<'a>(&'a HashMap<Ident, (Span, Vec<SrcNode<Ident>>, &'a Sr
 #[derive(Clone)]
 pub struct DataCtx<'a> {
     module: &'a Module,
-    generics: HashMap<Ident, TypeId>,
 
-    // TODO: Include type hint information
+    // Permits recursion, but only includes type hints
     globals: GlobalHints<'a>,
 }
 
 impl<'a> DataCtx<'a> {
-    fn get_data_type(&self, name: &SrcNode<Ident>, params: &[TypeId], infer: &mut InferCtx, span: Span) -> Result<TypeId, Error> {
-        if let Some(ty_id) = self
-            .generics
-            .get(&**name)
-        {
-            Ok(*ty_id)
-        } else if let Some(ty_info) = match name.as_str() {
-            "Num" => Some(TypeInfo::Primitive(Primitive::Number)),
-            "Bool" => Some(TypeInfo::Primitive(Primitive::Boolean)),
-            "Char" => Some(TypeInfo::Primitive(Primitive::Char)),
-            _ => None,
-        } {
-            if params.len() == 0 {
-                Ok(infer.insert(ty_info, span))
-            } else {
-                Err(Error::custom(format!("Primitive type '{}' cannot be parameterised", **name))
-                    .with_span(name.span())
-                    .with_span(infer.span(params[0]))
-                    .with_hint(format!("Remove all type parameters from '{}'", **name)))
-            }
-        } else {
-            if let Some(res) = self.module
-                .get_data_type(**name)
-                .map(|(ty, generics)| if params.len() != generics.len() {
-                    Err(Error::custom(format!("Type '{}' expected {} parameters, found {}", **name, generics.len(), params.len()))
-                        .with_span(ty.span())
-                        .with_span(span))
-                } else {
-                    Ok(infer.instantiate_ty_inner(&|name| generics
-                        .iter()
-                        .zip(params.iter())
-                        .find(|(gen, _)| ***gen == name)
-                        .map(|(_, ty)| *ty), ty))
-                })
-            {
-                res
-            } else {
-                Err(Error::custom(format!("No such data type '{}'", **name))
-                    .with_span(name.span()))
-            }
-        }
-    }
-
     fn get_def_type(&self, ident: Ident, data: &DataCtx, infer: &mut InferCtx, span: Span) -> Result<Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)>, Error> {
         self.module
             .get_def_type(ident, infer)
             .map(|x| Ok(Some(x)))
             .unwrap_or_else(|| Ok(if let Some((global_span, generics, hint)) = self.globals.0.get(&ident) {
-                let generics = generics.iter().map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span))).collect::<Vec<_>>();
+                let generics = generics
+                    .iter()
+                    .map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span)))
+                    .collect::<Vec<_>>();
                 Some((
-                    hint.to_type_id(data, infer, &|gen| generics.iter().find(|(name, _)| **name == gen).map(|(_, ty)| *ty))?,
+                    hint.to_type_id(infer, &|gen| generics.iter().find(|(name, _)| **name == gen).map(|(_, ty)| *ty))?,
                     generics,
                 ))
             } else {
@@ -244,25 +286,24 @@ pub struct Def {
     pub body: TypeExpr,
 }
 
-pub struct TypeAlias {
-    pub generics: Vec<SrcNode<Ident>>,
-    pub name: SrcNode<Ident>,
-    pub ty: SrcNode<Type>,
-}
-
 pub struct Program {
     pub root: Module,
+    pub data_ctx: data::DataCtx,
 }
 
 impl Program {
     pub fn new() -> Self {
         Self {
             root: Module::default(),
+            data_ctx: data::DataCtx::default(),
         }
     }
 
-    pub fn new_root(module: &SrcNode<ast::Module>) -> Result<Self, Error> {
-        let mut this = Self::new();
+    pub fn new_root(module: &SrcNode<ast::Module>) -> Result<Self, Vec<Error>> {
+        let mut this = Self {
+            root: Module::default(),
+            data_ctx: data::DataCtx::from_ast_module(module)?,
+        };
         // Collect list of globals
         let globals = module.decls
             .iter()
@@ -274,13 +315,14 @@ impl Program {
 
         for decl in module.decls.iter() {
             match &**decl {
-                ast::Decl::Def(def) => this.insert_def_inner(GlobalHints(&globals), def)?,
-                ast::Decl::TypeAlias(type_alias) => this.insert_type_alias(GlobalHints(&globals), type_alias)?,
-                ast::Decl::Data(_) => todo!("Data types"),
+                ast::Decl::Def(def) => this.insert_def_inner(GlobalHints(&globals), def)
+                    .map_err(|e| vec![e])?,
+                _ => {},
             }
         }
 
-        this.type_check()?;
+        this.type_check()
+            .map_err(|e| vec![e])?;
 
         Ok(this)
     }
@@ -294,7 +336,7 @@ impl Program {
                 .visit()
                 .try_for_each(|expr| match &**expr {
                     Expr::Global(ident, _) => {
-                        let mut infer = InferCtx::default();
+                        let mut infer = InferCtx::from_data_ctx(&self.data_ctx);
                         let global = &self.root.defs[ident];
                         let definition = infer.instantiate_ty(&global.generics, global.body.ty(), global.body.ty().span()).0;
                         // TODO: Put the usage span in here
@@ -308,8 +350,18 @@ impl Program {
             def.body
                 .visit()
                 .try_for_each(|expr| match &**expr {
-                    Expr::Func(param, _) if param.pat.is_refutable() => Err(Error::custom(format!("Refutable pattern may not be used here"))
+                    Expr::Func(param, _) if param.pat.is_refutable(&self.data_ctx) => Err(Error::custom(format!("Refutable pattern may not be used here"))
                         .with_span(param.pat.span())),
+                    Expr::Match(pred, arms) => if let Err(missing_case) = arms_are_exhaustive(&self.data_ctx, pred.ty(), arms.iter().map(|(binding, _)| binding)) {
+                        let hint = missing_case
+                            .map(|case| format!("Case '{}' is not handled", case))
+                            .unwrap_or_else(|| format!("Handle all possible cases"));
+                        Err(Error::custom(format!("Match arms are not exhaustive"))
+                            .with_span(expr.span())
+                            .with_hint(hint))
+                    } else {
+                        Ok(())
+                    },
                     _ => Ok(()),
                 })?;
         }
@@ -337,14 +389,16 @@ impl Program {
                 .with_span(ast_def.name.span()));
         }
 
-        let mut infer = InferCtx::default();
+        let mut infer = InferCtx::from_data_ctx(&self.data_ctx);
+
+        // Add the definition's generics to the infer context
+        ast_def
+            .generics
+            .iter()
+            .for_each(|name| infer.insert_generic(**name, name.span()));
+
         let data = DataCtx {
             module: &self.root,
-            generics: ast_def
-                .generics
-                .iter()
-                .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.span())))
-                .collect(),
             globals,
         };
         let scope = self.create_scope();
@@ -353,7 +407,7 @@ impl Program {
             let mut body = ast_def.body.to_hir(&data, &mut infer, &scope)?;
 
             // Unify with optional type annotation
-            let ty_id = ast_def.ty.to_type_id(&data, &mut infer, &|_| None)?;
+            let ty_id = ast_def.ty.to_type_id(&mut infer, &|_| None)?;
 
             infer.unify(body.type_id(), ty_id)?;
 
@@ -377,7 +431,7 @@ impl Program {
                 }
             });
             if !uses_gen {
-                return Err(Error::custom(format!("Type parameter '{}' must be mentioned by type {}", **gen, **body.ty()))
+                return Err(Error::custom(format!("Type parameter '{}' must be mentioned by type '{}'", **gen, **body.ty()))
                     .with_span(gen.span())
                     .with_span(body.ty().span())
                     .with_hint(format!("Consider removing '{}' from the list of generics", **gen)));
@@ -391,58 +445,10 @@ impl Program {
         });
         Ok(())
     }
-
-    fn insert_type_alias(&mut self, globals: GlobalHints, ast_type_alias: &ast::TypeAlias) -> Result<(), Error> {
-        let mut infer = InferCtx::default();
-        let data = DataCtx {
-            module: &self.root,
-            generics: ast_type_alias
-                .generics
-                .iter()
-                .map(|ident| (**ident, infer.insert(TypeInfo::GenParam(**ident), ident.span())))
-                .collect(),
-            globals,
-        };
-
-        let span = ast_type_alias.ty.span();
-        let generics = ast_type_alias.generics
-            .iter()
-            .map(|g| SrcNode::new(**g, g.span()))
-            .collect::<Vec<_>>();
-
-        let ty_id = ast_type_alias.ty.to_type_id(&data, &mut infer, &|_| None)?;
-
-        infer.solve_all()?;
-        let ty = infer.reconstruct(ty_id, span)?;
-
-        // Ensure that all generic parameters are in use
-        for gen in generics.iter() {
-            let mut uses_gen = false;
-            ty.visit(&mut |ty| {
-                if **ty == Type::GenParam(**gen) {
-                    uses_gen = true;
-                }
-            });
-            if !uses_gen {
-                return Err(Error::custom(format!("Type parameter '{}' must be mentioned by type {}", **gen, *ty))
-                    .with_span(gen.span())
-                    .with_span(ty.span())
-                    .with_hint(format!("Consider removing '{}' from the list of generics", **gen)));
-            }
-        }
-
-        self.root.type_aliases.insert(*ast_type_alias.name, TypeAlias {
-            generics,
-            name: ast_type_alias.name.clone(),
-            ty,
-        });
-        Ok(())
-    }
 }
 
 #[derive(Default)]
 pub struct Module {
-    type_aliases: HashMap<Ident, TypeAlias>,
     defs: HashMap<Ident, Def>,
 }
 
@@ -455,13 +461,6 @@ impl Module {
         self.defs
             .get(&ident)
             .map(|def| infer.instantiate_ty(&def.generics, def.body.ty(), def.name.span()))
-    }
-
-    fn get_data_type(&self, ident: Ident) -> Option<(&SrcNode<Type>, &[SrcNode<Ident>])> {
-        self
-            .type_aliases
-            .get(&ident)
-            .map(|type_alias| (&type_alias.ty, type_alias.generics.as_slice()))
     }
 }
 
@@ -523,6 +522,20 @@ impl ast::Binding {
                     .collect::<Result<_, _>>()?;
                 (infer.insert(TypeInfo::Record(field_type_ids), self.span()), Pat::Record(fields))
             },
+            ast::Pat::Deconstruct(constructor, inner) => {
+                let inner = inner.to_hir(infer)?;
+
+                // Instantiate inner type with generics as free type terms
+                let (data_id, variant, type_id, params, inner_ty) = infer.data_ctx().get_constructor_type(**constructor, infer, self.span())?;
+
+                infer.unify(inner.type_id(), inner_ty)?;
+
+                (type_id, Pat::Deconstruct(
+                    SrcNode::new((data_id, variant), constructor.span()),
+                    params.into_iter().map(|(name, ty)| (name.clone(), (name.span(), ty))).collect(),
+                    inner,
+                ))
+            },
         };
 
         Ok(InferNode::new(Binding {
@@ -533,34 +546,41 @@ impl ast::Binding {
 }
 
 impl ast::Type {
-    fn to_type_id(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx, get_generic: &impl Fn(Ident) -> Option<TypeId>) -> Result<TypeId, Error> {
+    fn to_type_id(self: &SrcNode<Self>, infer: &mut InferCtx, get_generic: &impl Fn(Ident) -> Option<TypeId>) -> Result<TypeId, Error> {
         let info = match &**self {
             ast::Type::Unknown => TypeInfo::Unknown(None),
             ast::Type::Data(name, params) => {
                 // Substitute generic
-                if params.len() == 0 {
-                    if let Some(ty_id) = get_generic(**name) {
-                        return Ok(ty_id);
+                if let Some(ty_id) = get_generic(**name) {
+                    if params.len() == 0 {
+                        TypeInfo::Ref(ty_id)
+                    } else {
+                        return Err(Error::custom(format!("Generic types may not be parameterised"))
+                            .with_span(self.span())
+                            .with_span(params.iter().fold(Span::none(), |a, p| a.union(p.span()))));
                     }
+                } else {
+                    let params = params
+                        .iter()
+                        .map(|param| param.to_type_id(infer, get_generic))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    TypeInfo::Ref(infer
+                        .data_ctx()
+                        .get_named_type(name, &params, infer, self.span())?)
                 }
-                let params = params
-                    .iter()
-                    .map(|param| param.to_type_id(data, infer, get_generic))
-                    .collect::<Result<Vec<_>, _>>()?;
-                TypeInfo::Ref(data.get_data_type(name, &params, infer, self.span())?)
             },
-            ast::Type::List(ty) => TypeInfo::List(ty.to_type_id(data, infer, get_generic)?),
+            ast::Type::List(ty) => TypeInfo::List(ty.to_type_id(infer, get_generic)?),
             ast::Type::Tuple(items) => TypeInfo::Tuple(items
                 .iter()
-                .map(|item| item.to_type_id(data, infer, get_generic))
+                .map(|item| item.to_type_id(infer, get_generic))
                 .collect::<Result<_, _>>()?),
             ast::Type::Record(fields) => TypeInfo::Record(fields
                 .iter()
-                .map(|(name, field)| Ok((name.clone(), field.to_type_id(data, infer, get_generic)?)))
+                .map(|(name, field)| Ok((name.clone(), field.to_type_id(infer, get_generic)?)))
                 .collect::<Result<_, _>>()?),
             ast::Type::Func(i, o) => TypeInfo::Func(
-                i.to_type_id(data, infer, get_generic)?,
-                o.to_type_id(data, infer, get_generic)?,
+                i.to_type_id(infer, get_generic)?,
+                o.to_type_id(infer, get_generic)?,
             ),
         };
 
@@ -587,6 +607,15 @@ impl ast::Expr {
                     let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                     infer.unify(type_id, global_id)?;
                     (type_id, Expr::Global(path.base(), generics))
+                } else if let Ok((data_id, variant, type_id, params, inner_ty)) = infer.data_ctx().get_constructor_type(path.base(), infer, self.span()) {
+                    let ast_inner = SrcNode::new(ast::Expr::Tuple(Vec::new()), self.span()); // Implicitly an empty tuple
+                    let inner = ast_inner.to_hir(data, infer, scope)?;
+                    infer.unify(inner_ty, inner.type_id())?;
+                    (type_id, Expr::Constructor(
+                        SrcNode::new((data_id, variant), self.span()),
+                        params.into_iter().map(|(name, ty)| (name.clone(), (name.span(), ty))).collect(),
+                        inner,
+                    ))
                 } else {
                     return Err(Error::custom(format!("No such binding '{}' in scope", path.base().to_string()))
                         .with_span(self.span()));
@@ -646,7 +675,7 @@ impl ast::Expr {
 
                 // Unify param_ty with type hint
                 if let Some(param_ty) = param_ty {
-                    let param_ty_id = param_ty.to_type_id(data, infer, &|_| None)?;
+                    let param_ty_id = param_ty.to_type_id(infer, &|_| None)?;
                     infer.unify(param.type_id(), param_ty_id)?;
                 }
 
@@ -701,7 +730,7 @@ impl ast::Expr {
 
                 // Unify pattern with type hint
                 if let Some(pat_ty) = pat_ty {
-                    let pat_ty_id = pat_ty.to_type_id(data, infer, &|_| None)?;
+                    let pat_ty_id = pat_ty.to_type_id(infer, &|_| None)?;
                     infer.unify(pat.type_id(), pat_ty_id)?;
                 }
 
@@ -751,7 +780,7 @@ impl ast::Expr {
 
                         // Unify pattern with type hint
                         if let Some(pat_ty) = pat_ty {
-                            let pat_ty_id = pat_ty.to_type_id(data, infer, &|_| None)?;
+                            let pat_ty_id = pat_ty.to_type_id(infer, &|_| None)?;
                             infer.unify(pat.type_id(), pat_ty_id)?;
                         }
 
@@ -770,15 +799,21 @@ impl ast::Expr {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
-                if arms
-                    .iter()
-                    .all(|(binding, _)| binding.pat.is_refutable())
-                {
-                    return Err(Error::custom(format!("Match requires irrefutable pattern somewhere (TODO: Implement proper exhaustivity checks)"))
-                        .with_span(self.span()));
-                }
-
                 (match_type_id, Expr::Match(pred, arms))
+            },
+            ast::Expr::Constructor(constructor, inner) => {
+                let inner = inner.to_hir(data, infer, scope)?;
+
+                // Instantiate inner type with generics as free type terms
+                let (data_id, variant, type_id, params, inner_ty) = infer.data_ctx().get_constructor_type(**constructor, infer, self.span())?;
+
+                infer.unify(inner.type_id(), inner_ty)?;
+
+                (type_id, Expr::Constructor(
+                    SrcNode::new((data_id, variant), constructor.span()),
+                    params.into_iter().map(|(name, ty)| (name.clone(), (name.span(), ty))).collect(),
+                    inner,
+                ))
             },
             expr => todo!("HIR for {:?}", expr),
         };
@@ -814,6 +849,14 @@ impl InferPat {
                 .into_iter()
                 .map(|(name, field)| Ok((name, field.into_checked(infer)?)))
                 .collect::<Result<_, _>>()?),
+            Pat::Deconstruct(data, generics, inner) => Pat::Deconstruct(
+                data,
+                generics
+                    .into_iter()
+                    .map(|(ident, (span, type_id))| Ok((ident, (span, infer.reconstruct(type_id, span)?))))
+                    .collect::<Result<_, _>>()?,
+                inner.into_checked(infer)?,
+            ),
         };
 
         Ok(SrcNode::new(pat, span))
@@ -837,8 +880,7 @@ impl InferBinding {
 impl InferExpr {
     fn into_checked(self, infer: &InferCtx) -> Result<TypeExpr, Error> {
         let span = self.span();
-        let meta = infer.reconstruct(self.type_id(), span)?;
-
+        let type_id = self.type_id();
         Ok(TypeNode::new(match self.into_inner() {
             Expr::Literal(litr) => Expr::Literal(litr),
             Expr::Local(ident) => Expr::Local(ident),
@@ -899,7 +941,15 @@ impl InferExpr {
                     })
                     .collect::<Result<_, _>>()?,
             ),
-        }, (span, meta)))
+            Expr::Constructor(data, generics, inner) => Expr::Constructor (
+                data,
+                generics
+                    .into_iter()
+                    .map(|(ident, (span, type_id))| Ok((ident, (span, infer.reconstruct(type_id, span)?))))
+                    .collect::<Result<_, _>>()?,
+                inner.into_checked(infer)?,
+            )
+        }, (span, infer.reconstruct(type_id, span)?)))
     }
 }
 
@@ -951,6 +1001,7 @@ impl TypeExpr {
                             stack.push(arm);
                         }
                     },
+                    Expr::Constructor(_, _, inner) => stack.push(inner),
                 }
 
                 expr

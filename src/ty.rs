@@ -1,6 +1,9 @@
 use std::fmt;
 use internment::LocalIntern;
-use crate::node::SrcNode;
+use crate::{
+    node::SrcNode,
+    hir::data::DataId,
+};
 
 type Ident = LocalIntern<String>;
 
@@ -29,6 +32,7 @@ pub enum Type {
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Func(SrcNode<Self>, SrcNode<Self>),
     GenParam(Ident),
+    Data(SrcNode<DataId>, Vec<SrcNode<Self>>),
 }
 
 impl Type {
@@ -47,6 +51,9 @@ impl Type {
                 o.visit(f);
             },
             Type::GenParam(_) => {},
+            Type::Data(data, params) => params
+                .iter()
+                .for_each(|param| param.visit(f)),
         };
 
         f(self);
@@ -83,6 +90,13 @@ impl fmt::Display for Type {
             },
             Type::Func(i, o) => write!(f, "({} -> {})", **i, **o),
             Type::GenParam(ident) => write!(f, "{}", ident),
+            Type::Data(data, params) => {
+                write!(f, "Data={}", **data)?;
+                params
+                    .iter()
+                    .try_for_each(|param| write!(f, " {}", **param))?;
+                Ok(())
+            },
         }
     }
 }
