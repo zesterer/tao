@@ -143,7 +143,8 @@ fn arms_are_exhaustive<'a>(
                     .filter_map(|binding| match &*binding.pat {
                         Pat::List(items) if items
                             .iter()
-                            .all(|item| !item.pat.is_refutable(data_ctx)) => Some(items.len()),
+                            .all(|item| !item.pat.is_refutable(data_ctx))
+                            && items.len() < smallest_irrefutable => Some(items.len()),
                         _ => None,
                     })
                     .collect::<HashSet<_>>();
