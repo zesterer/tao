@@ -249,7 +249,7 @@ impl<'a> Scope<'a> {
 }
 
 #[derive(Copy, Clone)]
-struct GlobalHints<'a>(&'a HashMap<Ident, (Span, Vec<SrcNode<Ident>>, &'a SrcNode<ast::Type>)>);
+pub struct GlobalHints<'a>(&'a HashMap<Ident, (Span, Vec<SrcNode<Ident>>, &'a SrcNode<ast::Type>)>);
 
 #[derive(Clone)]
 pub struct DataCtx<'a> {
