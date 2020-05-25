@@ -7,6 +7,9 @@ categories = ["wasm"]
 readme = "README.md"
 edition = "2018"
 
+[profile.release]
+lto = true
+
 [lib]
 crate-type = ["cdylib"]
 
@@ -14,3 +17,6 @@ crate-type = ["cdylib"]
 wasm-bindgen = { version = "0.2.62", features = ["serde-serialize"] }
 serde = "1"
 tao = { path = "../", default-features = false, features=["serde"] }
+
+[patch.crates-io]
+thread-id = { path = '../thread-id' }
