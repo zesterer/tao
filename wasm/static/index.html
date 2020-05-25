@@ -14,11 +14,6 @@
       <div class="code-wrapper">
         <div
           id="code"
-          contenteditable="true"
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
         ></div>
         <div class="toolbar">
           <button id="run">
@@ -63,7 +58,8 @@
               />
             </svg>
           </label>
-          <button id="theme" class="dropdown">
+          <!-- TODO: Readd themeing
+            <button id="theme" class="dropdown">
             <svg height="30" width="30">
               <polygon
                 points="0,0 30,0 30,30 0,30"
@@ -71,10 +67,11 @@
               />
             </svg>
             <div class="dropdown-content toolbar" id="themes"></div>
-          </button>
+          </button>-->
         </div>
       </div>
       <div id="output"></div>
+      <script src="ace/ace.js" type="text/javascript" charset="utf-8"></script>
       <script src="index.js"></script>
     </div>
   </body>

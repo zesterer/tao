@@ -16,6 +16,9 @@ const appConfig = {
   devServer: {
     contentBase: dist,
   },
+  resolve: {
+    extensions: [".js", ".wasm"],
+  },
   plugins: [
     new CopyPlugin([path.resolve(__dirname, "static")]),
   ],
