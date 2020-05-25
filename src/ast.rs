@@ -411,10 +411,12 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .or_not());
 
         let arm_list = nested_parser(
-            binding.clone()
-                .padded_by(just(Token::RMap))
-                .then(expr.clone())
-                .separated_by(just(Token::Comma)),
+            just(Token::Pipe)
+                .or_not()
+                .padding_for(binding.clone()
+                    .padded_by(just(Token::RMap))
+                    .then(expr.clone())
+                    .separated_by(just(Token::Pipe))),
             Delimiter::Brace,
         );
 

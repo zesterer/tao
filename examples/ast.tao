@@ -1,0 +1,45 @@
+# Utility
+
+type Str = [Char]
+
+data Maybe A =
+	| Some A
+	| None
+
+data Result A B =
+	| Ok A
+	| Err B
+
+# Parser combinator
+
+type Parser I O = I -> O
+
+# Lexer
+
+data Token =
+	| Ident Str
+	| Number Num
+	| Boolean Bool
+
+# AST
+
+data Literal =
+	| NumberLitr Num
+	| BooleanLitr Bool
+	| StringLitr Str
+
+data UnaryOp =
+	| Neg
+	| Not
+
+data BinaryOp =
+	| Add | Sub
+	| Mul | Div   | Rem
+	| Eq  | NotEq
+
+data Expr =
+	| LiteralExpr Literal
+	| UnaryExpr { op: UnaryOp, a: Expr }
+	| BinaryExpr { op: BinaryOp, a: Expr, b: Expr }
+
+def main = ()

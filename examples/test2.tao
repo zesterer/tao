@@ -3,11 +3,11 @@ data Maybe A =
 	| Nil
 
 def len A of [A] -> ? = |xs| match xs {
-  [_, xs: ...] => 1 + xs:len,
-  [] => 0,
+	| [_, xs: ...] => 1 + xs:len
+	| [] => 0
 }
 
 def main = match $Nil {
-	$Just x => x,
-	$Nil => 0,
+	| $Just x => x
+	| $Nil => 0
 }

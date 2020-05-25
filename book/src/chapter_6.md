@@ -20,10 +20,10 @@ patterns, then perform a different action in each case.
 
 ```
 match 5 {
-	1 => "one",
-	2 => "two",
-	3 => "three",
-	_ => "something else",
+	| 1 => "one"
+	| 2 => "two"
+	| 3 => "three"
+	| _ => "something else"
 }
 ```
 
@@ -45,10 +45,10 @@ number is divided by another.*
 ```
 let x = 15 in
 match (x % 3 = 0, x % 5 = 0) {
-	(true, true) => "FizzBuzz",
-	(true, _) => "Fizz",
-	(_, true) => "Buzz",
-	(_, _) => "something else",
+	| (true, true) => "FizzBuzz"
+	| (true, _) => "Fizz"
+	| (_, true) => "Buzz"
+	| (_, _) => "something else"
 }
 ```
 
@@ -61,10 +61,10 @@ binding.
 
 ```
 let axis = |x, y| match (x, y) {
-	(x: 0, y: 0) => ("origin", x, y),
-	(x: 0, y) => ("y axis", x, y),
-	(x, y: 0) => ("x axis", x, y),
-	(x, y) => ("point", x, y),
+	| (x: 0, y: 0) => ("origin", x, y)
+	| (x: 0, y) => ("y axis", x, y)
+	| (x, y: 0) => ("x axis", x, y)
+	| (x, y) => ("point", x, y)
 } in
 axis(5, 0)
 ```
@@ -77,8 +77,8 @@ but require a special syntax since they may have an arbitrary length.
 
 ```
 def reverse = |xs| match xs {
-	[] => [],
-	[head, tail: ...] => reverse(tail) ++ [head],
+	| [] => []
+	| [head, tail: ...] => tail:reverse ++ [head]
 }
 
 def main = last_of([4, 7, 3, 9])
@@ -91,10 +91,10 @@ of the list to `tail`.
 
 ```
 let length_of = |xs| match xs {
-	[] => "zero",
-	[_] => "one",
-	[_, _] => "two",
-	[_, _, ...] => "too many for me to count!",
+	| [] => "zero"
+	| [_] => "one"
+	| [_, _] => "two"
+	| [_, _, ...] => "too many for me to count!"
 }
 ```
 

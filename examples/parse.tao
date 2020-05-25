@@ -5,25 +5,25 @@ data Maybe A =
 	| Nil
 
 def contains = |cs of [Char], c of Char| match cs {
-	[c1, cs: ...] => c1 = c or contains(cs, c),
-	[] => false,
+	| [c1, cs: ...] => c1 = c or contains(cs, c)
+	| [] => false
 }
 
 def len A of [A] -> ? = |xs| match xs {
-	[_, xs: ...] => 1 + xs:len,
-	[] => 0,
+	| [_, xs: ...] => 1 + xs:len
+	| [] => 0
 }
 
 def fold_l A B of ? -> (B -> A -> B) -> ? -> ? = |init, f, xs| match xs {
-	[x, xs: ...] => fold_l(f(init, x), f, xs),
-	[] => init,
+	| [x, xs: ...] => fold_l(f(init, x), f, xs)
+	| [] => init
 }
 
 def reduce_l A B = |f, (init, xs) of (A, [B])| fold_l(init, f, xs)
 
 def fold_r A B of ? -> (A -> B -> B) -> ? -> ? = |init, f, xs| match xs {
-	[x, xs: ...] => f(x, fold_r(init, f, xs)),
-	[] => init,
+	| [x, xs: ...] => f(x, fold_r(init, f, xs))
+	| [] => init
 }
 
 def reduce_r A B = |f, (xs, init) of ([B], A)| fold_r(init, f, xs)
@@ -31,10 +31,10 @@ def reduce_r A B = |f, (xs, init) of ([B], A)| fold_r(init, f, xs)
 def sum = fold_l(0, |a, x| a + x)
 
 def find_char_inner = |x, cs, c of Char| match cs {
-	[c1, cs: ...] => if c1 = c
+	| [c1, cs: ...] => if c1 = c
 		then [x]
-		else find_char_inner(x + 1, cs, c),
-	[] => [],
+		else find_char_inner(x + 1, cs, c)
+	| [] => []
 }
 
 def find_char = find_char_inner(0)
@@ -52,74 +52,74 @@ def failure I O of ? -> Out ? O = |rest of [I]| $Out { rest, out: $Nil }
 type Parser I O = [I] -> Out I O
 
 def matcher I of (I -> Bool) -> Parser I I = |f, input| match input {
-	[i, rest: ...] => if i:f
+	| [i, rest: ...] => if i:f
 		then success(rest, i)
-		else failure(input),
-	[] => failure([]),
+		else failure(input)
+	| [] => failure([])
 }
 
 def recurse I O of ([I] -> Out I O) -> Parser I O = |f, input| match input:f {
-	$Out { rest, out: $Just o } => success(rest, o),
-	_ => failure(input),
+	| $Out { rest, out: $Just o } => success(rest, o)
+	| _ => failure(input)
 }
 
 def end I of Parser I () = |input| match input {
-	[] => success([], ()),
-	_ => failure([]),
+	| [] => success([], ())
+	| _ => failure([])
 }
 
 def map I O U of (O -> U) -> Parser I O -> Parser I U = |f, p, input|
 	let r = input:p in
 	match r.out {
-		$Just o => success(r.rest, f(o)),
-		_ => failure(r.rest),
+		| $Just o => success(r.rest, f(o))
+		| _ => failure(r.rest)
 	}
 
 def repeated I O of Parser I O -> Parser I [O] = |p, input| match input:p {
-	$Out { rest, out: $Just o } =>
+	| $Out { rest, out: $Just o } =>
 		let r = rest:repeated(p) in
 		match r.out {
-			$Just out => success(r.rest, [o] ++ out),
-			$Nil => failure(r.rest),
-		},
-	$Out { rest, out } => success(rest, []),
+			| $Just out => success(r.rest, [o] ++ out)
+			| $Nil => failure(r.rest)
+		}
+	| $Out { rest, out } => success(rest, [])
 }
 
 def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
 	let r = input:repeated(p) in
 	match r.out {
-		$Just xs => if xs:len >= n
+		| $Just xs => if xs:len >= n
 			then r
-			else failure(r.rest),
-		_ => failure(r.rest),
+			else failure(r.rest)
+		| _ => failure(r.rest)
 	}
 
 def and_then I O U of Parser I U -> Parser I O -> Parser I (O, U) = |p1, p0, input|
 	let r = input:p0 in
 	match r.out {
-		$Just o => r.rest:map(|u| (o, u), p1),
-		_ => failure(r.rest),
+		| $Just o => r.rest:map(|u| (o, u), p1)
+		| _ => failure(r.rest)
 	}
 
 def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
 	let r = input:p0 in
 	match r.out {
-		$Just o => success(r.rest, o),
-		_ => let r = input:p1 in
-		match r.out {
-			$Just o => success(r.rest, o),
-			_ => failure(r.rest),
-		},
+		| $Just o => success(r.rest, o)
+		| _ => let r = input:p1 in
+			match r.out {
+				| $Just o => success(r.rest, o)
+				| _ => failure(r.rest)
+			}
 	}
 
 def is_success I O = |p of Parser I O, input| match input:p {
-	$Out { rest, out: $Just _ } => true,
-	_ => false,
+	| $Out { rest, out: $Just _ } => true
+	| _ => false
 }
 
 def char_to_num = |c| match find_char("0123456789", c) {
-	[i] => i,
-	_ => 0,
+	| [i] => i
+	| _ => 0
 }
 
 def padded_by I O U = |p1 of Parser I O, p0 of Parser I U| p0
@@ -156,8 +156,8 @@ def unary = op('-')
 	:repeated
 	:and_then(atom)
 	:map(reduce_r(|op, x| match op {
-		'-' => -x,
-		_ => x,
+		| '-' => -x
+		| _ => x
 	}))
 
 def product = unary
@@ -167,10 +167,10 @@ def product = unary
 		:and_then(unary)
 		:repeated)
 	:map(reduce_l(|a, (op, b)| match op {
-		'*' => a * b,
-		'/' => a / b,
-		'%' => a % b,
-		_ => a,
+		| '*' => a * b
+		| '/' => a / b
+		| '%' => a % b
+		| _ => a
 	}))
 
 def sum = product
@@ -179,9 +179,9 @@ def sum = product
 		:and_then(product)
 		:repeated)
 	:map(reduce_l(|a, (op, b)| match op {
-		'+' => a + b,
-		'-' => a - b,
-		_ => a,
+		| '+' => a + b
+		| '-' => a - b
+		| _ => a
 	}))
 
 def expr = sum
