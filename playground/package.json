@@ -14,7 +14,6 @@
     "rimraf": "^3.0.0",
     "webpack": "^4.42.0",
     "webpack-cli": "^3.3.3",
-    "webpack-dev-server": "^3.7.1",
-    "worker-loader": "^2.0.0"
+    "webpack-dev-server": "^3.7.1"
   }
 }
