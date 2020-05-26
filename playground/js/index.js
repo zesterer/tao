@@ -13,11 +13,6 @@ editor.session.setMode("ace/mode/tao");
 var Range = ace.require("ace/range").Range;
 var marker_ids = [];
 
-// String splice polyfill
-String.prototype.splice = function (idx, rem, str) {
-  return this.slice(0, idx) + str + this.slice(idx + Math.abs(rem));
-};
-
 if (window.Worker) {
   let worker = new Worker("./worker.js");
 
@@ -25,7 +20,7 @@ if (window.Worker) {
     document.querySelector("#output").innerHTML = "";
 
     if (result.data.errors == null) {
-      document.querySelector("#output").innerHTML += result.data.out;
+      document.querySelector("#output").innerText += result.data.out;
     } else {
       let errors = result.data.errors;
 
@@ -149,3 +144,8 @@ function clearMarkers() {
 }
 
 editor.commands.removeCommand('find');
+
+// String splice polyfill
+String.prototype.splice = function (idx, rem, str) {
+  return this.slice(0, idx) + str + this.slice(idx + Math.abs(rem));
+};
