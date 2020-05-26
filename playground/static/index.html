@@ -14,11 +14,22 @@
       property="og:description"
       content="The tao interactive playground allows you to experiment with the language without needing to install any tools"
     />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="preload" href="worker.js" as="script">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preload" href="worker.js" as="script" />
   </head>
   <body>
     <div class="wrapper">
+      <button id="open">></button>
+      <div class="overlay">
+        <div class="explorer">
+          <div class="folder">
+            <p onclick="this.parentNode.classList.toggle('hide-children')">examples</p>
+            <ul class="examples">
+              <li>Loading...</li>
+            </ul>
+          </div>
+        </div>
+      </div>
       <div class="code-wrapper">
         <div id="code"></div>
         <div class="toolbar">

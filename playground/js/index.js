@@ -44,7 +44,7 @@ if (window.Worker) {
         document.querySelector("#output").innerHTML = "";
 
         try {
-          document.querySelector("#output").innerHTML += module.run(
+          document.querySelector("#output").innerText += module.run(
             editor.getValue()
           );
         } catch (errors) {
@@ -143,9 +143,71 @@ function clearMarkers() {
   }
 }
 
-editor.commands.removeCommand('find');
+editor.commands.removeCommand("find");
 
 // String splice polyfill
 String.prototype.splice = function (idx, rem, str) {
   return this.slice(0, idx) + str + this.slice(idx + Math.abs(rem));
+};
+
+(async function () {
+  const examples = document.querySelector(".examples");
+  const response = await fetch(
+    "https://api.github.com/repos/zesterer/tao/contents/examples", {
+      "mode": "no-cors"
+    }
+  );
+  
+
+  examples.innerHTML = "";
+
+  if (!response.ok) {
+    let li = document.createElement("li");
+    li.innerText = "(ノಠ益ಠ)ノ彡┻━┻ error getting examples";
+    examples.append(li);
+    return;
+  }
+
+  let contents = await response.json();
+
+  for (let i = 0; i < contents.length; i++) {
+    const element = contents[i];
+
+    if (element.type === "file") {
+      let li = document.createElement("li");
+      li.classList.add("link");
+      li.innerText = element.name;
+      li.onclick = () => {
+        loadExample(element.url);
+      };
+      examples.append(li);
+    }
+  }
+})();
+
+async function loadExample(url) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    return;
+  }
+
+  let file = await response.json();
+  let data = atob(file.content);
+
+  editor.setValue(data);
+
+  document.querySelector(".overlay").style.display = "none";
+}
+
+document.querySelector("#open").onclick = () => {
+  document.querySelector(".overlay").style.display = "block";
+};
+
+document.querySelector(".overlay").onclick = () => {
+  document.querySelector(".overlay").style.display = "none";
+};
+
+document.querySelector(".explorer").onclick = (e) => {
+  e.stopPropagation();
 };
