@@ -34,7 +34,7 @@ def find_char_inner = |x, cs, c of Char| match cs {
 	| [c1, cs: ...] => if c1 = c
 		then Just x
 		else find_char_inner(x + 1, cs, c)
-	| [] => $Nil
+	| [] => Nil
 }
 
 def find_char = find_char_inner(0)
@@ -46,8 +46,8 @@ data Out I O = {
 	out: Maybe O,
 }
 
-def success I O = |rest of [I], out of O| $Out { rest, out: $Just out }
-def failure I O of ? -> Out ? O = |rest of [I]| Out { rest, out: $Nil }
+def success I O = |rest of [I], out of O| Out { rest, out: Just out }
+def failure I O of ? -> Out ? O = |rest of [I]| Out { rest, out: Nil }
 
 type Parser I O = [I] -> Out I O
 
@@ -150,8 +150,8 @@ def padded O of Parser Char O -> Parser Char O = |p| p
 	:padded_by(whitespace:repeated)
 
 def char = |c of Char| matcher(|i| if c = i
-	then $Just i
-	else $Nil)
+	then Just i
+	else Nil)
 
 def op = |c| char(c):padded
 
@@ -163,7 +163,7 @@ def number = digit
 	:padded
 
 def atom = number
-	:map(|x| $Number x)
+	:map(|x| Number x)
 	:or_else(char('(')
 		:padding_for(recurse(|input| input:expr))
 		:padded_by(char(')')))
