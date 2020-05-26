@@ -114,9 +114,10 @@ pub enum Pat {
 }
 
 #[derive(Debug)]
-pub struct Binding {
-    pub pat: SrcNode<Pat>,
-    pub binding: Option<SrcNode<Ident>>,
+pub enum Binding {
+    Unbound(Pat),
+    Bound(SrcNode<Ident>, SrcNode<Pat>),
+    Ident(Ident),
 }
 
 #[derive(Clone, Debug)]
@@ -153,6 +154,17 @@ fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=
         Token::Ident(x) => Some(*x),
         _ => None,
     })
+}
+
+fn path_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Path>>, Error> {
+    ident_parser()
+        .then(just(Token::Separator)
+            .padding_for(ident_parser())
+            .repeated())
+        .map_with_span(|(ident, mut tail), span| {
+            tail.insert(0, ident);
+            SrcNode::new(Path(tail), span)
+        })
 }
 
 fn number_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=f64>, Error> {
@@ -294,35 +306,37 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
             let pat = pat.link();
             let binding = binding2;
 
-            let litr_pat = litr_parser()
+            let wildcard = just(Token::Wildcard)
+                .map_with_span(|pat, span| SrcNode::new(Pat::Wildcard, span));
+
+            let litr = litr_parser()
                 .map_with_span(|pat, span| SrcNode::new(Pat::Literal(pat), span));
 
-            let tuple_pat = nested_parser(
+            let tuple = nested_parser(
                 binding.clone().separated_by(just(Token::Comma)),
                 Delimiter::Paren,
             )
                 .map_with_span(|items, span| SrcNode::new(Pat::Tuple(items), span));
 
-            let record_pat = nested_parser(
+            let record = nested_parser(
                 ident_parser()
-                    .map_with_span(|ty, span| SrcNode::new(ty, span))
-                    .then(just(Token::Colon).padding_for(pat.clone()).or_not())
-                    .map_with_span(|(ident, pat), span| (ident.clone(), SrcNode::new(Binding {
-                        pat: pat.unwrap_or(SrcNode::new(Pat::Wildcard, ident.span())),
-                        binding: Some(ident)
-                    }, span)))
+                    .map_with_span(|field, span| SrcNode::new(field, span))
+                    .then(just(Token::Colon)
+                        .padding_for(pat.clone())
+                        .or_not())
+                    .map(|(field, pat)| (field.clone(), SrcNode::new(Binding::Bound(field.clone(), pat.unwrap_or_else(|| SrcNode::new(Pat::Wildcard, field.span()))), field.span())))
                     .separated_by(just(Token::Comma)),
                 Delimiter::Brace,
             )
                 .map_with_span(|fields, span| SrcNode::new(Pat::Record(fields), span));
 
-            let list_pat = nested_parser(
+            let list = nested_parser(
                 binding.clone().separated_by(just(Token::Comma)),
                 Delimiter::Brack,
             )
                 .map_with_span(|items, span| SrcNode::new(Pat::List(items), span));
 
-            let list_front_pat = nested_parser(
+            let list_front = nested_parser(
                 binding.clone().padded_by(just(Token::Comma)).repeated()
                     .then(ident_parser()
                         .padded_by(just(Token::Colon))
@@ -333,48 +347,31 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
             )
                 .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span));
 
-            let deconstruct = just(Token::Dollar)
-                .padding_for(ident_parser())
+            let deconstruct = ident_parser()
                 .map_with_span(|pat, span| SrcNode::new(pat, span))
-                .then(binding.or_not())
-                .map_with_span(|(data, inner), span| SrcNode::new(
-                    Pat::Deconstruct(data, inner.unwrap_or_else(|| SrcNode::new(Binding {
-                        pat: SrcNode::new(Pat::Wildcard, Span::none()),
-                        binding: None,
-                    }, Span::none()))),
-                    span,
-                ));
+                .then(binding)
+                .map_with_span(|(data, inner), span| SrcNode::new(Pat::Deconstruct(data, inner), span));
 
-            litr_pat
+            wildcard
+                .or(litr)
                 .or(deconstruct)
-                .or(tuple_pat)
-                .or(record_pat)
-                .or(list_pat)
-                .or(list_front_pat)
+                .or(tuple)
+                .or(record)
+                .or(list)
+                .or(list_front)
         });
 
-        let free_binding = ident_parser()
-            .map_with_span(|pat, span| Some(SrcNode::new(pat, span)))
-            .or(just(Token::Wildcard).to(None))
-            .map_with_span(|binding, span| Binding {
-                pat: SrcNode::new(Pat::Wildcard, span),
-                binding,
-            })
-            .map_with_span(|pat, span| SrcNode::new(pat, span));
-
+        // Bound
         ident_parser()
             .map_with_span(|ident, span| SrcNode::new(ident, span))
             .then(just(Token::Colon)
                 .padding_for(pat.clone()))
-            .map_with_span(|(binding, pat), span| SrcNode::new(Binding {
-                pat,
-                binding: Some(binding),
-            }, span))
-            .or(pat.map_with_span(|pat, span| SrcNode::new(Binding {
-                pat,
-                binding: None,
-            }, span)))
-            .or(free_binding)
+            .map(|(binding, pat)| Binding::Bound(binding, pat))
+            // Unbound pattern
+            .or(pat.map(|pat| Binding::Unbound(pat.into_inner())))
+            // Ident
+            .or(ident_parser().map(|name| Binding::Ident(name)))
+            .map_with_span(|binding, span| SrcNode::new(binding, span))
     })
 }
 

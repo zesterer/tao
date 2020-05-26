@@ -469,80 +469,109 @@ impl Module {
 
 impl ast::Binding {
     fn to_hir(self: &SrcNode<Self>, infer: &mut InferCtx) -> Result<InferBinding, Error> {
-        let (type_id, pat) = match &*self.pat {
-            ast::Pat::Wildcard => (infer.insert(TypeInfo::Unknown(None), self.span()), Pat::Wildcard),
-            ast::Pat::Literal(litr) => {
-                let litr_type_info = litr.get_type_info(infer, self.span());
-                (infer.insert(litr_type_info, self.span()), Pat::Literal(litr.clone()))
-            },
-            ast::Pat::List(items) => {
-                let item_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
-                let items = items
-                    .iter()
-                    .map(|item| {
-                        let item = item.to_hir(infer)?;
-                        infer.unify(item.type_id(), item_type_id)?;
-                        Ok(item)
-                    })
-                    .collect::<Result<_, _>>()?;
-                (infer.insert(TypeInfo::List(item_type_id), self.span()), Pat::List(items))
-            },
-            ast::Pat::ListFront(items, tail) => {
-                let item_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
-                let items = items
-                    .iter()
-                    .map(|item| {
-                        let item = item.to_hir(infer)?;
-                        infer.unify(item.type_id(), item_type_id)?;
-                        Ok(item)
-                    })
-                    .collect::<Result<_, _>>()?;
-                (infer.insert(TypeInfo::List(item_type_id), self.span()), Pat::ListFront(items, tail.clone()))
-            },
-            ast::Pat::Tuple(items) => {
-                let mut item_type_ids = Vec::new();
-                let items = items
-                    .iter()
-                    .map(|item| {
-                        let item = item.to_hir(infer)?;
-                        item_type_ids.push(item.type_id());
-                        Ok(item)
-                    })
-                    .collect::<Result<_, _>>()?;
-                (infer.insert(TypeInfo::Tuple(item_type_ids), self.span()), Pat::Tuple(items))
-            },
-            ast::Pat::Record(fields) => {
-                let mut field_type_ids = Vec::new();
-                let fields = fields
-                    .iter()
-                    .map(|(name, field)| {
-                        let field = field.to_hir(infer)?;
-                        field_type_ids.push((name.clone(), field.type_id()));
-                        Ok((name.clone(), field))
-                    })
-                    .collect::<Result<_, _>>()?;
-                (infer.insert(TypeInfo::Record(field_type_ids), self.span()), Pat::Record(fields))
-            },
-            ast::Pat::Deconstruct(constructor, inner) => {
-                let inner = inner.to_hir(infer)?;
+        // First, assume that a free identifier is a data constructor
+        let (type_id, pat, binding) = if let ast::Binding::Ident(name) = &**self {
+            if let Some((data_id, variant, type_id, params, inner_ty)) = infer
+                .data_ctx()
+                .get_constructor_type(*name, infer, self.span()).ok()
+            {
+                let fake_inner = InferNode::new(Binding {
+                    pat: SrcNode::new(Pat::Tuple(Vec::new()), self.span()),
+                    binding: None,
+                }, (self.span(), inner_ty));
 
-                // Instantiate inner type with generics as free type terms
-                let (data_id, variant, type_id, params, inner_ty) = infer.data_ctx().get_constructor_type(**constructor, infer, self.span())?;
+                infer.unify(fake_inner.type_id(), inner_ty)?;
 
-                infer.unify(inner.type_id(), inner_ty)?;
-
-                (type_id, Pat::Deconstruct(
-                    SrcNode::new((data_id, variant), constructor.span()),
+                (type_id, SrcNode::new(Pat::Deconstruct(
+                    SrcNode::new((data_id, variant), self.span()),
                     params.into_iter().map(|(name, ty)| (name.clone(), (name.span(), ty))).collect(),
-                    inner,
-                ))
-            },
+                    fake_inner,
+                ), self.span()), None)
+            } else { // If no data constructor can be found, consider it to just be a binding wildcard
+                let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
+                (type_id, SrcNode::new(Pat::Wildcard, self.span()), Some(SrcNode::new(*name, self.span())))
+            }
+        } else {
+            let (binding, pat, span) = match &**self {
+                ast::Binding::Bound(binding, pat) => (Some(binding.clone()), &**pat, pat.span()),
+                ast::Binding::Unbound(pat) => (None, pat, self.span()),
+                ast::Binding::Ident(_) => unreachable!(),
+            };
+
+            let (type_id, pat) = match pat {
+                ast::Pat::Wildcard => (infer.insert(TypeInfo::Unknown(None), self.span()), Pat::Wildcard),
+                ast::Pat::Literal(litr) => {
+                    let litr_type_info = litr.get_type_info(infer, self.span());
+                    (infer.insert(litr_type_info, self.span()), Pat::Literal(litr.clone()))
+                },
+                ast::Pat::List(items) => {
+                    let item_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
+                    let items = items
+                        .iter()
+                        .map(|item| {
+                            let item = item.to_hir(infer)?;
+                            infer.unify(item.type_id(), item_type_id)?;
+                            Ok(item)
+                        })
+                        .collect::<Result<_, _>>()?;
+                    (infer.insert(TypeInfo::List(item_type_id), self.span()), Pat::List(items))
+                },
+                ast::Pat::ListFront(items, tail) => {
+                    let item_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
+                    let items = items
+                        .iter()
+                        .map(|item| {
+                            let item = item.to_hir(infer)?;
+                            infer.unify(item.type_id(), item_type_id)?;
+                            Ok(item)
+                        })
+                        .collect::<Result<_, _>>()?;
+                    (infer.insert(TypeInfo::List(item_type_id), self.span()), Pat::ListFront(items, tail.clone()))
+                },
+                ast::Pat::Tuple(items) => {
+                    let mut item_type_ids = Vec::new();
+                    let items = items
+                        .iter()
+                        .map(|item| {
+                            let item = item.to_hir(infer)?;
+                            item_type_ids.push(item.type_id());
+                            Ok(item)
+                        })
+                        .collect::<Result<_, _>>()?;
+                    (infer.insert(TypeInfo::Tuple(item_type_ids), self.span()), Pat::Tuple(items))
+                },
+                ast::Pat::Record(fields) => {
+                    let mut field_type_ids = Vec::new();
+                    let fields = fields
+                        .iter()
+                        .map(|(name, field)| {
+                            let field = field.to_hir(infer)?;
+                            field_type_ids.push((name.clone(), field.type_id()));
+                            Ok((name.clone(), field))
+                        })
+                        .collect::<Result<_, _>>()?;
+                    (infer.insert(TypeInfo::Record(field_type_ids), self.span()), Pat::Record(fields))
+                },
+                ast::Pat::Deconstruct(constructor, inner) => {
+                    let inner = inner.to_hir(infer)?;
+
+                    // Instantiate inner type with generics as free type terms
+                    let (data_id, variant, type_id, params, inner_ty) = infer.data_ctx().get_constructor_type(**constructor, infer, self.span())?;
+
+                    infer.unify(inner.type_id(), inner_ty)?;
+
+                    (type_id, Pat::Deconstruct(
+                        SrcNode::new((data_id, variant), constructor.span()),
+                        params.into_iter().map(|(name, ty)| (name.clone(), (name.span(), ty))).collect(),
+                        inner,
+                    ))
+                },
+            };
+
+            (type_id, SrcNode::new(pat, span), binding)
         };
 
-        Ok(InferNode::new(Binding {
-            pat: SrcNode::new(pat, self.pat.span()),
-            binding: self.binding.clone(),
-        }, (self.span(), type_id)))
+        Ok(InferNode::new(Binding { pat, binding }, (self.span(), type_id)))
     }
 }
 
