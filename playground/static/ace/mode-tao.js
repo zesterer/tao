@@ -16,7 +16,7 @@ ace.define(
 
     var TaoHighlightRules = function () {
       var keywords =
-        "def|match|if|else|then|null|let|given|in|as|with|of|type|data";
+        "def|match|if|else|then|null|let|and|or|given|in|as|with|of|type|data";
 
       var builtinConstants = "true|false";
 
@@ -47,13 +47,13 @@ ace.define(
             regex: "\\d+(?:(?:\\.\\d*)?)?\\b",
           },
           {
-            token: keywordMapper,
-            regex: "[a-zA-Z_][a-zA-Z0-9_]*",
-          },
-          {
             token: "keyword.operator",
             regex:
-              "\\+|\\-|\\/|\\*|\\%|<|>|<=|>=|=>|!=|=|and|or|\\+\\+|\\.\\.\\.|!",
+              "\\+|\\-|\\/|\\*|\\%|<|>|<=|>=|=>|!=|\\+\\+|\\.\\.\\.|!",
+          },
+          {
+            token: keywordMapper,
+            regex: "[a-zA-Z_][a-zA-Z0-9_]*",
           },
           {
             token: "paren.lparen",

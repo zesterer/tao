@@ -1,3 +1,5 @@
+import "./index.css";
+
 var editor = ace.edit("code");
 editor.setOptions({
   fontFamily: "Fira Code",
@@ -8,10 +10,8 @@ editor.session.setNewLineMode("unix");
 editor.setShowPrintMargin(false);
 editor.session.setMode("ace/mode/tao");
 
-// String splice polyfill
-String.prototype.splice = function (idx, rem, str) {
-  return this.slice(0, idx) + str + this.slice(idx + Math.abs(rem));
-};
+var Range = ace.require("ace/range").Range;
+var marker_ids = [];
 
 if (window.Worker) {
   let worker = new Worker("./worker.js");
@@ -20,7 +20,7 @@ if (window.Worker) {
     document.querySelector("#output").innerHTML = "";
 
     if (result.data.errors == null) {
-      document.querySelector("#output").innerHTML += result.data.out;
+      document.querySelector("#output").innerText += result.data.out;
     } else {
       let errors = result.data.errors;
 
@@ -28,17 +28,23 @@ if (window.Worker) {
     }
   };
 
+  worker.onerror = () => {
+    alert("Crash");
+  };
+
   document.querySelector("#run").addEventListener("click", () => {
+    clearMarkers();
     worker.postMessage(editor.getValue());
   });
 } else {
   import("../pkg/index.js")
     .then((module) => {
       document.querySelector("#run").addEventListener("click", () => {
+        clearMarkers();
         document.querySelector("#output").innerHTML = "";
 
         try {
-          document.querySelector("#output").innerHTML += module.run(
+          document.querySelector("#output").innerText += module.run(
             editor.getValue()
           );
         } catch (errors) {
@@ -87,101 +93,123 @@ function save(filename) {
 }
 
 function handle_errors(errors) {
-  let output = "";
+  document.querySelector("#output").innerHTML = "";
 
-  console.log(errors);
+  let span = document.createElement("span");
+  span.style.color = "red";
+  span.style.whiteSpace = "pre-wrap";
 
-  output += '<span style="color: red">';
-
-  output += errors.length;
+  span.innerHTML += errors.length;
 
   if (errors.length == 1) {
-    output += " error when compiling \n\n";
+    span.innerHTML += " error when compiling \n\n";
   } else {
-    output += " errors when compiling \n\n";
+    span.innerHTML += " errors when compiling \n\n";
   }
-
-  //let highlighting_text = document.querySelector("#code").innerText;
 
   for (let i = 0; i < errors.length; i++) {
     const err = errors[i];
 
-    /*     let opening_tag = '<span class="highlight-err">';
-    
-    let closing_tag = "</span>";
+    for (let k = 0; k < err.src.error.primary_spans.length; k++) {
+      const span = err.src.error.primary_spans[k].Range;
 
-    for (let j = 0; j < err.src.error.primary_spans.length; j++) {
-      const range = err.src.error.primary_spans[j].Range;
-      
-      console.log("-------");
-      console.log(range);
-      
-      highlighting_text = highlighting_text.splice(range[0], 0, opening_tag);
-      highlighting_text = highlighting_text.splice(
-        range[1] + opening_tag.length,
-        0,
-        closing_tag
+      let start = editor.session.doc.indexToPosition(span[0]);
+      let end = editor.session.doc.indexToPosition(span[1]);
+
+      marker_ids.push(
+        editor.session.addMarker(
+          new Range(start.row, start.column, end.row, end.column),
+          "error",
+          "line",
+          true
+        )
       );
-      
-      for (let k = j; k < err.src.error.primary_spans.length; k++) {
-        const offset = opening_tag.length + closing_tag.length;
-        console.log(err.src.error.primary_spans[k].Range);
-        err.src.error.primary_spans[k].Range[0] += offset;
-        err.src.error.primary_spans[k].Range[1] += offset;
-        console.log(err.src.error.primary_spans[k].Range);
-      }
-    } */
+    }
 
-    output += err.msg;
+    span.innerText += err.msg;
 
-    output += "\n\n";
+    span.innerHTML += "\n\n";
   }
 
-  output += "<span>";
-  document.querySelector("#output").innerHTML = output;
+  document.querySelector("#output").append(span);
 }
 
-/* const themes = [
-                { background_color: "darkslategray", code_color: "wheat" },
-                { background_color: "#292d3e", code_color: "#99c2eb" },
-              ];
-              const themes_toolbar = document.querySelector("#themes");
-              
-              if (localStorage.getItem("theme") != null) {
-                document.documentElement.style.setProperty(
-                  "--code-background",
-                  themes[localStorage.getItem("theme")].background_color
-                );
-                document.documentElement.style.setProperty(
-                  "--code-color",
-                  themes[localStorage.getItem("theme")].code_color
-                );
-              }
-              
-              for (var i = 0; i < themes.length; i++) {
-                let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                svg.setAttribute("class", "theme-btn");
-                svg.setAttribute("theme", i);
-                svg.setAttribute("height", 30);
-                svg.setAttribute("width", 30);
-              
-                svg.innerHTML = `<polygon
-                points="0,0 30,0 30,30 0,30"
-                style="fill: ${themes[i].background_color};"
-              />`;
-              
-                svg.onclick = () => {
-                  document.documentElement.style.setProperty(
-                    "--code-background",
-                    themes[svg.getAttribute("theme")].background_color
-                  );
-                  document.documentElement.style.setProperty(
-                    "--code-color",
-                    themes[svg.getAttribute("theme")].code_color
-                  );
-              
-                  localStorage.setItem("theme", svg.getAttribute("theme"));
-                };
-              
-                themes_toolbar.appendChild(svg);
-              } */
+function clearMarkers() {
+  let id = marker_ids.pop();
+
+  while (id != undefined) {
+    editor.session.removeMarker(id);
+    id = marker_ids.pop();
+  }
+}
+
+editor.commands.removeCommand("find");
+
+// String splice polyfill
+String.prototype.splice = function (idx, rem, str) {
+  return this.slice(0, idx) + str + this.slice(idx + Math.abs(rem));
+};
+
+(async function () {
+  const examples = document.querySelector(".examples");
+  try {
+    const response = await fetch(
+      "https://api.github.com/repos/zesterer/tao/contents/examples"
+    );
+
+    if (!response.ok) {
+      throw null;
+    }
+
+    examples.innerHTML = "";
+
+    let contents = await response.json();
+
+    for (let i = 0; i < contents.length; i++) {
+      const element = contents[i];
+
+      if (element.type === "file") {
+        let li = document.createElement("li");
+        li.classList.add("link");
+        li.innerText = element.name;
+        li.onclick = () => {
+          loadExample(element.url);
+        };
+        examples.append(li);
+      }
+    }
+  } catch (err) {
+    examples.innerHTML = "";
+
+    let li = document.createElement("li");
+    li.innerText = "(╯°□°)╯︵ ┻━┻ error getting examples";
+    examples.append(li);
+  }
+})();
+
+async function loadExample(url) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    return;
+  }
+
+  let file = await response.json();
+  let data = atob(file.content);
+
+  editor.setValue(data);
+
+  document.querySelector(".overlay").style.display = "none";
+}
+
+document.querySelector("#open").onclick = () => {
+  document.querySelector(".overlay").style.display = "block";
+};
+
+document.querySelector(".overlay").onclick = () => {
+  document.querySelector(".overlay").style.display = "none";
+};
+
+document.querySelector(".explorer").onclick = (e) => {
+  e.stopPropagation();
+};

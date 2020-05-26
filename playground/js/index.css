@@ -20,10 +20,41 @@
 
 .wrapper {
   display: grid;
+  position: relative;
   height: 100%;
   grid-template-columns: 100%;
   grid-template-rows: 70% 30%;
   font-family: "Fira Code", monospace;
+}
+
+#open {
+  position: absolute;
+  z-index: 5;
+  background-color: white;
+  border: none;
+  color: black;
+  text-align: center;
+  text-decoration: none;
+  font-size: 16px;
+  padding-left: 16px;
+  border-radius: 20%;
+  left: -10px;
+}
+
+.overlay {
+  display: none;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(30, 30, 30, 0.8);
+  z-index: 6;
+}
+
+.explorer {
+  background-color: white;
+  min-width: 250px;
+  max-width: 420px;
+  height: 100%;
 }
 
 @media (min-width: 1200px) {
@@ -126,10 +157,6 @@ input[type="file"] {
   display: block;
 }
 
-.highlight-err {
-  text-decoration: underline wavy red;
-}
-
 @media (min-width: 1200px) {
   .wrapper {
     grid-template-rows: 100%;
@@ -139,4 +166,44 @@ input[type="file"] {
   .toolbar {
     flex-direction: row;
   }
+}
+
+.error {
+  border-bottom: 1px solid red;
+  position: absolute;
+}
+
+ul {
+  margin: 0;
+  padding: 6px;
+  list-style-type: none;
+}
+
+ul > li {
+  margin-left: 20px;
+}
+
+.link {
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline solid black;
+}
+
+.folder > p {
+  cursor: pointer;
+  margin: 0;
+}
+
+.folder > p:hover {
+  text-decoration: underline solid black;
+}
+
+.explorer > div {
+  padding: 8px;
+}
+
+.hide-children > *:not(:first-child) {
+  display: none;
 }

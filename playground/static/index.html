@@ -14,12 +14,22 @@
       property="og:description"
       content="The tao interactive playground allows you to experiment with the language without needing to install any tools"
     />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="index.css" />
-    <link rel="preload" href="worker.js" as="script">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preload" href="worker.js" as="script" />
   </head>
   <body>
     <div class="wrapper">
+      <button id="open">></button>
+      <div class="overlay">
+        <div class="explorer">
+          <div class="folder">
+            <p onclick="this.parentNode.classList.toggle('hide-children')">examples</p>
+            <ul class="examples">
+              <li>Loading...</li>
+            </ul>
+          </div>
+        </div>
+      </div>
       <div class="code-wrapper">
         <div id="code"></div>
         <div class="toolbar">
@@ -65,16 +75,6 @@
               />
             </svg>
           </label>
-          <!-- TODO: Readd themeing
-            <button id="theme" class="dropdown">
-            <svg height="30" width="30">
-              <polygon
-                points="0,0 30,0 30,30 0,30"
-                style="fill: var(--code-background);"
-              />
-            </svg>
-            <div class="dropdown-content toolbar" id="themes"></div>
-          </button>-->
         </div>
       </div>
       <div id="output"></div>
@@ -83,7 +83,6 @@
         href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap"
         rel="stylesheet"
       />
-      <script src="index.js"></script>
     </div>
   </body>
 </html>
