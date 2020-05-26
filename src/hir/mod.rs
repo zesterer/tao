@@ -471,26 +471,8 @@ impl ast::Binding {
     fn to_hir(self: &SrcNode<Self>, infer: &mut InferCtx) -> Result<InferBinding, Error> {
         // First, assume that a free identifier is a data constructor
         let (type_id, pat, binding) = if let ast::Binding::Ident(name) = &**self {
-            if let Some((data_id, variant, type_id, params, inner_ty)) = infer
-                .data_ctx()
-                .get_constructor_type(*name, infer, self.span()).ok()
-            {
-                let fake_inner = InferNode::new(Binding {
-                    pat: SrcNode::new(Pat::Tuple(Vec::new()), self.span()),
-                    binding: None,
-                }, (self.span(), inner_ty));
-
-                infer.unify(fake_inner.type_id(), inner_ty)?;
-
-                (type_id, SrcNode::new(Pat::Deconstruct(
-                    SrcNode::new((data_id, variant), self.span()),
-                    params.into_iter().map(|(name, ty)| (name.clone(), (name.span(), ty))).collect(),
-                    fake_inner,
-                ), self.span()), None)
-            } else { // If no data constructor can be found, consider it to just be a binding wildcard
-                let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
-                (type_id, SrcNode::new(Pat::Wildcard, self.span()), Some(SrcNode::new(*name, self.span())))
-            }
+            let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
+            (type_id, SrcNode::new(Pat::Wildcard, self.span()), Some(SrcNode::new(*name, self.span())))
         } else {
             let (binding, pat, span) = match &**self {
                 ast::Binding::Bound(binding, pat) => (Some(binding.clone()), &**pat, pat.span()),
@@ -637,15 +619,6 @@ impl ast::Expr {
                     let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                     infer.unify(type_id, global_id)?;
                     (type_id, Expr::Global(path.base(), generics))
-                } else if let Ok((data_id, variant, type_id, params, inner_ty)) = infer.data_ctx().get_constructor_type(path.base(), infer, self.span()) {
-                    let ast_inner = SrcNode::new(ast::Expr::Tuple(Vec::new()), self.span()); // Implicitly an empty tuple
-                    let inner = ast_inner.to_hir(data, infer, scope)?;
-                    infer.unify(inner_ty, inner.type_id())?;
-                    (type_id, Expr::Constructor(
-                        SrcNode::new((data_id, variant), self.span()),
-                        params.into_iter().map(|(name, ty)| (name.clone(), (name.span(), ty))).collect(),
-                        inner,
-                    ))
                 } else {
                     return Err(Error::custom(format!("No such binding '{}' in scope", path.base().to_string()))
                         .with_span(self.span()));

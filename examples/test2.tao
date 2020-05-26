@@ -12,7 +12,7 @@ def len A of [A] -> ? = |xs| match xs {
 	| [] => 0
 }
 
-def main = match $Nil {
-	| $Just x => x
-	| $Nil => 0
+def main = match Nil {
+	| Just x => x
+	| Nil => 0
 }

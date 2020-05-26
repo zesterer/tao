@@ -156,6 +156,13 @@ fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=
     })
 }
 
+fn type_name_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Ident>, Error> {
+    permit_map(|token: node::Node<_>| match &*token {
+        Token::TypeName(x) => Some(*x),
+        _ => None,
+    })
+}
+
 fn path_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Path>>, Error> {
     ident_parser()
         .then(just(Token::Separator)
@@ -215,7 +222,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             recursive(move |atom| {
                 let atom = atom.link();
 
-                let ident = ident_parser()
+                let ident = type_name_parser()
                     .map_with_span(|ident, span| SrcNode::new(Type::Data(SrcNode::new(ident, span), Vec::new()), span));
 
                 let list = nested_parser(
@@ -267,7 +274,7 @@ fn type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
             })
         };
 
-        let data = ident_parser()
+        let data = type_name_parser()
             .map_with_span(|name, span| SrcNode::new(name, span))
             .then(atom.clone().repeated())
             .map(|(data, params)| Type::Data(data, params))
@@ -347,10 +354,13 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
             )
                 .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span));
 
-            let deconstruct = ident_parser()
+            let deconstruct = type_name_parser()
                 .map_with_span(|pat, span| SrcNode::new(pat, span))
-                .then(binding)
-                .map_with_span(|(data, inner), span| SrcNode::new(Pat::Deconstruct(data, inner), span));
+                .then(binding.or_not())
+                .map_with_span(|(data, inner), span| SrcNode::new(
+                    Pat::Deconstruct(data.clone(), inner.unwrap_or_else(|| SrcNode::new(Binding::Unbound(Pat::Tuple(Vec::new())), data.span()))),
+                    span,
+                ));
 
             wildcard
                 .or(litr)
@@ -423,8 +433,7 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         let ident = ident_parser()
             .map_with_span(|ident, span| SrcNode::new(Expr::Path(Path(vec![ident])), span));
 
-        let constructor = just(Token::Dollar)
-            .padding_for(ident_parser())
+        let constructor = type_name_parser()
             .map_with_span(|ident, span| SrcNode::new(ident, span))
             .then(expr.clone().or_not())
             .map_with_span(|(data, expr), span| SrcNode::new(
@@ -610,7 +619,7 @@ pub fn parse_expr(tokens: &[node::Node<Token>]) -> Result<SrcNode<Expr>, Vec<Err
 }
 
 fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<DataType>>, Error> {
-    let variant = ident_parser()
+    let variant = type_name_parser()
         .map_with_span(|ident, span| SrcNode::new(ident, span))
         .then(type_parser().or_not());
 
@@ -624,10 +633,6 @@ fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Out
                 variants
             }))
         .map_with_span(|variants, span| SrcNode::new(DataType::Sum(variants), span));
-
-    let field = ident_parser()
-        .map_with_span(|ident, span| SrcNode::new(ident, span))
-        .then(type_parser());
 
     let product = type_parser()
         .map_with_span(|ty, span| SrcNode::new(DataType::Product(ty), span));
@@ -691,7 +696,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
     recursive(|module| {
         let module = module.link();
 
-        let generics = ident_parser()
+        let generics = type_name_parser()
             .map_with_span(|ident, span| SrcNode::new(ident, span))
             .repeated();
 
@@ -720,7 +725,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
 
         let type_alias = just(Token::Type)
             // Name
-            .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
+            .padding_for(type_name_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
             // Generic parameters
             .then(generics.clone())
             .padded_by(just(Token::Op(Op::Eq)))
@@ -733,7 +738,7 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
 
         let data = just(Token::Data)
             // Name
-            .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
+            .padding_for(type_name_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
             // Generic parameters
             .then(generics)
             .padded_by(just(Token::Op(Op::Eq)))

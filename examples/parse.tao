@@ -32,7 +32,7 @@ def sum = fold_l(0, |a, x| a + x)
 
 def find_char_inner = |x, cs, c of Char| match cs {
 	| [c1, cs: ...] => if c1 = c
-		then $Just x
+		then Just x
 		else find_char_inner(x + 1, cs, c)
 	| [] => $Nil
 }
@@ -47,7 +47,7 @@ data Out I O = {
 }
 
 def success I O = |rest of [I], out of O| $Out { rest, out: $Just out }
-def failure I O of ? -> Out ? O = |rest of [I]| $Out { rest, out: $Nil }
+def failure I O of ? -> Out ? O = |rest of [I]| Out { rest, out: $Nil }
 
 type Parser I O = [I] -> Out I O
 
@@ -168,25 +168,25 @@ def atom = number
 		:padding_for(recurse(|input| input:expr))
 		:padded_by(char(')')))
 
-def unary = op('-'):map(|_| $Neg)
+def unary = op('-'):map(|_| Neg)
 	:repeated
 	:and_then(atom)
-	:map(reduce_r(|op, a| $Unary (op, a)))
+	:map(reduce_r(|op, a| Unary (op, a)))
 
 def product = unary
-	:and_then(op('*'):map(|_| $Mul)
-		:or_else(op('/'):map(|_| $Div))
-		:or_else(op('%'):map(|_| $Rem))
+	:and_then(op('*'):map(|_| Mul)
+		:or_else(op('/'):map(|_| Div))
+		:or_else(op('%'):map(|_| Rem))
 		:and_then(unary)
 		:repeated)
-	:map(reduce_l(|a, (op, b)| $Binary (op, a, b)))
+	:map(reduce_l(|a, (op, b)| Binary (op, a, b)))
 
 def sum = product
-	:and_then(op('+'):map(|_| $Add)
-		:or_else(op('-'):map(|_| $Sub))
+	:and_then(op('+'):map(|_| Add)
+		:or_else(op('-'):map(|_| Sub))
 		:and_then(product)
 		:repeated)
-	:map(reduce_l(|a, (op, b)| $Binary (op, a, b)))
+	:map(reduce_l(|a, (op, b)| Binary (op, a, b)))
 
 def expr = sum
 

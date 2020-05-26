@@ -90,6 +90,7 @@ pub enum Token {
     String(LocalIntern<String>),
     Null,
     Ident(LocalIntern<String>),
+    TypeName(LocalIntern<String>),
     Op(Op),
     Tree(Delimiter, Vec<SrcNode<Token>>),
 
@@ -140,6 +141,7 @@ impl fmt::Display for Token {
             Token::String(x) => write!(f, "\"{}\"", x),
             Token::Null => write!(f, "null"),
             Token::Ident(i) => write!(f, "{}", i),
+            Token::TypeName(i) => write!(f, "{}", i),
             Token::Op(op) => write!(f, "{}", op),
             Token::Tree(delim, tokens) => write!(f, "{}...{}", delim.left(), delim.right()),
             Token::RArrow => write!(f, "->"),
@@ -212,9 +214,21 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .map(|chars| Token::String(LocalIntern::new(chars.into_iter().collect())))
             .boxed();
 
-        let ident = permit(|c: &char| c.is_ascii_alphabetic() || *c == '_')
+        let ident_raw = permit(|c: &char| c.is_ascii_lowercase() || *c == '_')
             .then(permit(|c: &char| c.is_ascii_alphanumeric() || *c == '_').repeated())
             .map(|(head, tail)| std::iter::once(head).chain(tail.into_iter()).collect());
+
+        let type_name_raw = permit(char::is_ascii_uppercase)
+            .then(permit(|c: &char| c.is_ascii_alphanumeric() || *c == '_').repeated())
+            .map(|(head, tail)| std::iter::once(head).chain(tail.into_iter()).collect());
+
+        // `$` reverses the ident/type name
+
+        let ident = ident_raw.clone()
+            .or(just('$').padding_for(type_name_raw.clone()));
+
+        let type_name = type_name_raw
+            .or(just('$').padding_for(ident_raw));
 
         let op = seq("->".chars()).to(Token::RArrow)
             .or(seq("=>".chars()).to(Token::RMap))
@@ -251,6 +265,7 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
         let token = number
             .or(character)
             .or(string)
+            .or(type_name.map(|s| Token::TypeName(LocalIntern::new(s))))
             .or(ident.map(|s: String| match s.as_str() {
                 "_" => Token::Wildcard,
                 "true" => Token::Boolean(true),
