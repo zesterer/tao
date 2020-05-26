@@ -818,7 +818,6 @@ impl ast::Expr {
                     inner,
                 ))
             },
-            expr => todo!("HIR for {:?}", expr),
         };
 
         Ok(InferNode::new(hir_expr, (self.span(), type_id)))
@@ -840,10 +839,6 @@ impl InferPat {
                 .into_iter()
                 .map(|item| item.into_checked(infer))
                 .collect::<Result<_, _>>()?, tail),
-            Pat::Tuple(items) => Pat::Tuple(items
-                .into_iter()
-                .map(|item| item.into_checked(infer))
-                .collect::<Result<_, _>>()?),
             Pat::Tuple(items) => Pat::Tuple(items
                 .into_iter()
                 .map(|item| item.into_checked(infer))

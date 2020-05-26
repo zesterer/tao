@@ -453,7 +453,6 @@ impl Program {
                     ])
                 }
             },
-            expr => todo!("{:?}", expr),
         };
 
         let ty = self.instantiate_type(prog, hir_expr.ty(), get_generic);
@@ -530,7 +529,6 @@ impl Program {
                         .collect())
                 }
             },
-            ty => todo!("{:?}", ty),
         }
     }
 }

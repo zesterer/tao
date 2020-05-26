@@ -10,7 +10,7 @@ Tao is a statically-typed functional programming language.
 
 # <img src="https://i.imgur.com/qVXyHq3.png" alt="List manipulation in Tao"/>
 
-See the [`examples` directory](examples/) for a selection of example programs.
+See the [`examples`](examples/) directory for a selection of example programs.
 
 ## Features
 

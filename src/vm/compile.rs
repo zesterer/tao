@@ -17,13 +17,14 @@ use super::{
 
 type Ident = LocalIntern<String>;
 
-fn push_constant_num(x: f64) -> Instr {
+fn emit_constant_num(builder: &mut ProcBuilder, x: f64) {
     if x.fract() == 0.0 && x > i32::MIN as f64 && x < i32::MAX as f64 {
-        Instr::Integer(x as i32)
+        builder.emit_instr(Instr::Integer(x as i32));
     } else if ((x as f32 as f64) - x).abs() < f64::EPSILON {
-        Instr::Float(x as f32)
+        builder.emit_instr(Instr::Float(x as f32));
     } else {
-        todo!()
+        let s = builder.emit_const(Value::Number(x));
+        builder.emit_instr(Instr::LoadConst(s));
     }
 }
 
@@ -38,7 +39,7 @@ impl RawTypeNode<mir::Expr> {
         match &**self {
             mir::Expr::Literal(val) => match val {
                 Literal::Number(x) => {
-                    builder.emit_instr(push_constant_num(*x));
+                    emit_constant_num(builder, *x);
                 },
                 Literal::Char(x) => {
                     builder.emit_instr(Instr::Char(*x));
@@ -225,7 +226,6 @@ impl RawTypeNode<mir::Expr> {
 
                 builder.emit_instr(Instr::SetList(*index as u32));
             },
-            expr => todo!("{:?}", expr),
         }
     }
 }
@@ -246,7 +246,7 @@ impl mir::Matcher {
                     builder.emit_instr(Instr::EqChar);
                 },
                 Literal::Number(x) => {
-                    builder.emit_instr(push_constant_num(*x));
+                    emit_constant_num(builder, *x);
                     builder.emit_instr(Instr::EqNum);
                 },
                 Literal::String(x) => todo!(),
