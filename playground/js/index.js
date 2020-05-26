@@ -152,36 +152,38 @@ String.prototype.splice = function (idx, rem, str) {
 
 (async function () {
   const examples = document.querySelector(".examples");
-  const response = await fetch(
-    "https://api.github.com/repos/zesterer/tao/contents/examples", {
-      "mode": "no-cors"
+  try {
+    const response = await fetch(
+      "https://api.github.com/repos/zesterer/tao/contents/examples"
+    );
+
+    if (!response.ok) {
+      throw null;
     }
-  );
-  
 
-  examples.innerHTML = "";
+    examples.innerHTML = "";
 
-  if (!response.ok) {
+    let contents = await response.json();
+
+    for (let i = 0; i < contents.length; i++) {
+      const element = contents[i];
+
+      if (element.type === "file") {
+        let li = document.createElement("li");
+        li.classList.add("link");
+        li.innerText = element.name;
+        li.onclick = () => {
+          loadExample(element.url);
+        };
+        examples.append(li);
+      }
+    }
+  } catch (err) {
+    examples.innerHTML = "";
+
     let li = document.createElement("li");
-    li.innerText = "(ノಠ益ಠ)ノ彡┻━┻ error getting examples";
+    li.innerText = "(╯°□°)╯︵ ┻━┻ error getting examples";
     examples.append(li);
-    return;
-  }
-
-  let contents = await response.json();
-
-  for (let i = 0; i < contents.length; i++) {
-    const element = contents[i];
-
-    if (element.type === "file") {
-      let li = document.createElement("li");
-      li.classList.add("link");
-      li.innerText = element.name;
-      li.onclick = () => {
-        loadExample(element.url);
-      };
-      examples.append(li);
-    }
   }
 })();
 
