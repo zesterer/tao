@@ -148,47 +148,4 @@ function clearMarkers() {
   }
 }
 
-/* const themes = [
-                { background_color: "darkslategray", code_color: "wheat" },
-                { background_color: "#292d3e", code_color: "#99c2eb" },
-              ];
-              const themes_toolbar = document.querySelector("#themes");
-              
-              if (localStorage.getItem("theme") != null) {
-                document.documentElement.style.setProperty(
-                  "--code-background",
-                  themes[localStorage.getItem("theme")].background_color
-                );
-                document.documentElement.style.setProperty(
-                  "--code-color",
-                  themes[localStorage.getItem("theme")].code_color
-                );
-              }
-              
-              for (var i = 0; i < themes.length; i++) {
-                let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                svg.setAttribute("class", "theme-btn");
-                svg.setAttribute("theme", i);
-                svg.setAttribute("height", 30);
-                svg.setAttribute("width", 30);
-              
-                svg.innerHTML = `<polygon
-                points="0,0 30,0 30,30 0,30"
-                style="fill: ${themes[i].background_color};"
-              />`;
-              
-                svg.onclick = () => {
-                  document.documentElement.style.setProperty(
-                    "--code-background",
-                    themes[svg.getAttribute("theme")].background_color
-                  );
-                  document.documentElement.style.setProperty(
-                    "--code-color",
-                    themes[svg.getAttribute("theme")].code_color
-                  );
-              
-                  localStorage.setItem("theme", svg.getAttribute("theme"));
-                };
-              
-                themes_toolbar.appendChild(svg);
-              } */
+editor.commands.removeCommand('find');
