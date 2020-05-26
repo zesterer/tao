@@ -53,14 +53,14 @@ type Parser I O = [I] -> Out I O
 
 def matcher I O of (I -> Maybe O) -> Parser I O = |f, input| match input {
 	| [i, rest: ...] => match i:f {
-		| $Just o => success(rest, o)
-		| $Nil => failure(input)
+		| Just o => success(rest, o)
+		| Nil => failure(input)
 	}
 	| [] => failure([])
 }
 
 def recurse I O of ([I] -> Out I O) -> Parser I O = |f, input| match input:f {
-	| $Out { rest, out: $Just o } => success(rest, o)
+	| Out { rest, out: Just o } => success(rest, o)
 	| _ => failure(input)
 }
 
@@ -72,49 +72,49 @@ def end I of Parser I () = |input| match input {
 def map I O U of (O -> U) -> Parser I O -> Parser I U = |f, p, input|
 	let r = input:p in
 	match r.out {
-		| $Just o => success(r.rest, f(o))
+		| Just o => success(r.rest, f(o))
 		| _ => failure(r.rest)
 	}
 
 def repeated I O of Parser I O -> Parser I [O] = |p, input| match input:p {
-	| $Out { rest, out: $Just o } =>
+	| Out { rest, out: Just o } =>
 		let r = rest:repeated(p) in
 		match r.out {
-			| $Just out => success(r.rest, [o] ++ out)
-			| $Nil => failure(r.rest)
+			| Just out => success(r.rest, [o] ++ out)
+			| Nil => failure(r.rest)
 		}
-	| $Out { rest, out } => success(rest, [])
+	| Out { rest, out } => success(rest, [])
 }
 
 def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
 	let r = input:repeated(p) in
 	match r.out {
-		| $Just xs => if xs:len >= n
+		| Just xs => if xs:len >= n
 			then r
 			else failure(r.rest)
-		| $Nil => failure(r.rest)
+		| Nil => failure(r.rest)
 	}
 
 def and_then I O U of Parser I U -> Parser I O -> Parser I (O, U) = |p1, p0, input|
 	let r = input:p0 in
 	match r.out {
-		| $Just o => r.rest:map(|u| (o, u), p1)
-		| $Nil => failure(r.rest)
+		| Just o => r.rest:map(|u| (o, u), p1)
+		| Nil => failure(r.rest)
 	}
 
 def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
 	let r = input:p0 in
 	match r.out {
-		| $Just o => success(r.rest, o)
-		| $Nil => let r = input:p1 in
+		| Just o => success(r.rest, o)
+		| Nil => let r = input:p1 in
 			match r.out {
-				| $Just o => success(r.rest, o)
-				| $Nil => failure(r.rest)
+				| Just o => success(r.rest, o)
+				| Nil => failure(r.rest)
 			}
 	}
 
 def is_success I O = |p of Parser I O, input| match input:p {
-	| $Out { rest, out: $Just _ } => true
+	| Out { rest, out: Just _ } => true
 	| _ => false
 }
 
@@ -127,6 +127,22 @@ def padded_by I O U = |p1 of Parser I O, p0 of Parser I U| p0
 def padding_for I O U = |p1 of Parser I O, p0 of Parser I U| p0
 	:and_then(p1)
 	:map(|(_, b)| b)
+
+# AST
+
+data UnaryOp =
+	| Neg
+
+data BinaryOp =
+	| Add | Sub
+	| Mul | Div | Rem
+
+data Expr =
+	| Number Num
+	| Unary (UnaryOp, Expr)
+	| Binary (BinaryOp, Expr, Expr)
+
+# Parser
 
 def whitespace = matcher(find_char(" \t\n"))
 
@@ -147,44 +163,52 @@ def number = digit
 	:padded
 
 def atom = number
+	:map(|x| $Number x)
 	:or_else(char('(')
 		:padding_for(recurse(|input| input:expr))
 		:padded_by(char(')')))
 
-def unary = op('-')
+def unary = op('-'):map(|_| $Neg)
 	:repeated
 	:and_then(atom)
-	:map(reduce_r(|op, x| match op {
-		| '-' => -x
-		| _ => x
-	}))
+	:map(reduce_r(|op, a| $Unary (op, a)))
 
 def product = unary
-	:and_then(op('*')
-		:or_else(op('/'))
-		:or_else(op('%'))
+	:and_then(op('*'):map(|_| $Mul)
+		:or_else(op('/'):map(|_| $Div))
+		:or_else(op('%'):map(|_| $Rem))
 		:and_then(unary)
 		:repeated)
-	:map(reduce_l(|a, (op, b)| match op {
-		| '*' => a * b
-		| '/' => a / b
-		| '%' => a % b
-		| _ => a
-	}))
+	:map(reduce_l(|a, (op, b)| $Binary (op, a, b)))
 
 def sum = product
-	:and_then(op('+')
-		:or_else(op('-'))
+	:and_then(op('+'):map(|_| $Add)
+		:or_else(op('-'):map(|_| $Sub))
 		:and_then(product)
 		:repeated)
-	:map(reduce_l(|a, (op, b)| match op {
-		| '+' => a + b
-		| '-' => a - b
-		| _ => a
-	}))
+	:map(reduce_l(|a, (op, b)| $Binary (op, a, b)))
 
 def expr = sum
 
 def full_expr = expr:padded_by(end)
 
-def main = "4 + (5 - 3)":full_expr
+# Interpreter
+
+def eval = |ast| match ast {
+	| Number x => x
+	| Unary (op, a) => match op {
+		| Neg => -a:eval
+	}
+	| Binary (op, a, b) => match op {
+		| Add => a:eval + b:eval
+		| Sub => a:eval - b:eval
+		| Mul => a:eval * b:eval
+		| Div => a:eval / b:eval
+		| Rem => a:eval % b:eval
+	}
+}
+
+def main = match full_expr("4 + (5 - 3)").out {
+	| Just ast => ast:eval
+	| Nil => 0
+}

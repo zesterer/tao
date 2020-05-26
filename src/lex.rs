@@ -101,6 +101,7 @@ pub enum Token {
     QuestionMark,
     Pipe,
     Dollar,
+    Separator,
     Wildcard,
 
     Let,
@@ -149,6 +150,7 @@ impl fmt::Display for Token {
             Token::QuestionMark => write!(f, "?"),
             Token::Pipe => write!(f, "|"),
             Token::Dollar => write!(f, "$"),
+            Token::Separator => write!(f, "::"),
             Token::Wildcard => write!(f, "_"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
@@ -233,6 +235,7 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(just('>').map(|sc| Token::Op(Op::More)))
             .or(just('!').map(|sc| Token::Op(Op::Not)))
             .or(just(',').map(|sc| Token::Comma))
+            .or(seq("::".chars()).map(|sc| Token::Separator))
             .or(just(':').map(|sc| Token::Colon))
             .or(just('.').map(|sc| Token::Dot))
             .or(just('?').map(|sc| Token::QuestionMark))
