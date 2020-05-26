@@ -624,21 +624,30 @@ fn data_type_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Out
         .then(type_parser().or_not());
 
     let sum = just(Token::Pipe)
-        .or_not()
-        .padding_for(variant.clone()
+        .or_not().map(|p| p.is_some())
+        .then(variant.clone()
             .then(just(Token::Pipe).padding_for(variant).repeated())
             .map(|(head, tail)| (vec![head], tail))
             .reduce_left(|mut variants, variant| {
                 variants.push(variant);
                 variants
             }))
-        .map_with_span(|variants, span| SrcNode::new(DataType::Sum(variants), span));
+        .map_with_span(|(is_sum, mut variants), span| {
+            // This is a bit horrid, but it's needed to correctly handle ambiguity
+            // `data X = Y` parses as a sum type but is actually a product type
+            if !is_sum && variants.len() == 1 {
+                let data = variants.remove(0);
+                let ty = SrcNode::new(Type::Data(data.0, data.1.into_iter().collect()), span);
+                return SrcNode::new(DataType::Product(ty), span);
+            }
+
+            SrcNode::new(DataType::Sum(variants), span)
+        });
 
     let product = type_parser()
         .map_with_span(|ty, span| SrcNode::new(DataType::Product(ty), span));
 
-    // Product first: `data X = Y` should be interpreted as a product!
-    product.or(sum)
+    sum.or(product)
 }
 
 #[derive(Clone, Debug)]
