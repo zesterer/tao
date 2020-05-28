@@ -192,7 +192,9 @@ impl hir::TypeExpr {
             hir::Expr::Literal(_) => {},
             hir::Expr::Global(_, _) => {},
             hir::Expr::Local(ident) => {
-                if scope.iter().find(|name| *name == ident).is_none() {
+                if scope.iter().find(|name| *name == ident).is_none()
+                    && !env.contains(ident)
+                {
                     env.push(*ident);
                 }
             },
@@ -227,6 +229,7 @@ impl hir::TypeExpr {
                 for ident in body_env {
                     if scope.iter().find(|name| **name == ident).is_none()
                         && !bindings.contains_key(&ident)
+                        && !env.contains(&ident)
                     {
                         env.push(ident);
                     }

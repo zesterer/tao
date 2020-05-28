@@ -1,3 +1,6 @@
+# 99 Haskell problems, in Tao (https://wiki.haskell.org/H-99:_Ninety-Nine_Haskell_Problems)
+# Very unfinished
+
 def magic A of A = magic
 
 data Maybe A =
@@ -15,16 +18,17 @@ def last = |xs of [Num]| match xs {
 # Problem 2
 
 def last_but_one = |xs of [Num]| match xs {
-	| [last_but_one, _] => last_but_one
+	| [last_but_one, _] => Just last_but_one
 	| [_, tail: ...] => tail:last_but_one
+	| [] => Nil
 }
 
 # Problem 3
 
 def kth = |k, xs of [Num]| match (k, xs) {
-	| (0, [head, ...]) => $Just head
+	| (0, [head, ...]) => Just head
 	| (k, [_, tail: ...]) => tail:kth(k - 1)
-	| _ => $Nil
+	| _ => Nil
 }
 
 # Problem 4
@@ -63,11 +67,11 @@ def flatten_inner A of [NestedList A] -> [A] = |lists| match lists {
 }
 
 def flatten A of NestedList A -> [A] = |list| match list {
-	| $Elem x => [x]
-	| $List lists => lists:flatten_inner
+	| Elem x => [x]
+	| List lists => lists:flatten_inner
 }
 
-#def main = flatten($List [$Elem 1, $Elem 2, $List [$Elem 3, $Elem 4], $Elem 5])
+#def main = flatten(List [Elem 1, Elem 2, List [Elem 3, Elem 4], Elem 5])
 
 # Problem 8
 
