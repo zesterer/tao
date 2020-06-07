@@ -41,6 +41,30 @@ pub struct DataCtx {
 }
 
 impl DataCtx {
+    pub fn insert_data(&mut self, name: Ident, data: Data) -> Result<DataId, Error> {
+        self.id_counter += 1;
+        let id = self.id_counter;
+
+        if let Some(other_span) = self.data_names
+            .get(&name)
+            .map(|data| self.data[data].span)
+            .or_else(|| self.type_aliases
+                .get(&name)
+                .map(|alias| alias.span))
+        {
+            Err(Error::custom(format!("Conflict between types with the same name"))
+                .with_span(data.span)
+                .with_secondary_span(other_span))
+        } else {
+            self.data_names.insert(name, id);
+            self.data_names_rev.insert(id, name);
+
+            self.data.insert(id, data);
+
+            Ok(id)
+        }
+    }
+
     pub fn from_ast_module(module: &SrcNode<ast::Module>) -> Result<Self, Vec<Error>> {
         let mut this = Self::default();
 
@@ -48,23 +72,21 @@ impl DataCtx {
         module.decls
             .iter()
             .filter_map(|decl| if let ast::Decl::Data(data) = &**decl { Some(data) } else { None })
-            .for_each(|data| {
-                let id = this.new_id();
-                this.data_names.insert(*data.name, id);
-                this.data_names_rev.insert(id, *data.name);
-                this.data.insert(id, Data {
+            .try_for_each(|data| {
+                this.insert_data(*data.name, Data {
                     span: data.name.span(),
                     generics: data.generics.clone(),
                     variants: Vec::new(),
-                });
-            });
+                })
+                    .map(|_| ())
+                    .map_err(|e| vec![e])
+            })?;
 
         // Do a pass to discover type aliases
         module.decls
             .iter()
             .filter_map(|decl| if let ast::Decl::TypeAlias(alias) = &**decl { Some(alias) } else { None })
             .try_for_each(|alias| {
-                let id = this.new_id();
                 let mut infer = InferCtx::from_data_ctx(&this);
                 // Add this type alias' generic parameters to the infer context
                 alias
@@ -130,11 +152,6 @@ impl DataCtx {
             .map_err(|e| vec![e])?;
 
         Ok(this)
-    }
-
-    fn new_id(&mut self) -> DataId {
-        self.id_counter += 1;
-        self.id_counter
     }
 
     pub fn get_data_name(&self, id: DataId) -> Ident {

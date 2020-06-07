@@ -26,6 +26,8 @@ pub fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
 
     let prog = mir_prog.compile().map_err(|e| vec![e])?;
 
+    println!("{:?}", prog);
+
     Ok(vm::Vm::default().execute(&prog))
 }
 

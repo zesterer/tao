@@ -163,14 +163,14 @@ fn type_name_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Out
     })
 }
 
-fn path_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Path>>, Error> {
-    ident_parser()
-        .then(just(Token::Separator)
-            .padding_for(ident_parser())
-            .repeated())
-        .map_with_span(|(ident, mut tail), span| {
-            tail.insert(0, ident);
-            SrcNode::new(Path(tail), span)
+fn path_parser(pat: Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Ident>, Error>) -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=SrcNode<Path>>, Error> {
+    just(Token::Separator)
+        .padding_for(ident_parser())
+        .repeated()
+        .then(pat)
+        .map_with_span(|(mut init, end), span| {
+            init.push(end);
+            SrcNode::new(Path(init), span)
         })
 }
 

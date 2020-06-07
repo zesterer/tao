@@ -84,10 +84,9 @@ def reverse = |xs| match xs {
 def main = last_of([4, 7, 3, 9])
 ```
 
-The first arm is relatively self-explanatory: it matches a list with no elements
-produces an empty list. This is out *base case*. The other arm is more complex.
-It matches a list with *at least* one element, `head`, and then binds the rest
-of the list to `tail`.
+The first arm is relatively self-explanatory: it matches lists with no elements.
+This is our *base case*. The other arm is more complex. It matches lists with
+*at least* one element, `head`, and then binds the rest of the list to `tail`.
 
 ```
 let length_of = |xs| match xs {

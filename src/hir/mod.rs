@@ -36,10 +36,7 @@ impl ast::Literal {
             ast::Literal::Boolean(_) => TypeInfo::Primitive(Primitive::Boolean),
             ast::Literal::Char(_) => TypeInfo::Primitive(Primitive::Char),
             ast::Literal::Number(_) => TypeInfo::Primitive(Primitive::Number),
-            ast::Literal::String(_) => {
-                let c = infer.insert(TypeInfo::Primitive(Primitive::Char), span);
-                TypeInfo::List(c)
-            },
+            ast::Literal::String(_) => TypeInfo::List(infer.insert(TypeInfo::Primitive(Primitive::Char), span)),
         }
     }
 }
@@ -216,7 +213,10 @@ pub type TypeExpr = TypeNode<Expr<(Span, SrcNode<Type>)>>;
 
 #[derive(Clone)]
 pub enum Scope<'a> {
-    Root,
+    Root {
+        module: &'a Module,
+        globals: GlobalHints<'a>,
+    },
     Local(Ident, TypeId, &'a Self),
     Many(HashMap<Ident, TypeId>, &'a Self),
 }
@@ -244,41 +244,35 @@ impl<'a> Scope<'a> {
                 .get(&ident)
                 .copied()
                 .or_else(|| parent.get_local(ident, infer, span)),
-            Scope::Root => None,
+            Scope::Root { .. } => None,
+        }
+    }
+
+    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Result<Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)>, Error> {
+        match self {
+            Scope::Local(_, _, parent) => parent.get_def_type(ident, infer, span),
+            Scope::Many(_, parent) => parent.get_def_type(ident, infer, span),
+            Scope::Root { module, globals } => module
+                .get_def_type(ident, infer)
+                .map(|x| Ok(Some(x)))
+                .unwrap_or_else(|| Ok(if let Some((global_span, generics, hint)) = globals.0.get(&ident) {
+                    let generics = generics
+                        .iter()
+                        .map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span)))
+                        .collect::<Vec<_>>();
+                    Some((
+                        hint.to_type_id(infer, &|gen| generics.iter().find(|(name, _)| **name == gen).map(|(_, ty)| *ty))?,
+                        generics,
+                    ))
+                } else {
+                    None
+                })),
         }
     }
 }
 
 #[derive(Copy, Clone)]
 pub struct GlobalHints<'a>(&'a HashMap<Ident, (Span, Vec<SrcNode<Ident>>, &'a SrcNode<ast::Type>)>);
-
-#[derive(Clone)]
-pub struct DataCtx<'a> {
-    module: &'a Module,
-
-    // Permits recursion, but only includes type hints
-    globals: GlobalHints<'a>,
-}
-
-impl<'a> DataCtx<'a> {
-    fn get_def_type(&self, ident: Ident, data: &DataCtx, infer: &mut InferCtx, span: Span) -> Result<Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)>, Error> {
-        self.module
-            .get_def_type(ident, infer)
-            .map(|x| Ok(Some(x)))
-            .unwrap_or_else(|| Ok(if let Some((global_span, generics, hint)) = self.globals.0.get(&ident) {
-                let generics = generics
-                    .iter()
-                    .map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span)))
-                    .collect::<Vec<_>>();
-                Some((
-                    hint.to_type_id(infer, &|gen| generics.iter().find(|(name, _)| **name == gen).map(|(_, ty)| *ty))?,
-                    generics,
-                ))
-            } else {
-                None
-            }))
-    }
-}
 
 #[derive(Debug)]
 pub struct Def {
@@ -374,10 +368,6 @@ impl Program {
         &self.root
     }
 
-    fn create_scope(&self) -> Scope {
-        Scope::Root
-    }
-
     pub fn insert_def(&mut self, ast_def: &ast::Def) -> Result<(), Error> {
         self.insert_def_inner(GlobalHints(&HashMap::default()), ast_def)
     }
@@ -398,14 +388,13 @@ impl Program {
             .iter()
             .for_each(|name| infer.insert_generic(**name, name.span()));
 
-        let data = DataCtx {
+        let scope = Scope::Root {
             module: &self.root,
             globals,
         };
-        let scope = self.create_scope();
 
         let body = {
-            let mut body = ast_def.body.to_hir(&data, &mut infer, &scope)?;
+            let mut body = ast_def.body.to_hir(&mut infer, &scope)?;
 
             // Unify with optional type annotation
             let ty_id = ast_def.ty.to_type_id(&mut infer, &|_| None)?;
@@ -601,7 +590,7 @@ impl ast::Type {
 }
 
 impl ast::Expr {
-    fn to_hir(self: &SrcNode<Self>, data: &DataCtx, infer: &mut InferCtx, scope: &Scope) -> Result<InferExpr, Error> {
+    fn to_hir(self: &SrcNode<Self>, infer: &mut InferCtx, scope: &Scope) -> Result<InferExpr, Error> {
         let (type_id, hir_expr) = match &**self {
             ast::Expr::Literal(litr) => {
                 let litr_ty_info = litr.get_type_info(infer, self.span());
@@ -614,7 +603,7 @@ impl ast::Expr {
                     let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                     infer.unify(type_id, local_id)?;
                     (type_id, Expr::Local(path.base()))
-                } else if let Some((global_id, generics)) = data.get_def_type(path.base(), data, infer, self.span())? {
+                } else if let Some((global_id, generics)) = scope.get_def_type(path.base(), infer, self.span())? {
                     let generics = generics.into_iter().map(|(ident, ty)| (ident.clone(), (ident.span(), ty))).collect();
                     let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                     infer.unify(type_id, global_id)?;
@@ -627,7 +616,7 @@ impl ast::Expr {
                 todo!("Complex paths")
             },
             ast::Expr::Unary(op, a) => {
-                let a = a.to_hir(data, infer, scope)?;
+                let a = a.to_hir(infer, scope)?;
                 let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                 infer.add_constraint(Constraint::Unary {
                     out: type_id,
@@ -637,8 +626,8 @@ impl ast::Expr {
                 (type_id, Expr::Unary(op.clone(), a))
             },
             ast::Expr::Binary(op, a, b) => {
-                let a = a.to_hir(data, infer, scope)?;
-                let b = b.to_hir(data, infer, scope)?;
+                let a = a.to_hir(infer, scope)?;
+                let b = b.to_hir(infer, scope)?;
                 let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                 infer.add_constraint(Constraint::Binary {
                     out: type_id,
@@ -649,7 +638,7 @@ impl ast::Expr {
                 (type_id, Expr::Binary(op.clone(), a, b))
             },
             ast::Expr::List(items) => {
-                let items = items.iter().map(|item| item.to_hir(data, infer, scope)).collect::<Result<Vec<_>, _>>()?;
+                let items = items.iter().map(|item| item.to_hir(infer, scope)).collect::<Result<Vec<_>, _>>()?;
                 let item_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                 for item in items.iter() {
                     infer.unify(item_type_id, item.type_id())?;
@@ -660,7 +649,7 @@ impl ast::Expr {
             ast::Expr::Tuple(items) => {
                 let items = items
                     .iter()
-                    .map(|item| item.to_hir(data, infer, scope))
+                    .map(|item| item.to_hir(infer, scope))
                     .collect::<Result<Vec<_>, _>>()?;
                 let type_id = infer.insert(TypeInfo::Tuple(items.iter().map(|item| item.type_id()).collect()), self.span());
                 (type_id, Expr::Tuple(items))
@@ -668,7 +657,7 @@ impl ast::Expr {
             ast::Expr::Record(fields) => {
                 let fields = fields
                     .iter()
-                    .map(|(name, value)| Ok((name.clone(), value.to_hir(data, infer, scope)?)))
+                    .map(|(name, value)| Ok((name.clone(), value.to_hir(infer, scope)?)))
                     .collect::<Result<Vec<_>, _>>()?;
                 let type_id = infer.insert(TypeInfo::Record(fields.iter().map(|(name, value)| (name.clone(), value.type_id())).collect()), self.span());
                 (type_id, Expr::Record(fields))
@@ -687,21 +676,21 @@ impl ast::Expr {
                     .into_iter()
                     .map(|(ident, (_, ty))| (ident, *ty))
                     .collect());
-                let body = body.to_hir(data, infer, &body_scope)?;
+                let body = body.to_hir(infer, &body_scope)?;
 
                 let type_id = infer.insert(TypeInfo::Func(param.type_id(), body.type_id()), self.span());
                 (type_id, Expr::Func(param, body))
             },
             ast::Expr::Apply(f, arg) => {
-                let f = f.to_hir(data, infer, scope)?;
-                let arg = arg.to_hir(data, infer, scope)?;
+                let f = f.to_hir(infer, scope)?;
+                let arg = arg.to_hir(infer, scope)?;
                 let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                 let f_type_id = infer.insert(TypeInfo::Func(arg.type_id(), type_id), f.span());
                 infer.unify(f_type_id, f.type_id())?;
                 (type_id, Expr::Apply(f, arg))
             },
             ast::Expr::Access(record, field) => {
-                let record = record.to_hir(data, infer, scope)?;
+                let record = record.to_hir(infer, scope)?;
                 let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                 infer.add_constraint(Constraint::Access {
                     out: type_id,
@@ -711,11 +700,11 @@ impl ast::Expr {
                 (type_id, Expr::Access(record, field.clone()))
             },
             ast::Expr::Update(record, field, value) => {
-                let record = record.to_hir(data, infer, scope)?;
+                let record = record.to_hir(infer, scope)?;
 
                 let field_ty = infer.insert(TypeInfo::Unknown(None), field.span());
                 let value_scope = scope.with(**field, field_ty);
-                let value = value.to_hir(data, infer, &value_scope)?;
+                let value = value.to_hir(infer, &value_scope)?;
                 infer.unify(field_ty, value.type_id())?;
 
                 infer.add_constraint(Constraint::Access {
@@ -737,7 +726,7 @@ impl ast::Expr {
                     infer.unify(pat.type_id(), pat_ty_id)?;
                 }
 
-                let val = val.to_hir(data, infer, scope)?;
+                let val = val.to_hir(infer, scope)?;
                 infer.unify(pat.type_id(), val.type_id())?;
 
                 let then_scope = scope.with_many(pat
@@ -745,19 +734,19 @@ impl ast::Expr {
                     .into_iter()
                     .map(|(ident, (_, ty))| (ident, *ty))
                     .collect());
-                let then_body = then.to_hir(data, infer, &then_scope)?;
+                let then_body = then.to_hir(infer, &then_scope)?;
 
                 (then_body.type_id(), Expr::Match(val, vec![
                     (pat, then_body)
                 ]))
             },
             ast::Expr::If(pred, a, b) => {
-                let pred_hir = pred.to_hir(data, infer, scope)?;
+                let pred_hir = pred.to_hir(infer, scope)?;
                 let pred_type_id = infer.insert(TypeInfo::Primitive(Primitive::Boolean), pred.span());
                 infer.unify(pred_hir.type_id(), pred_type_id)?;
 
-                let a = a.to_hir(data, infer, scope)?;
-                let b = b.to_hir(data, infer, scope)?;
+                let a = a.to_hir(infer, scope)?;
+                let b = b.to_hir(infer, scope)?;
                 infer.unify(a.type_id(), b.type_id())?;
 
                 (a.type_id(), Expr::Match(pred_hir, vec![
@@ -772,7 +761,7 @@ impl ast::Expr {
                 ]))
             },
             ast::Expr::Match(pred, arms) => {
-                let pred = pred.to_hir(data, infer, scope)?;
+                let pred = pred.to_hir(infer, scope)?;
 
                 let match_type_id = infer.insert(TypeInfo::Unknown(None), self.span());
 
@@ -794,7 +783,7 @@ impl ast::Expr {
                             .into_iter()
                             .map(|(ident, (_, ty))| (ident, *ty))
                             .collect());
-                        let body = body.to_hir(data, infer, &body_scope)?;
+                        let body = body.to_hir(infer, &body_scope)?;
 
                         infer.unify(match_type_id, body.type_id())?;
 
@@ -805,7 +794,7 @@ impl ast::Expr {
                 (match_type_id, Expr::Match(pred, arms))
             },
             ast::Expr::Constructor(constructor, inner) => {
-                let inner = inner.to_hir(data, infer, scope)?;
+                let inner = inner.to_hir(infer, scope)?;
 
                 // Instantiate inner type with generics as free type terms
                 let (data_id, variant, type_id, params, inner_ty) = infer.data_ctx().get_constructor_type(**constructor, infer, self.span())?;
