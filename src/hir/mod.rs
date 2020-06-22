@@ -253,7 +253,7 @@ impl<'a> Scope<'a> {
             Scope::Local(_, _, parent) => parent.get_def_type(ident, infer, span),
             Scope::Many(_, parent) => parent.get_def_type(ident, infer, span),
             Scope::Root { module, globals } => module
-                .get_def_type(ident, infer)
+                .get_def_type(ident, infer, span)
                 .map(|x| Ok(Some(x)))
                 .unwrap_or_else(|| Ok(if let Some((global_span, generics, hint)) = globals.0.get(&ident) {
                     let generics = generics
@@ -447,10 +447,10 @@ impl Module {
         self.defs.get(&name)
     }
 
-    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx) -> Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)> {
+    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)> {
         self.defs
             .get(&ident)
-            .map(|def| infer.instantiate_ty(&def.generics, def.body.ty(), def.name.span()))
+            .map(|def| infer.instantiate_ty(&def.generics, def.body.ty(), span))
     }
 }
 

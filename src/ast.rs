@@ -335,13 +335,15 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
                     .separated_by(just(Token::Comma)),
                 Delimiter::Brace,
             )
-                .map_with_span(|fields, span| SrcNode::new(Pat::Record(fields), span));
+                .map_with_span(|fields, span| SrcNode::new(Pat::Record(fields), span))
+                .boxed();
 
             let list = nested_parser(
                 binding.clone().separated_by(just(Token::Comma)),
                 Delimiter::Brack,
             )
-                .map_with_span(|items, span| SrcNode::new(Pat::List(items), span));
+                .map_with_span(|items, span| SrcNode::new(Pat::List(items), span))
+                .boxed();
 
             let list_front = nested_parser(
                 binding.clone().padded_by(just(Token::Comma)).repeated()
@@ -352,7 +354,8 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
                     .padded_by(just(Token::Op(Op::Ellipsis))),
                 Delimiter::Brack,
             )
-                .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span));
+                .map_with_span(|(items, tail), span| SrcNode::new(Pat::ListFront(items, tail), span))
+                .boxed();
 
             let deconstruct = type_name_parser()
                 .map_with_span(|pat, span| SrcNode::new(pat, span))
@@ -360,7 +363,8 @@ fn binding_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Outpu
                 .map_with_span(|(data, inner), span| SrcNode::new(
                     Pat::Deconstruct(data.clone(), inner.unwrap_or_else(|| SrcNode::new(Binding::Unbound(Pat::Tuple(Vec::new())), data.span()))),
                     span,
-                ));
+                ))
+                .boxed();
 
             wildcard
                 .or(litr)
@@ -709,6 +713,11 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
             .map_with_span(|ident, span| SrcNode::new(ident, span))
             .repeated();
 
+        let binding = binding_parser()
+            .then(just(Token::Of)
+                .padding_for(type_parser())
+                .or_not());
+
         // let typeparams = just(Token::Given)
         //     .padding_for(generics)
         //     .or_not()
@@ -730,7 +739,40 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
                 ty: ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, name.span())),
                 name,
                 body,
-            }));
+            }))
+            .boxed();
+
+        let func = just(Token::Fn)
+            // Name
+            .padding_for(ident_parser().map_with_span(|ident, span| SrcNode::new(ident, span)))
+            // Generic parameters
+            .then(generics.clone())
+            // Optional type annotation
+            .then(just(Token::Of)
+                .padding_for(type_parser())
+                .or_not())
+            // Parameters
+            .then(just(Token::Pipe)
+                .padding_for(binding.separated_by(just(Token::Comma)))
+                .padded_by(just(Token::Pipe))
+                .then(expr_parser())
+                .reduce_right(|(param, param_ty), body| {
+                    let span = param
+                        .span()
+                        .union(param_ty
+                            .as_ref()
+                            .map(|t| t.span())
+                            .unwrap_or(Span::none()))
+                        .union(body.span());
+                    SrcNode::new(Expr::Func(param, param_ty, body), span)
+                }))
+            .map_with_span(|(((name, generics), ty), body), span| Decl::Def(Def {
+                generics,
+                ty: ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, name.span())),
+                name,
+                body,
+            }))
+            .boxed();
 
         let type_alias = just(Token::Type)
             // Name
@@ -743,7 +785,8 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
                 generics,
                 name,
                 ty,
-            }));
+            }))
+            .boxed();
 
         let data = just(Token::Data)
             // Name
@@ -756,9 +799,11 @@ fn module_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output
                 generics,
                 name,
                 data_ty,
-            }));
+            }))
+            .boxed();
 
         let decl = def
+            .or(func)
             .or(type_alias)
             .or(data)
             .map_with_span(|decl, span| SrcNode::new(decl, span));

@@ -4,33 +4,33 @@ data Maybe A =
 	| Just A
 	| Nil
 
-def contains = |cs of [Char], c of Char| match cs {
+fn contains |cs of [Char], c of Char| match cs {
 	| [c1, cs: ...] => c1 = c or contains(cs, c)
 	| [] => false
 }
 
-def len A of [A] -> ? = |xs| match xs {
+fn len A of [A] -> ? |xs| match xs {
 	| [_, xs: ...] => 1 + xs:len
 	| [] => 0
 }
 
-def fold_l A B of ? -> (B -> A -> B) -> ? -> ? = |init, f, xs| match xs {
+fn fold_l A B of ? -> (B -> A -> B) -> ? -> ? |init, f, xs| match xs {
 	| [x, xs: ...] => fold_l(f(init, x), f, xs)
 	| [] => init
 }
 
-def reduce_l A B = |f, (init, xs) of (A, [B])| fold_l(init, f, xs)
+fn reduce_l A B |f, (init, xs) of (A, [B])| fold_l(init, f, xs)
 
-def fold_r A B of ? -> (A -> B -> B) -> ? -> ? = |init, f, xs| match xs {
+fn fold_r A B of ? -> (A -> B -> B) -> ? -> ? |init, f, xs| match xs {
 	| [x, xs: ...] => f(x, fold_r(init, f, xs))
 	| [] => init
 }
 
-def reduce_r A B = |f, (xs, init) of ([B], A)| fold_r(init, f, xs)
+fn reduce_r A B |f, (xs, init) of ([B], A)| fold_r(init, f, xs)
 
 def sum = fold_l(0, |a, x| a + x)
 
-def find_char_inner = |x, cs, c of Char| match cs {
+fn find_char_inner |x, cs, c of Char| match cs {
 	| [c1, cs: ...] => if c1 = c
 		then Just x
 		else find_char_inner(x + 1, cs, c)
@@ -46,12 +46,12 @@ data Out I O = {
 	out: Maybe O,
 }
 
-def success I O = |rest of [I], out of O| Out { rest, out: Just out }
-def failure I O of ? -> Out ? O = |rest of [I]| Out { rest, out: Nil }
+fn success I O |rest of [I], out of O| Out { rest, out: Just out }
+fn failure I O of [I] -> Out ? O |rest| Out { rest, out: Nil }
 
 type Parser I O = [I] -> Out I O
 
-def matcher I O of (I -> Maybe O) -> Parser I O = |f, input| match input {
+fn matcher I O |f of I -> Maybe O, input| match input {
 	| [i, rest: ...] => match i:f {
 		| Just o => success(rest, o)
 		| Nil => failure(input)
@@ -59,24 +59,24 @@ def matcher I O of (I -> Maybe O) -> Parser I O = |f, input| match input {
 	| [] => failure([])
 }
 
-def recurse I O of ([I] -> Out I O) -> Parser I O = |f, input| match input:f {
+fn recurse I O |f of [I] -> Out I O, input| match input:f {
 	| Out { rest, out: Just o } => success(rest, o)
 	| _ => failure(input)
 }
 
-def end I of Parser I () = |input| match input {
+fn end I of Parser I () |input| match input {
 	| [] => success([], ())
 	| _ => failure([])
 }
 
-def map I O U of (O -> U) -> Parser I O -> Parser I U = |f, p, input|
+fn map I O U |f of O -> U, p of Parser I O, input|
 	let r = input:p in
 	match r.out {
 		| Just o => success(r.rest, f(o))
 		| _ => failure(r.rest)
 	}
 
-def repeated I O of Parser I O -> Parser I [O] = |p, input| match input:p {
+fn repeated I O of Parser I O -> Parser I [O] |p, input| match input:p {
 	| Out { rest, out: Just o } =>
 		let r = rest:repeated(p) in
 		match r.out {
@@ -86,7 +86,7 @@ def repeated I O of Parser I O -> Parser I [O] = |p, input| match input:p {
 	| Out { rest, out } => success(rest, [])
 }
 
-def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
+fn repeated_at_least I O |n, p of Parser I O, input|
 	let r = input:repeated(p) in
 	match r.out {
 		| Just xs => if xs:len >= n
@@ -95,14 +95,14 @@ def repeated_at_least I O of Num -> Parser I O -> Parser I [O] = |n, p, input|
 		| Nil => failure(r.rest)
 	}
 
-def and_then I O U of Parser I U -> Parser I O -> Parser I (O, U) = |p1, p0, input|
+fn and_then I O U |p1 of Parser I U, p0 of Parser I O, input|
 	let r = input:p0 in
 	match r.out {
 		| Just o => r.rest:map(|u| (o, u), p1)
 		| Nil => failure(r.rest)
 	}
 
-def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
+fn or_else I O |p1 of Parser I O, p0 of Parser I O, input|
 	let r = input:p0 in
 	match r.out {
 		| Just o => success(r.rest, o)
@@ -113,18 +113,18 @@ def or_else I O of Parser I O -> Parser I O -> Parser I O = |p1, p0, input|
 			}
 	}
 
-def is_success I O = |p of Parser I O, input| match input:p {
+fn is_success I O |p of Parser I O, input| match input:p {
 	| Out { rest, out: Just _ } => true
 	| _ => false
 }
 
 def char_to_num = find_char("0123456789")
 
-def padded_by I O U = |p1 of Parser I O, p0 of Parser I U| p0
+fn padded_by I O U |p1 of Parser I O, p0 of Parser I U| p0
 	:and_then(p1)
 	:map(|(a, _)| a)
 
-def padding_for I O U = |p1 of Parser I O, p0 of Parser I U| p0
+fn padding_for I O U |p1 of Parser I O, p0 of Parser I U| p0
 	:and_then(p1)
 	:map(|(_, b)| b)
 
@@ -146,14 +146,14 @@ data Expr =
 
 def whitespace = matcher(find_char(" \t\n"))
 
-def padded O of Parser Char O -> Parser Char O = |p| p
+fn padded O |p of Parser Char O| p
 	:padded_by(whitespace:repeated)
 
-def char = |c of Char| matcher(|i| if c = i
+fn char |c of Char| matcher(|i| if c = i
 	then Just i
 	else Nil)
 
-def op = |c| char(c):padded
+fn op |c| char(c):padded
 
 def digit = matcher(|c| char_to_num(c))
 
