@@ -1,0 +1,6 @@
+fn map A B |f of A -> B, xs| match xs {
+	| [] => []
+	| [x, xs: ...] => [x:f] ++ xs:map(f)
+}
+
+def main = [1, 2, 3]:map(|x| x * 2)

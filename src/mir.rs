@@ -42,50 +42,21 @@ impl RawType {
                 .join(" | "),
             ),
             RawType::Func(i, o) => format!("{} -> {}", i.mangle(), o.mangle()),
-            RawType::Boxed(name, params) => format!("{} {}", name, params
-                .iter()
-                .map(|param| format!(" {}", param.mangle()))
-                .collect::<Vec<_>>()
-                .join(""),
+            RawType::Boxed(name, params) => format!(
+                "{}{}{}",
+                name,
+                if params.len() > 0 { " " } else { "" },
+                params
+                    .iter()
+                    .map(|param| format!(" {}", param.mangle()))
+                    .collect::<Vec<_>>()
+                    .join(""),
             ),
         }
     }
-
-    // Return a list of discriminants representing one of the possible pattern inhabitants of this
-    // type. A value of `None` implies that this type's most outer layer has in infinite number of
-    // possible inhabitants (i.e: `Num`) and so linear matching checks must occur
-    // fn inhabitants_discriminants(&self) -> Option<Vec<Discriminant>> {
-    //     match self {
-    //         RawType::Primitive(prim) => match prim {
-    //             Primitive::Boolean => Some(vec![Discriminant::Boolean(false), Discriminant::Boolean(true)]),
-    //             Primitive::Number => None,
-    //             Primitive::String => None,
-    //         },
-    //         RawType::List(_) => None,
-    //         RawType::Product(_) => None,
-    //         RawType::Sum(items) => Some((0..items.len()).map(Discriminant::Variant).collect()),
-    //         RawType::Func(_, _) => None,
-    //     }
-    // }
 }
 
 impl hir::TypeBinding {
-    // Return a discriminant corresponding with the `RawType::inhabitants_discriminants`
-    // discriminant for this pattern. A value of `None` implies that the pattern must be checked
-    // linearly because it may not represent a mutually-exclusive choice.
-    // fn inhabitant_discriminant(&self) -> Option<Discriminant> {
-    //     match &*self.pat {
-    //         hir::Pat::Wildcard => None,
-    //         hir::Pat::Value(val) => match val {
-    //             Value::Boolean(x) => Some(Discriminant::Boolean(*x)),
-    //             _ => None,
-    //         },
-    //         hir::Pat::List(_) => None,
-    //         hir::Pat::ListFront(_, _) => None,
-    //         hir::Pat::Tuple(_) => None,
-    //     }
-    // }
-
     fn make_matcher(&self, prog: &hir::Program) -> Matcher {
         match &*self.pat {
             hir::Pat::Wildcard => Matcher::Wildcard,
@@ -439,7 +410,26 @@ impl Program {
                         self.instantiate_expr(prog, value, get_generic),
                     )
                 },
-                _ => unreachable!(),
+                Type::Data(data, params) => {
+                    let fields = match &*prog.data_ctx
+                        .get_data(**data)
+                        .variants[0].1
+                    {
+                        Type::Record(fields) => fields,
+                        _ => unreachable!(),
+                    };
+                    let field_idx = fields
+                        .iter()
+                        .enumerate().find(|(_, (name, _))| name == field)
+                        .unwrap().0;
+                    Expr::Update(
+                        self.instantiate_expr(prog, record, get_generic),
+                        field_idx,
+                        **field,
+                        self.instantiate_expr(prog, value, get_generic),
+                    )
+                },
+                ty => unreachable!("{:?}", ty),
             },
             hir::Expr::Constructor(data, _, inner) => {
                 // Sum types with one variant don't need a discriminant!

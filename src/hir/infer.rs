@@ -19,7 +19,7 @@ pub type ConstraintId = usize;
 
 #[derive(Clone, Debug)]
 pub enum TypeInfo {
-    Unknown(Option<Type>), // Optionally instantiated from
+    Unknown(Option<Ident>), // Optionally instantiated from type parameter
     Ref(TypeId),
     Primitive(Primitive),
     List(TypeId),
@@ -322,7 +322,7 @@ impl<'a> InferCtx<'a> {
         // Turn generics into types the `InferCtx` can understand
         let generic_type_ids = generics
             .iter()
-            .map(|g| (g.clone(), self.insert(TypeInfo::Unknown(Some(Type::GenParam(**g))), span)))
+            .map(|g| (g.clone(), self.insert(TypeInfo::Unknown(Some(**g)), span)))
             .collect::<Vec<_>>();
         let get_generic = |ident| generic_type_ids
             .iter()
@@ -609,7 +609,7 @@ impl<'a> InferCtx<'a> {
                 }
             }
 
-            break Ok(());
+            break Err(Error::custom(format!("{:?}", self.constraints.values().next())));
         }
     }
 

@@ -215,6 +215,7 @@ pub type TypeExpr = TypeNode<Expr<(Span, SrcNode<Type>)>>;
 pub enum Scope<'a> {
     Root {
         module: &'a Module,
+        current_def: Option<(Ident, TypeId, &'a [SrcNode<Ident>])>,
         globals: GlobalHints<'a>,
     },
     Local(Ident, TypeId, &'a Self),
@@ -252,13 +253,26 @@ impl<'a> Scope<'a> {
         match self {
             Scope::Local(_, _, parent) => parent.get_def_type(ident, infer, span),
             Scope::Many(_, parent) => parent.get_def_type(ident, infer, span),
-            Scope::Root { module, globals } => module
-                .get_def_type(ident, infer, span)
-                .map(|x| Ok(Some(x)))
+            Scope::Root { module, current_def, globals } => current_def
+                // Check current definition
+                .as_ref()
+                .filter(|(name, _, _)| *name == ident)
+                .map(|(_, ty, generics)| Ok(Some((
+                    *ty,
+                    generics
+                        .iter()
+                        .map(|name| (name.clone(), infer.insert(TypeInfo::GenParam(**name), Span::none())))
+                        .collect(),
+                ))))
+                // Check module
+                .or_else(|| module
+                    .get_def_type(ident, infer, span)
+                    .map(|x| Ok(Some(x))))
+                // Check uninitiated globals
                 .unwrap_or_else(|| Ok(if let Some((global_span, generics, hint)) = globals.0.get(&ident) {
                     let generics = generics
                         .iter()
-                        .map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(Type::GenParam(**ident))), span)))
+                        .map(|ident| (ident.clone(), infer.insert(TypeInfo::Unknown(Some(**ident)), span)))
                         .collect::<Vec<_>>();
                     Some((
                         hint.to_type_id(infer, &|gen| generics.iter().find(|(name, _)| **name == gen).map(|(_, ty)| *ty))?,
@@ -388,13 +402,23 @@ impl Program {
             .iter()
             .for_each(|name| infer.insert_generic(**name, name.span()));
 
+        let generics = ast_def.generics
+            .iter()
+            .map(|g| SrcNode::new(**g, g.span()))
+            .collect::<Vec<_>>();
+
+        let current_def_ty = infer.insert(TypeInfo::Unknown(None), ast_def.body.span());
+
         let scope = Scope::Root {
             module: &self.root,
+            current_def: Some((*ast_def.name, current_def_ty, &generics)),
             globals,
         };
 
         let body = {
             let mut body = ast_def.body.to_hir(&mut infer, &scope)?;
+
+            infer.unify(current_def_ty, body.type_id())?;
 
             // Unify with optional type annotation
             let ty_id = ast_def.ty.to_type_id(&mut infer, &|_| None)?;
@@ -406,11 +430,6 @@ impl Program {
                 // Use the def name as the type's span
                 .map_meta(|(span, ty)| (span, ty.map_meta(|_| ast_def.name.span())))
         };
-
-        let generics = ast_def.generics
-            .iter()
-            .map(|g| SrcNode::new(**g, g.span()))
-            .collect::<Vec<_>>();
 
         // Ensure that all generic parameters are in use
         for gen in generics.iter() {
