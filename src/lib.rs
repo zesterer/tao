@@ -11,12 +11,21 @@ mod src;
 mod ty;
 pub mod vm;
 
-use crate::error::Error;
+use crate::{
+    error::Error,
+    node::SrcNode,
+};
 use internment::LocalIntern;
+
+// TODO: Make this not hacky
+fn parse_prelude() -> Result<SrcNode<ast::Module>, Vec<Error>> {
+    ast::parse_module(&lex::lex(include_str!("tao/prelude.tao"))?)
+}
 
 pub fn run_module(src: &str) -> Result<Option<vm::Value>, Vec<Error>> {
     let tokens = lex::lex(&src)?;
-    let ast = ast::parse_module(&tokens)?;
+    let mut ast = parse_prelude()?;
+    ast.decls.append(&mut ast::parse_module(&tokens)?.decls);
     let hir_prog = hir::Program::new_root(&ast)?;
 
     // TODO: Get rid of this
@@ -33,11 +42,9 @@ pub fn run_module(src: &str) -> Result<Option<vm::Value>, Vec<Error>> {
 
 pub fn run_expr(src: &str) -> Result<(ty::Type, vm::Value), Vec<Error>> {
     let tokens = lex::lex(&src)?;
-    let ast = ast::parse_expr(&tokens)?;
-
-    let mut hir_prog = hir::Program::new();
+    let mut hir_prog = hir::Program::new_root(&parse_prelude()?)?;
     hir_prog
-        .insert_def(&ast::Def::main(ast))
+        .insert_def(&ast::Def::main(ast::parse_expr(&tokens)?))
         .map_err(|e| vec![e])?;
 
     // TODO: Get rid of this

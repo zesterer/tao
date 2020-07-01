@@ -1,36 +1,9 @@
 # General utility
 
-type Str = [Char]
-type Io A = Universe -> (A, Universe)
-
-fn nothing |uni of Universe| ((), uni)
-fn print |s, uni| ((), @print(s, uni))
-fn input |uni| @input(uni)
-
-data Maybe A =
-	| Just A
-	| Nil
-
-fn contains |cs of [Char], c| match cs {
-	| [c1, cs: ...] => c1 = c or contains(cs, c)
-	| [] => false
-}
-
-fn eq |xs of [Char], ys| match (xs, ys) {
+fn str_eq |xs of [Char], ys| match (xs, ys) {
 	| ([], []) => true
 	| ([x, xs: ...], [y, ys: ...]) => x = y and xs:eq(ys)
 	| _ => false
-}
-
-fn len A |xs of [A]| match xs {
-	| [_, xs: ...] => 1 + xs:len
-	| [] => 0
-}
-
-fn nth A |n, xs of [A]| match (n, xs) {
-	| (0, [head, tail: ...]) => Just head
-	| (n, [_, tail: ...]) => nth(n - 1, tail)
-	| _ => Nil
 }
 
 fn show_num_inner |x| if x < 1
@@ -44,27 +17,11 @@ fn show_num |x| if x < 1
 	then "0"
 	else show_num_inner(x)
 
-fn fold_l A B |init, f of B -> A -> ?, xs| match xs {
-	| [x, xs: ...] => fold_l(f(init, x), f, xs)
-	| [] => init
-}
-
-fn reduce_l A B |f, (init, xs) of (A, [B])| fold_l(init, f, xs)
-
-fn fold_r A B |init, f of A -> B -> ?, xs| match xs {
-	| [x, xs: ...] => f(x, fold_r(init, f, xs))
-	| [] => init
-}
-
-fn reduce_r A B |f, (xs, init) of ([B], A)| fold_r(init, f, xs)
-
-def sum = fold_l(0, |a, x| a + x)
-
 fn find_char_inner |x, cs, c of Char| match cs {
 	| [c1, cs: ...] => if c1 = c
 		then Just x
 		else find_char_inner(x + 1, cs, c)
-	| [] => Nil
+	| [] => None
 }
 
 def find_char = find_char_inner(0)
@@ -77,14 +34,14 @@ data Out I O = {
 }
 
 fn success I O |rest of [I], out of O| Out { rest, out: Just out }
-fn failure I O of [I] -> Out ? O |rest| Out { rest, out: Nil }
+fn failure I O of [I] -> Out ? O |rest| Out { rest, out: None }
 
 type Parser I O = [I] -> Out I O
 
 fn matcher I O |f of I -> Maybe O, input| match input {
 	| [i, rest: ...] => match i:f {
 		| Just o => success(rest, o)
-		| Nil => failure(input)
+		| None => failure(input)
 	}
 	| [] => failure([])
 }
@@ -111,7 +68,7 @@ fn repeated I O |p of Parser I O, input| match input:p {
 		let r = rest:repeated(p) in
 		match r.out {
 			| Just out => success(r.rest, [o] ++ out)
-			| Nil => failure(r.rest)
+			| None => failure(r.rest)
 		}
 	| Out { rest, out } => success(rest, [])
 }
@@ -122,24 +79,24 @@ fn repeated_at_least I O |n, p of Parser I O, input|
 		| Just xs => if xs:len >= n
 			then r
 			else failure(r.rest)
-		| Nil => failure(r.rest)
+		| None => failure(r.rest)
 	}
 
 fn and_then I O U |p1 of Parser I U, p0 of Parser I O, input|
 	let r = input:p0 in
 	match r.out {
 		| Just o => r.rest:map(|u| (o, u), p1)
-		| Nil => failure(r.rest)
+		| None => failure(r.rest)
 	}
 
 fn or_else I O |p1 of Parser I O, p0 of Parser I O, input|
 	let r = input:p0 in
 	match r.out {
 		| Just o => success(r.rest, o)
-		| Nil => let r = input:p1 in
+		| None => let r = input:p1 in
 			match r.out {
 				| Just o => success(r.rest, o)
-				| Nil => failure(r.rest)
+				| None => failure(r.rest)
 			}
 	}
 
@@ -181,7 +138,7 @@ fn padded O |p of Parser Char O| p
 
 fn char |c of Char| matcher(|i| if c = i
 	then Just i
-	else Nil)
+	else None)
 
 fn op |c| char(c):padded
 
@@ -240,22 +197,9 @@ def eval = |ast| match ast {
 	}
 }
 
-def main = match full_expr("4 + (5 - 3)").out {
-	| Just ast => ast:eval
-	| Nil => 0
-}
-
-fn make A |x of A, uni of Universe| (x, uni)
-
-fn bind A B |b of ? -> Io B, a of Io A, uni|
-	let (x, uni) = a(uni) in b(x, uni)
-
-fn next A B |b of Io B, a of Io A, uni|
-	let (_, uni) = a(uni) in b(uni)
-
 def loop = do {
 	str <- input;
-	if str:eq("q\n")
+	if str:str_eq("q\n")
 	then nothing
 	else do {
 		match full_expr(str).out {
