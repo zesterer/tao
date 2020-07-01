@@ -1,5 +1,12 @@
 # General utility
 
+type Str = [Char]
+type Io A = Universe -> (A, Universe)
+
+fn nothing |uni of Universe| ((), uni)
+fn print |s, uni| ((), @print(s, uni))
+fn input |uni| @input(uni)
+
 data Maybe A =
 	| Just A
 	| Nil
@@ -9,10 +16,33 @@ fn contains |cs of [Char], c| match cs {
 	| [] => false
 }
 
+fn eq |xs of [Char], ys| match (xs, ys) {
+	| ([], []) => true
+	| ([x, xs: ...], [y, ys: ...]) => x = y and xs:eq(ys)
+	| _ => false
+}
+
 fn len A |xs of [A]| match xs {
 	| [_, xs: ...] => 1 + xs:len
 	| [] => 0
 }
+
+fn nth A |n, xs of [A]| match (n, xs) {
+	| (0, [head, tail: ...]) => Just head
+	| (n, [_, tail: ...]) => nth(n - 1, tail)
+	| _ => Nil
+}
+
+fn show_num_inner |x| if x < 1
+	then ""
+	else match nth(x % 10, "0123456789") {
+		| Just c => show_num_inner((x - x % 10) / 10) ++ [c]
+		| _ => ""
+	}
+
+fn show_num |x| if x < 1
+	then "0"
+	else show_num_inner(x)
 
 fn fold_l A B |init, f of B -> A -> ?, xs| match xs {
 	| [x, xs: ...] => fold_l(f(init, x), f, xs)
@@ -165,8 +195,10 @@ def number = digit
 def atom = number
 	:map(|x| Number x)
 	:or_else(char('(')
+		:padded
 		:padding_for(recurse(|input| input:expr))
-		:padded_by(char(')')))
+		:padded_by(char(')'))
+		:padded)
 
 def unary = op('-'):map(|_| Neg)
 	:repeated
@@ -212,3 +244,26 @@ def main = match full_expr("4 + (5 - 3)").out {
 	| Just ast => ast:eval
 	| Nil => 0
 }
+
+fn make A |x of A, uni of Universe| (x, uni)
+
+fn bind A B |b of ? -> Io B, a of Io A, uni|
+	let (x, uni) = a(uni) in b(x, uni)
+
+fn next A B |b of Io B, a of Io A, uni|
+	let (_, uni) = a(uni) in b(uni)
+
+def loop = do {
+	str <- input;
+	if str:eq("q\n")
+	then nothing
+	else do {
+		match full_expr(str).out {
+			| Just ast => print(ast:eval:show_num ++ "\n")
+			| _ => print("Invalid input: " ++ str)
+		};
+		loop;
+	}
+}
+
+def main = loop

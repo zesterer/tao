@@ -90,10 +90,12 @@ pub enum Token {
     String(LocalIntern<String>),
     Null,
     Ident(LocalIntern<String>),
+    Intrinsic(LocalIntern<String>),
     TypeName(LocalIntern<String>),
     Op(Op),
     Tree(Delimiter, Vec<SrcNode<Token>>),
 
+    LArrow,
     RArrow,
     RMap,
     Comma,
@@ -104,6 +106,7 @@ pub enum Token {
     Dollar,
     Separator,
     Wildcard,
+    Semicolon,
 
     Let,
     If,
@@ -119,6 +122,8 @@ pub enum Token {
     Of,
     Type,
     Data,
+    Do,
+    Return,
 }
 
 impl Token {
@@ -142,9 +147,11 @@ impl fmt::Display for Token {
             Token::String(x) => write!(f, "\"{}\"", x),
             Token::Null => write!(f, "null"),
             Token::Ident(i) => write!(f, "{}", i),
+            Token::Intrinsic(i) => write!(f, "@{}", i),
             Token::TypeName(i) => write!(f, "{}", i),
             Token::Op(op) => write!(f, "{}", op),
             Token::Tree(delim, tokens) => write!(f, "{}...{}", delim.left(), delim.right()),
+            Token::LArrow => write!(f, "<-"),
             Token::RArrow => write!(f, "->"),
             Token::RMap => write!(f, "=>"),
             Token::Comma => write!(f, ","),
@@ -154,7 +161,9 @@ impl fmt::Display for Token {
             Token::Pipe => write!(f, "|"),
             Token::Dollar => write!(f, "$"),
             Token::Separator => write!(f, "::"),
+            Token::Semicolon => write!(f, ";"),
             Token::Wildcard => write!(f, "_"),
+            Token::Semicolon => write!(f, ";"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
             Token::Match => write!(f, "match"),
@@ -169,6 +178,8 @@ impl fmt::Display for Token {
             Token::Of => write!(f, "of"),
             Token::Type => write!(f, "type"),
             Token::Data => write!(f, "data"),
+            Token::Do => write!(f, "do"),
+            Token::Return => write!(f, "return"),
         }
     }
 }
@@ -232,7 +243,8 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
         let type_name = type_name_raw
             .or(just('$').padding_for(ident_raw));
 
-        let op = seq("->".chars()).to(Token::RArrow)
+        let op = seq("<-".chars()).to(Token::LArrow)
+            .or(seq("->".chars()).to(Token::RArrow))
             .or(seq("=>".chars()).to(Token::RMap))
             .or(seq("++".chars()).to(Token::Op(Op::Join)))
             .or(seq("...".chars()).to(Token::Op(Op::Ellipsis)))
@@ -252,6 +264,7 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(just('!').map(|sc| Token::Op(Op::Not)))
             .or(just(',').map(|sc| Token::Comma))
             .or(seq("::".chars()).map(|sc| Token::Separator))
+            .or(just(';').map(|sc| Token::Semicolon))
             .or(just(':').map(|sc| Token::Colon))
             .or(just('.').map(|sc| Token::Dot))
             .or(just('?').map(|sc| Token::QuestionMark))
@@ -268,6 +281,9 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(character)
             .or(string)
             .or(type_name.map(|s| Token::TypeName(LocalIntern::new(s))))
+            .or(just('@')
+                .padding_for(ident.clone())
+                .map(|s| Token::Intrinsic(LocalIntern::new(s))))
             .or(ident.map(|s: String| match s.as_str() {
                 "_" => Token::Wildcard,
                 "true" => Token::Boolean(true),
@@ -289,6 +305,8 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
                 "data" => Token::Data,
                 "and" => Token::Op(Op::And),
                 "or" => Token::Op(Op::Or),
+                "do" => Token::Do,
+                "return" => Token::Return,
                 _ => Token::Ident(LocalIntern::new(s)),
             }))
             .or(op)

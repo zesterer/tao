@@ -14,7 +14,7 @@ pub mod vm;
 use crate::error::Error;
 use internment::LocalIntern;
 
-pub fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
+pub fn run_module(src: &str) -> Result<Option<vm::Value>, Vec<Error>> {
     let tokens = lex::lex(&src)?;
     let ast = ast::parse_module(&tokens)?;
     let hir_prog = hir::Program::new_root(&ast)?;
@@ -24,9 +24,9 @@ pub fn run_module(src: &str) -> Result<vm::Value, Vec<Error>> {
 
     let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
 
-    let prog = mir_prog.compile().map_err(|e| vec![e])?;
+    let prog = mir_prog.compile(false).map_err(|e| vec![e])?;
 
-    println!("{:?}", prog);
+    //println!("{:?}", prog);
 
     Ok(vm::Vm::default().execute(&prog))
 }
@@ -44,7 +44,7 @@ pub fn run_expr(src: &str) -> Result<(ty::Type, vm::Value), Vec<Error>> {
     let main_ident = LocalIntern::new("main".to_string());
 
     let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
-    let prog = mir_prog.compile().map_err(|e| vec![e])?;
+    let prog = mir_prog.compile(true).map_err(|e| vec![e])?;
 
     Ok((
         hir_prog
@@ -55,6 +55,6 @@ pub fn run_expr(src: &str) -> Result<(ty::Type, vm::Value), Vec<Error>> {
             .ty()
             .inner()
             .clone(),
-        vm::Vm::default().execute(&prog),
+        vm::Vm::default().execute(&prog).unwrap(),
     ))
 }

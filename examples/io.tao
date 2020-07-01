@@ -1,0 +1,46 @@
+type Str = [Char]
+type Io A = Universe -> (A, Universe)
+
+fn nothing |uni of Universe| ((), uni)
+fn print |s, uni| ((), @print(s, uni))
+fn input |uni| @input(uni)
+
+data Maybe A =
+	| Just A
+	| Nil
+
+# fn make A |x of A| Just x
+
+# fn bind A B |b of ? -> Maybe B, a of Maybe A|
+#	 match a {
+#		 | Just x => b(x)
+#		 | Nil => Nil
+#	 }
+
+# fn next A B |b of Maybe B, a of Maybe A|
+#	 match a {
+#		 | Just _ => b
+#		 | Nil => Nil
+#	 }
+
+# def main = do
+#	 x <- Just 3;
+#	 y <- Just 5;
+#	 return x + y;
+
+fn make A |x of A, uni of Universe| (x, uni)
+
+fn bind A B |b of ? -> Io B, a of Io A, uni|
+	let (x, uni) = a(uni) in b(x, uni)
+
+fn next A B |b of Io B, a of Io A, uni|
+	let (_, uni) = a(uni) in b(uni)
+
+def input_two = do
+	x <- input;
+	y <- input;
+	return (x, y);
+
+def main = do
+	(x, y) <- input_two;
+	print("Said " ++ x ++ " and " ++ y);

@@ -1,18 +1,27 @@
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    io::{self, BufRead, Write},
+};
 use super::{Instr, Program, Value};
+use crate::mir;
 
 #[derive(Default)]
 pub struct Vm;
 
 impl Vm {
-    pub fn execute(mut self, prog: &Program) -> Value {
-        let mut expr_stack = Vec::<Value>::new();
+    pub fn execute(mut self, prog: &Program) -> Option<Value> {
+        let mut universe = 0;
+        let mut expr_stack = if prog.is_pure() {
+            Vec::new()
+        } else {
+            vec![Value::Universe(universe)]
+        };
         let mut call_stack = Vec::new();
         let mut local_stack = Vec::<Value>::new();
 
         let mut ip = prog.entry();
 
-        loop {
+        let val = loop {
             let instr = unsafe { prog.fetch_instr_unchecked(ip) };
             //println!("{:>#5X} => {:?}", ip, instr);
 
@@ -170,16 +179,52 @@ impl Vm {
                     ip = addr;
                 },
                 Instr::Return(n) => {
-                    let ret_val = expr_stack.pop().unwrap();
+                    let val = expr_stack.pop().unwrap();
                     expr_stack.truncate(expr_stack.len() - n as usize);
                     if let Some(ret_addr) = call_stack.pop() {
-                        expr_stack.push(ret_val);
+                        expr_stack.push(val);
                         ip = ret_addr;
                     } else {
-                        return ret_val;
+                        break val;
+                    }
+                },
+
+                Instr::Intrinsic(intrinsic) => {
+                    match intrinsic {
+                        mir::Intrinsic::Print => {
+                            let s = expr_stack.pop().unwrap();
+                            assert_eq!(expr_stack.pop().unwrap().into_universe_unchecked(), universe, "Forked universe");
+
+                            for c in s.into_list_unchecked().iter().cloned() {
+                                print!("{}", c.into_char_unchecked());
+                                io::stdout().lock().flush().unwrap();
+                            }
+
+                            universe += 1;
+                            expr_stack.push(Value::Universe(universe));
+                        },
+                        mir::Intrinsic::Input => {
+                            assert_eq!(expr_stack.pop().unwrap().into_universe_unchecked(), universe, "Forked universe");
+
+                            let mut buf = String::new();
+                            io::stdin().lock().read_line(&mut buf).unwrap();
+                            let input = Value::make_list(buf.chars().map(Value::Char));
+
+                            universe += 1;
+                            expr_stack.push(Value::make_list(
+                                std::iter::once(input).chain(std::iter::once(Value::Universe(universe)))
+                            ));
+                        },
                     }
                 },
             }
+        };
+
+        if !prog.is_pure() {
+            assert_eq!(val.clone().into_list_unchecked()[1].clone().into_universe_unchecked(), universe, "Forked universe");
+            None
+        } else {
+            Some(val)
         }
     }
 }

@@ -11,7 +11,7 @@ data Instr =
 	| In
 	| Loop [Instr]
 
-def ascii = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+def ascii = "          \n                      !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 fn filled A |n, val of A| if n <= 0
 	then []
@@ -75,10 +75,10 @@ fn exec_inner |body, state of State| match body {
 		| Incr => state with { tape: tape:apply(state.ptr, |x| (x + 1) % 256) }
 		| Decr => state with { tape: tape:apply(state.ptr, |x| (x + 255) % 256) }
 		| Out => state with { output: match state.tape:nth(state.ptr) {
-			| Just x => output ++ [match ascii:nth(x - 32) {
-				| Just c => c
-				| Nil => '!'
-			}]
+			| Just x => match ascii:nth(x) {
+				| Just c => output ++ [c]
+				| Nil => output
+			}
 			| Nil => output
 		} }
 		| In => state with { tape: tape:apply(state.ptr, |_| 0) }

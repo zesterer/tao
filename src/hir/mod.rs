@@ -190,10 +190,18 @@ fn arms_are_exhaustive<'a>(
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+#[repr(u32)]
+pub enum Intrinsic {
+    Print,
+    Input,
+}
+
 #[derive(Debug)]
 pub enum Expr<M> {
     Literal(Literal),
     Local(Ident),
+    Intrinsic(Intrinsic, Vec<(SrcNode<Ident>, M)>, Vec<Node<Self, M>>),
     Global(Ident, Vec<(SrcNode<Ident>, M)>),
     Unary(SrcNode<ast::UnaryOp>, Node<Self, M>),
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
@@ -249,7 +257,12 @@ impl<'a> Scope<'a> {
         }
     }
 
-    fn get_def_type(&self, ident: Ident, infer: &mut InferCtx, span: Span) -> Result<Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)>, Error> {
+    fn get_def_type(
+        &self,
+        ident: Ident,
+        infer: &mut InferCtx,
+        span: Span,
+    ) -> Result<Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>)>, Error> {
         match self {
             Scope::Local(_, _, parent) => parent.get_def_type(ident, infer, span),
             Scope::Many(_, parent) => parent.get_def_type(ident, infer, span),
@@ -281,6 +294,38 @@ impl<'a> Scope<'a> {
                 } else {
                     None
                 })),
+        }
+    }
+
+    fn get_intrinsic(
+        &self,
+        ident: Ident,
+        infer: &mut InferCtx,
+        span: Span,
+    ) -> Result<Option<(TypeId, Vec<(SrcNode<Ident>, TypeId)>, Vec<TypeId>, Intrinsic)>, Error> {
+        let universe = infer.insert(TypeInfo::Primitive(Primitive::Universe), span);
+
+        match ident.as_str() {
+            "print" => Ok(Some((
+                universe,
+                Vec::new(),
+                vec![{
+                    let c = infer.insert(TypeInfo::Primitive(Primitive::Char), span);
+                    infer.insert(TypeInfo::List(c), span)
+                }, universe],
+                Intrinsic::Print,
+            ))),
+            "input" => Ok(Some((
+                {
+                    let c = infer.insert(TypeInfo::Primitive(Primitive::Char), span);
+                    let s = infer.insert(TypeInfo::List(c), span);
+                    infer.insert(TypeInfo::Tuple(vec![s, universe]), span)
+                },
+                Vec::new(),
+                vec![universe],
+                Intrinsic::Input,
+            ))),
+            _ => Ok(None),
         }
     }
 }
@@ -623,7 +668,10 @@ impl ast::Expr {
                     infer.unify(type_id, local_id)?;
                     (type_id, Expr::Local(path.base()))
                 } else if let Some((global_id, generics)) = scope.get_def_type(path.base(), infer, self.span())? {
-                    let generics = generics.into_iter().map(|(ident, ty)| (ident.clone(), (ident.span(), ty))).collect();
+                    let generics = generics
+                        .into_iter()
+                        .map(|(ident, ty)| (ident.clone(), (ident.span(), ty)))
+                        .collect();
                     let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
                     infer.unify(type_id, global_id)?;
                     (type_id, Expr::Global(path.base(), generics))
@@ -634,6 +682,31 @@ impl ast::Expr {
             } else {
                 todo!("Complex paths")
             },
+            ast::Expr::Intrinsic(name, args) => {
+                if let Some((type_id, generics, arg_tys, intrinsic)) = scope.get_intrinsic(*name, infer, self.span())? {
+                    if arg_tys.len() != args.len() {
+                        return Err(Error::custom(format!("Wrong number of intrinsic arguments: expected {}, found {}", arg_tys.len(), args.len()))
+                            .with_span(self.span()));
+                    }
+                    let args = args
+                        .iter()
+                        .zip(arg_tys.iter())
+                        .map(|(expr, ty)| {
+                            let expr = expr.to_hir(infer, scope)?;
+                            infer.unify(expr.type_id(), *ty)?;
+                            Ok(expr)
+                        })
+                        .collect::<Result<_, _>>()?;
+                    let generics = generics
+                        .into_iter()
+                        .map(|(ident, ty)| (ident.clone(), (ident.span(), ty)))
+                        .collect();
+                    (type_id, Expr::Intrinsic(intrinsic, generics, args))
+                } else {
+                    return Err(Error::custom(format!("No such intrinsic value '{}'", &*name))
+                        .with_span(self.span()));
+                }
+            }
             ast::Expr::Unary(op, a) => {
                 let a = a.to_hir(infer, scope)?;
                 let type_id = infer.insert(TypeInfo::Unknown(None), self.span());
@@ -826,6 +899,25 @@ impl ast::Expr {
                     inner,
                 ))
             },
+            // ast::Expr::Do(stmts) => {
+            //     fn stmts_to_hir<'a>(mut stmts: impl Iterator<Item=&'a ast::DoStatement>, infer: &mut InferCtx, scope: &Scope) -> Result<Option<InferExpr>, Error> {
+            //         match stmts.next() {
+            //             None => Ok(None),
+            //             Some(ast::DoStatement::Exec(expr)) => {
+            //                 let expr = expr.to_hir(infer, scope)?;
+            //                 if let Some(prev_stmts) = stmts_to_hir(stmts, infer, scope)? {
+            //                     Ok(Some(Expr::Apply(Expr::Apply("next", expr), prev_stmts)))
+            //                 } else {
+            //                     Ok(Some(expr))
+            //                 }
+            //             },
+            //             _ => todo!(),
+            //         }
+            //     }
+
+            //     let expr = stmts_to_hir(stmts.iter().rev().map(|x| &**x), infer, scope)?.unwrap();
+            //     (expr.type_id(), expr.into_inner())
+            // },
         };
 
         Ok(InferNode::new(hir_expr, (self.span(), type_id)))
@@ -890,6 +982,17 @@ impl InferExpr {
         Ok(TypeNode::new(match self.into_inner() {
             Expr::Literal(litr) => Expr::Literal(litr),
             Expr::Local(ident) => Expr::Local(ident),
+            Expr::Intrinsic(intrinsic, generics, args) => Expr::Intrinsic(
+                intrinsic,
+                generics
+                    .into_iter()
+                    .map(|(ident, (span, type_id))| Ok((ident, (span, infer.reconstruct(type_id, span)?))))
+                    .collect::<Result<_, _>>()?,
+                args
+                    .into_iter()
+                    .map(|x| x.into_checked(infer))
+                    .collect::<Result<_, _>>()?,
+            ),
             Expr::Global(ident, generics) => Expr::Global(
                 ident,
                 generics
@@ -969,6 +1072,9 @@ impl TypeExpr {
                     Expr::Literal(_) => {},
                     Expr::Local(_) => {},
                     Expr::Global(_, _) => {},
+                    Expr::Intrinsic(_, _, args) => args
+                        .iter()
+                        .for_each(|x| stack.push(x)),
                     Expr::Unary(_, x) => stack.push(x),
                     Expr::Binary(_, x, y) => {
                         stack.push(x);

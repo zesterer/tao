@@ -10,7 +10,8 @@ fn main() {
             .unwrap_or_else(|err| panic!("Could not read file '{}': {:?}", filename, err));
 
         match run_module(&src) {
-            Ok(val) => println!("{}", val),
+            Ok(Some(val)) => println!("{}", val),
+            Ok(None) => {},
             Err(errs) => errs
                 .iter()
                 .for_each(|err| print!("{}", err.in_source(&src))),

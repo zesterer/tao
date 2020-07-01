@@ -65,6 +65,12 @@ impl RawTypeNode<mir::Expr> {
                 builder.emit_instr(Instr::LoadLocal(offset));
             },
             mir::Expr::GetGlobal(global) => builder.emit_global_call(*global),
+            mir::Expr::Intrinsic(intrinsic, args) => {
+                for arg in args.iter().rev() {
+                    arg.compile(program, scope, builder);
+                }
+                builder.emit_instr(Instr::Intrinsic(*intrinsic));
+            },
             mir::Expr::Unary(op, a) => {
                 a.compile(program, scope, builder);
                 match (op, a.ty()) {
@@ -103,19 +109,19 @@ impl RawTypeNode<mir::Expr> {
                     binary => todo!("Implement binary expression {:?}", binary),
                 };
             },
-            mir::Expr::MakeTuple(items) => {
+            mir::Expr::Tuple(items) => {
                 for item in items.iter().rev() {
                     item.compile(program, scope, builder);
                 }
                 builder.emit_instr(Instr::MakeList(items.len() as u32));
             },
-            mir::Expr::MakeList(items) => {
+            mir::Expr::List(items) => {
                 for item in items.iter().rev() {
                     item.compile(program, scope, builder);
                 }
                 builder.emit_instr(Instr::MakeList(items.len() as u32));
             },
-            mir::Expr::MatchValue(pred, arms) => {
+            mir::Expr::Match(pred, arms) => {
                 pred.compile(program, scope, builder);
                 let mut exit_jumps = Vec::new();
                 for (i, (matcher, extractor, body)) in arms.iter().enumerate() {
@@ -160,7 +166,7 @@ impl RawTypeNode<mir::Expr> {
                     builder.patch_instr(exit_jump, Instr::Jump(builder.next_addr()));
                 }
             },
-            mir::Expr::MakeFunc(extractor, env, body) => {
+            mir::Expr::Func(extractor, env, body) => {
                 // Create body
                 let func_addr = {
                     let mut builder = ProcBuilder::default();
@@ -402,8 +408,16 @@ impl mir::Extractor {
 }
 
 impl mir::Program {
-    pub fn compile(&self) -> Result<Program, Error> {
+    pub fn compile(&self, is_pure: bool) -> Result<Program, Error> {
         let mut program = Program::default();
+
+        program.set_pure(is_pure || self.globals.get(&self.entry).and_then(|e| e.as_ref().map(|e| e.ty())) != Some(&mir::RawType::Func(
+            Box::new(mir::RawType::Primitive(Primitive::Universe)),
+            Box::new(mir::RawType::Product(vec![
+                mir::RawType::Product(Vec::new()),
+                mir::RawType::Primitive(Primitive::Universe),
+            ])),
+        )));
 
         let mut global_refs = Vec::new();
 
@@ -423,6 +437,12 @@ impl mir::Program {
                 );
 
                 global.compile(&mut program, &mut scope, &mut builder);
+
+                // `main` should execute
+                if id == self.entry && !program.is_pure() {
+                    builder.emit_instr(Instr::ApplyFunc);
+                }
+
                 builder.emit_instr(Instr::Return(0));
                 let (global_addr, global_calls) = builder.link(&mut program);
 

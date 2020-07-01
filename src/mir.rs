@@ -13,6 +13,8 @@ type Ident = LocalIntern<String>;
 pub type Unary = ast::UnaryOp;
 pub type Binary = ast::BinaryOp;
 
+pub type Intrinsic = hir::Intrinsic;
+
 // Raw types have had their name erased (since type checking and inference has already occurred)
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum RawType {
@@ -137,14 +139,16 @@ pub enum Expr {
     GetGlobal(DefId),
     // Get the value of the given local
     GetLocal(Ident),
+    // Evaluate an intrinsic operation
+    Intrinsic(Intrinsic, Vec<RawTypeNode<Self>>),
     // Perform a built-in unary operation
     Unary(Unary, RawTypeNode<Self>),
     // Perform a built-in binary operation
     Binary(Binary, RawTypeNode<Self>, RawTypeNode<Self>),
     // Construct a tuple with the given values
-    MakeTuple(Vec<RawTypeNode<Self>>),
+    Tuple(Vec<RawTypeNode<Self>>),
     // Construct a list with the given values
-    MakeList(Vec<RawTypeNode<Self>>),
+    List(Vec<RawTypeNode<Self>>),
     // Apply a value to a function
     Apply(RawTypeNode<Self>, RawTypeNode<Self>),
     // Access the field of a Tuple
@@ -152,9 +156,9 @@ pub enum Expr {
     // Update the field of a Tuple
     Update(RawTypeNode<Self>, usize, Ident, RawTypeNode<Self>),
     // Create a function with the given parameter extractor and body
-    MakeFunc(Extractor, Vec<Ident>, RawTypeNode<Self>),
+    Func(Extractor, Vec<Ident>, RawTypeNode<Self>),
     // Make a flat value against a series of arms
-    MatchValue(RawTypeNode<Self>, Vec<(Matcher, Extractor, RawTypeNode<Self>)>),
+    Match(RawTypeNode<Self>, Vec<(Matcher, Extractor, RawTypeNode<Self>)>),
 }
 
 impl hir::TypeExpr {
@@ -162,6 +166,9 @@ impl hir::TypeExpr {
         match &**self {
             hir::Expr::Literal(_) => {},
             hir::Expr::Global(_, _) => {},
+            hir::Expr::Intrinsic(_, _, args) => args
+                .iter()
+                .for_each(|arg| arg.get_env_inner(scope, env)),
             hir::Expr::Local(ident) => {
                 if scope.iter().find(|name| *name == ident).is_none()
                     && !env.contains(ident)
@@ -350,21 +357,25 @@ impl Program {
                 let def = self.instantiate_def(prog, *global, generics).unwrap();
                 Expr::GetGlobal(def)
             },
+            hir::Expr::Intrinsic(intrinsic, generics, args) => Expr::Intrinsic(*intrinsic, args
+                .iter()
+                .map(|arg| self.instantiate_expr(prog, arg, get_generic))
+                .collect()),
             hir::Expr::Unary(op, a) => Expr::Unary(**op, self.instantiate_expr(prog, a, get_generic)),
             hir::Expr::Binary(op, a, b) => Expr::Binary(**op, self.instantiate_expr(prog, a, get_generic), self.instantiate_expr(prog, b, get_generic)),
             hir::Expr::Match(pred, arms) => {
                 let pred = self.instantiate_expr(prog, pred, get_generic);
                 self.instantiate_match(prog, pred, &arms, get_generic)
             },
-            hir::Expr::Tuple(items) => Expr::MakeTuple(items
+            hir::Expr::Tuple(items) => Expr::Tuple(items
                 .iter()
                 .map(|item| self.instantiate_expr(prog, item, get_generic))
                 .collect()),
-            hir::Expr::Record(fields) => Expr::MakeTuple(fields
+            hir::Expr::Record(fields) => Expr::Tuple(fields
                 .iter()
                 .map(|(_, field)| self.instantiate_expr(prog, field, get_generic))
                 .collect()),
-            hir::Expr::List(items) => Expr::MakeList(items
+            hir::Expr::List(items) => Expr::List(items
                 .iter()
                 .map(|item| self.instantiate_expr(prog, item, get_generic))
                 .collect()),
@@ -372,7 +383,7 @@ impl Program {
                 let extractor = binding.make_extractor(prog);
                 let e_bindings = extractor.get_bindings();
                 let env = body.get_env().into_iter().filter(|ident| !e_bindings.contains(ident)).collect();
-                Expr::MakeFunc(extractor, env, self.instantiate_expr(prog, body, get_generic))
+                Expr::Func(extractor, env, self.instantiate_expr(prog, body, get_generic))
             },
             hir::Expr::Apply(f, arg) => Expr::Apply(
                 self.instantiate_expr(prog, f, get_generic),
@@ -437,7 +448,7 @@ impl Program {
                 if prog.data_ctx.get_data(data.0).variants.len() == 1 {
                     return inner;
                 } else {
-                    Expr::MakeTuple(vec![
+                    Expr::Tuple(vec![
                         RawTypeNode::new(
                             Expr::Literal(Literal::Number(data.1 as f64)),
                             (data.span(), self.instantiate_type(prog, &Type::Primitive(Primitive::Number), get_generic)),
@@ -469,7 +480,7 @@ impl Program {
             ))
             .collect();
 
-        Expr::MatchValue(pred, arms)
+        Expr::Match(pred, arms)
     }
 
     fn instantiate_type(&mut self,

@@ -15,6 +15,7 @@ pub enum Value {
     Char(char),
     List(Rc<Vector<Value>>),
     Func(Rc<(CodeAddr, Vec<Value>)>),
+    Universe(u64),
 }
 
 impl Value {
@@ -57,6 +58,16 @@ impl Value {
             Value::Func(addr) => addr,
             #[cfg(debug_assertions)]
             this => unreachable!("Expected func, found {:?}", this),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub fn into_universe_unchecked(self) -> u64 {
+        match self {
+            Value::Universe(val) => val,
+            #[cfg(debug_assertions)]
+            this => unreachable!("Expected universe, found {:?}", this),
             #[cfg(not(debug_assertions))]
             _ => unsafe { unreachable_unchecked() },
         }
@@ -112,6 +123,7 @@ impl fmt::Display for Value {
                     .join(", ")),
             },
             Value::Func(addr) => write!(f, "<func {:#X}>", addr.0),
+            Value::Universe(_) => write!(f, "<universe>"),
         }
     }
 }

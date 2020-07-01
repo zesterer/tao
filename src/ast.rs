@@ -134,6 +134,7 @@ pub enum Type {
 pub enum Expr {
     Literal(Literal),
     Path(Path),
+    Intrinsic(Ident, Vec<SrcNode<Self>>),
     Unary(SrcNode<UnaryOp>, SrcNode<Self>),
     Binary(SrcNode<BinaryOp>, SrcNode<Self>, SrcNode<Self>),
     If(SrcNode<Self>, SrcNode<Self>, SrcNode<Self>),
@@ -147,11 +148,26 @@ pub enum Expr {
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Update(SrcNode<Self>, SrcNode<Ident>, SrcNode<Self>),
     Constructor(SrcNode<Ident>, SrcNode<Self>),
+    //Do(Vec<SrcNode<DoStatement>>),
+}
+
+#[derive(Debug)]
+pub enum DoStatement {
+    Exec(SrcNode<Expr>),
+    Bind(SrcNode<Binding>, Option<SrcNode<Type>>, SrcNode<Expr>),
+    Return(SrcNode<Expr>),
 }
 
 fn ident_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Ident>, Error> {
     permit_map(|token: node::Node<_>| match &*token {
         Token::Ident(x) => Some(*x),
+        _ => None,
+    })
+}
+
+fn intrinsic_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=Ident>, Error> {
+    permit_map(|token: node::Node<_>| match &*token {
+        Token::Intrinsic(x) => Some(*x),
         _ => None,
     })
 }
@@ -437,6 +453,10 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
         let ident = ident_parser()
             .map_with_span(|ident, span| SrcNode::new(Expr::Path(Path(vec![ident])), span));
 
+        let intrinsic = intrinsic_parser()
+            .then(paren_expr_list.clone().or_not())
+            .map_with_span(|(ident, args), span| SrcNode::new(Expr::Intrinsic(ident, args.unwrap_or(Vec::new())), span));
+
         let constructor = type_name_parser()
             .map_with_span(|ident, span| SrcNode::new(ident, span))
             .then(expr.clone().or_not())
@@ -445,8 +465,16 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 span,
             ));
 
+        let do_statement = binding.clone()
+            .padded_by(just(Token::LArrow))
+            .then(expr.clone())
+            .map(|((binding, ty), expr)| DoStatement::Bind(binding, ty, expr))
+            .or(expr.clone().map(DoStatement::Exec))
+            .or(just(Token::Return).padding_for(expr.clone()).map(DoStatement::Return));
+
         let atom = litr
             .or(ident)
+            .or(intrinsic)
             .or(constructor)
             // Parenthesised expression
             .or(nested_parser(expr.clone(), Delimiter::Paren))
@@ -483,6 +511,46 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .padding_for(expr.clone())
                 .then(arm_list)
                 .map_with_span(|(pred, arms), span| SrcNode::new(Expr::Match(pred, arms), span)))
+            .or(just(Token::Do)
+                .padding_for(nested_parser(
+                    do_statement
+                        .clone()
+                        .then(just(Token::Semicolon).padding_for(do_statement.separated_by(just(Token::Semicolon))).or_not())
+                    .map(|(x, xs)| {
+                        let mut x = vec![x];
+                        if let Some(mut xs) = xs {
+                            x.append(&mut xs);
+                        }
+                        x
+                    })
+                    .map(|mut xs| {
+                        let x = xs.pop().unwrap();
+                        (xs, match x {
+                            DoStatement::Exec(expr) => expr,
+                            DoStatement::Return(expr) => {
+                                let make = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("make".to_string())])), Span::none());
+                                SrcNode::new(Expr::Apply(make, expr), Span::none())
+                            },
+                            DoStatement::Bind(_, _, expr) => expr,
+                        })
+                    })
+                    .reduce_right(|l, r| match l {
+                        DoStatement::Exec(l) => {
+                            let next = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("next".to_string())])), Span::none());
+                            SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(next, r), Span::none()), l), Span::none())
+                        },
+                        DoStatement::Return(l) => {
+                            let next = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("next".to_string())])), Span::none());
+                            let make = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("make".to_string())])), Span::none());
+                            SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(next, SrcNode::new(Expr::Apply(make, r), Span::none())), Span::none()), l), Span::none())
+                        },
+                        DoStatement::Bind(b, ty, l) => {
+                            let bind = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("bind".to_string())])), Span::none());
+                            SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(bind, SrcNode::new(Expr::Func(b, ty, r), Span::none())), Span::none()), l), Span::none())
+                        },
+                    }),
+                Delimiter::Brace,
+            )))
             .boxed();
 
         let application = atom

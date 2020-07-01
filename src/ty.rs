@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, convert::TryFrom};
 use internment::LocalIntern;
 use crate::{
     node::SrcNode,
@@ -12,6 +12,7 @@ pub enum Primitive {
     Boolean,
     Char,
     Number,
+    Universe,
 }
 
 impl fmt::Display for Primitive {
@@ -20,6 +21,21 @@ impl fmt::Display for Primitive {
             Primitive::Boolean => write!(f, "Bool"),
             Primitive::Char => write!(f, "Char"),
             Primitive::Number => write!(f, "Num"),
+            Primitive::Universe => write!(f, "Universe"),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Primitive {
+    type Error = ();
+
+    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        match s {
+            "Num" => Ok(Primitive::Number),
+            "Bool" => Ok(Primitive::Boolean),
+            "Char" => Ok(Primitive::Char),
+            "Universe" => Ok(Primitive::Universe),
+            _ => Err(()),
         }
     }
 }

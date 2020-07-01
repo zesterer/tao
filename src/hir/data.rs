@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::TryFrom};
 use internment::LocalIntern;
 use crate::{
     Error,
@@ -205,12 +205,7 @@ impl DataCtx {
     ) -> Result<TypeId, Error> {
         if let Some(ty_id) = infer.generic(**name) {
             Ok(ty_id)
-        } else if let Some(ty_info) = match name.as_str() {
-            "Num" => Some(TypeInfo::Primitive(Primitive::Number)),
-            "Bool" => Some(TypeInfo::Primitive(Primitive::Boolean)),
-            "Char" => Some(TypeInfo::Primitive(Primitive::Char)),
-            _ => None,
-        } {
+        } else if let Some(ty_info) = Primitive::try_from(name.as_str()).ok().map(TypeInfo::Primitive) {
             if params.len() == 0 {
                 Ok(infer.insert(ty_info, span))
             } else {

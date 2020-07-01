@@ -1,4 +1,5 @@
 use std::fmt;
+use crate::mir;
 use super::Value;
 
 pub type CodeAddr = u32;
@@ -83,6 +84,9 @@ pub enum Instr {
     /// Then, pop N additional items and return to the last pushed
     /// address, and push the return value
     Return(u32),
+
+    /// Intrinsics
+    Intrinsic(mir::Intrinsic),
 }
 
 impl fmt::Debug for Instr {
@@ -129,6 +133,7 @@ impl fmt::Debug for Instr {
             Instr::JumpIfNot(addr) => write!(f, "jump_if_not {:#X}", addr),
             Instr::Call(addr) => write!(f, "call {:#X}", addr),
             Instr::Return(n) => write!(f, "return {}", n),
+            Instr::Intrinsic(i) => write!(f, "intrinsic {:?}", i),
         }
     }
 }
@@ -144,11 +149,16 @@ pub struct Program {
     consts: Vec<Value>,
     debug: Vec<(CodeAddr, String)>,
     entry: CodeAddr,
+    is_pure: bool,
 }
 
 impl Program {
     pub fn entry(&self) -> CodeAddr {
         self.entry
+    }
+
+    pub fn is_pure(&self) -> bool {
+        self.is_pure
     }
 
     pub unsafe fn fetch_instr_unchecked(&self, addr: CodeAddr) -> Instr {
@@ -177,6 +187,10 @@ impl Program {
 
     pub fn set_entry(&mut self, addr: CodeAddr) {
         self.entry = addr;
+    }
+
+    pub fn set_pure(&mut self, is_pure: bool) {
+        self.is_pure = is_pure;
     }
 
     pub fn next_instr_addr(&self) -> CodeAddr {
