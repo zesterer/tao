@@ -193,8 +193,8 @@ fn arms_are_exhaustive<'a>(
 #[derive(Copy, Clone, Debug)]
 #[repr(u32)]
 pub enum Intrinsic {
-    Print,
-    Input,
+    Out,
+    In,
 }
 
 #[derive(Debug)]
@@ -306,24 +306,20 @@ impl<'a> Scope<'a> {
         let universe = infer.insert(TypeInfo::Primitive(Primitive::Universe), span);
 
         match ident.as_str() {
-            "print" => Ok(Some((
+            "out" => Ok(Some((
                 universe,
                 Vec::new(),
-                vec![{
-                    let c = infer.insert(TypeInfo::Primitive(Primitive::Char), span);
-                    infer.insert(TypeInfo::List(c), span)
-                }, universe],
-                Intrinsic::Print,
+                vec![infer.insert(TypeInfo::Primitive(Primitive::Char), span), universe],
+                Intrinsic::Out,
             ))),
-            "input" => Ok(Some((
+            "in" => Ok(Some((
                 {
                     let c = infer.insert(TypeInfo::Primitive(Primitive::Char), span);
-                    let s = infer.insert(TypeInfo::List(c), span);
-                    infer.insert(TypeInfo::Tuple(vec![s, universe]), span)
+                    infer.insert(TypeInfo::Tuple(vec![c, universe]), span)
                 },
                 Vec::new(),
                 vec![universe],
-                Intrinsic::Input,
+                Intrinsic::In,
             ))),
             _ => Ok(None),
         }

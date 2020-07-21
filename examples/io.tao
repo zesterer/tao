@@ -1,10 +1,10 @@
-def input_two = do {
+def input_two = do io {
 	x <- input;
 	y <- input;
 	return (x, y);
 }
 
-def main = do {
+def main = do io {
 	(x, y) <- input_two;
 	print("Said " ++ x ++ " and " ++ y);
 }

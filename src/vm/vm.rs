@@ -1,9 +1,10 @@
 use std::{
     rc::Rc,
-    io::{self, BufRead, Write},
+    io::{self, Write},
 };
 use super::{Instr, Program, Value};
 use crate::mir;
+use utf8_chars::BufReadCharsExt;
 
 #[derive(Default)]
 pub struct Vm;
@@ -191,28 +192,27 @@ impl Vm {
 
                 Instr::Intrinsic(intrinsic) => {
                     match intrinsic {
-                        mir::Intrinsic::Print => {
-                            let s = expr_stack.pop().unwrap();
+                        mir::Intrinsic::Out => {
+                            let c = expr_stack.pop().unwrap();
                             assert_eq!(expr_stack.pop().unwrap().into_universe_unchecked(), universe, "Forked universe");
 
-                            for c in s.into_list_unchecked().iter().cloned() {
-                                print!("{}", c.into_char_unchecked());
+                            let c = c.into_char_unchecked();
+                            print!("{}", c);
+                            if c == '\n' {
                                 io::stdout().lock().flush().unwrap();
                             }
 
                             universe += 1;
                             expr_stack.push(Value::Universe(universe));
                         },
-                        mir::Intrinsic::Input => {
+                        mir::Intrinsic::In => {
                             assert_eq!(expr_stack.pop().unwrap().into_universe_unchecked(), universe, "Forked universe");
 
-                            let mut buf = String::new();
-                            io::stdin().lock().read_line(&mut buf).unwrap();
-                            let input = Value::make_list(buf.chars().map(Value::Char));
+                            let c = io::stdin().lock().chars().next().map(|c| Value::Char(c.unwrap())).unwrap();
 
                             universe += 1;
                             expr_stack.push(Value::make_list(
-                                std::iter::once(input).chain(std::iter::once(Value::Universe(universe)))
+                                std::iter::once(c).chain(std::iter::once(Value::Universe(universe)))
                             ));
                         },
                     }

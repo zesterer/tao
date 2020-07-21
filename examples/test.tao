@@ -1,6 +1,34 @@
-fn map A B |f of A -> B, xs| match xs {
-	| [] => []
-	| [x, xs: ...] => [x:f] ++ xs:map(f)
+type ListMonad A = [A]
+
+fn list_make A |x of A| [x]
+
+fn list_next A B |b of ListMonad B, a of ListMonad A|
+	b
+
+fn list_bind A B |b of A -> ListMonad B, a of ListMonad A|
+	a:map(b):concat
+
+fn append A |x of A, l| l ++ [x]
+
+def main = do list {
+	x <- [1, 2, 3, 4];
+	y <- list_make(x + 1);
+	z <- list_make(y * 2);
+	return z;
 }
 
-def main = [1, 2, 3]:map(|x| x * 2)
+fn maybe_make A |x of A| Just x
+
+fn maybe_next A B |b of Maybe B, a of Maybe A|
+	b
+
+fn maybe_bind A B |b of A -> Maybe B, a of Maybe A| match a {
+	| Just a => b(a)
+	| None => None
+}
+
+def main = do maybe {
+	x <- Just 5;
+	y <- Just 3;
+	return x + y;
+}

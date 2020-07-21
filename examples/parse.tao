@@ -197,11 +197,11 @@ def eval = |ast| match ast {
 	}
 }
 
-def loop = do {
+def loop = do io {
 	str <- input;
 	if str:str_eq("q\n")
 	then nothing
-	else do {
+	else do io {
 		match full_expr(str).out {
 			| Just ast => print(ast:eval:show_num ++ "\n")
 			| _ => print("Invalid input: " ++ str)

@@ -7,18 +7,43 @@ type Str = [Char]
 type Io A = Universe -> (A, Universe)
 
 fn nothing |uni of Universe| ((), uni)
-fn print |s, uni| ((), @print(s, uni))
-fn input |uni| @input(uni)
+fn out_char |c, uni| ((), @out(c, uni))
+fn in_char |uni| @in(uni)
+
+fn input || do io {
+	c <- in_char;
+	if c = '\n'
+	then do io { return [c]; }
+	else do io {
+		cs <- input;
+		return [c] ++ cs;
+	};
+}
+
+fn print |cs| do io {
+	match cs {
+		| [c, cs: ...] => do io {
+			out_char(c);
+			print(cs);
+		}
+		| [] => do io { return (); }
+	}
+}
+
+# Errors
+
+def unreachable A of Str -> A = |s| unreachable(s)
 
 # Monadic IO
 
-fn make A |x of A, uni of Universe| (x, uni)
+fn io_make A |x of A|
+	|uni of Universe| (x, uni)
 
-fn bind A B |b of ? -> Io B, a of Io A, uni|
-	let (x, uni) = a(uni) in b(x, uni)
+fn io_bind A B |b of ? -> Io B, a of Io A|
+	|uni| let (x, uni) = a(uni) in b(x, uni)
 
-fn next A B |b of Io B, a of Io A, uni|
-	let (_, uni) = a(uni) in b(uni)
+fn io_next A B |b of Io B, a of Io A|
+	|uni| let (_, uni) = a(uni) in b(uni)
 
 # Lists
 
@@ -47,7 +72,7 @@ fn fold_l A B |init, f of B -> A -> ?, xs| match xs {
 fn reduce_l A B |f, (init, xs) of (A, [B])| fold_l(init, f, xs)
 
 fn fold_r A B |init, f of A -> B -> ?, xs| match xs {
-	| [x, xs: ...] => f(x, fold_r(init, f, xs))
+ 	| [x, xs: ...] => f(x, fold_r(init, f, xs))
 	| [] => init
 }
 
@@ -56,6 +81,11 @@ fn reduce_r A B |f, (xs, init) of ([B], A)| fold_r(init, f, xs)
 fn map A B |f of A -> B, xs| match xs {
 	| [] => []
 	| [x, xs: ...] => [x:f] ++ xs:map(f)
+}
+
+fn concat A |xs of [[A]]| match xs {
+	| [x, xs: ...] => x ++ xs:concat
+	| [] => []
 }
 
 # Numeric lists
@@ -69,3 +99,9 @@ def product = fold_l(1, |a, x| a * x)
 data Maybe A =
 	| Just A
 	| None
+
+# Result
+
+data Result A E =
+	| Ok A
+	| Err E

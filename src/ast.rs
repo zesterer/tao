@@ -512,45 +512,47 @@ fn expr_parser() -> Parser<impl Pattern<Error, Input=node::Node<Token>, Output=S
                 .then(arm_list)
                 .map_with_span(|(pred, arms), span| SrcNode::new(Expr::Match(pred, arms), span)))
             .or(just(Token::Do)
-                .padding_for(nested_parser(
-                    do_statement
-                        .clone()
-                        .then(just(Token::Semicolon).padding_for(do_statement.separated_by(just(Token::Semicolon))).or_not())
-                    .map(|(x, xs)| {
-                        let mut x = vec![x];
-                        if let Some(mut xs) = xs {
-                            x.append(&mut xs);
-                        }
-                        x
-                    })
-                    .map(|mut xs| {
-                        let x = xs.pop().unwrap();
-                        (xs, match x {
-                            DoStatement::Exec(expr) => expr,
-                            DoStatement::Return(expr) => {
-                                let make = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("make".to_string())])), Span::none());
-                                SrcNode::new(Expr::Apply(make, expr), Span::none())
-                            },
-                            DoStatement::Bind(_, _, expr) => expr,
-                        })
-                    })
-                    .reduce_right(|l, r| match l {
-                        DoStatement::Exec(l) => {
-                            let next = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("next".to_string())])), Span::none());
-                            SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(next, r), Span::none()), l), Span::none())
+                .padding_for(ident_parser())
+                .then(nested_parser(
+                        do_statement
+                            .clone()
+                            .then(just(Token::Semicolon).padding_for(do_statement.separated_by(just(Token::Semicolon))).or_not())
+                        .map(|(x, xs)| {
+                            let mut x = vec![x];
+                            if let Some(mut xs) = xs {
+                                x.append(&mut xs);
+                            }
+                            x
+                        }),
+                    Delimiter::Brace,
+                ))
+                .map(|(prefix, mut xs)| {
+                    let x = xs.pop().unwrap();
+                    (xs, (prefix, match x {
+                        DoStatement::Exec(expr) => expr,
+                        DoStatement::Return(expr) => {
+                            let make = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new(format!("{}_make", prefix))])), Span::none());
+                            SrcNode::new(Expr::Apply(make, expr), Span::none())
                         },
-                        DoStatement::Return(l) => {
-                            let next = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("next".to_string())])), Span::none());
-                            let make = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("make".to_string())])), Span::none());
-                            SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(next, SrcNode::new(Expr::Apply(make, r), Span::none())), Span::none()), l), Span::none())
-                        },
-                        DoStatement::Bind(b, ty, l) => {
-                            let bind = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new("bind".to_string())])), Span::none());
-                            SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(bind, SrcNode::new(Expr::Func(b, ty, r), Span::none())), Span::none()), l), Span::none())
-                        },
-                    }),
-                Delimiter::Brace,
-            )))
+                        DoStatement::Bind(_, _, expr) => expr,
+                    }))
+                })
+                .reduce_right(|l, (prefix, r)| match l {
+                    DoStatement::Exec(l) => {
+                        let next = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new(format!("{}_next", prefix))])), Span::none());
+                        (prefix, SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(next, r), Span::none()), l), Span::none()))
+                    },
+                    DoStatement::Return(l) => {
+                        let next = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new(format!("{}_next", prefix))])), Span::none());
+                        let make = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new(format!("{}_make", prefix))])), Span::none());
+                        (prefix, SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(next, SrcNode::new(Expr::Apply(make, r), Span::none())), Span::none()), l), Span::none()))
+                    },
+                    DoStatement::Bind(b, ty, l) => {
+                        let bind = SrcNode::new(Expr::Path(Path(vec![LocalIntern::new(format!("{}_bind", prefix))])), Span::none());
+                        (prefix, SrcNode::new(Expr::Apply(SrcNode::new(Expr::Apply(bind, SrcNode::new(Expr::Func(b, ty, r), Span::none())), Span::none()), l), Span::none()))
+                    },
+                })
+                .map(|(_, expr)| expr))
             .boxed();
 
         let application = atom
