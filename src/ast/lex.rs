@@ -1,37 +1,60 @@
-use std::{
-    fmt,
-    cmp::PartialEq,
-};
-use parze::prelude::*;
-use internment::LocalIntern;
+use internment::Intern;
+// use parze::{
+//     prelude::*,
+//     Error as ParzeError,
+// };
+use lingo::{prelude::*, Span as LingoSpan};
 use crate::{
-    src::Span,
-    node::SrcNode,
-    error::Error,
+    util::{Span, SrcNode},
+    ErrorCode, Error,
 };
+use super::SrcId;
+use std::{fmt, ops::Range, marker::PhantomData};
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum LexError {
+    Unexpected(char, Range<usize>, Option<char>),
+    UnexpectedEnd,
+}
+
+struct LexContext;
+
+impl Context for LexContext {
+    type Token = char;
+    type Span = Range<usize>;
+    type Error = LexError;
+}
+
+impl lingo::Error<LexContext> for LexError {
+    type Item = char;
+
+    fn span(&self) -> Option<Range<usize>> {
+        Some(match self {
+            LexError::Unexpected(_, span, _) => span.clone(),
+            LexError::UnexpectedEnd => Range::end(),
+        })
+    }
+
+    fn unexpected_end() -> Self { LexError::UnexpectedEnd }
+
+    fn unexpected(found: Self::Item, span: Range<usize>, expected: Option<Self::Item>) -> Self {
+        LexError::Unexpected(found, span, expected)
+    }
+}
+
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Op {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
+    Add, Sub,
+    Mul, Div, Rem,
 
-    Eq,
-    NotEq,
-    Less,
-    More,
-    LessEq,
-    MoreEq,
+    Eq, NotEq,
+    Less, LessEq,
+    More, MoreEq,
 
-    And,
-    Or,
+    And, Or, Not,
 
     Join,
-    Ellipsis,
 
-    Not,
+    Ellipsis,
 }
 
 impl fmt::Display for Op {
@@ -57,7 +80,7 @@ impl fmt::Display for Op {
     }
 }
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Delimiter {
     Paren,
     Brack,
@@ -82,16 +105,18 @@ impl Delimiter {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Token {
-    Number(LocalIntern<String>),
+    Nat(Intern<String>),
+    Int(Intern<String>),
+    Num(Intern<String>),
     Boolean(bool),
     Char(char),
-    String(LocalIntern<String>),
+    String(Intern<String>),
     Null,
-    Ident(LocalIntern<String>),
-    Intrinsic(LocalIntern<String>),
-    TypeName(LocalIntern<String>),
+    Ident(Intern<String>),
+    Intrinsic(Intern<String>),
+    TypeName(Intern<String>),
     Op(Op),
     Tree(Delimiter, Vec<SrcNode<Token>>),
 
@@ -124,24 +149,32 @@ pub enum Token {
     Data,
     Do,
     Return,
+
+    Root,
+    This,
+    Super,
+
+    Poison,
 }
 
-impl Token {
-    fn at(self, span: Span) -> SrcNode<Self> {
-        SrcNode::new(self, span)
+impl<'a> From<&'a Token> for Token {
+    fn from(tok: &'a Token) -> Self {
+        tok.clone()
     }
 }
 
-impl PartialEq<Token> for SrcNode<Token> {
-    fn eq(&self, other: &Token) -> bool {
-        &**self == other
+impl<'a> PartialEq<&'a Token> for Token {
+    fn eq(&self, other: &&'a Token) -> bool {
+        self == *other
     }
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Token::Number(x) => write!(f, "{}", x),
+            Token::Nat(x) => write!(f, "{}", x),
+            Token::Int(x) => write!(f, "{}", x),
+            Token::Num(x) => write!(f, "{}", x),
             Token::Boolean(x) => write!(f, "{}", x),
             Token::Char(c) => write!(f, "'{}'", c),
             Token::String(x) => write!(f, "\"{}\"", x),
@@ -180,28 +213,53 @@ impl fmt::Display for Token {
             Token::Data => write!(f, "data"),
             Token::Do => write!(f, "do"),
             Token::Return => write!(f, "return"),
+            Token::Root => write!(f, "root"),
+            Token::Super => write!(f, "super"),
+            Token::This => write!(f, "this"),
+            Token::Poison => write!(f, "<poison>"),
         }
     }
 }
 
-pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
-    let tokens = recursive(|tokens| {
+impl Token {
+    fn at(self, span: Span) -> SrcNode<Self> {
+        SrcNode::new(self, span)
+    }
+}
+
+impl<'a> PartialEq<&'a SrcNode<Token>> for Token {
+    fn eq(&self, other: &&'a SrcNode<Token>) -> bool {
+        self == &***other
+    }
+}
+
+impl<'a> From<&'a SrcNode<Token>> for Token {
+    fn from(token: &'a SrcNode<Token>) -> Self {
+        token.inner().clone()
+    }
+}
+
+pub fn lex(src_id: SrcId, code: &str) -> (Option<Vec<SrcNode<Token>>>, Vec<Error>) {
+    let tokens = recursive::<LexContext, _, _, _>(move |tokens| {
         let whitespace = permit(|c: &char| c.is_whitespace()).to(())
             .or(just('#').padding_for(permit(|c: &char| *c != '\n').repeated()).to(()));
 
         let space = whitespace.repeated();
 
-        let integer = permit(|c: &char| c.is_ascii_digit()).once_or_more();
+        let digits = permit::<LexContext, _>(|c: &char| c.is_ascii_digit()).once_or_more();
 
-        let number = integer.clone()
-            .then(just('.').padding_for(integer).or_not())
-            .map(|(mut int, fract)| {
-                if let Some(mut fract) = fract {
-                    int.push('.');
-                    int.append(&mut fract);
-                }
-                Token::Number(LocalIntern::new(int.into_iter().collect()))
-            });
+        let natural = digits.clone()
+            .map(|digits| Token::Nat(Intern::new(digits.into_iter().collect())))
+            .boxed();
+
+        let number = digits.clone()
+            .then(just('.').padding_for(digits))
+            .map(|(mut int, mut fract)| {
+                int.push('.');
+                int.append(&mut fract);
+                Token::Num(Intern::new(int.into_iter().collect()))
+            })
+            .boxed();
 
         let special = just('\\')
             .or(just('/'))
@@ -210,7 +268,8 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(just('f').to('\x0C'))
             .or(just('n').to('\n'))
             .or(just('r').to('\r'))
-            .or(just('t').to('\t'));
+            .or(just('t').to('\t'))
+            .boxed();
         let escape = just('\\').padding_for(special);
 
         let char_inner = permit(|c: &char| *c != '\\' && *c != '"').or(escape);
@@ -224,7 +283,7 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
         let string = just('"')
             .padding_for(char_inner.repeated())
             .padded_by(just('"'))
-            .map(|chars| Token::String(LocalIntern::new(chars.into_iter().collect())))
+            .map(|chars| Token::String(Intern::new(chars.into_iter().collect())))
             .boxed();
 
         let ident_raw = permit(|c: &char| c.is_ascii_lowercase() || *c == '_')
@@ -259,31 +318,33 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
             .or(seq("<=".chars()).to(Token::Op(Op::LessEq)))
             .or(seq(">=".chars()).to(Token::Op(Op::MoreEq)))
             .boxed()
-            .or(just('<').map(|sc| Token::Op(Op::Less)))
-            .or(just('>').map(|sc| Token::Op(Op::More)))
-            .or(just('!').map(|sc| Token::Op(Op::Not)))
-            .or(just(',').map(|sc| Token::Comma))
-            .or(seq("::".chars()).map(|sc| Token::Separator))
-            .or(just(';').map(|sc| Token::Semicolon))
-            .or(just(':').map(|sc| Token::Colon))
-            .or(just('.').map(|sc| Token::Dot))
-            .or(just('?').map(|sc| Token::QuestionMark))
-            .or(just('|').map(|sc| Token::Pipe))
-            .or(just('$').map(|sc| Token::Dollar))
+            .or(just('<').to(Token::Op(Op::Less)))
+            .or(just('>').to(Token::Op(Op::More)))
+            .or(just('!').to(Token::Op(Op::Not)))
+            .or(just(',').to(Token::Comma))
+            .or(seq("::".chars()).to(Token::Separator))
+            .or(just(';').to(Token::Semicolon))
+            .or(just(':').to(Token::Colon))
+            .or(just('.').to(Token::Dot))
+            .or(just('?').to(Token::QuestionMark))
+            .or(just('|').to(Token::Pipe))
+            .or(just('$').to(Token::Dollar))
             .boxed();
 
-        let tree = just('(').to(Delimiter::Paren).then(tokens.link()).padded_by(just(')'))
-            .or(just('[').to(Delimiter::Brack).then(tokens.link()).padded_by(just(']')))
-            .or(just('{').to(Delimiter::Brace).then(tokens.link()).padded_by(just('}')))
+        let tree = just('(').to(Delimiter::Paren).then(tokens.clone().padded_by(just(')')))
+            .or(just('[').to(Delimiter::Brack).then(tokens.clone()).padded_by(just(']')))
+            .or(just('{').to(Delimiter::Brace).then(tokens.clone()).padded_by(just('}')))
             .map(|(delim, tokens)| Token::Tree(delim, tokens));
 
         let token = number
+            .or(natural)
             .or(character)
             .or(string)
-            .or(type_name.map(|s| Token::TypeName(LocalIntern::new(s))))
+            .or(type_name.map(|s| Token::TypeName(Intern::new(s))))
             .or(just('@')
                 .padding_for(ident.clone())
-                .map(|s| Token::Intrinsic(LocalIntern::new(s))))
+                .map(|s| Token::Intrinsic(Intern::new(s))))
+            .boxed()
             .or(ident.map(|s: String| match s.as_str() {
                 "_" => Token::Wildcard,
                 "true" => Token::Boolean(true),
@@ -307,17 +368,74 @@ pub fn lex(code: &str) -> Result<Vec<SrcNode<Token>>, Vec<Error>> {
                 "or" => Token::Op(Op::Or),
                 "do" => Token::Do,
                 "return" => Token::Return,
-                _ => Token::Ident(LocalIntern::new(s)),
+                "root" => Token::Root,
+                "self" => Token::This,
+                "super" => Token::Super,
+                _ => Token::Ident(Intern::new(s)),
             }))
             .or(op)
             .or(tree)
-            .map_with_span(|token, span| token.at(span))
+            // .recover(none_of("])}".chars()).to(Token::Poison))
+            .map_with_span(move |token, span| token.at(Span::new(src_id, span)))
             .padded_by(space.clone());
 
-        space.padding_for(token.repeated())
+        space
+            .padding_for(token.repeated())
+            .map(|tokens| tokens
+                .into_iter()
+                .filter(|t| !matches!(t.inner(), Token::Poison))
+                .collect())
     });
 
-    tokens
+    let (tokens, errors) = tokens
         .padded_by(end())
-        .parse(code.chars())
+        .parse(Stream::from_iter(code
+            .chars()
+            .enumerate()
+            .map(|(i, c)| (c, i..i + 1))));
+
+    let errors = errors
+        .into_iter()
+        .map(|e| match e {
+            LexError::Unexpected(c, span, expected) => {
+                let span = Span::new(src_id, span);
+                Error::new(
+                    ErrorCode::UnexpectedChar,
+                    span,
+                    if let Some(expected) = expected {
+                        format!("Unexpected character `{}`, expected `{}`", c, expected)
+                    } else {
+                        format!("Unexpected character `{}`", c)
+                    },
+                )
+                    .with_primary(span, None)
+            },
+            LexError::UnexpectedEnd => Error::new(
+                ErrorCode::UnexpectedEnd,
+                Span::none().with_src(src_id),
+                format!("Unexpected end of input"),
+            ),
+        })
+        .collect();
+
+    (tokens, errors)
 }
+
+// impl ParzeError<char> for LexError {
+//     type Span = Range<usize>;
+
+//     fn position(&self) -> Option<usize> {
+//         match self {
+//             LexError::Unexpected(_, x) => Some(*x),
+//             _ => None,
+//         }
+//     }
+
+//     fn unexpected_end() -> Self {
+//         LexError::UnexpectedEnd
+//     }
+
+//     fn unexpected(span: Self::Span, f: char) -> Self {
+//         LexError::Unexpected(f, span)
+//     }
+// }

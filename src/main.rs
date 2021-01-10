@@ -1,21 +1,28 @@
 use rustyline::Editor;
-use std::{env, fs::File, io::Read};
-use tao::{run_expr, run_module};
+use std::{env, fs, io::Read};
+use tao::{eval_expr, run_module, Loader, Src, Ident, ErrorCode, Error, Span};
+
+struct SimpleLoader(String);
+
+impl Loader for SimpleLoader {
+    fn load(&mut self, path: &[Ident]) -> Result<Src, Error> {
+        if path.len() == 0 {
+            Ok(Src {
+                name: "repl".to_string(),
+                code: self.0.clone(),
+            })
+        } else {
+            Err(Error::new(ErrorCode::NoSuchSrc, Span::none(), format!("No such source: {:?}", path)))
+        }
+    }
+}
 
 fn main() {
     if let Some(filename) = env::args().nth(1) {
-        let mut src = String::new();
-        File::open(&filename)
-            .and_then(|mut file| file.read_to_string(&mut src))
+        let src = fs::read_to_string(&filename)
             .unwrap_or_else(|err| panic!("Could not read file '{}': {:?}", filename, err));
 
-        match run_module(&src) {
-            Ok(Some(val)) => println!("{}", val),
-            Ok(None) => {},
-            Err(errs) => errs
-                .iter()
-                .for_each(|err| print!("{}", err.in_source(&src))),
-        };
+        run_module(SimpleLoader(src));
     } else {
         let mut rl = Editor::<()>::new();
 
@@ -24,13 +31,7 @@ fn main() {
             match line {
                 Ok(line) => {
                     rl.add_history_entry(&line);
-
-                    match run_expr(&line) {
-                        Ok((ty, val)) => println!("{} of {}", val, ty),
-                        Err(errs) => errs
-                            .iter()
-                            .for_each(|err| print!("{}", err.in_source(&line))),
-                    };
+                    eval_expr(SimpleLoader(line));
                 }
                 Err(_) => break,
             }

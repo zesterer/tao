@@ -1,250 +1,127 @@
-use std::fmt;
 use crate::{
-    src::{Loc, Span},
-    lex::Token,
-    node::SrcNode,
+    ast::{Loader, LoadCache, SrcId, Src},
+    util::Span,
 };
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label, Severity, LabelStyle},
+    files::Src as CodespanSrc,
+    term::{self, termcolor::{ColorChoice, StandardStream}},
+};
+use std::fmt;
 
-#[cfg(feature = "serde")]
-use serde::Serialize;
+pub enum ErrorCode {
+    NoSuchSrc,
+    ExpectedEnd,
+    UnexpectedEnd,
+    UnexpectedChar,
+    UnexpectedToken,
+    TypeMismatch,
+    CannotInferType,
+}
 
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
+impl ErrorCode {
+    pub fn severity(&self) -> Severity {
+        match self {
+            ErrorCode::NoSuchSrc
+            | ErrorCode::ExpectedEnd
+            | ErrorCode::UnexpectedEnd
+            | ErrorCode::UnexpectedChar
+            | ErrorCode::UnexpectedToken
+            | ErrorCode::TypeMismatch
+            | ErrorCode::CannotInferType => Severity::Error,
+        }
+    }
+}
+
+impl fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            ErrorCode::NoSuchSrc => "E00",
+            ErrorCode::ExpectedEnd => "E01",
+            ErrorCode::UnexpectedEnd => "E02",
+            ErrorCode::UnexpectedChar => "E03",
+            ErrorCode::UnexpectedToken => "E04",
+            ErrorCode::TypeMismatch => "E05",
+            ErrorCode::CannotInferType => "E06",
+        })
+    }
+}
+
 pub struct Error {
-    msg: String,
-    primary_spans: Vec<Span>,
-    secondary_spans: Vec<Span>,
-    hints: Vec<String>,
+    pub code: ErrorCode,
+    pub span: Span,
+    pub msg: String,
+    pub primary_spans: Vec<(Span, Option<String>)>,
+    pub secondary_spans: Vec<(Span, Option<String>)>,
+    pub notes: Vec<String>,
 }
 
 impl Error {
-    //#[deprecated]
-    pub fn custom(msg: String) -> Self {
+    pub fn new(code: ErrorCode, span: Span, msg: String) -> Self {
         Self {
+            code,
+            span,
             msg,
             primary_spans: Vec::new(),
             secondary_spans: Vec::new(),
-            hints: Vec::new(),
+            notes: Vec::new(),
         }
     }
 
-    pub fn in_source<'a>(&'a self, src: &'a str) -> ErrorInSrc<'a> {
-        ErrorInSrc {
-            error: self,
-            src,
-        }
-    }
-
-    pub fn at(mut self, span: Span) -> Self {
-        // TODO: More span information
+    pub fn with_primary(mut self, span: Span, msg: Option<String>) -> Self {
+        self.primary_spans.push((span, msg));
         self
     }
 
-    pub fn merge(mut self, mut other: Self) -> Self {
-        // TODO: Merge errors
+    pub fn with_secondary(mut self, span: Span, msg: Option<String>) -> Self {
+        self.secondary_spans.push((span, msg));
         self
     }
 
-    pub fn with_span(mut self, span: Span) -> Self {
-        self.primary_spans.push(span);
+    pub fn with_note(mut self, msg: String) -> Self {
+        self.notes.push(msg);
         self
     }
 
-    pub fn with_secondary_span(mut self, span: Span) -> Self {
-        self.secondary_spans.push(span);
-        self
+    pub fn spans(&self) -> impl Iterator<Item=Span> + '_ {
+        self.primary_spans
+            .iter()
+            .chain(self.secondary_spans
+                .iter())
+            .map(|(span, _)| *span)
     }
 
-    pub fn with_hint(mut self, hint: String) -> Self {
-        self.hints.push(hint);
-        self
-    }
-}
-
-impl parze::error::Error<char> for Error {
-    type Span = Span;
-    type Thing = Thing;
-    type Context = ();
-
-    fn unexpected_sym(c: &char, span: Span) -> Self {
-        Self::custom(format!("Unexpected character '{}'", c))
-            .with_span(span)
-    }
-
-    fn unexpected_end() -> Self {
-        Self::custom(format!("Unexpected end of input"))
-    }
-
-    fn expected_end(c: &char, span: Span) -> Self {
-        Self::custom(format!("Expected end of input, found '{}'", c))
-            .with_span(span)
-    }
-
-    fn expected(mut self, thing: Self::Thing) -> Self {
-        // TODO: Merge error messages
-        self
-    }
-
-    fn merge(self, other: Self) -> Self {
-        self.merge(other)
-    }
-}
-
-impl parze::error::Error<SrcNode<Token>> for Error {
-    type Span = Span;
-    type Thing = Thing;
-    type Context = ();
-
-    fn unexpected_sym(sym: &SrcNode<Token>, span: Span) -> Self {
-        Self::custom(format!("Unexpected token '{}'", **sym))
-            .with_span(span)
-    }
-
-    fn unexpected_end() -> Self {
-        Self::custom(format!("Unexpected end of input"))
-    }
-
-    fn expected_end(sym: &SrcNode<Token>, span: Span) -> Self {
-        Self::custom(format!("Expected end of input, found '{}'", **sym))
-            .with_span(span)
-    }
-
-    fn expected(mut self, thing: Self::Thing) -> Self {
-        // TODO: Merge error messages
-        self
-    }
-
-    fn merge(self, other: Self) -> Self {
-        self.merge(other)
-    }
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct ErrorInSrc<'a> {
-    error: &'a Error,
-    src: &'a str,
-}
-
-impl<'a> fmt::Display for ErrorInSrc<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let highlight_spans = |f: &mut fmt::Formatter, spans: &[_]| {
-            let span_iter = spans
-                .iter()
-                .cloned()
-                .chain(self.error.primary_spans.iter().map(|s| (*s, true)))
-                .chain(self.error.secondary_spans.iter().map(|s| (*s, false)));
-
-            if let Some(((start_line, start_col), (end_line, end_col))) = span_iter
-                .clone()
-                .fold(Span::none(), |a, (s, _)| a.union(s))
-                .in_context(self.src)
-            {
-                writeln!(f, "-> line {}, column {}", start_line + 1, start_col + 1)?;
-
-                let lines = self.src.lines().collect::<Vec<_>>();
-
-                let mut char_pos = 0;
-                for (i, line) in lines.iter().enumerate() {
-                    if i >= start_line && i <= end_line {
-                        let line_span = Span::range(
-                            Loc::at(char_pos),
-                            Loc::at(char_pos + line.len()),
-                        );
-
-                        let any_intersects = span_iter
-                            .clone()
-                            .any(|(s, _)| s.intersects(line_span));
-
-                        let any_starts_or_ends = span_iter
-                            .clone()
-                            .any(|(s, _)| match s.in_context(self.src) {
-                                Some(((sl, _), (el, _))) => sl == i || el == i,
-                                _ => false,
-                            });
-
-                        // let any_wraps = span_iter
-                        //     .clone()
-                        //     .any(|(s, _)| match s.in_context(self.src) {
-                        //         Some(((sl, _), (el, _))) => sl != el && sl < i && el >= i,
-                        //         _ => false,
-                        //     });
-
-                        if any_intersects {
-                            writeln!(f, "{:>4} | {}", i + 1, line.replace("\t", " "))?;
-                        }
-
-                        // Underline
-                        if any_starts_or_ends {
-                            write!(f, "       ")?;
-                            for _ in 0..line.len() {
-                                if let Some((span, is_primary)) = span_iter
-                                    .clone()
-                                    .find(|(s, is_primary)| s.contains(Loc::at(char_pos)) && *is_primary)
-                                    .or_else(|| span_iter
-                                        .clone()
-                                        .find(|(s, _)| s.contains(Loc::at(char_pos))))
-                                {
-                                    write!(f, "{}", if is_primary { '^' } else { '-' })?;
-                                } else {
-                                    write!(f, " ")?;
-                                }
-
-                                char_pos += 1;
-                            }
-                            writeln!(f, "")?;
-                            char_pos += 1;
-                        } else {
-                            char_pos += line.len() + 1;
-                        }
+    pub fn emit(&self, load_cache: &mut LoadCache<impl Loader>) {
+        let diag = Diagnostic::new(self.code.severity())
+            .with_message(&self.msg)
+            .with_code(format!("{}", self.code))
+            .with_labels(
+                self.primary_spans
+                    .iter()
+                    .zip(std::iter::repeat(LabelStyle::Primary))
+                    .chain(self.secondary_spans
+                        .iter()
+                        .zip(std::iter::repeat(LabelStyle::Secondary)))
+                    .filter_map(|((span, msg), style)| if let Some((src, range)) = span.src().zip(span.range()) {
+                        Some(Label::new(style, src, range.start..range.end)
+                            .with_message(msg.clone().unwrap_or_else(String::new)))
                     } else {
-                        char_pos += line.len() + 1;
-                    }
-                }
-            }
+                        None
+                    })
+                    .collect()
+            )
+            .with_notes(self.notes.clone());
 
-            Ok(())
-        };
-
-        writeln!(f, "Error: {}", self.error.msg)?;
-        highlight_spans(f, &[])?;
-
-        for hint in self.error.hints.iter() {
-            writeln!(f, "Hint: {}", hint)?;
+        impl CodespanSrc for Src {
+            fn name(&self) -> &str { &self.name }
+            fn source(&self) -> &str { &self.code }
         }
 
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum Thing {
-    Char(char),
-    Token(Token),
-}
-
-impl From<char> for Thing {
-    fn from(c: char) -> Self {
-        Thing::Char(c)
-    }
-}
-
-impl From<Token> for Thing {
-    fn from(token: Token) -> Self {
-        Thing::Token(token)
-    }
-}
-
-impl From<SrcNode<Token>> for Thing {
-    fn from(token: SrcNode<Token>) -> Self {
-        Self::from(token.into_inner())
-    }
-}
-
-impl fmt::Display for Thing {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Thing::Char(c) => write!(f, "'{}'", c),
-            Thing::Token(t) => write!(f, "'{}'", t),
-        }
+        term::emit(
+            &mut StandardStream::stderr(ColorChoice::Always).lock(),
+            &term::Config::default(),
+            move |id| load_cache.load(id).unwrap_or_else(|_| panic!("ICE")).clone(),
+            &diag,
+        ).unwrap();
     }
 }

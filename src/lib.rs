@@ -1,67 +1,71 @@
-#![type_length_limit = "10823821"]
-#![feature(arbitrary_self_types, arbitrary_enum_discriminant)]
+#![feature(
+    label_break_value,
+    option_zip,
+    trait_alias,
+    type_alias_impl_trait,
+    arbitrary_self_types,
+    option_expect_none,
+)]
 
-mod ast;
+pub mod ast;
+pub mod hir;
+pub mod util;
 pub mod error;
-mod hir;
-mod lex;
-mod mir;
-mod node;
-mod src;
-mod ty;
-pub mod vm;
 
-use crate::{
-    error::Error,
-    node::SrcNode,
+pub use self::{
+    ast::{Loader, Src, Ident, lex},
+    error::{ErrorCode, Error},
+    util::Span,
 };
-use internment::LocalIntern;
 
-// TODO: Make this not hacky
-fn parse_prelude() -> Result<SrcNode<ast::Module>, Vec<Error>> {
-    ast::parse_module(&lex::lex(include_str!("tao/prelude.tao"))?)
+use self::ast::LoadCache;
+
+type Val = String;
+type Ty = String;
+
+pub fn eval_expr<L: Loader>(loader: L) {
+    let mut cache = LoadCache::from(loader);
+    let mut errors = Vec::new();
+    'eval: {
+        let (main, main_id) = match cache.load_from_path(std::iter::empty()) {
+            Ok(src) => src,
+            Err(e) => {
+                errors.push(e);
+                break 'eval;
+            },
+        };
+
+        let (tokens, es) = lex(main_id, &main.code);
+        errors.extend(es.into_iter());
+        let tokens = match tokens {
+            Some(tokens) => tokens,
+            None => break 'eval,
+        };
+
+        println!("Tokens: {:?}", tokens);
+
+        let (ast, es) = ast::parse::parse_expr(main_id, &tokens);
+        errors.extend(es.into_iter());
+        let ast = match ast {
+            Some(ast) => ast,
+            None => break 'eval,
+        };
+
+        println!("{:#?}", ast);
+
+        let mut ctx = hir::Ctx::default();
+        let hir = ast.to_hir(&mut ctx);
+        errors.extend(std::mem::take(&mut ctx.errors).into_iter());
+
+        println!("{:#?}", hir);
+        println!("Type: {}", ctx.display_ty(hir.ty()));
+    }
+
+    errors
+        .into_iter()
+        .for_each(|e| e.emit(&mut cache));
 }
 
-pub fn run_module(src: &str) -> Result<Option<vm::Value>, Vec<Error>> {
-    let tokens = lex::lex(&src)?;
-    let mut ast = parse_prelude()?;
-    ast.decls.append(&mut ast::parse_module(&tokens)?.decls);
-    let hir_prog = hir::Program::new_root(&ast)?;
-
-    // TODO: Get rid of this
-    let main_ident = LocalIntern::new("main".to_string());
-
-    let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
-
-    let prog = mir_prog.compile(false).map_err(|e| vec![e])?;
-
-    //println!("{:?}", prog);
-
-    Ok(vm::Vm::default().execute(&prog))
-}
-
-pub fn run_expr(src: &str) -> Result<(ty::Type, vm::Value), Vec<Error>> {
-    let tokens = lex::lex(&src)?;
-    let mut hir_prog = hir::Program::new_root(&parse_prelude()?)?;
-    hir_prog
-        .insert_def(&ast::Def::main(ast::parse_expr(&tokens)?))
-        .map_err(|e| vec![e])?;
-
-    // TODO: Get rid of this
-    let main_ident = LocalIntern::new("main".to_string());
-
-    let mir_prog = mir::Program::from_hir(&hir_prog, main_ident).map_err(|e| vec![e])?;
-    let prog = mir_prog.compile(true).map_err(|e| vec![e])?;
-
-    Ok((
-        hir_prog
-            .root()
-            .def(main_ident)
-            .unwrap()
-            .body
-            .ty()
-            .inner()
-            .clone(),
-        vm::Vm::default().execute(&prog).unwrap(),
-    ))
+pub fn run_module<L: Loader>(loader: L) {
+    eval_expr(loader)
 }
