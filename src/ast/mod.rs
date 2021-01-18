@@ -14,7 +14,7 @@ use crate::util::SrcNode;
 pub type SrcStr = Intern<String>;
 pub type Ident = Intern<String>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PathBase {
     Root,
     Super,
@@ -57,6 +57,19 @@ pub enum Literal {
     Char(char),
     Bool(bool),
     Str(SrcStr),
+}
+
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Literal::Nat(s) => write!(f, "{}", s),
+            Literal::Int(s) => write!(f, "{}", s),
+            Literal::Num(s) => write!(f, "{}", s),
+            Literal::Char(c) => write!(f, "{}", c),
+            Literal::Bool(b) => write!(f, "{}", b),
+            Literal::Str(s) => write!(f, "{}", s),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -126,6 +139,7 @@ pub enum Expr {
     Literal(Literal),
     Item(Item),
 
+    Coerce(SrcNode<Self>),
     Unary(SrcNode<UnaryOp>, SrcNode<Self>),
     Binary(SrcNode<BinaryOp>, SrcNode<Self>, SrcNode<Self>),
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),

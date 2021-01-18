@@ -39,6 +39,14 @@ impl Span {
         self.range.map(|(a, b)| a..b)
     }
 
+    pub fn or(self, other: Self) -> Self {
+        if self.range.is_some() {
+            self
+        } else {
+            other
+        }
+    }
+
     pub fn union(self, other: Self) -> Self {
         assert!(self.src.zip_with(other.src, |a, b| a == b).unwrap_or(true));
         Self {

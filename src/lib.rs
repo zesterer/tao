@@ -42,7 +42,7 @@ pub fn eval_expr<L: Loader>(loader: L) {
             None => break 'eval,
         };
 
-        println!("Tokens: {:?}", tokens);
+        //println!("Tokens: {:?}", tokens);
 
         let (ast, es) = ast::parse::parse_expr(main_id, &tokens);
         errors.extend(es.into_iter());
@@ -51,13 +51,16 @@ pub fn eval_expr<L: Loader>(loader: L) {
             None => break 'eval,
         };
 
-        println!("{:#?}", ast);
+        //println!("{:#?}", ast);
 
         let mut ctx = hir::Ctx::default();
         let hir = ast.to_hir(&mut ctx);
         errors.extend(std::mem::take(&mut ctx.errors).into_iter());
 
-        println!("{:#?}", hir);
+        //println!("{:#?}", hir);
+
+        //println!("Expr: {}", ctx.display_expr(&hir));
+
         println!("Type: {}", ctx.display_ty(hir.ty()));
     }
 

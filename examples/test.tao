@@ -1,6 +1,20 @@
-fn map A B |f of A -> B, xs| match xs {
-	| [] => []
-	| [x, xs: ...] => [x:f] ++ xs:map(f)
-}
+let a = |x| x in
+let b = |x| a(x) in
+let result :: Num = b(&42) in
 
-def main = [1, 2, 3]:map(|x| x * 2)
+let f :: ? -> Nat = |x| x in
+let g :: Num -> ? = |x| x in
+let fg = [&f, &g] in
+
+let x :: Nat = 5 in
+let y :: Num = &x in
+
+let x = 5.0 in
+let y = 8 in
+let identity = |x :: Num| x in
+let identity = |x| identity(x) in
+let identity = |x| identity(x) in
+let identity = |x| identity(x) in
+let xs :: [Num] = [&4, identity(&x), identity(&y)] in
+#[xs, [5]]
+fg

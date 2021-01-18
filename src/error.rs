@@ -16,7 +16,10 @@ pub enum ErrorCode {
     UnexpectedChar,
     UnexpectedToken,
     TypeMismatch,
-    CannotInferType,
+    TypeIncompatibility,
+    TypeInferenceFailure,
+    TypeInfinite,
+    SolverLimitReached,
 }
 
 impl ErrorCode {
@@ -28,7 +31,10 @@ impl ErrorCode {
             | ErrorCode::UnexpectedChar
             | ErrorCode::UnexpectedToken
             | ErrorCode::TypeMismatch
-            | ErrorCode::CannotInferType => Severity::Error,
+            | ErrorCode::TypeIncompatibility
+            | ErrorCode::TypeInferenceFailure
+            | ErrorCode::TypeInfinite
+            | ErrorCode::SolverLimitReached => Severity::Error,
         }
     }
 }
@@ -42,7 +48,10 @@ impl fmt::Display for ErrorCode {
             ErrorCode::UnexpectedChar => "E03",
             ErrorCode::UnexpectedToken => "E04",
             ErrorCode::TypeMismatch => "E05",
-            ErrorCode::CannotInferType => "E06",
+            ErrorCode::TypeIncompatibility => "E06",
+            ErrorCode::TypeInferenceFailure => "E07",
+            ErrorCode::TypeInfinite => "E08",
+            ErrorCode::SolverLimitReached => "E09",
         })
     }
 }
@@ -89,6 +98,14 @@ impl Error {
             .chain(self.secondary_spans
                 .iter())
             .map(|(span, _)| *span)
+    }
+
+    pub fn do_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if cond {
+            f(self)
+        } else {
+            self
+        }
     }
 
     pub fn emit(&self, load_cache: &mut LoadCache<impl Loader>) {

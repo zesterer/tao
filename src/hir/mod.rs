@@ -1,12 +1,13 @@
-pub mod infer;
+//pub mod infer;
 pub mod ty;
 pub mod data;
 pub mod intrinsic;
 pub mod lower;
 pub mod check;
+pub mod infer2;
 
 pub use self::{
-    infer::{TyVar, InferCtx, TyInfo},
+    infer2::{TyVar, InferCtx, TyInfo, SolvedTys, EquateReason},
     ty::{Ty, TyId, TyCtx, TyDisplay, Primitive},
     data::DataCtx,
     intrinsic::Intrinsic,
@@ -18,7 +19,7 @@ use crate::{
     util::{Span, Node, SrcNode, InferNode, TyNode},
     Error,
 };
-use std::collections::HashMap;
+use std::{fmt, collections::HashMap};
 
 #[derive(Debug)]
 pub enum Path {
@@ -72,6 +73,7 @@ pub enum Expr<A> {
     Local(Ident),
     Global(Item, Generics<A>),
 
+    Coerce(Node<Self, A>),
     Unary(SrcNode<UnaryOp>, Node<Self, A>),
     Binary(SrcNode<BinaryOp>, Node<Self, A>, Node<Self, A>),
     Intrinsic(SrcNode<Intrinsic>, Vec<Node<Self, A>>),
@@ -123,5 +125,85 @@ impl Ctx {
 
     pub fn display_ty(&self, id: TyId) -> TyDisplay<'_> {
         self.ty.display(id)
+    }
+
+    pub fn fmt_expr(&self, f: &mut fmt::Formatter, expr: &TyExpr, depth: usize) -> fmt::Result {
+        match expr.inner() {
+            Expr::Error => write!(f, "!"),
+            Expr::Literal(litr) => write!(f, "{}", litr),
+            Expr::Local(ident) => write!(f, "{}", ident),
+            Expr::Match(pred, arms) => write!(f, "match {} {{\n{}{}}}", self.display_custom(pred, depth, Self::fmt_expr), arms
+                .iter()
+                .map(|arm| format!(
+                    "{}| {} => {}\n",
+                    std::iter::repeat("    ").take(depth + 1).collect::<String>(),
+                    self.display_custom(&arm.binding, depth + 1, Self::fmt_binding),
+                    self.display_custom(&arm.body, depth + 1, Self::fmt_expr),
+                ))
+                .collect::<Vec<_>>()
+                .join(""), std::iter::repeat("    ").take(depth).collect::<String>()),
+            Expr::List(items) => write!(f, "[{}]", items
+                .iter()
+                .map(|item| format!("{}", self.display_custom(item, depth, Self::fmt_expr)))
+                .collect::<Vec<_>>()
+                .join(", ")),
+            Expr::Tuple(fields) => write!(f, "({})", fields
+                .iter()
+                .map(|field| format!("{}", self.display_custom(field, depth, Self::fmt_expr)))
+                .collect::<Vec<_>>()
+                .join(", ")),
+            Expr::Func(param, body) => write!(f, "|{}| {}", self.display_custom(param, depth, Self::fmt_binding), self.display_custom(body, depth, Self::fmt_expr)),
+            Expr::Apply(func, arg) => write!(f, "({})({})", self.display_custom(func, depth, Self::fmt_expr), self.display_custom(arg, depth, Self::fmt_expr)),
+            expr => todo!("{:?}", expr),
+        }
+    }
+
+    pub fn fmt_binding(&self, f: &mut fmt::Formatter, binding: &TyBinding, depth: usize) -> fmt::Result {
+        if let Some(ident) = &binding.binding {
+            write!(f, "{}", ident.inner())?;
+
+            match binding.pat.inner() {
+                Pat::Wildcard => {},
+                _ => write!(f, ": ")?,
+            }
+        }
+
+        match binding.pat.inner() {
+            Pat::Wildcard => {},
+            Pat::Literal(litr) => write!(f, "{}", litr)?,
+            Pat::List(items) => write!(f, "[{}]", items
+                .iter()
+                .map(|item| format!("{}", self.display_custom(item, depth, Self::fmt_binding)))
+                .collect::<Vec<_>>()
+                .join(", "))?,
+            Pat::Tuple(fields) => write!(f, "({})", fields
+                .iter()
+                .map(|field| format!("{}", self.display_custom(field, depth, Self::fmt_binding)))
+                .collect::<Vec<_>>()
+                .join(", "))?,
+            binding => todo!("{:?}", binding),
+        }
+        write!(f, " :: {}", self.display_ty(binding.ty()))
+    }
+
+    fn display_custom<'a, T>(&'a self, x: &'a T, depth: usize, f: fn(&Ctx, &mut fmt::Formatter, &T, usize) -> fmt::Result) -> impl fmt::Display + 'a {
+        struct DisplayExpr<'a, T> {
+            ctx: &'a Ctx,
+            x: &'a T,
+            f: fn(&Ctx, &mut fmt::Formatter, &T, usize) -> fmt::Result,
+            depth: usize,
+        }
+
+        impl<'a, T> fmt::Display for DisplayExpr<'a, T> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                (self.f)(self.ctx, f, self.x, self.depth)
+            }
+        }
+
+        DisplayExpr { ctx: self, x, f, depth }
+    }
+
+    pub fn display_expr<'a>(&'a self, expr: &'a TyExpr) -> impl fmt::Display + 'a {
+        self.display_custom(expr, 0, Self::fmt_expr)
     }
 }

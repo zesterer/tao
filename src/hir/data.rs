@@ -3,7 +3,7 @@ use crate::util::SrcNode;
 use bimap::BiMap;
 use std::collections::HashMap;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DataId(usize);
 
 pub struct Data {

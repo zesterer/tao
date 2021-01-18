@@ -30,6 +30,12 @@ impl fmt::Display for Primitive {
 }
 
 impl Primitive {
+    pub fn subtype_of(self, other: Self) -> bool {
+        self == other || self.numerical_rank()
+            .zip(other.numerical_rank())
+            .map_or(false, |(a, b)| a < b)
+    }
+
     /// Return a number that determines how general a numerical primitive is.
     pub fn numerical_rank(&self) -> Option<usize> {
         match self {
@@ -41,7 +47,7 @@ impl Primitive {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Ty {
     /// An error occurred when performing inference with this type variable, generate no other errors.
     Error,

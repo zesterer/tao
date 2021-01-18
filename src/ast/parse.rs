@@ -25,6 +25,10 @@ impl<'a> Context for ParseContext<'a> {
 }
 
 impl LingoSpan for Span {
+    fn start() -> Self {
+        Self::none()
+    }
+
     fn end() -> Self {
         Self::none()
     }
@@ -436,7 +440,7 @@ fn binding_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Bi
                 .or(list_front)
         });
 
-        let ty_hint = just(Token::Of)
+        let ty_hint = just(Token::Separator)
             .padding_for(type_parser(src_id))
             .or_not()
             .map(|ty| ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, Span::none())));
@@ -641,11 +645,21 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
             })
             .boxed();
 
+        let coerce = just(Token::Ampersand)
+            .map_with_span(move |_, span| span)
+            .repeated()
+            .then(infix)
+            .reduce_right(|span, expr: SrcNode<Expr>| {
+                let span = span.union(expr.span());
+                SrcNode::new(Expr::Coerce(expr), span)
+            })
+            .boxed();
+
         let unary = just(Token::Op(Op::Sub)).to(UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(UnaryOp::Not))
             .map_with_span(move |op, span| SrcNode::new(op, span))
             .repeated()
-            .then(infix)
+            .then(coerce)
             .reduce_right(|op: SrcNode<UnaryOp>, expr: SrcNode<Expr>| {
                 let span = op.span().union(expr.span());
                 SrcNode::new(Expr::Unary(op, expr), span)

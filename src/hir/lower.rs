@@ -36,27 +36,76 @@ impl<'a> Scope<'a> {
 
 impl ast::Literal {
     fn ty_var(&self, ctx: &mut InferCtx, span: Span) -> TyVar {
-        let info = match self {
+        let ty = match self {
             ast::Literal::Nat(_) => TyInfo::Primitive(Primitive::Nat),
             ast::Literal::Int(_) => TyInfo::Primitive(Primitive::Int),
             ast::Literal::Num(_) => TyInfo::Primitive(Primitive::Num),
             ast::Literal::Char(_) => TyInfo::Primitive(Primitive::Char),
             ast::Literal::Bool(_) => TyInfo::Primitive(Primitive::Bool),
-            ast::Literal::Str(_) => TyInfo::List(ctx.insert(TyInfo::Primitive(Primitive::Char), span)),
+            ast::Literal::Str(_) => TyInfo::List(ctx.info_var(TyInfo::Primitive(Primitive::Char), span)),
         };
-        ctx.insert(info, span)
+        ctx.info_var(ty, span)
+    }
+}
+
+impl ast::Type {
+    fn ty_var(self: &SrcNode<Self>, ctx: &mut InferCtx) -> TyVar {
+        match self.inner() {
+            ast::Type::Unknown => ctx.free_var(self.span()),
+            ast::Type::List(inner) => {
+                let inner = inner.ty_var(ctx);
+                ctx.info_var(TyInfo::List(inner), self.span())
+            },
+            ast::Type::Tuple(fields) => {
+                let tuple = TyInfo::Tuple(fields
+                    .iter()
+                    .map(|field| field.ty_var(ctx))
+                    .collect());
+                ctx.info_var(tuple, self.span())
+            },
+            ast::Type::Record(_) => todo!(),
+            ast::Type::Func(i, o) => {
+                let i = i.ty_var(ctx);
+                let o = o.ty_var(ctx);
+                ctx.info_var(TyInfo::Func(i, o), self.span())
+            },
+            ast::Type::Data(item, params) => if item.base.as_ref().map_or(false, |b| b.inner() == &ast::PathBase::This) && item.path.is_empty() && params.is_empty() {
+                ctx.info_var(match item.name.inner().as_str() {
+                    "Nat" => TyInfo::Primitive(Primitive::Nat),
+                    "Int" => TyInfo::Primitive(Primitive::Int),
+                    "Num" => TyInfo::Primitive(Primitive::Num),
+                    "Bool" => TyInfo::Primitive(Primitive::Bool),
+                    "Char" => TyInfo::Primitive(Primitive::Char),
+                    _ => todo!(),
+                }, self.span())
+            } else {
+                todo!()
+            },
+        }
     }
 }
 
 impl ast::Binding {
     fn lower(self: &SrcNode<Self>, ctx: &mut InferCtx) -> InferBinding {
         let (pat, var) = match self.pat.inner() {
-            ast::Pat::Wildcard => (Pat::Wildcard, ctx.insert_free(self.pat.span())),
+            ast::Pat::Wildcard => (Pat::Wildcard, ctx.free_var(self.pat.span())),
             ast::Pat::Literal(litr) => (Pat::Literal(litr.clone()), litr.ty_var(ctx, self.pat.span())),
-            _ => todo!(),
+            ast::Pat::Tuple(fields) => {
+                let (tys, fields) = fields
+                    .iter()
+                    .map(|field| {
+                        let field = field.lower(ctx);
+                        (field.ty(), field)
+                    })
+                    .unzip();
+                (Pat::Tuple(fields), ctx.info_var(TyInfo::Tuple(tys), self.span()))
+            },
+            pat => todo!("Implement {:?}", pat),
         };
 
         let binding = Binding { pat: SrcNode::new(pat, self.pat.span()), binding: self.binding.clone() };
+        let ty_hint = self.ty.ty_var(ctx);
+        ctx.unify_eq(ty_hint, var, self.span());
         InferNode::new(binding, (self.span(), var))
     }
 }
@@ -99,50 +148,54 @@ impl ast::Expr {
     fn lower(self: &SrcNode<Self>, ctx: &mut InferCtx, scope: &Scope) -> InferExpr {
         let (this, var) = match self.inner() {
             ast::Expr::Literal(litr) => (Expr::Literal(litr.clone()), litr.ty_var(ctx, self.span())),
+            ast::Expr::Coerce(expr) => {
+                let var = ctx.free_var(self.span());
+                let expr = expr.lower(ctx, scope);
+                ctx.unify_flow(expr.ty(), var, self.span());
+                (Expr::Coerce(expr), var)
+            },
             ast::Expr::Item(item) => if item.base.is_none() && item.path.is_empty() {
                 match scope.get_local(*item.name.inner()) {
                     Some(var) => (Expr::Local(*item.name.inner()), var),
                     _ => {
                         ctx.emit_error(Error::new(ErrorCode::TypeMismatch, item.name.span(), format!("Cannot find binding `{}` in the current scope", item.name.inner()))
                             .with_primary(item.name.span(), None));
-                        (Expr::Error, ctx.insert_error(self.span()))
+                        (Expr::Error, ctx.error_var(self.span()))
                     },
                 }
             } else {
                 todo!()
             },
             ast::Expr::List(items) => {
-                let inner_ty = ctx.insert_free(self.span());
+                let inner_ty = ctx.free_var(self.span());
 
                 let items = items
                     .iter()
                     .map(|item| {
                         let item = item.lower(ctx, scope);
-                        ctx.unify_subtype(item.ty(), inner_ty, item.span());
+                        ctx.unify_eq_reason(item.ty(), inner_ty, self.span(), EquateReason::List);
                         item
                     })
                     .collect();
 
-                (Expr::List(items), ctx.insert(TyInfo::List(inner_ty), self.span()))
+                (Expr::List(items), ctx.info_var(TyInfo::List(inner_ty), self.span()))
             },
             ast::Expr::Tuple(fields) => {
                 let (tys, fields) = fields
                     .iter()
-                    .map(|item| {
-                        let ty = ctx.insert_free(item.span());
-                        let item = item.lower(ctx, scope);
-                        ctx.unify_subtype(item.ty(), ty, item.span());
-                        (ty, item)
+                    .map(|field| {
+                        let field = field.lower(ctx, scope);
+                        (field.ty(), field)
                     })
                     .unzip();
 
-                (Expr::Tuple(fields), ctx.insert(TyInfo::Tuple(tys), self.span()))
+                (Expr::Tuple(fields), ctx.info_var(TyInfo::Tuple(tys), self.span()))
             },
             ast::Expr::Let(binding, pred, body) => {
                 let pred = pred.lower(ctx, scope);
                 let binding = binding.lower(ctx);
                 let body = body.lower(ctx, &scope.with_many(binding.get_bindings()));
-                ctx.unify_subtype(pred.ty(), binding.ty(), body.span());
+                ctx.unify_eq(pred.ty(), binding.ty(), body.span());
 
                 let body_ty = body.ty();
                 let arm = MatchArm { binding, body };
@@ -150,15 +203,15 @@ impl ast::Expr {
                 (Expr::Match(pred, vec![arm]), body_ty)
             },
             ast::Expr::If(pred, a, b) => {
-                let boolean = ctx.insert(TyInfo::Primitive(Primitive::Bool), pred.span());
+                let boolean = ctx.info_var(TyInfo::Primitive(Primitive::Bool), pred.span());
                 let pred = pred.lower(ctx, scope);
-                ctx.unify_subtype(pred.ty(), boolean, pred.span());
+                ctx.unify_eq_reason(pred.ty(), boolean, pred.span(), EquateReason::Conditional);
 
-                let expr_ty = ctx.insert_free(self.span());
+                let expr_ty = ctx.free_var(self.span());
                 let a = a.lower(ctx, scope);
                 let b = b.lower(ctx, scope);
-                ctx.unify_subtype(a.ty(), expr_ty, a.span());
-                ctx.unify_subtype(b.ty(), expr_ty, b.span());
+                ctx.unify_eq(a.ty(), expr_ty, a.span());
+                ctx.unify_eq(b.ty(), expr_ty, b.span());
 
                 let arms = vec![
                     MatchArm {
@@ -176,14 +229,14 @@ impl ast::Expr {
             ast::Expr::Match(pred, arms) => {
                 let pred = pred.lower(ctx, scope);
 
-                let expr_ty = ctx.insert_free(self.span());
+                let expr_ty = ctx.free_var(self.span());
                 let arms = arms
                     .iter()
                     .map(|arm| {
                         let binding = arm.binding.lower(ctx);
-                        ctx.unify_subtype(pred.ty(), binding.ty(), binding.span());
+                        ctx.unify_eq(pred.ty(), binding.ty(), binding.span());
                         let body = arm.body.lower(ctx, &scope.with_many(binding.get_bindings()));
-                        ctx.unify_subtype(body.ty(), expr_ty, body.span());
+                        ctx.unify_eq(body.ty(), expr_ty, body.span());
 
                         MatchArm { binding, body }
                     })
@@ -191,14 +244,42 @@ impl ast::Expr {
 
                 (Expr::Match(pred, arms), expr_ty)
             },
+            ast::Expr::Func(param, body) => {
+                let param = param.lower(ctx);
+                let body = body.lower(ctx, &scope.with_many(param.get_bindings()));
+                let ty = ctx.info_var(TyInfo::Func(param.ty(), body.ty()), self.span());
+                (Expr::Func(param, body), ty)
+            },
+            ast::Expr::Apply(func, arg) => {
+                let func = func.lower(ctx, scope);
+                let arg = arg.lower(ctx, scope);
+
+                // let arg_coerce = ctx.free_var(arg.span());
+                // ctx.unify_flow(arg.ty(), arg_coerce, self.span());
+
+                let ty = ctx.free_var(self.span());
+                // TODO: Should we coerce the arg into an appropriate arg type?
+                let f_ty = ctx.info_var(TyInfo::Func(arg.ty(), ty), func.span());
+                ctx.unify_eq(func.ty(), f_ty, func.span());
+                (Expr::Apply(func, arg), ty)
+            },
             expr => todo!("Implement {:?}", expr),
         };
         InferNode::new(this, (self.span(), var))
     }
 
     pub fn to_hir(self: &SrcNode<Self>, ctx: &mut Ctx) -> TyExpr {
-        let mut infer_ctx = InferCtx::new(ctx);
+        let mut infer_ctx = InferCtx::from_ctx(ctx);
         let expr = self.lower(&mut infer_ctx, &Scope::Root);
-        expr.check(&mut infer_ctx)
+
+        // infer_ctx.print_constraints();
+
+        let (solved_tys, errors) = infer_ctx.solve();
+
+        for error in errors {
+            ctx.emit_error(error);
+        }
+
+        expr.check(&solved_tys)
     }
 }

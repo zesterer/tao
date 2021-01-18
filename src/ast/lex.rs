@@ -132,6 +132,7 @@ pub enum Token {
     Separator,
     Wildcard,
     Semicolon,
+    Ampersand,
 
     Let,
     If,
@@ -197,6 +198,7 @@ impl fmt::Display for Token {
             Token::Semicolon => write!(f, ";"),
             Token::Wildcard => write!(f, "_"),
             Token::Semicolon => write!(f, ";"),
+            Token::Ampersand => write!(f, "&"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
             Token::Match => write!(f, "match"),
@@ -324,6 +326,7 @@ pub fn lex(src_id: SrcId, code: &str) -> (Option<Vec<SrcNode<Token>>>, Vec<Error
             .or(just(',').to(Token::Comma))
             .or(seq("::".chars()).to(Token::Separator))
             .or(just(';').to(Token::Semicolon))
+            .or(just('&').to(Token::Ampersand))
             .or(just(':').to(Token::Colon))
             .or(just('.').to(Token::Dot))
             .or(just('?').to(Token::QuestionMark))
