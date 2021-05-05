@@ -1,6 +1,7 @@
 use super::{Span, Primitive, Ctx, Ty, TyId, UnaryOp, BinaryOp, Ident, data::DataId};
 use crate::{Error, ErrorCode};
-use std::{fmt, cmp::PartialEq, collections::{HashSet, HashMap}};
+use std::{fmt, cmp::PartialEq};
+use hashbrown::{HashSet, HashMap};
 
 #[derive(Copy, Clone, Debug)]
 pub enum EquateReason {
@@ -271,8 +272,9 @@ impl<'a> InferCtx<'a> {
             (Unknown { sups: a_sups, subs: a_subs }, Unknown { sups: b_sups, subs: b_subs }) => {
                 let mut a_subs = a_subs.clone();
                 let mut b_sups = b_sups.clone();
-                if let Entry::Info(Unknown { sups, .. }) = &mut self.vars[a.0] { sups.extend(b_sups.into_iter()); }
-                if let Entry::Info(Unknown { subs, .. }) = &mut self.vars[b.0] { subs.extend(a_subs.into_iter()); }
+                // TODO: Is this needed?
+                if let Entry::Info(Unknown { sups, .. }) = &mut self.vars[a.0] { sups.insert(b); sups.extend(b_sups.into_iter()); }
+                if let Entry::Info(Unknown { subs, .. }) = &mut self.vars[b.0] { subs.insert(a); subs.extend(a_subs.into_iter()); }
                 None
             },
             (Unknown { .. }, _) | (_, Unknown { .. }) => {
@@ -326,7 +328,8 @@ impl<'a> InferCtx<'a> {
                 .zip(b.iter())
                 .for_each(|(&a, &b)| add_constraint(Constraint::Flow(a, b, span))))),
             */
-            // Because the above is unsound, just enforce equality even though this is a flow relationship
+            // Because the above is unsound, just enforce equality even though this is a flow relationship. The real
+            // solution is to figure out how to do variance with datatypes properly.
             (Data(a_data, a), Data(b_data, b)) if a_data == b_data && a.len() == b.len() => Some(Ok(a
                 .iter()
                 .zip(b.iter())
@@ -426,6 +429,15 @@ impl<'a> InferCtx<'a> {
             | (Prim(Bool), BinaryOp::And, Prim(Bool))
             | (Prim(Bool), BinaryOp::Or, Prim(Bool))
                 => Some(Ok(add_constraint(Constraint::Eq(self.info_var(TyInfo::Prim(Primitive::Bool), span), out, span, EquateReason::Other)))),
+            // List joins
+            (&List(a), BinaryOp::Join, &List(b)) => {
+                let item = self.free_var(span);
+                // add_constraint(Constraint::Eq(a, b, span, EquateReason::List));
+                add_constraint(Constraint::Flow(a, item, span));
+                add_constraint(Constraint::Flow(b, item, span));
+                add_constraint(Constraint::Eq(self.info_var(TyInfo::List(item), span), out, span, EquateReason::List));
+                Some(Ok(()))
+            },
             _ => {
                 self.errors[a.0] = true;
                 self.errors[b.0] = true;
@@ -472,7 +484,7 @@ impl<'a> InferCtx<'a> {
     // Ok(var) => found a general type
     // Err(None) => Found an unknown type, can't usefully proceed but not an error
     // Err(Some(a, b)) => Failed to find compatible supertype for a and b
-    fn find_general_type(&mut self, head: TyVar, mut tail: impl Iterator<Item = TyVar>, span: Span, mut add_constraint: impl FnMut(Constraint)) -> Result<TyVar, Option<(TyVar, TyVar)>> {
+    fn find_general_type(&mut self, head: TyVar, mut tail: impl Iterator<Item = TyVar>, span: Span, mut add_constraint: impl FnMut(Constraint), assume_unknown: bool) -> Result<TyVar, Option<(TyVar, TyVar)>> {
         use TyInfo::*;
         tail.try_fold(head, |a_var, b_var| {
             Ok(match (self.info(a_var), self.info(b_var)) {
@@ -480,6 +492,8 @@ impl<'a> InferCtx<'a> {
                 // Errors are considered most general
                 (Error, _) => a_var,
                 (_, Error) => b_var,
+                (Unknown { .. }, _) if assume_unknown => b_var,
+                (_, Unknown { .. }) if assume_unknown => a_var,
                 // No useful progress can be made if either is unknown
                 (Unknown { .. }, _) | (_, TyInfo::Unknown { .. }) => return Err(None),
                 (Prim(a), Prim(b)) => if a.subtype_of(*b) {
@@ -518,6 +532,20 @@ impl<'a> InferCtx<'a> {
                         a_var
                     }
                 },
+                (Tuple(a), Tuple(b)) if a.len() == b.len() => {
+                    let a = a.clone();
+                    let b = b.clone();
+                    let mut fields = (0..a.len())
+                        .map(|_| self.free_var(span))
+                        .collect::<Vec<_>>();
+                    for (i, a) in a.into_iter().enumerate() {
+                        add_constraint(Constraint::Flow(a, fields[i], span));
+                    }
+                    for (i, b) in b.into_iter().enumerate() {
+                        add_constraint(Constraint::Flow(b, fields[i], span));
+                    }
+                    self.info_var(TyInfo::Tuple(fields), span)
+                },
                 (Record(a), Record(b)) => {
                     let fields = a
                         .iter()
@@ -532,9 +560,9 @@ impl<'a> InferCtx<'a> {
                 },
                 // TODO: Others
                 _ => {
-                    // return Err(Some((a_var, b_var)))
-                    add_constraint(Constraint::Eq(a_var, b_var, span, EquateReason::Other));
-                    a_var
+                    return Err(Some((a_var, b_var)))
+                    // add_constraint(Constraint::Eq(a_var, b_var, span, EquateReason::Other));
+                    // a_var
                 },
             })
         })
@@ -543,7 +571,7 @@ impl<'a> InferCtx<'a> {
     // Ok(var) => found a common type
     // Err(None) => Found an unknown type, can't usefully proceed but not an error
     // Err(Some(a, b)) => Failed to find compatible subtype for a and b
-    fn find_common_type(&mut self, head: TyVar, mut tail: impl Iterator<Item = TyVar>, span: Span, mut add_constraint: impl FnMut(Constraint)) -> Result<TyVar, Option<(TyVar, TyVar)>> {
+    fn find_common_type(&mut self, head: TyVar, mut tail: impl Iterator<Item = TyVar>, span: Span, mut add_constraint: impl FnMut(Constraint), assume_unknown: bool) -> Result<TyVar, Option<(TyVar, TyVar)>> {
         use TyInfo::*;
         tail.try_fold(head, |a_var, b_var| {
             Ok(match (self.info(a_var), self.info(b_var)) {
@@ -551,6 +579,8 @@ impl<'a> InferCtx<'a> {
                 // Errors are considered least general
                 (Error, _) => a_var,
                 (_, Error) => b_var,
+                (Unknown { .. }, _) if assume_unknown => b_var,
+                (_, Unknown { .. }) if assume_unknown => a_var,
                 // No useful progress can be made if either is unknown
                 (Unknown { .. }, _) | (_, Unknown { .. }) => return Err(None),
                 (Prim(a), Prim(b)) => if a.subtype_of(*b) {
@@ -589,6 +619,20 @@ impl<'a> InferCtx<'a> {
                         a_var
                     }
                 },
+                (Tuple(a), Tuple(b)) if a.len() == b.len() => {
+                    let a = a.clone();
+                    let b = b.clone();
+                    let mut fields = (0..a.len())
+                        .map(|_| self.free_var(span))
+                        .collect::<Vec<_>>();
+                    for (i, a) in a.into_iter().enumerate() {
+                        add_constraint(Constraint::Flow(fields[i], a, span));
+                    }
+                    for (i, b) in b.into_iter().enumerate() {
+                        add_constraint(Constraint::Flow(fields[i], b, span));
+                    }
+                    self.info_var(TyInfo::Tuple(fields), span)
+                },
                 (Record(a), Record(b)) => {
                     // TODO: Don't clone
                     let a = a.clone();
@@ -607,28 +651,31 @@ impl<'a> InferCtx<'a> {
                 },
                 // TODO: Others
                 _ => {
-                    //return Err(Some((a_var, b_var)))
-                    add_constraint(Constraint::Eq(a_var, b_var, span, EquateReason::Other));
-                    a_var
+                    return Err(Some((a_var, b_var)))
+                    // add_constraint(Constraint::Eq(a_var, b_var, span, EquateReason::Other));
+                    // a_var
                 },
             })
         })
     }
 
     /// Attempt to derive a type from the subtype and super type constraints placed upon it.
-    fn try_derive_from_sub_sup(
+    fn try_derive_from_sub(
         &mut self,
         var: TyVar,
         mut add_constraint: impl FnMut(Constraint),
+        assume_unknown: bool,
     ) -> Option<Result<(), TyError>> {
         let (var, info) = self.var_and_info(var);
+
+        if self.errors[var.0] {
+            return None;
+        }
 
         use TyInfo::*;
         match info {
             Unknown { subs, sups } => {
                 let subs = subs.clone();
-                let sups = sups.clone();
-                // TODO: Skip for errors subs/sups?
 
                 let span = self.span(var);
 
@@ -636,35 +683,96 @@ impl<'a> InferCtx<'a> {
                     let mut sub_constraints = Vec::new();
                     let mut add_constraint = |c| sub_constraints.push(c);
                     let mut subs_iter = subs.clone().into_iter();
-                    (match subs_iter.next().map(|head| self.find_general_type(head, subs_iter, span, &mut add_constraint)) {
+                    (match subs_iter.next().map(|head| self.find_general_type(head, subs_iter, span, &mut add_constraint, assume_unknown)).map(|v| v.and_then(|v| if self.is_known(v) { Ok(v) } else { Err(None) })) {
                         None => None,
                         Some(Ok(most_general)) => Some(most_general),
                         Some(Err(None)) => None,
-                        Some(Err(Some((a, b)))) => return Some(Err(TyError::NoSupertype(a, b, span))),
+                        Some(Err(Some((a, b)))) => {
+                            let a = self.var_and_info(a).0;
+                            let b = self.var_and_info(b).0;
+                            let var = self.var_and_info(var).0;
+                            if !self.errors[a.0] && !self.errors[b.0] {
+                                self.errors[var.0] = true;
+                                self.errors[a.0] = true;
+                                self.errors[b.0] = true;
+                                return Some(Err(TyError::NoSupertype(a, b, span)))
+                            } else {
+                                None
+                            }
+                        },
                     }, sub_constraints)
                 };
+
+                if let Some(new_var) = sub_var {
+                    if !self.errors[new_var.0] && !self.errors[var.0] {
+                        // println!("Assumption made! {} == {}", self.display(var, &[], None), self.display(new_var, &[], None));
+                        // println!("Subs({}) = {:?}", subs.len(), subs.iter().map(|s| self.display(*s, &[], None).to_string()).collect::<Vec<_>>());
+                        add_constraint(Constraint::Eq(var, new_var, self.span(var), EquateReason::Other));
+
+                        for c in sub_constraints {
+                            add_constraint(c);
+                        }
+
+                        Some(Ok(()))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        }
+    }
+
+    /// Attempt to derive a type from the subtype and super type constraints placed upon it.
+    fn try_derive_from_sup(
+        &mut self,
+        var: TyVar,
+        mut add_constraint: impl FnMut(Constraint),
+        assume_unknown: bool,
+    ) -> Option<Result<(), TyError>> {
+        let (var, info) = self.var_and_info(var);
+
+        if self.errors[var.0] {
+            return None;
+        }
+
+        use TyInfo::*;
+        match info {
+            Unknown { subs, sups } => {
+                let sups = sups.clone();
+
+                let span = self.span(var);
 
                 let (sup_var, sup_constraints) = {
                     let mut sup_constraints = Vec::new();
                     let mut add_constraint = |c| sup_constraints.push(c);
                     // TODO: Is inferring from supertypes okay?
                     let mut sups_iter = sups.clone().into_iter();
-                    (match sups_iter.next().map(|head| self.find_common_type(head, sups_iter, span, &mut add_constraint)) {
+                    (match sups_iter.next().map(|head| self.find_common_type(head, sups_iter, span, &mut add_constraint, assume_unknown)).map(|v| v.and_then(|v| if self.is_known(v) { Ok(v) } else { Err(None) })) {
                         None => None,
                         Some(Ok(least_general)) => Some(least_general),
                         Some(Err(None)) => None,
-                        Some(Err(Some((a, b)))) => return Some(Err(TyError::NoSubtype(a, b, span))),
+                        Some(Err(Some((a, b)))) => {
+                            let a = self.var_and_info(a).0;
+                            let b = self.var_and_info(b).0;
+                            let var = self.var_and_info(var).0;
+                            if !self.errors[a.0] && !self.errors[b.0] {
+                                self.errors[var.0] = true;
+                                self.errors[a.0] = true;
+                                self.errors[b.0] = true;
+                                return Some(Err(TyError::NoSubtype(a, b, span)))
+                            } else {
+                                None
+                            }
+                        },
                     }, sup_constraints)
                 };
 
-                if let Some(new_var) = sub_var.or(sup_var) {
-                    // Don't count things we already know to be equal as new information
-                    if self.var_and_info(new_var).0 != self.var_and_info(var).0 {
+                if let Some(new_var) = sup_var {
+                    if !self.errors[var.0] && !self.errors[new_var.0] {
                         add_constraint(Constraint::Eq(var, new_var, self.span(var), EquateReason::Other));
-
-                        for c in sub_constraints {
-                            add_constraint(c);
-                        }
 
                         for c in sup_constraints {
                             add_constraint(c);
@@ -701,7 +809,7 @@ impl<'a> InferCtx<'a> {
             let (var, info) = self.var_and_info(var);
             match info {
                 Unknown { subs, sups } => {
-                    if !self.errors[var.0] {
+                    if !self.errors[var.0] && !subs.iter().any(|s| cannot_infer.contains_key(s)) && !sups.iter().any(|s| cannot_infer.contains_key(s)) {
                         cannot_infer.insert(self.var_and_info(var).0, (subs.clone(), sups.clone()));
                     }
                     Ty::Error
@@ -738,7 +846,7 @@ impl<'a> InferCtx<'a> {
 
     /// Attempt to solve all the constraints provided to this context.
     fn solve_inner(&mut self) -> (SolvedTys, Vec<TyError>) {
-        const ITER_LIMIT: usize = 100_000;
+        const ITER_LIMIT: usize = 1_000_000;
 
         let mut errors = Vec::new();
         let mut eq_constraints = Vec::new();
@@ -812,7 +920,71 @@ impl<'a> InferCtx<'a> {
             } else if (0..self.vars.len())
                 .into_iter()
                 .map(TyVar)
-                .any(|var| match self.try_derive_from_sub_sup(var, &mut add_constraint) {
+                // Attempt to find the type of a var from its subtypes (i.e: the things that flow into it)
+                .any(|var| match self.try_derive_from_sub(var, &mut add_constraint, false) {
+                    Some(Ok(())) => true,
+                    Some(Err(e)) => { errors.push(e); self.errors[var.0] = true; false },
+                    None => false,
+                })
+            {
+                // Reconsider all proofs if we managed to derive any types
+                // TODO: Maybe don't invalidate all proofs? This seems a bit silly.
+                std::mem::take(&mut stale_constraints)
+                    .into_iter()
+                    .for_each(|c| match &c {
+                        Constraint::Eq(_, _, _, _) => eq_constraints.push(c),
+                        Constraint::Flow(_, _, _) => flow_constraints.push(c),
+                        Constraint::Unary { .. } => op_constraints.push(c),
+                        Constraint::Binary { .. } => op_constraints.push(c),
+                        Constraint::Field { .. } => op_constraints.push(c),
+                    });
+            } else if (0..self.vars.len())
+                .into_iter()
+                .map(TyVar)
+                // Attempt to find the type of a var from its supertypes (i.e: the things that it flows into)
+                .any(|var| match self.try_derive_from_sup(var, &mut add_constraint, false) {
+                    Some(Ok(())) => true,
+                    Some(Err(e)) => { errors.push(e); self.errors[var.0] = true; false },
+                    None => false,
+                })
+            {
+                // Reconsider all proofs if we managed to derive any types
+                // TODO: Maybe don't invalidate all proofs? This seems a bit silly.
+                std::mem::take(&mut stale_constraints)
+                    .into_iter()
+                    .for_each(|c| match &c {
+                        Constraint::Eq(_, _, _, _) => eq_constraints.push(c),
+                        Constraint::Flow(_, _, _) => flow_constraints.push(c),
+                        Constraint::Unary { .. } => op_constraints.push(c),
+                        Constraint::Binary { .. } => op_constraints.push(c),
+                        Constraint::Field { .. } => op_constraints.push(c),
+                    });
+            } else if (0..self.vars.len())
+                .into_iter()
+                .map(TyVar)
+                // Attempt to find the type of a var from its subtypes (i.e: the things that flow into it)
+                .any(|var| match self.try_derive_from_sub(var, &mut add_constraint, true) {
+                    Some(Ok(())) => true,
+                    Some(Err(e)) => { errors.push(e); self.errors[var.0] = true; false },
+                    None => false,
+                })
+            {
+                // Reconsider all proofs if we managed to derive any types
+                // TODO: Maybe don't invalidate all proofs? This seems a bit silly.
+                std::mem::take(&mut stale_constraints)
+                    .into_iter()
+                    .for_each(|c| match &c {
+                        Constraint::Eq(_, _, _, _) => eq_constraints.push(c),
+                        Constraint::Flow(_, _, _) => flow_constraints.push(c),
+                        Constraint::Unary { .. } => op_constraints.push(c),
+                        Constraint::Binary { .. } => op_constraints.push(c),
+                        Constraint::Field { .. } => op_constraints.push(c),
+                    });
+            } else if (0..self.vars.len())
+                .into_iter()
+                .map(TyVar)
+                // Attempt to find the type of a var from its supertypes (i.e: the things that it flows into)
+                .any(|var| match self.try_derive_from_sup(var, &mut add_constraint, true) {
                     Some(Ok(())) => true,
                     Some(Err(e)) => { errors.push(e); self.errors[var.0] = true; false },
                     None => false,
@@ -866,15 +1038,15 @@ impl<'a> InferCtx<'a> {
                 TyError::CannotEquate(a, b, span, reason) => Error::new(
                     ErrorCode::TypeMismatch,
                     span,
-                    format!("Type mismatch between `{}` and `{}`", self.display(a, &[a], None), self.display(b, &[b], None)),
+                    format!("Type mismatch between `{}` and `{}`", self.display(a, &[a], Some(1)), self.display(b, &[b], Some(1))),
                 )
                     .with_secondary(span, match reason {
                         EquateReason::Conditional => Some(format!("Condition predicates must be of type `Bool`")),
                         EquateReason::List => Some(format!("List elements must all be the same type")),
                         EquateReason::Other => Some(format!("The types are required to be equal here")),
                     })
-                    .with_primary(self.span(a), Some(format!("{}", self.display(a, &[a], None))))
-                    .with_primary(self.span(b), Some(format!("{}", self.display(b, &[b], None))))
+                    .with_primary(self.span(a), Some(format!("{}", self.display(a, &[a], Some(1)))))
+                    .with_primary(self.span(b), Some(format!("{}", self.display(b, &[b], Some(1)))))
                     /*
                     .do_if(
                         self.least_general_super([a, b].iter().copied()).is_ok(),
@@ -884,30 +1056,34 @@ impl<'a> InferCtx<'a> {
                 TyError::CannotFlow(a, b, span) => Error::new(
                     ErrorCode::TypeIncompatibility,
                     span,
-                    format!("Type coercion `{}` to `{}` is invalid", self.display(a, &[a], None), self.display(b, &[b], None)),
+                    format!("Type coercion `{}` to `{}` is invalid", self.display(a, &[a], Some(1)), self.display(b, &[b], Some(1))),
                 )
                     .with_secondary(span, Some(format!("The type is required to coerce here")))
-                    .with_primary(self.span(a), Some(format!("{}", self.display(a, &[a], None))))
-                    .with_primary(self.span(b), Some(format!("{}", self.display(b, &[b], None)))),
-                TyError::CannotInfer(a, subs, sups) => Error::new(
-                    ErrorCode::TypeInferenceFailure,
-                    self.span(a),
-                    format!("Cannot infer ambiguous type `{}`", self.display(a, &[a], None)),
-                )
-                    .with_primary(self.span(a), Some(format!("{}", self.display(a, &[a], None))))
-                    .with_note(format!("Consider adding a type hint"))
-                    .do_if(subs.len() > 0, |e| e.with_note(format!("Type must a super type of {}", subs
+                    .with_primary(self.span(a), Some(format!("{}", self.display(a, &[a], Some(1)))))
+                    .with_primary(self.span(b), Some(format!("{}", self.display(b, &[b], Some(1))))),
+                TyError::CannotInfer(a, subs, sups) => {
+                    let subs_iter = subs
                         .iter()
-                        //.filter(|&&sub| self.is_known(sub))
-                        .map(|&sub| format!("{}", self.display(sub, &[sub], None)))
-                        .collect::<Vec<_>>()
-                        .join(", "))))
-                    .do_if(sups.len() > 0, |e| e.with_note(format!("Type must coerce to {}", sups
+                        .filter(|&&sub| self.is_known(sub));
+                    let sups_iter = sups
                         .iter()
-                        //.filter(|&&sup| self.is_known(sup))
-                        .map(|&sup| format!("{}", self.display(sup, &[sup], None)))
-                        .collect::<Vec<_>>()
-                        .join(", ")))),
+                        .filter(|&&sup| self.is_known(sup));
+                    Error::new(
+                        ErrorCode::TypeInferenceFailure,
+                        self.span(a),
+                        format!("Cannot infer ambiguous type `{}`", self.display(a, &[a], None)),
+                    )
+                        .with_primary(self.span(a), Some(format!("{}", self.display(a, &[a], None))))
+                        .with_note(format!("Consider adding a type hint"))
+                        .do_if(subs_iter.clone().count() > 0, |e| e.with_note(format!("Type must a super type of {}", subs_iter
+                            .map(|&sub| format!("{}", self.display(sub, &[sub], None)))
+                            .collect::<Vec<_>>()
+                            .join(", "))))
+                        .do_if(sups_iter.clone().count() > 0, |e| e.with_note(format!("Type must coerce to {}", sups_iter
+                            .map(|&sup| format!("{}", self.display(sup, &[sup], None)))
+                            .collect::<Vec<_>>()
+                            .join(", "))))
+                },
                 TyError::InfiniteType(a) => Error::new(
                     ErrorCode::TypeInfinite,
                     self.span(a),
@@ -999,7 +1175,7 @@ impl<'a> fmt::Display for TyInfoDisplay<'a> {
         use TyInfo::*;
 
         if Some(self.depth) == self.max_depth {
-            Ok(())
+            write!(f, "_")
         } else if self.excluding.contains(&self.var) && self.depth > 0 {
             write!(f, "...")
         } else {

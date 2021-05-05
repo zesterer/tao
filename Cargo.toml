@@ -19,3 +19,4 @@ bimap = "0.4"
 codespan-reporting = { path = "../codespan/codespan-reporting" }
 lingo = { path = "../lingo" }
 slab = "0.4"
+hashbrown = "0.11"

@@ -197,18 +197,19 @@ impl ast::Expr {
                 (Expr::Binary(op.clone(), a, b), var)
             },
             ast::Expr::List(items) => {
-                let inner_ty = ctx.free_var(self.span());
+                let item_ty = ctx.free_var(self.span());
 
                 let items = items
                     .iter()
                     .map(|item| {
                         let item = item.lower(ctx, scope);
-                        ctx.unify_eq_reason(item.ty(), inner_ty, self.span(), EquateReason::List);
+                        ctx.unify_eq_reason(item.ty(), item_ty, self.span(), EquateReason::List);
+                        // ctx.unify_flow(item.ty(), item_ty, item.span());
                         item
                     })
                     .collect();
 
-                (Expr::List(items), ctx.info_var(TyInfo::List(inner_ty), self.span()))
+                (Expr::List(items), ctx.info_var(TyInfo::List(item_ty), self.span()))
             },
             ast::Expr::Tuple(fields) => {
                 let (tys, fields) = fields

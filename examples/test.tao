@@ -6,13 +6,30 @@ def test =
 	let x, y = 4, 5 in
 
 	let x = match x, y {
-	 | _, y => y
+	 | _, y => -y
 	 | x, _ => x
 	} in
+	let test :: [?] = [x] in
+
+	let a = |x, y|
+		let a = (4, x) in
+		let b = (y, true) in
+		[a, b]
+	in
+
+	let foo :: [Num] = [-5, -(5 / 7), 8] in
+	let bar_func = |x :: [Int]| x in
+	let bar = [-5] in
+	let result = bar_func(bar) in
 
 	let f :: ? -> Nat = |x| x in
 	let g :: Num -> ? = |x| x in
 	let fg :: [Nat -> Num] = [f, g] in
+
+	let take_num = |x :: [?]| x in
+	let foo1 = [4] in
+	let foo :: [Int] = [1, -5] ++ foo1 in
+	let bar = take_num(foo) in
 
 	let x :: Num = 5 / 3 in
 	let y :: Num = x in
@@ -27,9 +44,7 @@ def test =
 	let identity = |x| identity(x) in
 	let identity = |x| identity(x) in
 	let identity = |x| identity(x) in
-	let identity = |x| identity(x) in
-	let identity = |x| identity(x) in
-	let identity = |x| identity(x) in
-	let identity = |x| identity(x) in
 	let xs :: [Num] = [4, identity(x), identity(y)] in
-	[xs, [5]]
+	let foo = [xs, [5]] in
+
+	5
