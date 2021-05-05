@@ -1,20 +1,35 @@
-let a = |x| x in
-let b = |x| a(x) in
-let result :: Num = b(&42) in
+def test =
+	let a = |x| x in
+	let b = |x| a(x) in
+	let result :: Num = b(42) in
 
-let f :: ? -> Nat = |x| x in
-let g :: Num -> ? = |x| x in
-let fg = [&f, &g] in
+	let x, y = 4, 5 in
 
-let x :: Nat = 5 in
-let y :: Num = &x in
+	let x = match x, y {
+	 | _, y => y
+	 | x, _ => x
+	} in
 
-let x = 5.0 in
-let y = 8 in
-let identity = |x :: Num| x in
-let identity = |x| identity(x) in
-let identity = |x| identity(x) in
-let identity = |x| identity(x) in
-let xs :: [Num] = [&4, identity(&x), identity(&y)] in
-#[xs, [5]]
-fg
+	let f :: ? -> Nat = |x| x in
+	let g :: Num -> ? = |x| x in
+	let fg :: [Nat -> Num] = [f, g] in
+
+	let x :: Num = 5 / 3 in
+	let y :: Num = x in
+
+	let nat2num :: ? -> Num = |x| x in
+	let z = 3:nat2num + 8.0 in
+
+	let x = 5.0 in
+	let y = 8 in
+	let identity = |x| x in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let xs :: [Num] = [4, identity(x), identity(y)] in
+	[xs, [5]]

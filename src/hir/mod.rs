@@ -1,13 +1,12 @@
-//pub mod infer;
+pub mod infer;
 pub mod ty;
 pub mod data;
 pub mod intrinsic;
 pub mod lower;
 pub mod check;
-pub mod infer2;
 
 pub use self::{
-    infer2::{TyVar, InferCtx, TyInfo, SolvedTys, EquateReason},
+    infer::{TyVar, InferCtx, TyInfo, SolvedTys, EquateReason},
     ty::{Ty, TyId, TyCtx, TyDisplay, Primitive},
     data::DataCtx,
     intrinsic::Intrinsic,
@@ -21,14 +20,14 @@ use crate::{
 };
 use std::{fmt, collections::HashMap};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Path {
     Root,
     Branch(Intern<Path>, Ident),
 }
 
-#[derive(Debug)]
-pub struct Item(Intern<Path>, Ident);
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct Item(pub Intern<Path>, pub Ident);
 
 #[derive(Debug)]
 pub struct Generics<A> {
@@ -95,16 +94,19 @@ pub enum Expr<A> {
 pub type InferExpr = InferNode<Expr<(Span, TyVar)>>;
 pub type TyExpr = TyNode<Expr<TyId>>;
 
+#[derive(Debug)]
 pub struct Def {
     pub name: SrcNode<Ident>,
     pub generics: TyGenerics,
     pub body: TyExpr,
 }
 
+#[derive(Debug, Default)]
 pub struct DefCtx {
-    pub defs: HashMap<Item, Def>
+    pub defs: HashMap<Item, Def>,
 }
 
+#[derive(Debug, Default)]
 pub struct Program {
     pub data_ctx: DataCtx,
     pub def_ctx: DefCtx,
@@ -115,12 +117,17 @@ pub struct Program {
 #[derive(Default)]
 pub struct Ctx {
     ty: TyCtx,
-    pub errors: Vec<Error>,
+    errors: Vec<Error>,
 }
 
 impl Ctx {
     pub fn emit_error(&mut self, error: Error) {
         self.errors.push(error);
+    }
+
+    pub fn take_errors(&mut self) -> Vec<Error> {
+        self.errors.sort_by_key(|e| e.span);
+        std::mem::take(&mut self.errors)
     }
 
     pub fn display_ty(&self, id: TyId) -> TyDisplay<'_> {

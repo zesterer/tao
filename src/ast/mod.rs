@@ -72,13 +72,22 @@ impl fmt::Display for Literal {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum UnaryOp {
     Neg,
     Not,
 }
 
-#[derive(Clone, Debug)]
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            UnaryOp::Neg => write!(f, "-"),
+            UnaryOp::Not => write!(f, "!"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BinaryOp {
     Add, Sub,
 
@@ -91,6 +100,27 @@ pub enum BinaryOp {
     And, Or,
 
     Join,
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Sub => write!(f, "-"),
+            BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Div => write!(f, "/"),
+            BinaryOp::Rem => write!(f, "%"),
+            BinaryOp::Eq => write!(f, "="),
+            BinaryOp::NotEq => write!(f, "!="),
+            BinaryOp::Less => write!(f, "<"),
+            BinaryOp::LessEq => write!(f, "<="),
+            BinaryOp::More => write!(f, ">"),
+            BinaryOp::MoreEq => write!(f, ">="),
+            BinaryOp::And => write!(f, "and"),
+            BinaryOp::Or => write!(f, "or"),
+            BinaryOp::Join => write!(f, "++"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -162,22 +192,26 @@ pub enum Expr {
     Do(Vec<SrcNode<DoStmt>>),
 }
 
+#[derive(Debug)]
 pub struct Generics {
     pub params: Vec<SrcNode<Ident>>,
 }
 
+#[derive(Debug)]
 pub struct Alias {
     pub name: SrcNode<Ident>,
     pub generics: SrcNode<Generics>,
     pub ty: SrcNode<Type>,
 }
 
+#[derive(Debug)]
 pub struct Data {
     pub name: SrcNode<Ident>,
     pub generics: SrcNode<Generics>,
     pub variants: Vec<(SrcNode<Ident>, Option<SrcNode<Type>>)>,
 }
 
+#[derive(Debug)]
 pub struct Def {
     pub name: SrcNode<Ident>,
     pub generics: SrcNode<Generics>,
@@ -185,10 +219,21 @@ pub struct Def {
     pub body: SrcNode<Expr>,
 }
 
+#[derive(Debug, Default)]
 pub struct Module {
-    pub name: SrcNode<Ident>,
     pub aliases: Vec<Alias>,
     pub datas: Vec<Data>,
     pub defs: Vec<Def>,
-    pub submodules: Vec<Module>,
+    pub submodules: Vec<(SrcNode<Ident>, Module)>,
+}
+
+#[derive(Debug)]
+pub struct Program {
+    pub root: SrcNode<Module>,
+}
+
+impl Program {
+    pub fn new(root: SrcNode<Module>) -> Self {
+        Self { root }
+    }
 }

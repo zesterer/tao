@@ -8,6 +8,7 @@ use super::{
     lex::{Token, Op, Delimiter},
     SrcId,
     Ident, SrcStr, Expr, Type, Item, PathBase, Literal, Pat, Binding, UnaryOp, BinaryOp, MatchArm,
+    Generics, Def, Module,
 };
 use std::{ops::Range, cmp::Ordering, marker::PhantomData};
 
@@ -248,7 +249,7 @@ fn type_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Type>
 
             recursive(move |atom| {
                 let data = data_name_parser(src_id)
-                    .map_with_span(move |data_name, span| SrcNode::new(Type::Data(data_name, Vec::new()), span));
+                    .map(move |data_name| Type::Data(data_name, Vec::new()));
 
                 let list = nested_parser(
                     ty.clone(),
@@ -292,8 +293,8 @@ fn type_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Type>
                 );
 
                 let atom = paren_ty
-                    .or(data)
-                    .or(list
+                    .or(data
+                        .or(list)
                         .or(tuple)
                         .or(record)
                         .or(unknown)
@@ -442,8 +443,7 @@ fn binding_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Bi
 
         let ty_hint = just(Token::Separator)
             .padding_for(type_parser(src_id))
-            .or_not()
-            .map(|ty| ty.unwrap_or_else(|| SrcNode::new(Type::Unknown, Span::none())));
+            .or_not();
 
         // Bound pattern
         ident_parser()
@@ -458,7 +458,7 @@ fn binding_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Bi
                 SrcNode::new(Pat::Wildcard, span),
                 Some(SrcNode::new(name, span)),
             )))
-            .then(ty_hint.or_not())
+            .then(ty_hint)
             .map_with_span(move |((pat, binding), ty), span| SrcNode::new(Binding {
                 pat,
                 binding,
@@ -474,10 +474,9 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
             Delimiter::Brack,
         );
 
-        let paren_expr_list = nested_parser(
-            expr.clone().separated_by(just(Token::Comma)).padded_by(just(Token::Comma).or_not()),
-            Delimiter::Paren,
-        );
+        let expr_list = expr.clone().separated_by(just(Token::Comma)).padded_by(just(Token::Comma).or_not());
+
+        let paren_expr_list = nested_parser(expr_list.clone(), Delimiter::Paren);
 
         let brace_field_list = nested_parser(
             ident_parser()
@@ -493,10 +492,21 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
 
         let binding = binding_parser(src_id);
 
+        let binding_list = binding
+            .clone()
+            .separated_by(just(Token::Comma))
+            .padded_by(just(Token::Comma).or_not())
+            .map_with_span(move |items, span| SrcNode::new(Binding {
+                ty: SrcNode::new(Type::Tuple(items.iter().map(|ty| SrcNode::new(Type::Unknown, ty.span())).collect()), span),
+                pat: SrcNode::new(Pat::Tuple(items), span),
+                binding: None,
+            }, span));
+
         let arm_list = nested_parser(
             just(Token::Pipe)
                 .or_not()
-                .padding_for(binding.clone()
+                .padding_for(binding_list
+                    .clone()
                     .padded_by(just(Token::RMap))
                     .then(expr.clone())
                     .map(|(binding, body)| MatchArm {
@@ -552,9 +562,11 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
                 .map_with_span(move |fields, span| SrcNode::new(Expr::Record(fields), span)))
             // Let
             .or(just(Token::Let)
-                .padding_for(binding.clone())
+                .padding_for(binding_list.clone())
                 .padded_by(just(Token::Op(Op::Eq)))
-                .then(expr.clone())
+                .then(expr_list
+                    .clone()
+                    .map_with_span(move |items, span| SrcNode::new(Expr::Tuple(items), span)))
                 .map_with_span(move |(pat, expr), span| ((pat, expr), span))
                 .padded_by(just(Token::In))
                 .then(expr.clone())
@@ -569,7 +581,9 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
                 .map_with_span(move |((pred, a), b), span| SrcNode::new(Expr::If(pred, a, b), span)))
             // Match
             .or(just(Token::Match)
-                .padding_for(expr.clone())
+                .padding_for(expr_list
+                    .clone()
+                    .map_with_span(move |items, span| SrcNode::new(Expr::Tuple(items), span)))
                 .then(arm_list)
                 .map_with_span(move |(pred, arms), span| SrcNode::new(Expr::Match(pred, arms), span)))
             // .or(just(Token::Do)
@@ -614,6 +628,7 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
             //         },
             //     })
             //     .map(|(_, expr)| expr))
+            .or(expr.clone())
             .boxed();
 
         let application = atom
@@ -739,7 +754,7 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
         let func = just(Token::Pipe)
             .padding_for(binding.separated_by(just(Token::Comma)).padded_by(just(Token::Comma).or_not()))
             .padded_by(just(Token::Pipe))
-            .then(expr)
+            .then(expr.clone())
             .reduce_right(|param: SrcNode<Binding>, body: SrcNode<Expr>| {
                 let span = param
                     .span()
@@ -748,13 +763,54 @@ fn expr_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Expr>
             })
             .boxed();
 
-        func
-            .or(update)
+        let update = func
+            .or(update);
+
+        update
     })
 }
 
-pub fn parse_expr(src_id: SrcId, tokens: &[SrcNode<Token>]) -> (Option<SrcNode<Expr>>, Vec<Error>) {
-    let (ty, errs) = expr_parser(src_id)
+fn module_parser<'a>(src_id: SrcId) -> impl Parser<ParseContext<'a>, SrcNode<Module>> + Clone {
+    enum ModItem {
+        Def(Def),
+    }
+
+    let ident = ident_parser()
+        .map_with_span(|ident, span| SrcNode::new(ident, span));
+
+    let def = just(Token::Def)
+        .padding_for(ident)
+        .padded_by(just(Token::Op(Op::Eq)))
+        .then(expr_parser(src_id))
+        .map(|(name, body)| Def {
+            generics: SrcNode::new(Generics {
+                params: Vec::new()
+            }, name.span()),
+            ty: SrcNode::new(Type::Unknown, name.span()),
+            name,
+            body,
+        });
+
+    let item = def.map(ModItem::Def);
+
+    item
+        .repeated()
+        .map(|items| {
+            let mut module = Module::default();
+
+            for item in items {
+                match item {
+                    ModItem::Def(def) => module.defs.push(def),
+                }
+            }
+
+            module
+        })
+        .map_with_span(|m, span| SrcNode::new(m, span))
+}
+
+fn parse_with<'a, T>(src_id: SrcId, tokens: &'a [SrcNode<Token>], parser: impl Parser<ParseContext<'a>, T> + Clone) -> (Option<T>, Vec<Error>) {
+    let (ty, errs) = parser
         .padded_by(end())
         .parse(Stream::from_iter(tokens.iter().map(|tok| (tok.inner(), tok.span()))));
     (ty, errs
@@ -776,4 +832,12 @@ pub fn parse_expr(src_id: SrcId, tokens: &[SrcNode<Token>]) -> (Option<SrcNode<E
                 .with_primary(span, None),
         })
         .collect())
+}
+
+pub fn parse_expr(src_id: SrcId, tokens: &[SrcNode<Token>]) -> (Option<SrcNode<Expr>>, Vec<Error>) {
+    parse_with(src_id, tokens, expr_parser(src_id))
+}
+
+pub fn parse_module(src_id: SrcId, tokens: &[SrcNode<Token>]) -> (Option<SrcNode<Module>>, Vec<Error>) {
+    parse_with(src_id, tokens, module_parser(src_id))
 }

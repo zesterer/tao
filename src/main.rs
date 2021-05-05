@@ -1,6 +1,6 @@
 use rustyline::Editor;
 use std::{env, fs, io::Read, path::PathBuf};
-use tao::{eval_expr, run_module, Loader, Src, Ident, ErrorCode, Error, Span};
+use tao::{eval_expr, eval_prog, Loader, Src, Ident, ErrorCode, Error, Span};
 
 struct SimpleLoader(String, String);
 
@@ -23,7 +23,7 @@ fn main() {
         let src = fs::read_to_string(&path)
             .unwrap_or_else(|err| panic!("Could not read file '{}': {:?}", filename, err));
 
-        run_module(SimpleLoader(src, path.file_name().unwrap_or_default().to_os_string().into_string().unwrap()));
+        eval_prog(SimpleLoader(src, path.file_name().unwrap_or_default().to_os_string().into_string().unwrap()));
     } else {
         let mut rl = Editor::<()>::new();
 

@@ -1,6 +1,6 @@
-#(
+#[
 	Multi-line comments look like this
-)
+]
 
 # Anonymous product and sum types
 type Person = { name :: Str, age :: Num }

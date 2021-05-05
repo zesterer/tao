@@ -1,7 +1,7 @@
 use std::{ops::Range, cmp::Ordering, fmt};
 use crate::ast::loader::SrcId;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
     src: Option<SrcId>,
     range: Option<(usize, usize)>,

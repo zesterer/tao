@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use internment::Intern;
 use crate::Error;
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SrcId(Intern<Vec<Ident>>);
 
 pub struct Src {

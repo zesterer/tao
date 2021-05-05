@@ -1,0 +1,6 @@
+def foo =
+	let x = { a: 8, b: -16 } in
+	let answer = 3 + x.b in
+	answer + 7.5
+
+def six = let five = 5 in five + 1

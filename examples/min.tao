@@ -1,0 +1,6 @@
+def five = let identity = |x| x in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	let identity = |x| identity(x) in
+	identity(&5) + identity(&3.4)

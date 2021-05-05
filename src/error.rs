@@ -20,6 +20,9 @@ pub enum ErrorCode {
     TypeInferenceFailure,
     TypeInfinite,
     SolverLimitReached,
+    InvalidUnaryOp,
+    InvalidBinaryOp,
+    DuplicateDef,
 }
 
 impl ErrorCode {
@@ -34,7 +37,10 @@ impl ErrorCode {
             | ErrorCode::TypeIncompatibility
             | ErrorCode::TypeInferenceFailure
             | ErrorCode::TypeInfinite
-            | ErrorCode::SolverLimitReached => Severity::Error,
+            | ErrorCode::SolverLimitReached
+            | ErrorCode::InvalidUnaryOp
+            | ErrorCode::InvalidBinaryOp
+            | ErrorCode::DuplicateDef => Severity::Error,
         }
     }
 }
@@ -52,6 +58,9 @@ impl fmt::Display for ErrorCode {
             ErrorCode::TypeInferenceFailure => "E07",
             ErrorCode::TypeInfinite => "E08",
             ErrorCode::SolverLimitReached => "E09",
+            ErrorCode::InvalidUnaryOp => "E10",
+            ErrorCode::InvalidBinaryOp => "E11",
+            ErrorCode::DuplicateDef => "E12",
         })
     }
 }
