@@ -6,8 +6,8 @@ def test =
 	let x, y = 4, 5 in
 
 	let x = match x, y {
-	 | _, y => -y
-	 | x, _ => x
+		| _, y => -y
+		| x, _ => x
 	} in
 	let test :: [?] = [x] in
 
@@ -16,6 +16,10 @@ def test =
 		let b = (y, true) in
 		[a, b]
 	in
+
+	let two, three, four = 2, 3, 4 in
+
+	let x = [(3,4), 2, 3, 0.5] in
 
 	let foo :: [Num] = [-5, -(5 / 7), 8] in
 	let bar_func = |x :: [Int]| x in

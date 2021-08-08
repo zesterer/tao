@@ -1,5 +1,5 @@
 // use parze::{prelude::*, Error as ParzeError, Span as ParzeSpan};
-use lingo::{prelude::*, Span as LingoSpan};
+// use lingo::{prelude::*, Span as LingoSpan};
 use crate::{
     util::{Span, SrcNode},
     ErrorCode, Error,
@@ -10,55 +10,56 @@ use super::{
     Ident, SrcStr, Expr, Type, Item, PathBase, Literal, Pat, Binding, UnaryOp, BinaryOp, MatchArm,
     Generics, Def, Module,
 };
+use chumsky::prelude::*;
 use std::{ops::Range, cmp::Ordering, marker::PhantomData};
 
-pub enum ParseError {
-    Unexpected(Token, Span, Option<Token>),
-    UnexpectedEnd,
-}
+// pub enum ParseError {
+//     Unexpected(Token, Span, Option<Token>),
+//     UnexpectedEnd,
+// }
 
-struct ParseContext<'a>(PhantomData<&'a ()>);
+// struct ParseContext<'a>(PhantomData<&'a ()>);
 
-impl<'a> Context for ParseContext<'a> {
-    type Token = &'a Token;
-    type Span = Span;
-    type Error = ParseError;
-}
+// impl<'a> Context for ParseContext<'a> {
+//     type Token = &'a Token;
+//     type Span = Span;
+//     type Error = ParseError;
+// }
 
-impl LingoSpan for Span {
-    fn start() -> Self {
-        Self::none()
-    }
+// impl LingoSpan for Span {
+//     fn start() -> Self {
+//         Self::none()
+//     }
 
-    fn end() -> Self {
-        Self::none()
-    }
+//     fn end() -> Self {
+//         Self::none()
+//     }
 
-    fn union(self, other: Self) -> Self {
-        Span::union(self, other)
-    }
+//     fn union(self, other: Self) -> Self {
+//         Span::union(self, other)
+//     }
 
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Span::partial_cmp(self, other)
-    }
-}
+//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+//         Span::partial_cmp(self, other)
+//     }
+// }
 
-impl<'a> lingo::Error<ParseContext<'a>> for ParseError {
-    type Item = Token;
+// impl<'a> lingo::Error<ParseContext<'a>> for ParseError {
+//     type Item = Token;
 
-    fn span(&self) -> Option<<ParseContext as Context>::Span> {
-        Some(match self {
-            ParseError::Unexpected(_, span, _) => span.clone(),
-            ParseError::UnexpectedEnd => Span::none(),
-        })
-    }
+//     fn span(&self) -> Option<<ParseContext as Context>::Span> {
+//         Some(match self {
+//             ParseError::Unexpected(_, span, _) => span.clone(),
+//             ParseError::UnexpectedEnd => Span::none(),
+//         })
+//     }
 
-    fn unexpected_end() -> Self { ParseError::UnexpectedEnd }
+//     fn unexpected_end() -> Self { ParseError::UnexpectedEnd }
 
-    fn unexpected(found: Self::Item, span: <ParseContext as Context>::Span, expected: Option<Self::Item>) -> Self {
-        ParseError::Unexpected(found, span, expected)
-    }
-}
+//     fn unexpected(found: Self::Item, span: <ParseContext as Context>::Span, expected: Option<Self::Item>) -> Self {
+//         ParseError::Unexpected(found, span, expected)
+//     }
+// }
 
 /*
 pub enum ParseError<'a> {

@@ -18,5 +18,7 @@ bimap = "0.4"
 #codespan-reporting = "0.9"
 codespan-reporting = { path = "../codespan/codespan-reporting" }
 lingo = { path = "../lingo" }
+chumsky = "0.3.2"
+ariadne = "0.1.3"
 slab = "0.4"
 hashbrown = "0.11"

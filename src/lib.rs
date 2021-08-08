@@ -17,11 +17,22 @@ pub use self::{
 
 use self::ast::LoadCache;
 
+use ariadne::FnCache;
+
 type Val = String;
 type Ty = String;
 
+impl ariadne::Span for Span {
+    type SourceId = SrcId;
+
+    fn source(&self) -> SrcId { self.src().unwrap() }
+    fn start(&self) -> usize { self.range().unwrap().start }
+    fn end(&self) -> usize { self.range().unwrap().end }
+}
+
 pub fn eval_expr<L: Loader>(loader: L) {
-    let mut cache = LoadCache::from(loader);
+    let mut cache = FnCache::new(|src_id: &SrcId| Ok(loader.load(*src_id)?.code));
+
     let mut errors = Vec::new();
     'eval: {
         let (main, main_id) = match cache.load_from_path(std::iter::empty()) {

@@ -2,31 +2,32 @@ use crate::{
     ast::{Loader, LoadCache, SrcId, Src},
     util::Span,
 };
-use codespan_reporting::{
-    diagnostic::{Diagnostic, Label, Severity, LabelStyle},
-    files::Src as CodespanSrc,
-    term::{self, termcolor::{ColorChoice, StandardStream}},
+use ariadne::{
+    Report, ReportKind,
+    Cache,
+    Label,
 };
 use std::fmt;
 
+#[repr(u32)]
 pub enum ErrorCode {
-    NoSuchSrc,
-    ExpectedEnd,
-    UnexpectedEnd,
-    UnexpectedChar,
-    UnexpectedToken,
-    TypeMismatch,
-    TypeIncompatibility,
-    TypeInferenceFailure,
-    TypeInfinite,
-    SolverLimitReached,
-    InvalidUnaryOp,
-    InvalidBinaryOp,
-    DuplicateDef,
+    NoSuchSrc = 0,
+    ExpectedEnd = 1,
+    UnexpectedEnd = 2,
+    UnexpectedChar = 3,
+    UnexpectedToken = 4,
+    TypeMismatch = 5,
+    TypeIncompatibility = 6,
+    TypeInferenceFailure = 7,
+    TypeInfinite = 8,
+    SolverLimitReached = 9,
+    InvalidUnaryOp = 10,
+    InvalidBinaryOp = 11,
+    DuplicateDef = 12,
 }
 
 impl ErrorCode {
-    pub fn severity(&self) -> Severity {
+    pub fn kind(&self) -> ReportKind {
         match self {
             ErrorCode::NoSuchSrc
             | ErrorCode::ExpectedEnd
@@ -40,7 +41,7 @@ impl ErrorCode {
             | ErrorCode::SolverLimitReached
             | ErrorCode::InvalidUnaryOp
             | ErrorCode::InvalidBinaryOp
-            | ErrorCode::DuplicateDef => Severity::Error,
+            | ErrorCode::DuplicateDef => ReportKind::Error,
         }
     }
 }
@@ -117,37 +118,12 @@ impl Error {
         }
     }
 
-    pub fn emit(&self, load_cache: &mut LoadCache<impl Loader>) {
-        let diag = Diagnostic::new(self.code.severity())
+    pub fn emit(&self, cache: impl Cache<Span>) {
+        Report::build(self.code.kind(), self.span, self.code as u32 as usize)
             .with_message(&self.msg)
-            .with_code(format!("{}", self.code))
-            .with_labels(
-                self.primary_spans
-                    .iter()
-                    .zip(std::iter::repeat(LabelStyle::Primary))
-                    .chain(self.secondary_spans
-                        .iter()
-                        .zip(std::iter::repeat(LabelStyle::Secondary)))
-                    .filter_map(|((span, msg), style)| if let Some((src, range)) = span.src().zip(span.range()) {
-                        Some(Label::new(style, src, range.start..range.end)
-                            .with_message(msg.clone().unwrap_or_else(String::new)))
-                    } else {
-                        None
-                    })
-                    .collect()
-            )
-            .with_notes(self.notes.clone());
-
-        impl CodespanSrc for Src {
-            fn name(&self) -> &str { &self.name }
-            fn source(&self) -> &str { &self.code }
-        }
-
-        term::emit(
-            &mut StandardStream::stderr(ColorChoice::Always).lock(),
-            &term::Config::default(),
-            move |id| load_cache.load(id).unwrap_or_else(|_| panic!("ICE")).clone(),
-            &diag,
-        ).unwrap();
+            .with_label(Label::new(self.span)
+                .with_message("Here"))
+            .finish()
+            .eprint(cache);
     }
 }
