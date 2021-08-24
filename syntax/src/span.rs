@@ -11,6 +11,11 @@ pub struct Span {
 }
 
 impl Span {
+    #[cfg(test)]
+    pub fn empty() -> Self {
+        Self::new(SrcId::empty(), None)
+    }
+
     pub fn new(src: SrcId, range: Option<Range<usize>>) -> Self {
         Self {
             src,
@@ -21,6 +26,18 @@ impl Span {
     pub fn range(&self) -> Option<Range<usize>> { self.range.map(|(s, e)| s..e) }
 
     pub fn src(&self) -> SrcId { self.src }
+}
+
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}:", self.src)?;
+        if let Some((a, b)) = self.range {
+            write!(f, "{:?}", a..b)?;
+        } else {
+            write!(f, "?")?;
+        }
+        Ok(())
+    }
 }
 
 impl chumsky::Span for Span {

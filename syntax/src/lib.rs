@@ -1,4 +1,4 @@
-#![feature(option_zip)]
+#![feature(option_zip, trait_alias)]
 
 pub mod token;
 pub mod span;
@@ -11,5 +11,5 @@ pub use crate::{
     span::Span,
     node::{Node, SrcNode},
     src::SrcId,
-    token::Token,
+    token::{Token, Op, Delimiter},
 };

@@ -1,6 +1,11 @@
 use super::*;
-use std::ops::Deref;
+use std::{
+    ops::Deref,
+    cmp::PartialEq,
+    fmt,
+};
 
+#[derive(Clone)]
 pub struct Node<T, M = ()> {
     inner: Box<T>, // TODO: Replace with smallbox or similar optimisation?
     meta: M,
@@ -17,6 +22,17 @@ impl<T, M> Node<T, M> {
         &self.inner
     }
 
+    // Take the node's inner value.
+    pub fn into_inner(self) -> T { *self.inner }
+
+    /// Map the node's inner value.
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Node<U, M> {
+        Node {
+            inner: Box::new(f(*self.inner)),
+            meta: self.meta,
+        }
+    }
+
     /// Get a reference to the metadata.
     pub fn meta(&self) -> &M { &self.meta }
 }
@@ -26,4 +42,21 @@ impl<T, M> Deref for Node<T, M> {
     fn deref(&self) -> &Self::Target { self.inner() }
 }
 
+impl<T: PartialEq, M> PartialEq for Node<T, M> {
+    fn eq(&self, other: &Self) -> bool {
+        // Only compare inner
+        self.inner == other.inner
+    }
+}
+
+impl<T: fmt::Debug, M: fmt::Debug> fmt::Debug for Node<T, M> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:#?} @ {:?}", self.inner, self.meta)
+    }
+}
+
 pub type SrcNode<T> = Node<T, Span>;
+
+impl<T> SrcNode<T> {
+    pub fn span(&self) -> Span { self.meta }
+}
