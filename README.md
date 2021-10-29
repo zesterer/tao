@@ -27,6 +27,25 @@ See the [`examples`](examples/) directory for a selection of example programs.
 - Sum types
 - Monadic I/O (incomplete)
 
+## Goals
+
+- Expressive but not complicated
+- Self-similar but not ambiguous
+- Consistent but not dogmatic
+- Beautiful but not frivolous
+- Concise but not imprecise
+
+## Syntax 'Ideology'
+
+- Different kinds of expression (value, pattern, type, generic) should be kept apart and well-delimited (i.e: no
+  ambiguous inline mixing of them).
+- Expressions that manipulate the same constructs should be similar in different kinds of expressions (i.e:
+  destructuring a value with a pattern should look like the construction of that value).
+- When ambiguity arises, the chosen interpretation should be far more commonly intended than alternative
+  interpretations.
+- Global items should mirror the syntax of their anonymous, inline counterparts.
+- Whitespace should not have semantic meaning.
+
 ## Status
 
 Tao is currently in heavy development and many aspects (particularly the
