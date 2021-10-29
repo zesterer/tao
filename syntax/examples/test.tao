@@ -1,0 +1,146 @@
+# Data syntax
+
+data Never = # Data without variants has no inhabitants
+
+data Unit = ()
+
+data List A =
+	| Item (A, List A)
+	| Empty
+
+data Maybe A =
+	| Just A
+	| None
+
+data Result A, E =
+	| Ok A
+	| Err E
+
+data NatWrapper = Nat
+
+data Person = {
+	name = Str,
+	age = Num,
+}
+
+# Type alias syntax
+
+type Natural = Nat
+
+type NonEmpty A = (A, List A)
+
+type Str A = [Char]
+
+# Definition syntax
+
+def five = 5
+def six = five + 1
+
+def bob = Person {
+	# '=' used instead of ':' because the latter is for type hints, which are permitted in patterns during destructuring
+	name: "Bob",
+	age: 42.0,
+}
+
+# Function syntax
+
+def add = fn x: Nat, y: Nat => x + y # TODO: Investigate whether `fn add x, y => x + y` would conflict with inline function syntax
+
+def factorial = fn
+	| 0 => 1
+	| x => x * factorial(x - 1)
+
+def zip A, B = fn
+	| Just x: A, Just y: B => Just (x, y)
+	| _, _ => None
+
+# Type hints can be added with ':' and may include the wildcard type, '?', which gets inferred
+# Type parameters combe before type hints
+def append A : A -> [A] -> [?] = fn
+	| x, [] => [x]
+	# 'arg:f' is equivalent to 'f(arg)' and allows method-like chaining of functions
+	| x, [y .. ys] => [y] ++ ys:append(x)
+
+def len A : [A] -> Nat = fn
+	| [] => 0
+	| [_ .. tail] => 1 + tail:len
+
+def make_tuple A, B = fn
+	# Type annotations are permitted in patterns
+	| a : A, b : B => (a, b)
+
+def filter A : (A -> Bool) -> [A] -> [A] = fn
+    | _, [] => []
+    | f, [x .. xs] => if x:f
+		then [x] ++ xs:filter(f)
+		else xs:filter(f)
+
+# Typeclasses are specified with `A < Ord` meaning "A is a subset of the class Ord"
+# TODO: How to specify multiple typeclasses?
+def qsort A : [A] -> [A] = fn
+    | [] => []
+	# Binding with '~' is permitted in patterns
+    | xs ~ [x ..] =>
+		# '< x' is shorthand for 'fn a => a < x'
+		xs:filter(fn x => x < x):qsort
+			++
+		xs:filter(fn x => x >= x):qsort
+
+# Inline function syntax
+
+def main =
+	# Simple case
+	let identity = fn x => x in
+	# Inline functions also support pattern matching
+	let unwrap_or = fn
+		| _, Just x => x
+		| default, None => default
+	in
+	let unwrap_or_zero = fn
+		| Just x => x
+		| None => 0
+	in
+	identity(5)
+
+# Match syntax
+
+def main =
+	let x = 5 in
+	# Branches, like function pattern matching
+	let desc = match x in
+		| 0 => "zero"
+		| 1 => "one"
+		| _ => "a big number"
+	in
+	let x = match desc in
+		| "zero" => Just 0
+		| "one" => Just 1
+		| _ => None
+	in
+	# Multiple assignments are permitted in a let
+	let
+		x = 7,
+		y = 8,
+	in
+	x
+
+# Typeclass constraint syntax
+
+def less A : A -> A -> Bool = fn
+	| x, y => x < y
+
+data Ordering =
+	| Equal
+	| Less
+	| Greater
+
+data Vec2 A = {
+	x = A,
+	y = A,
+}
+
+def add_vec A = fn
+	| Vec2 { x, y }: Vec2 A, Vec2 { a, b }: Vec2 A => Vec2 {
+		x: x + a,
+		y: y + b,
+	}

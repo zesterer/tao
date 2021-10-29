@@ -1,0 +1,25 @@
+type Str = [Char]
+
+def foo = fn x: Str => x
+
+data Maybe A =
+	| Just A
+	| None
+
+type Option A = Maybe A
+
+#type Fizz = Buzz
+#type Buzz = Fizz
+
+def make_bool A = fn x: A => x
+def five = make_bool(5)
+
+def a = let a: Nat = a in a
+
+def bar = fn
+	| (Just x): Option ? => x
+	| Just 5 => 5
+
+def factorial: ? -> ? = fn
+	| 0 => 1
+	| x => x * factorial(x - 1)
