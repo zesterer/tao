@@ -86,7 +86,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
         let record = nested_parser(
             term_ident_parser()
                 .map_with_span(SrcNode::new)
-                .then_ignore(just(Token::Op(Op::Eq)))
+                .then_ignore(just(Token::Colon))
                 .then(ty.clone().map_with_span(SrcNode::new))
                 .separated_by(just(Token::Comma))
                 .allow_trailing()

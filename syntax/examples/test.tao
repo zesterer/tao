@@ -19,8 +19,8 @@ data Result A, E =
 data NatWrapper = Nat
 
 data Person = {
-	name = Str,
-	age = Num,
+	name: Str,
+	age: Num,
 }
 
 # Type alias syntax
@@ -37,7 +37,6 @@ def five = 5
 def six = five + 1
 
 def bob = Person {
-	# '=' used instead of ':' because the latter is for type hints, which are permitted in patterns during destructuring
 	name: "Bob",
 	age: 42.0,
 }
@@ -135,8 +134,8 @@ data Ordering =
 	| Greater
 
 data Vec2 A = {
-	x = A,
-	y = A,
+	x: A,
+	y: A,
 }
 
 def add_vec A = fn
