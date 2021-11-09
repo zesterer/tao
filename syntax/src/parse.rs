@@ -177,7 +177,7 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
             term_ident_parser()
                 .map_with_span(SrcNode::new)
                 .then(ty_hint_parser())
-                .then(just(Token::Op(Op::Eq))
+                .then(just(Token::Tilde)
                     .ignore_then(binding.clone())
                     .or_not())
                 .map_with_span(|((field, ty), binding), span| {
@@ -255,16 +255,22 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
                 SrcNode::new(ast::Pat::Wildcard, span),
                 Some(SrcNode::new(name, span)),
             )))
-            .then(ty_hint_parser())
-            .map_with_span(|((pat, name), ty), span| SrcNode::new(ast::Binding {
+            // TODO: Resolve ambiguity
+            // .then(ty_hint_parser())
+            .map_with_span(|/*(*/(pat, name)/*, ty)*/, span| SrcNode::new(ast::Binding {
                 pat,
                 name,
-                ty,
+                ty: None,
             }, span))
             .boxed()
     })
         .map(|expr| expr.into_inner())
         .labelled("pattern")
+        .then(ty_hint_parser())
+        .map(|(binding, ty)| ast::Binding {
+            ty,
+            ..binding
+        })
 }
 
 pub fn expr_parser() -> impl Parser<ast::Expr> {

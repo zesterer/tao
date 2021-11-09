@@ -3,7 +3,7 @@ use super::*;
 // TODO: use `ToHir`?
 fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
     match litr {
-        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Nat),
+        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Int /*Nat*/),
         ast::Literal::Num(_) => TyInfo::Prim(ty::Prim::Num),
         ast::Literal::Bool(_) => TyInfo::Prim(ty::Prim::Bool),
         ast::Literal::Char(_) => TyInfo::Prim(ty::Prim::Char),
@@ -13,6 +13,7 @@ fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
 
 pub enum Scope<'a> {
     Empty,
+    Recursive(SrcNode<Ident>, TyVar),
     Binding(&'a Scope<'a>, SrcNode<Ident>, TyVar),
     Many(&'a Scope<'a>, Vec<(SrcNode<Ident>, TyVar)>),
 }
@@ -20,17 +21,23 @@ pub enum Scope<'a> {
 impl<'a> Scope<'a> {
     pub fn empty() -> Self { Self::Empty }
 
-    fn with<'b>(&'a self, name: SrcNode<Ident>, ty: TyVar) -> Scope<'b> where 'a: 'b {
+    fn with(&self, name: SrcNode<Ident>, ty: TyVar) -> Scope<'_> {
         Scope::Binding(self, name, ty)
     }
 
-    fn with_many<'b>(&'a self, many: Vec<(SrcNode<Ident>, TyVar)>) -> Scope<'b> where 'a: 'b {
+    fn with_many(&self, many: Vec<(SrcNode<Ident>, TyVar)>) -> Scope<'_> {
         Scope::Many(self, many)
     }
 
     fn find(&self, name: &Ident) -> Option<TyVar> {
         match self {
             Self::Empty => None,
+            Self::Recursive(def, ty) => if &**def == name {
+                // TODO: Don't just use this type value: reinstantiate it to replace generic type variables!
+                Some(*ty)
+            } else {
+                None
+            },
             Self::Binding(_, local, ty) if &**local == name => Some(*ty),
             Self::Binding(parent, _, _) => parent.find(name),
             Self::Many(parent, locals) => if let Some((_, ty)) = locals.iter().find(|(local, _)| &**local == name) {
@@ -66,7 +73,7 @@ impl ToHir for ast::Type {
                 .collect()),
             ast::Type::Func(i, o) => TyInfo::Func(i.to_hir(infer, scope).meta().1, o.to_hir(infer, scope).meta().1),
             ast::Type::Data(name, params) => match (name.as_str(), params.len()) {
-                ("Nat", 0) => TyInfo::Prim(Prim::Nat),
+                ("Nat", 0) => TyInfo::Prim(Prim::Int /*Nat*/),
                 ("Int", 0) => TyInfo::Prim(Prim::Int),
                 ("Num", 0) => TyInfo::Prim(Prim::Num),
                 ("Bool", 0) => TyInfo::Prim(Prim::Bool),

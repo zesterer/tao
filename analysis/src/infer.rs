@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 pub type InferMeta = (Span, TyVar);
 pub type InferNode<T> = Node<T, InferMeta>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TyInfo {
     Ref(TyVar),
     Error,
@@ -233,12 +233,50 @@ impl<'a> Infer<'a> {
                 (_, TyInfo::Error, _) => Some(Ok(TyInfo::Error)),
                 (_, _, TyInfo::Unknown) => None,
                 (_, TyInfo::Unknown, _) => None,
-                (Add | Mul | Rem, TyInfo::Prim(Prim::Nat), TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Nat))),
-                (Sub, TyInfo::Prim(Prim::Nat), TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Int))),
-                (Div, TyInfo::Prim(Prim::Nat), TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Num))),
-                (Add | Sub | Mul | Div | Rem, TyInfo::Prim(Prim::Num), TyInfo::Prim(Prim::Num)) => Some(Ok(TyInfo::Prim(Prim::Num))),
-                (Eq | NotEq | Less | LessEq | More | MoreEq, TyInfo::Prim(Prim::Nat), TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Bool))),
-                (And | Or | Xor, TyInfo::Prim(Prim::Bool), TyInfo::Prim(Prim::Bool)) => Some(Ok(TyInfo::Prim(Prim::Bool))),
+                (_, TyInfo::Prim(prim_a), TyInfo::Prim(prim_b)) => {
+                    use ty::Prim::*;
+                    lazy_static::lazy_static! {
+                        static ref PRIM_BINARY_IMPLS: HashMap<(ast::BinaryOp, ty::Prim, ty::Prim), ty::Prim> = [
+                            // Bool
+                            ((Eq, Bool, Bool), Bool),
+                            ((NotEq, Bool, Bool), Bool),
+                            ((And, Bool, Bool), Bool),
+                            ((Or, Bool, Bool), Bool),
+                            ((Xor, Bool, Bool), Bool),
+
+                            // Nat
+                            ((Add, Nat, Nat), Nat),
+                            ((Sub, Nat, Nat), Int),
+                            ((Mul, Nat, Nat), Nat),
+                            ((Rem, Nat, Nat), Nat),
+                            ((Div, Nat, Nat), Num),
+                            ((Eq, Nat, Nat), Bool),
+                            ((NotEq, Nat, Nat), Bool),
+                            ((Less, Nat, Nat), Bool),
+                            ((LessEq, Nat, Nat), Bool),
+                            ((More, Nat, Nat), Bool),
+                            ((MoreEq, Nat, Nat), Bool),
+
+                            // Int
+                            ((Add, Int, Int), Int),
+                            ((Sub, Int, Int), Int),
+                            ((Mul, Int, Int), Int),
+                            ((Div, Int, Int), Num),
+
+                            // TODO: Others
+                        ]
+                            .into_iter()
+                            .collect();
+                    }
+
+                    if let Some(out) = PRIM_BINARY_IMPLS.get(&(*op, prim_a, prim_b)) {
+                        Some(Ok(TyInfo::Prim(*out)))
+                    } else {
+                        self.set_info(output, TyInfo::Error);
+                        Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
+                    }
+                },
+                (Join, TyInfo::List(a), TyInfo::List(b)) if self.follow_info(a) == self.follow_info(b) => Some(Ok(TyInfo::List(a))),
                 _ => {
                     self.set_info(output, TyInfo::Error);
                     Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
@@ -246,7 +284,7 @@ impl<'a> Infer<'a> {
             }
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
-                    let result_ty = self.insert(op.span(), info);
+                    let result_ty = self.insert(self.span(output), info);
                     self.make_eq(output, result_ty);
                 })),
         }

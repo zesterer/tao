@@ -53,7 +53,7 @@ impl fmt::Display for UnaryOp {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     // Sum
     Add, Sub,

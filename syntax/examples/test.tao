@@ -50,11 +50,11 @@ def factorial = fn
 	| x => x * factorial(x - 1)
 
 def zip A, B = fn
-	| Just x: A, Just y: B => Just (x, y)
+	| Just x: Maybe A, Just y: Maybe B => Just (x, y)
 	| _, _ => None
 
 # Type hints can be added with ':' and may include the wildcard type, '?', which gets inferred
-# Type parameters combe before type hints
+# Type parameters come before type hints
 def append A : A -> [A] -> [?] = fn
 	| x, [] => [x]
 	# 'arg:f' is equivalent to 'f(arg)' and allows method-like chaining of functions
@@ -99,7 +99,7 @@ def main =
 		| Just x => x
 		| None => 0
 	in
-	identity(5)
+	identity(5) + unwrap_or(5, None)
 
 # Match syntax
 
@@ -139,7 +139,7 @@ data Vec2 A = {
 }
 
 def add_vec A = fn
-	| Vec2 { x, y }: Vec2 A, Vec2 { a, b }: Vec2 A => Vec2 {
+	| Vec2 { x, y }: Vec2 A, Vec2 { x ~ a, y ~ b }: Vec2 A => Vec2 {
 		x: x + a,
 		y: y + b,
 	}

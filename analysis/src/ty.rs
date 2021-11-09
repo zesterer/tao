@@ -3,7 +3,7 @@ use super::*;
 pub type TyMeta = (Span, TyId);
 pub type TyNode<T> = Node<T, TyMeta>;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Prim {
     Nat,
     Int,
