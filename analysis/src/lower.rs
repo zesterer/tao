@@ -29,21 +29,20 @@ impl<'a> Scope<'a> {
         Scope::Many(self, many)
     }
 
-    fn find(&self, name: &Ident) -> Option<TyVar> {
+    fn find(&self, infer: &mut Infer, span: Span, name: &Ident) -> Option<TyVar> {
         match self {
             Self::Empty => None,
             Self::Recursive(def, ty) => if &**def == name {
-                // TODO: Don't just use this type value: reinstantiate it to replace generic type variables!
-                Some(*ty)
+                Some(infer.try_reinstantiate(span, *ty))
             } else {
                 None
             },
             Self::Binding(_, local, ty) if &**local == name => Some(*ty),
-            Self::Binding(parent, _, _) => parent.find(name),
+            Self::Binding(parent, _, _) => parent.find(infer, span, name),
             Self::Many(parent, locals) => if let Some((_, ty)) = locals.iter().find(|(local, _)| &**local == name) {
                 Some(*ty)
             } else {
-                parent.find(name)
+                parent.find(infer, span, name)
             },
         }
     }
@@ -61,7 +60,7 @@ impl ToHir for ast::Type {
     fn to_hir(self: &SrcNode<Self>, infer: &mut Infer, scope: &Scope) -> InferNode<()> {
         let info = match &**self {
             ast::Type::Error => TyInfo::Error,
-            ast::Type::Unknown => TyInfo::Unknown,
+            ast::Type::Unknown => TyInfo::Unknown(None),
             ast::Type::List(item) => TyInfo::List(item.to_hir(infer, scope).meta().1),
             ast::Type::Tuple(items) => TyInfo::Tuple(items
                 .iter()
@@ -84,22 +83,23 @@ impl ToHir for ast::Type {
                         .map(|param| param.to_hir(infer, scope).meta().1)
                         .collect::<Vec<_>>();
 
-                    if let Some(scope) = infer
+                    if let Some((scope, (gen_idx, gen))) = infer
                         .gen_scope()
-                        .filter(|scope| infer.ctx().tys.get_gen_scope(*scope).index(**name).is_some())
+                        .and_then(|scope| Some((scope, infer.ctx().tys.get_gen_scope(scope).find(**name)?)))
                     {
-                        TyInfo::Gen(**name, scope)
-                    } else if let Some(alias) = infer.ctx().datas.lookup_alias(**name) {
-                        if let Some(alias) = infer.ctx().datas.get_alias(alias) {
+                        TyInfo::Gen(gen_idx, scope, gen.span())
+                    } else if let Some(alias_id) = infer.ctx().datas.lookup_alias(**name) {
+                        if let Some(alias) = infer.ctx().datas.get_alias(alias_id) {
                             let (alias_ty, alias_gen_scope) = (alias.ty, alias.gen_scope);
-                            let get_gen = |gen, ctx: &Context| {
-                                let generics = ctx.tys.get_gen_scope(alias_gen_scope);
-                                params[generics.index(gen).unwrap()]
+                            let get_gen = |index, scope, ctx: &Context| {
+                                assert!(index < params.len(), "{:?}, {}, {:?}, {:?}, {:?}", name, ctx.datas.get_alias(alias_id).unwrap().name, ctx.tys.get_gen_scope(scope).get(index), alias_gen_scope, scope);
+                                params[index]
                             };
                             TyInfo::Ref(infer.instantiate(alias_ty, &get_gen))
                         } else {
-                            infer.ctx_mut().emit(Error::RecursiveAlias(alias, name.span()));
-                            TyInfo::Error
+                            let err_ty = infer.insert(self.span(), TyInfo::Error);
+                            infer.emit(InferError::RecursiveAlias(alias_id, err_ty, name.span()));
+                            TyInfo::Ref(err_ty)
                         }
                     } else if let Some(data) = infer.ctx().datas.lookup_data(**name) {
                         TyInfo::Data(data, params)
@@ -121,7 +121,7 @@ impl ToHir for ast::Binding {
     fn to_hir(self: &SrcNode<Self>, infer: &mut Infer, scope: &Scope) -> InferNode<Self::Output> {
         let (info, pat) = match &*self.pat {
             ast::Pat::Error => (TyInfo::Error, hir::Pat::Error),
-            ast::Pat::Wildcard => (TyInfo::Unknown, hir::Pat::Wildcard),
+            ast::Pat::Wildcard => (TyInfo::Unknown(None), hir::Pat::Wildcard),
             ast::Pat::Literal(litr) => (litr_ty_info(litr, infer, self.pat.span()), hir::Pat::Literal(*litr)),
             ast::Pat::Single(inner) => {
                 let binding = inner.to_hir(infer, scope);
@@ -184,16 +184,21 @@ impl ToHir for ast::Binding {
                     .map(|_| infer.unknown(name.span()))
                     .collect::<Vec<_>>();
 
-                let inner_ty = infer.ctx().datas.get_data(data).cons[&name];
+                let inner_ty = infer
+                    .ctx()
+                    .datas
+                    .get_data(data)
+                    .cons
+                    .iter()
+                    .find(|(cons, _)| **cons == **name)
+                    .unwrap()
+                    .1;
 
                 // Recreate type in context
                 let inner_ty = {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
-                    let get_gen = |gen, ctx: &Context| {
-                        let generics = ctx.tys.get_gen_scope(data_gen_scope);
-                        generic_tys[generics.index(gen).unwrap()]
-                    };
+                    let get_gen = |index, _, ctx: &Context| generic_tys[index];
                     infer.instantiate(inner_ty, &get_gen)
                 };
 
@@ -229,12 +234,16 @@ impl ToHir for ast::Expr {
         let (info, expr) = match &**self {
             ast::Expr::Error => (TyInfo::Error, hir::Expr::Error),
             ast::Expr::Literal(litr) => (litr_ty_info(litr, infer, self.span()), hir::Expr::Literal(*litr)),
-            ast::Expr::Local(local) => if let Some(ty) = scope.find(&local) {
+            ast::Expr::Local(local) => if let Some(ty) = scope.find(infer, self.span(), &local) {
                 (TyInfo::Ref(ty), hir::Expr::Local(*local))
             } else if let Some(def) = infer.ctx().defs.lookup(*local) {
-                let generics_count = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def).gen_scope).len();
+                let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def).gen_scope);
+                let generics_count = scope.len();
                 let generic_tys = (0..generics_count)
-                    .map(|_| infer.unknown(self.span()))
+                    .map(|i| TyInfo::Unknown(Some(scope.get(i).span())))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|info| (self.span(), infer.insert(self.span(), info)))
                     .collect::<Vec<_>>();
 
                 // Recreate type in context
@@ -242,16 +251,13 @@ impl ToHir for ast::Expr {
                 let ty = if let Some(body) = def.body.as_ref() {
                     let def_gen_scope = def.gen_scope;
                     let def_ty = body.meta().1;
-                    let get_gen = |gen, ctx: &Context| {
-                        let generics = ctx.tys.get_gen_scope(def_gen_scope);
-                        generic_tys[generics.index(gen).unwrap()]
-                    };
+                    let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
                     infer.instantiate(def_ty, &get_gen)
                 } else {
                     infer.unknown(self.span())
                 };
 
-                (TyInfo::Ref(ty), hir::Expr::Global(*local))
+                (TyInfo::Ref(ty), hir::Expr::Global(*local, generic_tys))
             } else {
                 infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
                 (TyInfo::Error, hir::Expr::Error)
@@ -451,16 +457,21 @@ impl ToHir for ast::Expr {
                     .map(|_| infer.unknown(name.span()))
                     .collect::<Vec<_>>();
 
-                let inner_ty = infer.ctx().datas.get_data(data).cons[&name];
+                let inner_ty = infer
+                    .ctx()
+                    .datas
+                    .get_data(data)
+                    .cons
+                    .iter()
+                    .find(|(cons, _)| **cons == **name)
+                    .unwrap()
+                    .1;
 
                 // Recreate type in context
                 let inner_ty = {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
-                    let get_gen = |gen, ctx: &Context| {
-                        let generics = ctx.tys.get_gen_scope(data_gen_scope);
-                        generic_tys[generics.index(gen).unwrap()]
-                    };
+                    let get_gen = |index, _, ctx: &Context| generic_tys[index];
                     infer.instantiate(inner_ty, &get_gen)
                 };
 

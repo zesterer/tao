@@ -556,12 +556,24 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
 }
 
 pub fn generics_parser() -> impl Parser<ast::Generics> {
+    let constraint = just(Token::Op(Op::Less))
+        .ignore_then(type_parser()
+            .separated_by(just(Token::Op(Op::Add)))
+            .allow_leading());
+
     type_ident_parser()
         .map_with_span(SrcNode::new)
+        .then_ignore(constraint.or_not())
         .separated_by(just(Token::Comma))
         .allow_trailing()
         .map(|tys| ast::Generics { tys })
 }
+
+const ITEM_STARTS: [Token; 3] = [
+    Token::Data,
+    Token::Type,
+    Token::Def,
+];
 
 pub fn data_parser() -> impl Parser<ast::Data> {
     let variant = type_ident_parser()
@@ -578,17 +590,19 @@ pub fn data_parser() -> impl Parser<ast::Data> {
     just(Token::Data)
         .ignore_then(type_ident_parser()
             .map_with_span(SrcNode::new))
-        .then(generics_parser())
-        .then_ignore(just(Token::Op(Op::Eq)))
-        // TODO: Don't use `Result`
-        .then(type_parser().map_with_span(SrcNode::new).map(Err)
-            .or(variant
-                .separated_by(just(Token::Pipe))
-                .allow_leading()
-                .map(Ok)))
+        .then(generics_parser().map_with_span(SrcNode::new))
+        .then(just(Token::Op(Op::Eq))
+            // TODO: Don't use `Result`
+            .ignore_then(type_parser().map_with_span(SrcNode::new).map(Err)
+                .or(variant
+                    .separated_by(just(Token::Pipe))
+                    .allow_leading()
+                    .map(Ok)))
+            .or_not())
         .map(|((name, generics), variants)| ast::Data {
             generics,
             variants: variants
+                .unwrap_or_else(|| Ok(Vec::new()))
                 .unwrap_or_else(|ty| vec![(name.clone(), ty)]),
             name,
         })
@@ -599,7 +613,7 @@ pub fn alias_parser() -> impl Parser<ast::Alias> {
     just(Token::Type)
         .ignore_then(type_ident_parser()
             .map_with_span(SrcNode::new))
-        .then(generics_parser())
+        .then(generics_parser().map_with_span(SrcNode::new))
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(type_parser().map_with_span(SrcNode::new))
         .map(|((name, generics), ty)| ast::Alias {
@@ -614,7 +628,7 @@ pub fn def_parser() -> impl Parser<ast::Def> {
     just(Token::Def)
         .ignore_then(term_ident_parser()
             .map_with_span(SrcNode::new))
-        .then(generics_parser())
+        .then(generics_parser().map_with_span(SrcNode::new))
         .then(ty_hint_parser())
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(expr_parser()
@@ -629,16 +643,35 @@ pub fn def_parser() -> impl Parser<ast::Def> {
 }
 
 pub fn item_parser() -> impl Parser<ast::Item> {
-    def_parser().map(ast::Item::Def)
-        .or(data_parser().map(ast::Item::Data))
-        .or(alias_parser().map(ast::Item::Alias))
+    let attr = just(Token::Dollar)
+        .ignore_then(nested_parser(
+            term_ident_parser()
+                .map_with_span(SrcNode::new)
+                .separated_by(just(Token::Comma))
+                .allow_trailing(),
+            Delimiter::Brack,
+            |_| Vec::new(),
+        ))
+        .repeated()
+        .flatten();
+
+    let item = def_parser().map(ast::ItemKind::Def)
+        .or(data_parser().map(ast::ItemKind::Data))
+        .or(alias_parser().map(ast::ItemKind::Alias));
+
+    attr.then(item).map(|(attr, kind)| ast::Item {
+        attr,
+        kind,
+    })
 }
 
 pub fn module_parser() -> impl Parser<ast::Module> {
     item_parser()
+        .map(Some)
+        .recover_with(skip_until(ITEM_STARTS, |_| None))
         .repeated()
         .then_ignore(end())
-        .map(|items| ast::Module { items })
+        .map(|items| ast::Module { items: items.into_iter().flatten().collect() })
 }
 
 #[cfg(test)]

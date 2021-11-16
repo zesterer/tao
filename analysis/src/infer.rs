@@ -8,23 +8,25 @@ pub type InferNode<T> = Node<T, InferMeta>;
 pub enum TyInfo {
     Ref(TyVar),
     Error,
-    Unknown,
+    Unknown(Option<Span>), // With optional instantiation origin
     Prim(ty::Prim),
     List(TyVar),
     Tuple(Vec<TyVar>),
     Record(HashMap<Ident, TyVar>),
     Func(TyVar, TyVar),
     Data(DataId, Vec<TyVar>),
-    Gen(Ident, GenScopeId),
+    Gen(usize, GenScopeId, Span),
 }
 
 #[derive(Debug)]
 pub enum InferError {
     Mismatch(TyVar, TyVar),
-    CannotInfer(TyVar),
+    CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
+    Recursive(TyVar),
     NoSuchField(TyVar, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
+    RecursiveAlias(AliasId, TyVar, Span),
 }
 
 #[derive(Clone)]
@@ -104,7 +106,7 @@ impl<'a> Infer<'a> {
         id
     }
 
-    pub fn instantiate(&mut self, ty: TyId, f: &impl Fn(Ident, &Context) -> TyVar) -> TyVar {
+    pub fn instantiate(&mut self, ty: TyId, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar) -> TyVar {
         let info = match self.ctx.tys.get(ty) {
             Ty::Error => TyInfo::Error,
             Ty::Prim(prim) => TyInfo::Prim(prim),
@@ -122,13 +124,13 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .map(|param| self.instantiate(param, f))
                 .collect()),
-            Ty::Gen(name, scope) => TyInfo::Ref(f(name, self.ctx)), // TODO: Check scope is valid for recursive scopes
+            Ty::Gen(index, scope) => TyInfo::Ref(f(index, scope, self.ctx)), // TODO: Check scope is valid for recursive scopes
         };
         self.insert(self.ctx.tys.get_span(ty), info)
     }
 
     pub fn unknown(&mut self, span: Span) -> TyVar {
-        self.insert(span, TyInfo::Unknown)
+        self.insert(span, TyInfo::Unknown(None))
     }
 
     // pub fn usage(&mut self, span: Span, ty: TyVar) -> TyVar {
@@ -147,42 +149,99 @@ impl<'a> Infer<'a> {
         self.constraints.push_back(Constraint::Binary(op, a, b, output));
     }
 
+    pub fn emit(&mut self, err: InferError) {
+        self.errors.push(err);
+    }
+
+    // Returns true if `x` occurs in `y`.
+    fn occurs_in(&self, x: TyVar, y: TyVar) -> bool {
+        match self.info(y) {
+            TyInfo::Unknown(_) | TyInfo::Error | TyInfo::Prim(_) | TyInfo::Gen(_, _, _) => false,
+            TyInfo::Ref(y) => x == y || self.occurs_in(x, y),
+            TyInfo::List(item) => x == item || self.occurs_in(x, item),
+            TyInfo::Func(i, o) => x == i || x == o || self.occurs_in(x, i) || self.occurs_in(x, o),
+            TyInfo::Tuple(ys) => ys
+                .into_iter()
+                .any(|y| x == y || self.occurs_in(x, y)),
+            TyInfo::Record(ys) => ys
+                .into_iter()
+                .any(|(_, y)| x == y || self.occurs_in(x, y)),
+            TyInfo::Data(_, ys) => ys
+                .into_iter()
+                .any(|y| x == y || self.occurs_in(x, y)),
+        }
+    }
+
     pub fn make_eq(&mut self, x: TyVar, y: TyVar) {
-        if x == y { return } // If the vars are equal, we have no need to check equivalence
+        if let Err((a, b)) = self.make_eq_inner(x, y) {
+            // self.set_info(a, TyInfo::Error);
+            // self.set_info(b, TyInfo::Error);
+            self.errors.push(InferError::Mismatch(a, b));
+        }
+    }
+
+    pub fn make_eq_inner(&mut self, x: TyVar, y: TyVar) -> Result<(), (TyVar, TyVar)> {
+        if x == y { return Ok(()) } // If the vars are equal, we have no need to check equivalence
         match (self.info(x), self.info(y)) {
             // Follow references
-            (TyInfo::Ref(x), _) => self.make_eq(x, y),
-            (_, TyInfo::Ref(y)) => self.make_eq(x, y),
-            (TyInfo::Error, _) => self.set_info(y, TyInfo::Ref(x)),
-            (_, TyInfo::Error) => self.set_info(x, TyInfo::Ref(y)),
-            (_, TyInfo::Unknown) => self.set_info(y, TyInfo::Ref(x)),
-            (TyInfo::Unknown, _) => self.set_info(x, TyInfo::Ref(y)),
-            (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => {},
-            (TyInfo::List(x), TyInfo::List(y)) => self.make_eq(x, y),
+            (TyInfo::Ref(x), _) => self.make_eq_inner(x, y),
+            (_, TyInfo::Ref(y)) => self.make_eq_inner(x, y),
+
+            // Unify unknown or erronoeus types
+            (TyInfo::Unknown(_), _) => if self.occurs_in(x, y) {
+                self.errors.push(InferError::Recursive(y));
+                Ok(self.set_info(x, TyInfo::Error)) // TODO: Not actually ok
+            } else {
+                Ok(self.set_info(x, TyInfo::Ref(y)))
+            },
+            (_, TyInfo::Error) => Ok(self.set_info(x, TyInfo::Ref(y))),
+            (TyInfo::Error, _) | (_, TyInfo::Unknown(_)) => self.make_eq_inner(y, x),
+
+            (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
+            (TyInfo::List(x), TyInfo::List(y)) => self.make_eq_inner(x, y),
             (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .for_each(|(x, y)| self.make_eq(x, y)),
+                .try_for_each(|(x, y)| self.make_eq_inner(x, y)),
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
                 .keys()
                 .all(|x| ys.contains_key(x)) => xs
                     .into_iter()
-                    .for_each(|(x, x_ty)| self.make_eq(x_ty, ys[&x])),
+                    .try_for_each(|(x, x_ty)| self.make_eq_inner(x_ty, ys[&x])),
             (TyInfo::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                self.make_eq(x_i, y_i);
-                self.make_eq(x_o, y_o);
+                self.make_eq_inner(x_i, y_i)?;
+                self.make_eq_inner(x_o, y_o)?;
+                Ok(())
             },
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
                 xs.len() == ys.len() => xs
                     .into_iter()
                     .zip(ys.into_iter())
-                    .for_each(|(x, y)| self.make_eq(x, y)),
-            (TyInfo::Gen(a, a_scope), TyInfo::Gen(b, b_scope)) if a == a && a_scope == b_scope => {},
-            (_, _) => {
-                // self.set_info(x, TyInfo::Error);
-                // self.set_info(y, TyInfo::Ref(x));
-                self.errors.push(InferError::Mismatch(x, y));
+                    .try_for_each(|(x, y)| self.make_eq_inner(x, y)),
+            (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == a && a_scope == b_scope => Ok(()),
+            (_, _) => Err((x, y)),//self.errors.push(InferError::Mismatch(x, y)),
+        }
+    }
+
+    /// Reinstantiate a type variable, replacing any known generic types with new unknown ones
+    // TODO: Is this a good way to resolve the problem of type inference of recursive definitions in the presence of
+    // polymorphism?
+    pub fn try_reinstantiate(&mut self, span: Span, ty: TyVar) -> TyVar {
+        match self.info(ty) {
+            TyInfo::Ref(x) => self.try_reinstantiate(span, x),
+            TyInfo::Unknown(_) | TyInfo::Error | TyInfo::Prim(_) => ty,
+            TyInfo::List(item) => {
+                let item = self.try_reinstantiate(span, item);
+                self.insert(self.span(ty), TyInfo::List(item))
             },
+            TyInfo::Func(i, o) => {
+                let i = self.try_reinstantiate(span, i);
+                let o = self.try_reinstantiate(span, o);
+                self.insert(self.span(ty), TyInfo::Func(i, o))
+            },
+            // TODO: Reinstantiate type parameters with fresh type variables, but without creating inference problems
+            TyInfo::Gen(x, _, origin) => ty,//self.insert(span, TyInfo::Unknown(Some(origin))),
+            info => todo!("{:?}", info),
         }
     }
 
@@ -196,12 +255,32 @@ impl<'a> Infer<'a> {
                     // errors than necessary.
                     Some(true)
                 },
-                TyInfo::Unknown => None,
+                TyInfo::Unknown(_) => None,
                 TyInfo::Record(fields) => if let Some(field_ty) = fields.get(&field_name) {
                     self.make_eq(*field_ty, field);
                     Some(true)
                 } else {
                     Some(false)
+                },
+                // Field access through a data type
+                TyInfo::Data(data, params) => {
+                    let data = self.ctx.datas.get_data(data);
+                    // Field access on data only works for single-variant, record datatypes
+                    if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
+                        if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
+                            if let Some(field_ty) = fields.get(&field_name) {
+                                let field_ty = self.instantiate(*field_ty, &|index, _, _| params[index]);
+                                self.make_eq(field_ty, field);
+                                Some(true)
+                            } else {
+                                Some(false)
+                            }
+                        } else {
+                            Some(false)
+                        }
+                    } else {
+                        Some(false)
+                    }
                 },
                 _ => Some(false),
             }
@@ -213,7 +292,7 @@ impl<'a> Infer<'a> {
                 }),
             Constraint::Unary(op, a, output) => match (&*op, self.follow_info(a)) {
                 (_, TyInfo::Error) => Some(Ok(TyInfo::Error)),
-                (_, TyInfo::Unknown) => None,
+                (_, TyInfo::Unknown(_)) => None,
                 (Neg, TyInfo::Prim(Prim::Num)) => Some(Ok(TyInfo::Prim(Prim::Num))),
                 (Neg, TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Int))),
                 (Neg, TyInfo::Prim(Prim::Int)) => Some(Ok(TyInfo::Prim(Prim::Int))),
@@ -231,8 +310,8 @@ impl<'a> Infer<'a> {
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
                 (_, _, TyInfo::Error) => Some(Ok(TyInfo::Error)),
                 (_, TyInfo::Error, _) => Some(Ok(TyInfo::Error)),
-                (_, _, TyInfo::Unknown) => None,
-                (_, TyInfo::Unknown, _) => None,
+                (_, _, TyInfo::Unknown(_)) => None,
+                (_, TyInfo::Unknown(_), _) => None,
                 (_, TyInfo::Prim(prim_a), TyInfo::Prim(prim_b)) => {
                     use ty::Prim::*;
                     lazy_static::lazy_static! {
@@ -262,6 +341,12 @@ impl<'a> Infer<'a> {
                             ((Sub, Int, Int), Int),
                             ((Mul, Int, Int), Int),
                             ((Div, Int, Int), Num),
+                            ((Eq, Int, Int), Bool),
+                            ((NotEq, Int, Int), Bool),
+                            ((Less, Int, Int), Bool),
+                            ((LessEq, Int, Int), Bool),
+                            ((More, Int, Int), Bool),
+                            ((MoreEq, Int, Int), Bool),
 
                             // TODO: Others
                         ]
@@ -315,21 +400,26 @@ impl<'a> Infer<'a> {
 
         // Report errors for types that cannot be inferred
         for (ty, info) in self.iter() {
-            if matches!(info, TyInfo::Unknown) {
-                errors.push(InferError::CannotInfer(ty));
+            if let TyInfo::Unknown(origin) = info {
+                errors.push(InferError::CannotInfer(ty, origin));
             }
         }
 
-        let mut checked = Checked { infer: self };
+        let mut checked = Checked {
+            cache: HashMap::default(),
+            infer: self,
+        };
 
         let errors = errors
             .into_iter()
             .map(|error| match error {
                 InferError::Mismatch(a, b) => Error::Mismatch(checked.reify(a), checked.reify(b)),
-                InferError::CannotInfer(a) => Error::CannotInfer(checked.reify(a)),
+                InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
+                InferError::Recursive(a) => Error::Recursive(checked.infer.span(a)),
                 InferError::NoSuchField(a, field) => Error::NoSuchField(checked.reify(a), field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
+                InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),
             })
             .collect();
 
@@ -337,15 +427,22 @@ impl<'a> Infer<'a> {
     }
 }
 
-pub struct Checked<'a> { infer: Infer<'a> }
+pub struct Checked<'a> {
+    cache: HashMap<TyVar, TyId>,
+    infer: Infer<'a>,
+}
 
 impl<'a> Checked<'a> {
     fn reify_inner(&mut self, var: TyVar) -> TyId {
+        if let Some(ty) = self.cache.get(&var) {
+            return *ty;
+        }
+
         let ty = match self.infer.info(var) {
             // Follow references
             TyInfo::Ref(x) => return self.reify_inner(x),
             // Unknown types are treated as errors from here on out
-            TyInfo::Error | TyInfo::Unknown => Ty::Error,
+            TyInfo::Error | TyInfo::Unknown(_) => Ty::Error,
             TyInfo::Prim(prim) => Ty::Prim(prim),
             TyInfo::List(item) => Ty::List(self.reify_inner(item)),
             TyInfo::Tuple(items) => Ty::Tuple(items
@@ -361,12 +458,14 @@ impl<'a> Checked<'a> {
                 .into_iter()
                 .map(|arg| self.reify_inner(arg))
                 .collect()),
-            TyInfo::Gen(name, scope) => Ty::Gen(name, scope),
+            TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
         };
         self.infer.ctx.tys.insert(self.infer.span(var), ty)
     }
 
-    pub fn reify(&mut self, ty: TyVar) -> TyId {
-        self.reify_inner(ty)
+    pub fn reify(&mut self, var: TyVar) -> TyId {
+        let ty = self.reify_inner(var);
+        self.cache.insert(var, ty);
+        ty
     }
 }

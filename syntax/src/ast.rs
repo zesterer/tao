@@ -177,30 +177,38 @@ pub struct Generics {
 #[derive(Debug, PartialEq)]
 pub struct Data {
     pub name: SrcNode<Ident>,
-    pub generics: Generics,
+    pub generics: SrcNode<Generics>,
     pub variants: Vec<(SrcNode<Ident>, SrcNode<Type>)>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Alias {
     pub name: SrcNode<Ident>,
-    pub generics: Generics,
+    pub generics: SrcNode<Generics>,
     pub ty: SrcNode<Type>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Def {
     pub name: SrcNode<Ident>,
-    pub generics: Generics,
+    pub generics: SrcNode<Generics>,
     pub ty_hint: SrcNode<Type>,
     pub body: SrcNode<Expr>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Item {
+pub enum ItemKind {
     Data(Data),
     Alias(Alias),
     Def(Def),
+}
+
+pub type Attr = Vec<SrcNode<Ident>>;
+
+#[derive(Debug, PartialEq)]
+pub struct Item {
+    pub kind: ItemKind,
+    pub attr: Attr,
 }
 
 #[derive(Debug, PartialEq)]
@@ -209,29 +217,29 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn datas(&self) -> impl Iterator<Item = &Data> + '_ {
+    pub fn datas(&self) -> impl Iterator<Item = (&Attr, &Data)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match item {
-                Item::Data(data) => Some(data),
+            .filter_map(|item| match &item.kind {
+                ItemKind::Data(data) => Some((&item.attr, data)),
                 _ => None,
             })
     }
 
-    pub fn aliases(&self) -> impl Iterator<Item = &Alias> + '_ {
+    pub fn aliases(&self) -> impl Iterator<Item = (&Attr, &Alias)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match item {
-                Item::Alias(alias) => Some(alias),
+            .filter_map(|item| match &item.kind {
+                ItemKind::Alias(alias) => Some((&item.attr, alias)),
                 _ => None,
             })
     }
 
-    pub fn defs(&self) -> impl Iterator<Item = &Def> + '_ {
+    pub fn defs(&self) -> impl Iterator<Item = (&Attr, &Def)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match item {
-                Item::Def(def) => Some(def),
+            .filter_map(|item| match &item.kind {
+                ItemKind::Def(def) => Some((&item.attr, def)),
                 _ => None,
             })
     }

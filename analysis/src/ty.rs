@@ -1,4 +1,5 @@
 use super::*;
+use std::rc::Rc;
 
 pub type TyMeta = (Span, TyId);
 pub type TyNode<T> = Node<T, TyMeta>;
@@ -33,7 +34,7 @@ pub enum Ty {
     Record(HashMap<Ident, TyId>),
     Func(TyId, TyId),
     Data(DataId, Vec<TyId>),
-    Gen(Ident, GenScopeId),
+    Gen(usize, GenScopeId),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -70,57 +71,71 @@ impl Types {
         id
     }
 
-    pub fn display<'a>(&'a self, datas: &'a Datas, ty: TyId) -> impl fmt::Display + 'a {
-        #[derive(Copy, Clone)]
-        struct TyDisplay<'a> {
-            types: &'a Types,
-            datas: &'a Datas,
-            ty: TyId,
-            lhs_exposed: bool,
-        }
-
-        impl<'a> TyDisplay<'a> {
-            fn with_ty(&self, ty: TyId, lhs_exposed: bool) -> Self {
-                Self { ty, lhs_exposed, ..*self }
-            }
-        }
-
-        impl<'a> fmt::Display for TyDisplay<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                match self.types.get(self.ty) {
-                    Ty::Error => write!(f, "?"),
-                    Ty::Prim(prim) => write!(f, "{}", prim),
-                    Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
-                    Ty::Tuple(items) => write!(f, "({}{})", items
-                        .iter()
-                        .map(|item| format!("{}", self.with_ty(*item, false)))
-                        .collect::<Vec<_>>()
-                        .join(", "), if items.len() == 1 { "," } else { "" }),
-                    Ty::Record(fields) => write!(f, "{{ {} }}", fields
-                        .into_iter()
-                        .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
-                        .collect::<Vec<_>>()
-                        .join(", ")),
-                    Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-                    Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-                    Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", self.datas.get_data(name).name, params
-                        .iter()
-                        .map(|param| format!(" {}", self.with_ty(*param, true)))
-                        .collect::<String>()),
-                    Ty::Data(name, params) => write!(f, "{}{}", self.datas.get_data(name).name, params
-                        .iter()
-                        .map(|param| format!(" {}", self.with_ty(*param, true)))
-                        .collect::<String>()),
-                    Ty::Gen(name, _scope) => write!(f, "{}", name),
-                }
-            }
-        }
-
+    pub fn display<'a>(&'a self, datas: &'a Datas, ty: TyId) -> TyDisplay<'a> {
         TyDisplay {
             types: self,
             datas,
             ty,
             lhs_exposed: false,
+            substitutes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct TyDisplay<'a> {
+    types: &'a Types,
+    datas: &'a Datas,
+    ty: TyId,
+    lhs_exposed: bool,
+    substitutes: Vec<(TyId, Rc<dyn Fn(&mut fmt::Formatter) -> fmt::Result + 'a>)>,
+}
+
+impl<'a> TyDisplay<'a> {
+    fn with_ty(&self, ty: TyId, lhs_exposed: bool) -> Self {
+        Self { ty, lhs_exposed, ..self.clone() }
+    }
+
+    pub fn substitute(mut self, ty: TyId, sub: impl Fn(&mut fmt::Formatter) -> fmt::Result + 'a) -> Self {
+        self.substitutes.push((ty, Rc::new(sub)));
+        self
+    }
+}
+
+impl<'a> fmt::Display for TyDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some((_, sub)) = self.substitutes
+            .iter()
+            .find(|(ty, _)| *ty == self.ty)
+        {
+            return sub(f);
+        }
+
+        match self.types.get(self.ty) {
+            Ty::Error => write!(f, "?"),
+            Ty::Prim(prim) => write!(f, "{}", prim),
+            Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
+            Ty::Tuple(items) => write!(f, "({}{})", items
+                .iter()
+                .map(|item| format!("{}", self.with_ty(*item, false)))
+                .collect::<Vec<_>>()
+                .join(", "), if items.len() == 1 { "," } else { "" }),
+            Ty::Record(fields) => write!(f, "{{ {} }}", fields
+                .into_iter()
+                .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
+                .collect::<Vec<_>>()
+                .join(", ")),
+            Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
+            Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
+            Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", self.datas.get_data(name).name, params
+                .iter()
+                .map(|param| format!(" {}", self.with_ty(*param, true)))
+                .collect::<String>()),
+            Ty::Data(name, params) => write!(f, "{}{}", self.datas.get_data(name).name, params
+                .iter()
+                .map(|param| format!(" {}", self.with_ty(*param, true)))
+                .collect::<String>()),
+            Ty::Gen(index, scope) => write!(f, "{}", **self.types.get_gen_scope(scope).get(index)),
         }
     }
 }
@@ -129,22 +144,28 @@ impl Types {
 pub struct GenScopeId(usize);
 
 pub struct GenScope {
-    types: Vec<Ident>,
+    pub span: Span,
+    types: Vec<SrcNode<Ident>>,
 }
 
 impl GenScope {
-    pub fn from_ast(generics: &ast::Generics) -> Self {
+    pub fn from_ast(generics: &SrcNode<ast::Generics>) -> Self {
         Self {
+            span: generics.span(),
             types: generics.tys
                 .iter()
-                .map(|ty| **ty)
+                .cloned()
                 .collect(),
         }
     }
 
     pub fn len(&self) -> usize { self.types.len() }
 
-    pub fn index(&self, name: Ident) -> Option<usize> {
-        self.types.iter().position(|ty| ty == &name)
+    pub fn get(&self, index: usize) -> &SrcNode<Ident> {
+        &self.types[index]
+    }
+
+    pub fn find(&self, name: Ident) -> Option<(usize, &SrcNode<Ident>)> {
+        self.types.iter().enumerate().find(|(_, ty)| &***ty == &name)
     }
 }

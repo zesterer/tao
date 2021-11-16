@@ -86,6 +86,7 @@ pub enum Token {
     Else,
     In,
     Tilde,
+    Dollar,
 }
 
 impl fmt::Display for Token {
@@ -122,6 +123,7 @@ impl fmt::Display for Token {
             Token::Else => write!(f, "else"),
             Token::In => write!(f, "in"),
             Token::Tilde => write!(f, "~"),
+            Token::Dollar => write!(f, "$"),
         }
     }
 }
@@ -142,7 +144,8 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .or(just(':').to(Token::Colon))
         .or(just('?').to(Token::Question))
         .or(just('|').to(Token::Pipe))
-        .or(just('~').to(Token::Tilde));
+        .or(just('~').to(Token::Tilde))
+        .or(just('$').to(Token::Dollar));
 
     let op = seq("=>".chars()).to(Op::RFlow)
         .or(just('=').to(Op::Eq))

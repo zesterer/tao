@@ -2,4 +2,6 @@
 members = [
     "syntax",
     "analysis",
+    "middle",
+    "vm",
 ]

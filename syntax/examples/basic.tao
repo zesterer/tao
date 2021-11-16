@@ -17,9 +17,14 @@ def five = make_bool(5)
 def a = let a: Nat = a in a
 
 def bar = fn
-	| (Just x): Option ? => x
+	| Just x: Option ? => x
 	| Just 5 => 5
 
 def factorial: ? -> ? = fn
 	| 0 => 1
 	| x => x * factorial(x - 1)
+
+$[main]
+def main = match False, 40 + 1 in
+	| False, 42 => 1
+	| _, _ => 0

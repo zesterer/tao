@@ -1,10 +1,12 @@
 use super::*;
 
+pub use ast::Literal as Literal;
+
 #[derive(Debug)]
 pub enum Pat<M> {
     Error,
     Wildcard,
-    Literal(ast::Literal),
+    Literal(Literal),
     Single(Node<Binding<M>, M>),
     Tuple(Vec<Node<Binding<M>, M>>),
     Record(HashMap<Ident, Node<Binding<M>, M>>),
@@ -70,10 +72,10 @@ pub type TyBinding = TyNode<Binding<TyMeta>>;
 #[derive(Debug)]
 pub enum Expr<M> {
     Error,
-    Literal(ast::Literal),
+    Literal(Literal),
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
-    Global(Ident),
+    Global(Ident, Vec<M>),
     Tuple(Vec<Node<Self, M>>),
     List(Vec<Node<Self, M>>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),

@@ -36,10 +36,20 @@ type Str A = [Char]
 def five = 5
 def six = five + 1
 
+def empty A: [A] = []
+
 def bob = Person {
 	name: "Bob",
 	age: 42.0,
 }
+
+# Simple typeclass emulation
+
+data Add A = {
+	add: A -> A -> A,
+}
+
+def sum A = fn class: Add A, x: A, y: A => class.add(x, y)
 
 # Function syntax
 
@@ -76,7 +86,7 @@ def filter A : (A -> Bool) -> [A] -> [A] = fn
 
 # Typeclasses are specified with `A < Ord` meaning "A is a subset of the class Ord"
 # TODO: How to specify multiple typeclasses?
-def qsort A : [A] -> [A] = fn
+def qsort A < Ord A : [A] -> [A] = fn
     | [] => []
 	# Binding with '~' is permitted in patterns
     | xs ~ [x ..] =>
@@ -87,7 +97,7 @@ def qsort A : [A] -> [A] = fn
 
 # Inline function syntax
 
-def main =
+def foobar =
 	# Simple case
 	let identity = fn x => x in
 	# Inline functions also support pattern matching
@@ -103,6 +113,10 @@ def main =
 
 # Match syntax
 
+$[main]
+def n = 5
+
+#$[main]
 def main =
 	let x = 5 in
 	# Branches, like function pattern matching
@@ -143,3 +157,27 @@ def add_vec A = fn
 		x: x + a,
 		y: y + b,
 	}
+
+def identity A : A -> A = fn x => let (x, ()) = identity(((), x)) in x
+
+type NatNonEmpty = (Nat, Maybe NatNonEmpty)
+
+data N =
+	| Zero
+	| Zero
+	| Succ N
+
+def is_even = fn
+	| Zero => True
+	| Succ Succ x => x:is_even
+	| Succ Zero => False
+
+
+def main = greet({ greeting: "Hello", audience: "World" })
+
+def greet = fn { greeting: Str, audience: Str } =>
+	let str = if Str.is_empty(greeting)
+		then "Hi!"
+		else "{greeting}, {audience}!"
+	in
+	Stdout.!line(str)

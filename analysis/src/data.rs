@@ -2,8 +2,9 @@ use super::*;
 
 pub struct Data {
     pub name: Ident,
+    pub attr: ast::Attr,
     pub gen_scope: GenScopeId,
-    pub cons: HashMap<Ident, TyId>,
+    pub cons: Vec<(SrcNode<Ident>, TyId)>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -14,6 +15,7 @@ pub struct AliasId(usize);
 
 pub struct Alias {
     pub name: Ident,
+    pub attr: ast::Attr,
     pub gen_scope: GenScopeId,
     pub ty: TyId,
 }
@@ -21,8 +23,8 @@ pub struct Alias {
 #[derive(Default)]
 pub struct Datas {
     // TODO: Don't use `Result`
-    name_lut: HashMap<Ident, Result<DataId, AliasId>>,
-    cons_lut: HashMap<Ident, DataId>,
+    name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>)>,
+    cons_lut: HashMap<Ident, (Span, DataId)>,
     alias_lut: HashMap<Ident, Alias>,
     datas: Vec<Option<Data>>,
     aliases: Vec<(Span, Option<Alias>)>,
@@ -32,19 +34,19 @@ impl Datas {
     pub fn lookup_data(&self, name: Ident) -> Option<DataId> {
         self.name_lut
             .get(&name)
-            .and_then(|data| data.as_ref().ok())
+            .and_then(|data| data.1.as_ref().ok())
             .copied()
     }
 
     pub fn lookup_alias(&self, name: Ident) -> Option<AliasId> {
         self.name_lut
             .get(&name)
-            .and_then(|data| data.as_ref().err())
+            .and_then(|data| data.1.as_ref().err())
             .copied()
     }
 
     pub fn lookup_cons(&self, name: Ident) -> Option<DataId> {
-        self.cons_lut.get(&name).copied()
+        self.cons_lut.get(&name).map(|(_, id)| *id)
     }
 
     pub fn get_data(&self, data: DataId) -> &Data {
@@ -63,25 +65,39 @@ impl Datas {
         self.aliases[alias.0].0
     }
 
-    pub fn declare_data(&mut self, name: Ident) -> DataId {
+    pub fn declare_data(&mut self, name: Ident, span: Span) -> Result<DataId, Error> {
         let id = DataId(self.datas.len());
         self.datas.push(None);
-        self.name_lut.insert(name, Ok(id));
-        id
+        if let Err(old) = self.name_lut.try_insert(name, (span, Ok(id))) {
+            Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
+        } else {
+            Ok(id)
+        }
     }
 
-    pub fn declare_alias(&mut self, name: Ident, span: Span) -> AliasId {
+    pub fn declare_alias(&mut self, name: Ident, span: Span) -> Result<AliasId, Error> {
         let id = AliasId(self.aliases.len());
         self.aliases.push((span, None));
-        self.name_lut.insert(name, Err(id));
-        id
+        if let Err(old) = self.name_lut.try_insert(name, (span, Err(id))) {
+            Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
+        } else {
+            Ok(id)
+        }
     }
 
-    pub fn define_data(&mut self, id: DataId, data: Data) {
-        for cons in data.cons.keys() {
-            self.cons_lut.insert(*cons, id);
+    pub fn define_data(&mut self, id: DataId, span: Span, data: Data) -> Result<(), Vec<Error>> {
+        let mut errors = Vec::new();
+        for (cons, _) in &data.cons {
+            if let Err(old) = self.cons_lut.try_insert(**cons, (cons.span(), id)) {
+                errors.push(Error::DuplicateConsName(**cons, old.entry.get().0, cons.span()));
+            }
         }
         self.datas[id.0] = Some(data);
+        if errors.len() == 0 {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     pub fn define_alias(&mut self, id: AliasId, alias: Alias) {

@@ -1,0 +1,12 @@
+[package]
+name = "tao_vm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tao_middle = { path = "../middle" }
+ariadne = "0.1"
+
+[dev-dependencies]
+tao_syntax = { path = "../syntax" }
+tao_analysis = { path = "../analysis" }

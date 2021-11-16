@@ -60,7 +60,6 @@ pub fn parse_expr(code: &str, src: SrcId) -> (Option<SrcNode<ast::Expr>>, Vec<Er
 pub fn parse_module(code: &str, src: SrcId) -> (Option<SrcNode<ast::Module>>, Vec<Error>) {
     parse(
         parse::module_parser()
-            .then_ignore(end())
             .map_with_span(SrcNode::new),
         code,
         src,
