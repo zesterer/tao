@@ -20,11 +20,38 @@ def bar = fn
 	| Just x: Option ? => x
 	| Just 5 => 5
 
-def factorial: ? -> ? = fn
-	| 0 => 1
-	| x => x * factorial(x - 1)
+# def factorial: ? -> ? = fn
+#	 | 0 => 1
+#	 | x => x * factorial(x - 1)
 
-$[main]
+def life = if True
+	then 40 + 1 + 1
+	else life
+
+def three = let two = 2 in
+	let one = 1 in
+	two + one
+
+def seven =
+	let x = three in
+	let	y = 2 in
+	x + y + 2
+
+def test =
+	let seven = seven in
+	match False in
+	| True => 5
+	| False => seven
+
+def main2 = match let x = life in life + 2, False in
+	| 44, False => "Hello, world!"
+	| _, _ => "something else"
+
+def main3 =
+	let x = life + 10 in
+	let y = life in
+	x + y
+
 def main = match False, 40 + 1 in
 	| False, 42 => 1
 	| _, _ => 0

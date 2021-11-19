@@ -12,4 +12,6 @@ use tao_middle::{
     MirNode,
     ProcId,
     repr,
+    Ident,
 };
+use hashbrown::HashMap;

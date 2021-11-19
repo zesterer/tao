@@ -75,7 +75,7 @@ pub enum Expr<M> {
     Literal(Literal),
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
-    Global(Ident, Vec<M>),
+    Global(DefId, Vec<M>),
     Tuple(Vec<Node<Self, M>>),
     List(Vec<Node<Self, M>>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
@@ -83,7 +83,7 @@ pub enum Expr<M> {
     Unary(SrcNode<ast::UnaryOp>, Node<Self, M>),
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
     Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
-    Func(Node<Binding<M>, M>, Node<Self, M>),
+    Func(Node<Ident, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>),
     Cons(SrcNode<DataId>, Node<Self, M>),
 }

@@ -128,7 +128,7 @@ impl Context {
 
             let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
 
-            let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1));
+            let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, Vec::new()));
             infer.make_eq(ty_hint.meta().1, body.meta().1);
 
             let (mut checked, mut errs) = infer.into_checked();

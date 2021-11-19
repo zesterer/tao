@@ -41,4 +41,12 @@ impl Context {
 
         (this, errors)
     }
+
+    pub fn optimize(&mut self) {
+        for _ in 0..10 {
+            opt::FlattenSingleField::default().apply(self);
+            opt::ConstFold::default().apply(self);
+            opt::RemoveUnusedBindings::default().apply(self);
+        }
+    }
 }

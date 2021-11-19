@@ -1,0 +1,29 @@
+def fibonacci = fn x: Int => if x <= 1
+	then 1
+	else fibonacci(x - 1) + fibonacci(x - 2)
+
+def factorial = fn
+	| 0 => 1
+	| x => x * factorial(x - 1)
+
+$[main]
+#def main = fibonacci(35)
+def main = factorial(10)
+
+def test =
+	let five = 5 in
+	let three = 3 in
+	let f = fn x: Int => five in
+	f(1)
+
+def const_fold = (fn x => x)(5)
+
+def inlining =
+	let double = fn x => x * 2 in
+	let square = fn x => x * x in
+	2:double:square
+
+def captures =
+	let x = 5 in
+	let add_five = fn y => x + y in
+	add_five(5)

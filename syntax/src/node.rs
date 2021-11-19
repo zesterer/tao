@@ -1,6 +1,6 @@
 use super::*;
 use std::{
-    ops::Deref,
+    ops::{Deref, DerefMut},
     cmp::PartialEq,
     fmt,
 };
@@ -22,6 +22,11 @@ impl<T, M> Node<T, M> {
         &self.inner
     }
 
+    /// Get a mutable to the inner value.
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
     // Take the node's inner value.
     pub fn into_inner(self) -> T { *self.inner }
 
@@ -35,11 +40,18 @@ impl<T, M> Node<T, M> {
 
     /// Get a reference to the metadata.
     pub fn meta(&self) -> &M { &self.meta }
+
+    /// Get a mutable reference to the metadata.
+    pub fn meta_mut(&mut self) -> &mut M { &mut self.meta }
 }
 
 impl<T, M> Deref for Node<T, M> {
     type Target = T;
     fn deref(&self) -> &Self::Target { self.inner() }
+}
+
+impl<T, M> DerefMut for Node<T, M> {
+    fn deref_mut(&mut self) -> &mut Self::Target { self.inner_mut() }
 }
 
 impl<T: PartialEq, M> PartialEq for Node<T, M> {

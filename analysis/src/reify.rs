@@ -75,7 +75,7 @@ impl Reify for hir::Expr<InferMeta> {
                 .into_iter()
                 .map(|(binding, arm)| (binding.reify(infer), arm.reify(infer)))
                 .collect()),
-            hir::Expr::Func(param, body) => hir::Expr::Func(param.reify(infer), body.reify(infer)),
+            hir::Expr::Func(param, body) => hir::Expr::Func(TyNode::new(*param, (param.meta().0, infer.reify(param.meta().1))), body.reify(infer)),
             hir::Expr::Apply(f, param) => hir::Expr::Apply(f.reify(infer), param.reify(infer)),
             hir::Expr::Cons(name, a) => hir::Expr::Cons(name, a.reify(infer)),
         };

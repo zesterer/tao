@@ -7,6 +7,7 @@ pub enum Value {
     Char(char),
     Bool(bool),
     List(Vec<Self>),
+    Func(Addr, Vec<Self>),
 }
 
 impl Value {
@@ -14,6 +15,7 @@ impl Value {
     pub fn char(self) -> char { if let Value::Char(c) = self { c } else { panic!() } }
     pub fn bool(self) -> bool { if let Value::Bool(x) = self { x } else { panic!() } }
     pub fn list(self) -> Vec<Self> { if let Value::List(xs) = self { xs } else { panic!() } }
+    pub fn func(self) -> (Addr, Vec<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!() } }
 }
 
 impl fmt::Display for Value {
@@ -32,6 +34,12 @@ impl fmt::Display for Value {
                     .collect::<Vec<_>>()
                     .join(", ")),
             },
+            Value::Func(f_addr, captures) => write!(
+                f,
+                "Function(addr = 0x{:03X}, captures = {})",
+                f_addr.0,
+                captures.len(),
+            ),
         }
     }
 }
@@ -41,6 +49,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
 
     let mut funcs = Vec::new();
     let mut stack = Vec::new();
+    let mut locals = Vec::new();
 
     loop {
         let mut next_addr = addr.incr();
@@ -64,17 +73,39 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 stack.pop();
                 stack.push(x);
             },
+            Instr::Call(n) => {
+                funcs.push(next_addr);
+                next_addr = addr.jump(n);
+            },
             Instr::Ret => if let Some(addr) = funcs.pop() {
                 next_addr = addr;
             } else {
+                assert_eq!(locals.len(), 0, "Local stack still has values, this is probably a bug");
                 assert_eq!(stack.len(), 1, "Stack size must be 0 on program exit");
                 break stack.pop();
+            },
+            Instr::MakeFunc(i, n) => {
+                let f_addr = addr.jump(i);
+                let func = Value::Func(f_addr, stack.split_off(stack.len().saturating_sub(n)));
+                stack.push(func);
+            },
+            Instr::ApplyFunc => {
+                let (f_addr, mut captures) = stack.pop().unwrap().func();
+
+                funcs.push(next_addr);
+                next_addr = f_addr;
+
+                locals.append(&mut captures);
             },
             Instr::MakeList(n) => {
                 let val = Value::List(stack.split_off(stack.len().saturating_sub(n)));
                 stack.push(val);
             },
-            Instr::Dup(x) => stack.push(stack[stack.len() - 1 - x].clone()),
+            Instr::IndexList(i) => {
+                let mut x = stack.pop().unwrap().list();
+                stack.push(x.remove(i));
+            },
+            Instr::Dup => stack.push(stack.last().unwrap().clone()),
             Instr::Jump(n) => {
                 next_addr = addr.jump(n);
                 // println!("Jump from 0x{:03X} to 0x{:03X}", addr.0, next_addr.0);
@@ -84,10 +115,9 @@ pub fn exec(prog: &Program) -> Option<Value> {
                     next_addr = next_addr.jump(1);
                 }
             },
-            Instr::Field(i) => {
-                let mut x = stack.pop().unwrap().list();
-                stack.push(x.remove(i));
-            },
+            Instr::PushLocal => locals.push(stack.pop().unwrap()),
+            Instr::PopLocal(n) => locals.truncate(locals.len() - n),
+            Instr::GetLocal(x) => stack.push(locals[locals.len() - 1 - x].clone()),
             Instr::NotBool => {
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::Bool(!x))
@@ -102,6 +132,11 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::Int(x - y))
             },
+            Instr::MulInt => {
+                let y = stack.pop().unwrap().int();
+                let x = stack.pop().unwrap().int();
+                stack.push(Value::Int(x * y))
+            },
             Instr::EqInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
@@ -111,6 +146,26 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let y = stack.pop().unwrap().bool();
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::Bool(x == y))
+            },
+            Instr::LessInt => {
+                let y = stack.pop().unwrap().int();
+                let x = stack.pop().unwrap().int();
+                stack.push(Value::Bool(x < y))
+            },
+            Instr::MoreInt => {
+                let y = stack.pop().unwrap().int();
+                let x = stack.pop().unwrap().int();
+                stack.push(Value::Bool(x > y))
+            },
+            Instr::LessEqInt => {
+                let y = stack.pop().unwrap().int();
+                let x = stack.pop().unwrap().int();
+                stack.push(Value::Bool(x <= y))
+            },
+            Instr::MoreEqInt => {
+                let y = stack.pop().unwrap().int();
+                let x = stack.pop().unwrap().int();
+                stack.push(Value::Bool(x >= y))
             },
             Instr::AndBool => {
                 let y = stack.pop().unwrap().bool();

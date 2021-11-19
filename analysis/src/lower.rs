@@ -3,7 +3,7 @@ use super::*;
 // TODO: use `ToHir`?
 fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
     match litr {
-        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Int /*Nat*/),
+        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Int /*Nat*/), // TODO: Numeric subtyping
         ast::Literal::Num(_) => TyInfo::Prim(ty::Prim::Num),
         ast::Literal::Bool(_) => TyInfo::Prim(ty::Prim::Bool),
         ast::Literal::Char(_) => TyInfo::Prim(ty::Prim::Char),
@@ -13,7 +13,7 @@ fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
 
 pub enum Scope<'a> {
     Empty,
-    Recursive(SrcNode<Ident>, TyVar),
+    Recursive(SrcNode<Ident>, TyVar, DefId, Vec<(Span, TyVar)>),
     Binding(&'a Scope<'a>, SrcNode<Ident>, TyVar),
     Many(&'a Scope<'a>, Vec<(SrcNode<Ident>, TyVar)>),
 }
@@ -29,18 +29,19 @@ impl<'a> Scope<'a> {
         Scope::Many(self, many)
     }
 
-    fn find(&self, infer: &mut Infer, span: Span, name: &Ident) -> Option<TyVar> {
+    // bool = is_local
+    fn find(&self, infer: &mut Infer, span: Span, name: &Ident) -> Option<(TyVar, Option<(DefId, Vec<(Span, TyVar)>)>)> {
         match self {
             Self::Empty => None,
-            Self::Recursive(def, ty) => if &**def == name {
-                Some(infer.try_reinstantiate(span, *ty))
+            Self::Recursive(def, ty, def_id, tys) => if &**def == name {
+                Some((infer.try_reinstantiate(span, *ty), Some((*def_id, tys.clone()))))
             } else {
                 None
             },
-            Self::Binding(_, local, ty) if &**local == name => Some(*ty),
+            Self::Binding(_, local, ty) if &**local == name => Some((*ty, None)),
             Self::Binding(parent, _, _) => parent.find(infer, span, name),
             Self::Many(parent, locals) => if let Some((_, ty)) = locals.iter().find(|(local, _)| &**local == name) {
-                Some(*ty)
+                Some((*ty, None))
             } else {
                 parent.find(infer, span, name)
             },
@@ -72,7 +73,7 @@ impl ToHir for ast::Type {
                 .collect()),
             ast::Type::Func(i, o) => TyInfo::Func(i.to_hir(infer, scope).meta().1, o.to_hir(infer, scope).meta().1),
             ast::Type::Data(name, params) => match (name.as_str(), params.len()) {
-                ("Nat", 0) => TyInfo::Prim(Prim::Int /*Nat*/),
+                ("Nat", 0) => TyInfo::Prim(Prim::Nat),
                 ("Int", 0) => TyInfo::Prim(Prim::Int),
                 ("Num", 0) => TyInfo::Prim(Prim::Num),
                 ("Bool", 0) => TyInfo::Prim(Prim::Bool),
@@ -234,10 +235,14 @@ impl ToHir for ast::Expr {
         let (info, expr) = match &**self {
             ast::Expr::Error => (TyInfo::Error, hir::Expr::Error),
             ast::Expr::Literal(litr) => (litr_ty_info(litr, infer, self.span()), hir::Expr::Literal(*litr)),
-            ast::Expr::Local(local) => if let Some(ty) = scope.find(infer, self.span(), &local) {
-                (TyInfo::Ref(ty), hir::Expr::Local(*local))
-            } else if let Some(def) = infer.ctx().defs.lookup(*local) {
-                let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def).gen_scope);
+            ast::Expr::Local(local) => if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
+                if let Some((def_id, gens)) = rec {
+                    (TyInfo::Ref(ty), hir::Expr::Global(def_id, gens))
+                } else {
+                    (TyInfo::Ref(ty), hir::Expr::Local(*local))
+                }
+            } else if let Some(def_id) = infer.ctx().defs.lookup(*local) {
+                let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
                 let generics_count = scope.len();
                 let generic_tys = (0..generics_count)
                     .map(|i| TyInfo::Unknown(Some(scope.get(i).span())))
@@ -247,7 +252,7 @@ impl ToHir for ast::Expr {
                     .collect::<Vec<_>>();
 
                 // Recreate type in context
-                let def = infer.ctx().defs.get(def);
+                let def = infer.ctx().defs.get(def_id);
                 let ty = if let Some(body) = def.body.as_ref() {
                     let def_gen_scope = def.gen_scope;
                     let def_ty = body.meta().1;
@@ -257,7 +262,7 @@ impl ToHir for ast::Expr {
                     infer.unknown(self.span())
                 };
 
-                (TyInfo::Ref(ty), hir::Expr::Global(*local, generic_tys))
+                (TyInfo::Ref(ty), hir::Expr::Global(def_id, generic_tys))
             } else {
                 infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
                 (TyInfo::Error, hir::Expr::Error)
@@ -429,9 +434,8 @@ impl ToHir for ast::Expr {
                             .fold(
                                 InferNode::new(hir::Expr::Match(pred, arms), (self.span(), output_ty)),
                                 |body, (pseudo, pseudo_ty)| {
-                                    let binding = hir::Binding::wildcard(pseudo);
                                     let f = infer.insert(self.span(), TyInfo::Func(pseudo_ty, body.meta().1));
-                                    InferNode::new(hir::Expr::Func(InferNode::new(binding, pred_meta), body), (self.span(), f))
+                                    InferNode::new(hir::Expr::Func(InferNode::new(*pseudo, pred_meta), body), (self.span(), f))
                                 },
                             );
 

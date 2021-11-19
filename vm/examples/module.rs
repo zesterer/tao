@@ -27,11 +27,15 @@ fn main() {
                 err.print(&ctx, sources([(src_id, &src)]));
             }
         } else {
-            let (ctx, errors) = Context::from_hir(&ctx);
+            let (mut ctx, errors) = Context::from_hir(&ctx);
 
             for err in errors {
                 err.print(&ctx, sources([(src_id, &src)]));
             }
+
+            // ctx.optimize();
+
+            println!("MIR: {:?}", ctx.procs.get(ctx.entry.unwrap()).unwrap().body);
 
             let prog = Program::from_mir(&ctx);
 

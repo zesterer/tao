@@ -21,13 +21,14 @@ pub use crate::{
     reify::Reify,
     ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta},
 };
+pub use tao_syntax::ast::Ident;
 
 use tao_syntax::{
     Node,
     Span,
     SrcNode,
     SrcId,
-    ast::{self, Ident},
+    ast,
 };
 use hashbrown::{HashMap, HashSet};
 use std::fmt;
