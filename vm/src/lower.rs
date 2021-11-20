@@ -31,9 +31,7 @@ impl Program {
             mir::Pat::Tuple(fields) => {
                 for (i, field) in fields.iter().enumerate() {
                     if field.binds() {
-                        if i + 1 < fields.len() {
-                            self.push(Instr::Dup);
-                        }
+                        self.push(Instr::Dup);
                         self.push(Instr::IndexList(i));
 
                         self.compile_extractor(mir, field);

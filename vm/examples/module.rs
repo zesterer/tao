@@ -33,7 +33,7 @@ fn main() {
                 err.print(&ctx, sources([(src_id, &src)]));
             }
 
-            // ctx.optimize();
+            ctx.optimize();
 
             println!("MIR: {:?}", ctx.procs.get(ctx.entry.unwrap()).unwrap().body);
 
