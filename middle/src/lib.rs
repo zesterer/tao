@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types)]
+#![feature(arbitrary_self_types, cell_update)]
 
 pub mod error;
 pub mod proc;

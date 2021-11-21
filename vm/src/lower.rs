@@ -14,6 +14,10 @@ fn const_to_value(constant: &mir::Const) -> Value {
             .iter()
             .map(const_to_value)
             .collect()),
+        mir::Const::List(items) => Value::List(items
+            .iter()
+            .map(const_to_value)
+            .collect()),
     }
 }
 
@@ -28,13 +32,29 @@ impl Program {
         match &binding.pat {
             mir::Pat::Wildcard => {},
             mir::Pat::Const(_) => {},
-            mir::Pat::Tuple(fields) => {
-                for (i, field) in fields.iter().enumerate() {
-                    if field.binds() {
+            mir::Pat::Tuple(items) | mir::Pat::ListExact(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    if item.binds() {
                         self.push(Instr::Dup);
                         self.push(Instr::IndexList(i));
 
-                        self.compile_extractor(mir, field);
+                        self.compile_extractor(mir, item);
+                    }
+                }
+            },
+            mir::Pat::ListFront(items, tail) => {
+                if let Some(tail) = tail.as_ref() {
+                    self.push(Instr::Dup);
+                    self.push(Instr::SkipList(items.len()));
+                    self.compile_extractor(mir, tail);
+                }
+
+                for (i, item) in items.iter().enumerate() {
+                    if item.binds() {
+                        self.push(Instr::Dup);
+                        self.push(Instr::IndexList(i));
+
+                        self.compile_extractor(mir, item);
                     }
                 }
             },
@@ -43,8 +63,35 @@ impl Program {
         self.push(Instr::Pop(1));
     }
 
+    pub fn compile_item_matcher(&mut self, items: &[MirNode<mir::Binding>], fail_fixup: impl IntoIterator<Item = Addr>) {
+        let mut fixups = fail_fixup.into_iter().collect::<Vec<_>>();
+
+        for (i, item) in items.iter().enumerate() {
+
+            self.push(Instr::Dup);
+            self.push(Instr::IndexList(i));
+            self.compile_matcher(item);
+
+            self.push(Instr::IfNot);
+            fixups.push(self.push(Instr::Jump(0))); // Fixed by #2
+        }
+
+        self.push(Instr::Pop(1));
+        self.push(Instr::bool(true));
+        let success = self.push(Instr::Jump(0)); // Fixed by #3
+
+        for fixup in fixups {
+            self.fixup(fixup, self.next_addr(), Instr::Jump); // Fixes #2
+        }
+
+        self.push(Instr::Pop(1));
+        self.push(Instr::bool(false));
+
+        self.fixup(success, self.next_addr(), Instr::Jump); // Fixes #3
+    }
+
     // [.., T] -> [.., Bool]
-    pub fn compile_matcher(&mut self, mir: &MirContext, binding: &MirNode<mir::Binding>, stack: &mut Vec<Ident>) {
+    pub fn compile_matcher(&mut self, binding: &MirNode<mir::Binding>) {
         match &binding.pat {
             mir::Pat::Wildcard => {
                 self.push(Instr::Pop(1));
@@ -65,29 +112,40 @@ impl Program {
                     });
                 },
             },
-            mir::Pat::Tuple(fields) => {
-                let mut fixups = Vec::new();
-                for (i, field) in fields.iter().enumerate() {
+            mir::Pat::Tuple(items) => {
+                self.compile_item_matcher(items, None);
+            },
+            mir::Pat::ListExact(items) => if items.len() == 0 {
+                self.push(Instr::LenList);
+                self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                self.push(Instr::EqInt);
+            } else {
+                self.push(Instr::Dup);
+                self.push(Instr::LenList);
+                self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                self.push(Instr::EqInt);
+                self.push(Instr::IfNot);
+                let fail_fixup = Some(self.push(Instr::Jump(0))); // Fixed by #2
 
+                self.compile_item_matcher(items, fail_fixup);
+            },
+            mir::Pat::ListFront(items, tail) => {
+                self.push(Instr::Dup);
+                self.push(Instr::LenList);
+                self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                self.push(Instr::MoreEqInt);
+                self.push(Instr::IfNot);
+                let mut fail_fixup = vec![self.push(Instr::Jump(0))]; // Fixed by #2
+
+                if let Some(tail) = tail.as_ref() {
                     self.push(Instr::Dup);
-                    self.push(Instr::IndexList(i));
-                    self.compile_matcher(mir, field, stack);
-
+                    self.push(Instr::SkipList(items.len()));
+                    self.compile_item_matcher(items, None);
                     self.push(Instr::IfNot);
-                    fixups.push(self.push(Instr::Jump(0))); // Fixed by #2
+                    fail_fixup.push(self.push(Instr::Jump(0))); // Fixed by #2
                 }
 
-                self.push(Instr::Pop(1));
-                self.push(Instr::bool(true));
-                let success = self.push(Instr::Jump(0)); // Fixed by #3
-
-                for fixup in fixups {
-                    self.fixup(fixup, self.next_addr(), Instr::Jump); // Fixes #2
-                }
-                self.push(Instr::Pop(1));
-                self.push(Instr::bool(false));
-
-                self.fixup(success, self.next_addr(), Instr::Jump); // Fixes #3
+                self.compile_item_matcher(items, fail_fixup);
             },
         }
     }
@@ -112,7 +170,7 @@ impl Program {
                     .0;
                 self.push(Instr::GetLocal(idx));
             },
-            mir::Expr::Global(global) => { proc_fixups.push((*global, self.push(Instr::Call(0)))); }, // Fixed by #4
+            mir::Expr::Global(global, _) => { proc_fixups.push((*global, self.push(Instr::Call(0)))); }, // Fixed by #4
             mir::Expr::Intrinsic(intrinsic, args) => {
                 for arg in args {
                     self.compile_expr(mir, arg, stack, proc_fixups);
@@ -142,6 +200,12 @@ impl Program {
                 }
                 self.push(Instr::MakeList(fields.len()));
             },
+            mir::Expr::List(items) => {
+                for item in items {
+                    self.compile_expr(mir, item, stack, proc_fixups);
+                }
+                self.push(Instr::MakeList(items.len()));
+            },
             mir::Expr::Match(pred, arms) => {
                 self.compile_expr(mir, pred, stack, proc_fixups);
 
@@ -155,7 +219,7 @@ impl Program {
                     // Skip pattern match if pattern is irrefutable or it's the last pattern
                     if binding.is_refutable() && !is_last {
                         self.push(Instr::Dup);
-                        self.compile_matcher(mir, binding, stack);
+                        self.compile_matcher(binding);
 
                         self.push(Instr::IfNot);
                         fail_jumps.push(self.push(Instr::Jump(0)));

@@ -43,6 +43,7 @@ impl Context {
     }
 
     pub fn optimize(&mut self) {
+        opt::prepare(self);
         for _ in 0..10 {
             opt::FlattenSingleField::default().apply(self);
             opt::ConstFold::default().apply(self);

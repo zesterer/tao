@@ -128,7 +128,14 @@ impl Context {
 
             let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
 
-            let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, Vec::new()));
+            let gen_tys = (0..infer.ctx().tys.get_gen_scope(gen_scope).len())
+                .map(|i| {
+                    let span = infer.ctx().tys.get_gen_scope(gen_scope).get(i).span();
+                    (span, infer.insert(span, TyInfo::Gen(i, gen_scope, span)))
+                })
+                .collect();
+
+            let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
             infer.make_eq(ty_hint.meta().1, body.meta().1);
 
             let (mut checked, mut errs) = infer.into_checked();

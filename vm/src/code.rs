@@ -12,6 +12,8 @@ pub enum Instr {
     ApplyFunc,
     MakeList(usize), // T * N => [T]
     IndexList(usize), // Nth field of list/tuple
+    SkipList(usize), // (N..) fields of list/tuple
+    LenList,
     Jump(isize),
     IfNot,
 
@@ -104,6 +106,8 @@ impl Program {
                 Instr::ApplyFunc => 0, // Turns input stack item into output stack item
                 Instr::MakeList(n) => -(n as isize) + 1,
                 Instr::IndexList(_) => 0,
+                Instr::SkipList(_) => 0,
+                Instr::LenList => 0,
                 Instr::Dup => 1,
                 Instr::Jump(_) => 0,
                 Instr::IfNot => -1,
@@ -136,6 +140,8 @@ impl Program {
                 Instr::ApplyFunc => format!("func.apply"),
                 Instr::MakeList(n) => format!("list.make {}", n),
                 Instr::IndexList(i) => format!("list.index #{}", i),
+                Instr::SkipList(i) => format!("list.skip #{}", i),
+                Instr::LenList => format!("list.len"),
                 Instr::Dup => format!("dup"),
                 Instr::Jump(x) => format!("jump {:+} (0x{:03X})", x, addr.jump(x).0),
                 Instr::IfNot => format!("if_not"),

@@ -15,7 +15,7 @@ impl Pass for RemoveUnusedBindings {
         ) {
             match expr {
                 Expr::Const(_) => {},
-                Expr::Global(proc_id) => {},
+                Expr::Global(_, _) => {},
                 Expr::Local(local) => if let Some((_, n)) = stack.iter_mut().rev().find(|(name, _)| *name == *local) {
                     // Increment uses
                     *n += 1;
@@ -55,6 +55,17 @@ impl Pass for RemoveUnusedBindings {
                                     Pat::Tuple(fields) => fields
                                         .iter_mut()
                                         .for_each(|field| remove_unused(field, stack)),
+                                    Pat::ListExact(items) => items
+                                        .iter_mut()
+                                        .for_each(|item| remove_unused(item, stack)),
+                                    Pat::ListFront(items, tail) => {
+                                        items
+                                            .iter_mut()
+                                            .for_each(|item| remove_unused(item, stack));
+                                        tail
+                                            .as_mut()
+                                            .map(|tail| remove_unused(tail, stack));
+                                    },
                                 }
                             }
 
@@ -79,7 +90,10 @@ impl Pass for RemoveUnusedBindings {
                 },
                 Expr::Tuple(fields) => fields
                     .iter_mut()
-                    .for_each(|f| visit(mir, f, stack, proc_stack)),
+                    .for_each(|field| visit(mir, field, stack, proc_stack)),
+                Expr::List(items) => items
+                    .iter_mut()
+                    .for_each(|item| visit(mir, item, stack, proc_stack)),
                 Expr::Access(expr, _) => visit(mir, expr, stack, proc_stack),
                 Expr::Func(captures, arg, body) => {
                     let old_stack = stack.len();

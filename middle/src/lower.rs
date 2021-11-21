@@ -3,7 +3,7 @@ use super::*;
 pub trait ToMir: Sized {
     type Output;
 
-    fn to_mir(&self, ctx: &mut Context, hir: &HirContext) -> Self::Output;
+    fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output;
 }
 
 fn prim_to_mir(prim: ty::Prim) -> repr::Prim {
@@ -19,19 +19,20 @@ fn prim_to_mir(prim: ty::Prim) -> repr::Prim {
 impl ToMir for ty::TyId {
     type Output = Repr;
 
-    fn to_mir(&self, ctx: &mut Context, hir: &HirContext) -> Self::Output {
+    fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         match hir.tys.get(*self) {
             ty::Ty::Error => unreachable!("Error types should not exist during MIR compilation"),
             ty::Ty::Prim(prim) => Repr::Prim(prim_to_mir(prim)),
-            ty::Ty::List(ty) => Repr::List(Box::new(ty.to_mir(ctx, hir))),
+            ty::Ty::List(ty) => Repr::List(Box::new(ty.to_mir(ctx, hir, gen_tys))),
             ty::Ty::Tuple(fields) => Repr::Tuple(fields
                 .iter()
-                .map(|field| field.to_mir(ctx, hir))
+                .map(|field| field.to_mir(ctx, hir, gen_tys))
                 .collect()),
             ty::Ty::Func(i, o) => Repr::Func(
-                Box::new(i.to_mir(ctx, hir)),
-                Box::new(o.to_mir(ctx, hir)),
+                Box::new(i.to_mir(ctx, hir, gen_tys)),
+                Box::new(o.to_mir(ctx, hir, gen_tys)),
             ),
+            ty::Ty::Gen(idx, _) => gen_tys[idx].clone(),
             ty => todo!("{:?}", ty),
         }
     }
@@ -40,7 +41,7 @@ impl ToMir for ty::TyId {
 impl ToMir for hir::Literal {
     type Output = Const;
 
-    fn to_mir(&self, ctx: &mut Context, hir: &HirContext) -> Self::Output {
+    fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         match &*self {
             hir::Literal::Nat(x) => mir::Const::Int(*x as i64), // TODO: Use Nat
             hir::Literal::Str(s) => mir::Const::Str(*s),
@@ -53,14 +54,25 @@ impl ToMir for hir::Literal {
 impl ToMir for hir::TyBinding {
     type Output = MirNode<mir::Binding>;
 
-    fn to_mir(&self, ctx: &mut Context, hir: &HirContext) -> Self::Output {
+    fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         let pat = match &*self.pat {
             hir::Pat::Wildcard => mir::Pat::Wildcard,
-            hir::Pat::Literal(litr) => mir::Pat::Const(litr.to_mir(ctx, hir)),
+            hir::Pat::Literal(litr) => mir::Pat::Const(litr.to_mir(ctx, hir, gen_tys)),
             hir::Pat::Tuple(fields) => mir::Pat::Tuple(fields
                 .iter()
-                .map(|field| field.to_mir(ctx, hir))
+                .map(|field| field.to_mir(ctx, hir, gen_tys))
                 .collect()),
+            hir::Pat::ListExact(items) => mir::Pat::ListExact(items
+                .iter()
+                .map(|item| item.to_mir(ctx, hir, gen_tys))
+                .collect()),
+            hir::Pat::ListFront(items, tail) => mir::Pat::ListFront(
+                items
+                    .iter()
+                    .map(|item| item.to_mir(ctx, hir, gen_tys))
+                    .collect(),
+                tail.as_ref().map(|tail| tail.to_mir(ctx, hir, gen_tys)),
+            ),
             pat => todo!("{:?}", pat),
         };
 
@@ -69,23 +81,24 @@ impl ToMir for hir::TyBinding {
             name: self.name.as_ref().map(|n| **n),
         };
 
-        MirNode::new(binding, self.meta().1.to_mir(ctx, hir))
+        MirNode::new(binding, self.meta().1.to_mir(ctx, hir, gen_tys))
     }
 }
 
 impl ToMir for hir::TyExpr {
     type Output = MirNode<mir::Expr>;
 
-    fn to_mir(&self, ctx: &mut Context, hir: &HirContext) -> Self::Output {
+    fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         let expr = match &**self {
-            hir::Expr::Literal(litr) => mir::Expr::Const(litr.to_mir(ctx, hir)),
+            hir::Expr::Literal(litr) => mir::Expr::Const(litr.to_mir(ctx, hir, gen_tys)),
             hir::Expr::Local(local) => mir::Expr::Local(*local),
             hir::Expr::Global(def_id, args) => {
-                let args = args
+                let gen_tys = args
                     .iter()
-                    .map(|(_, ty)| ty.to_mir(ctx, hir))
+                    .map(|(_, ty)| ty.to_mir(ctx, hir, gen_tys))
                     .collect();
-                mir::Expr::Global(lower_def(ctx, hir, *def_id, args))
+                println!("{:?} => {:?}", def_id, gen_tys);
+                mir::Expr::Global(lower_def(ctx, hir, *def_id, gen_tys), Default::default())
             },
             hir::Expr::Unary(op, x) => {
                 use ast::BinaryOp::*;
@@ -94,7 +107,7 @@ impl ToMir for hir::TyExpr {
                     (Not, Prim(Bool)) => mir::Intrinsic::NotBool,
                     op => panic!("Invalid unary op in HIR: {:?}", op),
                 };
-                mir::Expr::Intrinsic(intrinsic, vec![x.to_mir(ctx, hir)])
+                mir::Expr::Intrinsic(intrinsic, vec![x.to_mir(ctx, hir, gen_tys)])
             },
             hir::Expr::Binary(op, x, y) => {
                 use ast::BinaryOp::*;
@@ -116,35 +129,39 @@ impl ToMir for hir::TyExpr {
                     (MoreEq, Prim(Int), Prim(Int)) => mir::Intrinsic::MoreEqInt,
                     op => panic!("Invalid binary op in HIR: {:?}", op),
                 };
-                mir::Expr::Intrinsic(intrinsic, vec![x.to_mir(ctx, hir), y.to_mir(ctx, hir)])
+                mir::Expr::Intrinsic(intrinsic, vec![x.to_mir(ctx, hir, gen_tys), y.to_mir(ctx, hir, gen_tys)])
             },
             hir::Expr::Match(pred, arms) => {
                 let arms = arms
                     .iter()
-                    .map(|(binding, body)| (binding.to_mir(ctx, hir), body.to_mir(ctx, hir)))
+                    .map(|(binding, body)| (binding.to_mir(ctx, hir, gen_tys), body.to_mir(ctx, hir, gen_tys)))
                     .collect();
-                mir::Expr::Match(pred.to_mir(ctx, hir), arms)
+                mir::Expr::Match(pred.to_mir(ctx, hir, gen_tys), arms)
             },
             hir::Expr::Tuple(fields) => mir::Expr::Tuple(fields
                 .iter()
-                .map(|field| field.to_mir(ctx, hir))
+                .map(|field| field.to_mir(ctx, hir, gen_tys))
+                .collect()),
+            hir::Expr::List(items) => mir::Expr::List(items
+                .iter()
+                .map(|item| item.to_mir(ctx, hir, gen_tys))
                 .collect()),
             hir::Expr::Func(arg, body) => {
-                let body = body.to_mir(ctx, hir);
+                let body = body.to_mir(ctx, hir, gen_tys);
                 mir::Expr::Func(body.required_locals(Some(**arg)), **arg, body)
             },
-            hir::Expr::Apply(f, arg) => mir::Expr::Apply(f.to_mir(ctx, hir), arg.to_mir(ctx, hir)),
+            hir::Expr::Apply(f, arg) => mir::Expr::Apply(f.to_mir(ctx, hir, gen_tys), arg.to_mir(ctx, hir, gen_tys)),
             expr => todo!("{:?}", expr),
         };
 
-        MirNode::new(expr, self.meta().1.to_mir(ctx, hir))
+        MirNode::new(expr, self.meta().1.to_mir(ctx, hir, gen_tys))
     }
 }
 
-pub fn lower_def(ctx: &mut Context, hir: &HirContext, id: DefId, gen: Vec<Repr>) -> ProcId {
+pub fn lower_def(ctx: &mut Context, hir: &HirContext, id: DefId, gen_tys: Vec<Repr>) -> ProcId {
     let def = hir.defs.get(id);
 
-    let id = ctx.procs.id_of(id, gen);
+    let id = ctx.procs.id_of(id, gen_tys.clone());
 
     // Instantiate proc if not already done
     if !ctx.procs.is_declared(id) {
@@ -154,7 +171,7 @@ pub fn lower_def(ctx: &mut Context, hir: &HirContext, id: DefId, gen: Vec<Repr>)
                 .body
                 .as_ref()
                 .unwrap()
-                .to_mir(ctx, hir),
+                .to_mir(ctx, hir, &gen_tys),
         };
         ctx.procs.define(id, proc);
     }

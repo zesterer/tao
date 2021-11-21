@@ -105,6 +105,14 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let mut x = stack.pop().unwrap().list();
                 stack.push(x.remove(i));
             },
+            Instr::SkipList(i) => {
+                let mut x = stack.pop().unwrap().list();
+                stack.push(Value::List(x.split_off(i)));
+            },
+            Instr::LenList => {
+                let len = stack.pop().unwrap().list().len();
+                stack.push(Value::Int(len as i64));
+            },
             Instr::Dup => stack.push(stack.last().unwrap().clone()),
             Instr::Jump(n) => {
                 next_addr = addr.jump(n);

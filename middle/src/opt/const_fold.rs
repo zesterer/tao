@@ -15,11 +15,10 @@ impl Pass for ConstFold {
         ) {
             match expr {
                 Expr::Const(_) => {}, // Already constant!
-                Expr::Global(proc_id) => if !proc_stack.contains(&proc_id) {
+                Expr::Global(proc_id, flags) => if flags.get().can_inline {
                     proc_stack.push(*proc_id);
-                    // TODO: Find a way to stop recursive inlining
-                    // *expr = mir.procs.get(*proc_id).unwrap().body.inner().clone();
-                    // visit(mir, expr, &mut Vec::new(), proc_stack);
+                    *expr = mir.procs.get(*proc_id).unwrap().body.inner().clone();
+                    visit(mir, expr, &mut Vec::new(), proc_stack);
                     proc_stack.pop();
                 },
                 Expr::Local(local) => if let Some((_, constant)) = stack.iter().rev().find(|(name, _)| *name == *local) {
@@ -82,6 +81,23 @@ impl Pass for ConstFold {
                             } else {
                                 unreachable!();
                             },
+                            Pat::ListExact(items) => if let Const::List(const_items) = constant {
+                                const_items.len() == items.len() && items
+                                    .iter()
+                                    .zip(const_items.iter())
+                                    .all(|(a, b)| matches(a, b))
+                            } else {
+                                unreachable!();
+                            },
+                            Pat::ListFront(items, tail) => if let Const::List(const_items) = constant {
+                                const_items.len() >= items.len() && items
+                                    .iter()
+                                    .zip(const_items.iter())
+                                    .all(|(a, b)| matches(a, b))
+                                && tail.as_ref().map_or(true, |tail| matches(tail, &Const::List(const_items[items.len()..].to_vec())))
+                            } else {
+                                unreachable!();
+                            },
                         }
                     }
 
@@ -111,7 +127,7 @@ impl Pass for ConstFold {
                 Expr::Tuple(fields) => {
                     fields
                         .iter_mut()
-                        .for_each(|f| visit(mir, f, stack, proc_stack));
+                        .for_each(|field| visit(mir, field, stack, proc_stack));
 
                     // If all fields of a tuple construction are constant, turn the tuple into a constant
                     if fields.iter().all(|field| matches!(&**field, Expr::Const(_))) {
@@ -124,8 +140,29 @@ impl Pass for ConstFold {
                             .collect()))
                     }
                 },
-                // TODO: const fold field access
-                Expr::Access(expr, _) => visit(mir, expr, stack, proc_stack),
+                Expr::List(items) => {
+                    items
+                        .iter_mut()
+                        .for_each(|item| visit(mir, item, stack, proc_stack));
+
+                    // If all fields of a tuple construction are constant, turn the tuple into a constant
+                    if items.iter().all(|item| matches!(&**item, Expr::Const(_))) {
+                        *expr = Expr::Const(Const::List(std::mem::take(items)
+                            .into_iter()
+                            .map(|item| match item.into_inner() {
+                                Expr::Const(c) => c,
+                                _ => unreachable!(),
+                            })
+                            .collect()))
+                    }
+                },
+                Expr::Access(tuple, field) => {
+                    visit(mir, tuple, stack, proc_stack);
+
+                    if let Expr::Const(Const::Tuple(fields)) = &mut **tuple {
+                        *expr = Expr::Const(fields.remove(*field));
+                    }
+                },
                 Expr::Func(captures, arg, body) => {
                     stack.push((*arg, None));
                     visit(mir, body, stack, proc_stack);
@@ -170,7 +207,17 @@ impl Binding {
             Pat::Tuple(fields) => fields
                 .iter()
                 .for_each(|field| field.try_extract_inner(None, bindings)),
-            pat => todo!("{:?}", pat),
+            Pat::ListExact(items) => items
+                .iter()
+                .for_each(|item| item.try_extract_inner(None, bindings)),
+            Pat::ListFront(items, tail) => {
+                items
+                    .iter()
+                    .for_each(|item| item.try_extract_inner(None, bindings));
+                tail
+                    .as_ref()
+                    .map(|tail| tail.try_extract_inner(None, bindings));
+            },
         }
     }
 

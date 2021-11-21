@@ -1,4 +1,5 @@
 use super::*;
+use std::cell::Cell;
 
 pub type MirMeta = Repr;
 pub type MirNode<T> = Node<T, MirMeta>;
@@ -15,6 +16,7 @@ pub enum Const {
     Bool(bool),
     Str(Intern<String>),
     Tuple(Vec<Self>),
+    List(Vec<Self>),
 }
 
 impl Const {
@@ -48,6 +50,8 @@ pub enum Pat {
     Wildcard,
     Const(Const), // Expression is evaluated and then compared
     Tuple(Vec<MirNode<Binding>>),
+    ListExact(Vec<MirNode<Binding>>),
+    ListFront(Vec<MirNode<Binding>>, Option<MirNode<Binding>>),
 }
 
 #[derive(Clone, Debug)]
@@ -60,10 +64,15 @@ impl Binding {
     pub fn is_refutable(&self) -> bool {
         match &self.pat {
             Pat::Wildcard => false,
-            Pat::Const(_) => true,
+            Pat::Const(c) => match c {
+                Const::Tuple(fields) if fields.is_empty() => false,
+                _ => true,
+            },
             Pat::Tuple(fields) => fields
                 .iter()
                 .any(|field| field.is_refutable()),
+            Pat::ListExact(_) => true,
+            Pat::ListFront(items, tail) => items.len() > 0 || tail.as_ref().map_or(false, |tail| tail.is_refutable()),
         }
     }
 
@@ -75,6 +84,15 @@ impl Binding {
             Pat::Tuple(fields) => fields
                 .iter()
                 .for_each(|field| field.visit_bindings(bind)),
+            Pat::ListExact(items) => items
+                .iter()
+                .for_each(|item| item.visit_bindings(bind)),
+            Pat::ListFront(items, tail) => {
+                items
+                    .iter()
+                    .for_each(|item| item.visit_bindings(bind));
+                tail.as_ref().map(|tail| tail.visit_bindings(bind));
+            },
         }
     }
 
@@ -91,11 +109,26 @@ impl Binding {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct GlobalFlags {
+    /// Determines whether a global reference may be inlined. By default this is `true`, but inlining is not permitted
+    /// for recursive definitions.
+    pub can_inline: bool,
+}
+
+impl Default for GlobalFlags {
+    fn default() -> Self {
+        Self {
+            can_inline: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Expr {
     Const(Const),
     Local(Ident),
-    Global(ProcId),
+    Global(ProcId, Cell<GlobalFlags>),
 
     Intrinsic(Intrinsic, Vec<MirNode<Self>>),
     Match(MirNode<Self>, Vec<(MirNode<Binding>, MirNode<Self>)>),
@@ -105,6 +138,7 @@ pub enum Expr {
 
     Tuple(Vec<MirNode<Self>>),
     Access(MirNode<Self>, usize),
+    List(Vec<MirNode<Self>>),
 
     Variant(usize, MirNode<Self>),
 }
@@ -118,7 +152,7 @@ impl Expr {
                     required.push(*local);
                 }
             },
-            Expr::Global(_) => {},
+            Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| arg.required_locals_inner(stack, required)),
@@ -155,6 +189,9 @@ impl Expr {
             Expr::Tuple(fields) => fields
                 .iter()
                 .for_each(|field| field.required_locals_inner(stack, required)),
+            Expr::List(items) => items
+                .iter()
+                .for_each(|item| item.required_locals_inner(stack, required)),
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Variant(_, inner) => inner.required_locals_inner(stack, required),
         }

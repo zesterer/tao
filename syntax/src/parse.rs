@@ -253,7 +253,11 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
             // Ident
             .or(term_ident_parser().map_with_span(|name, span| (
                 SrcNode::new(ast::Pat::Wildcard, span),
-                Some(SrcNode::new(name, span)),
+                if *name == "_" {
+                    None
+                } else {
+                    Some(SrcNode::new(name, span))
+                },
             )))
             // TODO: Resolve ambiguity
             // .then(ty_hint_parser())

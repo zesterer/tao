@@ -6,9 +6,14 @@ def factorial = fn
 	| 0 => 1
 	| x => x * factorial(x - 1)
 
+def len A = fn
+	| []: [A] => 0
+	| [_ .. tail] => 1 + tail:len
+
+# def main = fibonacci(35)
+# def main = factorial(10)
 $[main]
-#def main = fibonacci(35)
-def main = factorial(10)
+def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:len
 
 def test =
 	let five = 5 in
