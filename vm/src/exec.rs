@@ -8,14 +8,16 @@ pub enum Value {
     Bool(bool),
     List(Vec<Self>),
     Func(Addr, Vec<Self>),
+    Sum(usize, Box<Self>),
 }
 
 impl Value {
-    pub fn int(self) -> i64 { if let Value::Int(x) = self { x } else { panic!() } }
-    pub fn char(self) -> char { if let Value::Char(c) = self { c } else { panic!() } }
-    pub fn bool(self) -> bool { if let Value::Bool(x) = self { x } else { panic!() } }
-    pub fn list(self) -> Vec<Self> { if let Value::List(xs) = self { xs } else { panic!() } }
-    pub fn func(self) -> (Addr, Vec<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!() } }
+    pub fn int(self) -> i64 { if let Value::Int(x) = self { x } else { panic!("{}", self) } }
+    pub fn char(self) -> char { if let Value::Char(c) = self { c } else { panic!("{}", self) } }
+    pub fn bool(self) -> bool { if let Value::Bool(x) = self { x } else { panic!("{}", self) } }
+    pub fn list(self) -> Vec<Self> { if let Value::List(xs) = self { xs } else { panic!("{}", self) } }
+    pub fn func(self) -> (Addr, Vec<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
+    pub fn sum(self) -> (usize, Box<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
 }
 
 impl fmt::Display for Value {
@@ -40,6 +42,7 @@ impl fmt::Display for Value {
                 f_addr.0,
                 captures.len(),
             ),
+            Value::Sum(variant, inner) => write!(f, "#{} {}", variant, inner),
         }
     }
 }
@@ -112,6 +115,25 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::LenList => {
                 let len = stack.pop().unwrap().list().len();
                 stack.push(Value::Int(len as i64));
+            },
+            Instr::JoinList => {
+                let mut y = stack.pop().unwrap().list();
+                let mut x = stack.pop().unwrap().list();
+                x.append(&mut y);
+                stack.push(Value::List(x));
+            },
+            Instr::MakeSum(variant) => {
+                let x = stack.pop().unwrap();
+                stack.push(Value::Sum(variant, Box::new(x)));
+            },
+            Instr::IndexSum(variant) => {
+                let (v, inner) = stack.pop().unwrap().sum();
+                debug_assert_eq!(variant, v);
+                stack.push(*inner);
+            },
+            Instr::VariantSum => {
+                let (variant, _) = stack.pop().unwrap().sum();
+                stack.push(Value::Int(variant as i64));
             },
             Instr::Dup => stack.push(stack.last().unwrap().clone()),
             Instr::Jump(n) => {

@@ -32,7 +32,9 @@ impl Context {
             .iter_mut()
             .for_each(|(_, proc)| proc.body.visit_inner(order, repr, binding, expr));
 
-        // TODO: Visit data types too
+        self.reprs
+            .iter_mut()
+            .for_each(|r| r.visit_inner(order, repr, binding, expr));
     }
     pub fn visit(
         &mut self,
@@ -70,6 +72,9 @@ impl Repr {
             Repr::Tuple(fields) => fields
                 .iter_mut()
                 .for_each(|field| field.visit_inner(order, repr, binding, expr)),
+            Repr::Sum(variants) => variants
+                .iter_mut()
+                .for_each(|variant| variant.visit_inner(order, repr, binding, expr)),
             Repr::Data(_, params) => params
                 .iter_mut()
                 .for_each(|param| param.visit_inner(order, repr, binding, expr)),
@@ -113,6 +118,7 @@ impl Binding {
                     .for_each(|item| item.visit_inner(order, repr, binding, expr));
                 tail.as_mut().map(|tail| tail.visit_inner(order, repr, binding, expr));
             },
+            mir::Pat::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
@@ -149,6 +155,7 @@ impl Expr {
             },
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
+            Expr::AccessVariant(inner, _) => f(inner),
         }
     }
 
@@ -179,6 +186,7 @@ impl Expr {
             },
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
+            Expr::AccessVariant(inner, _) => f(inner),
         }
     }
 
@@ -240,6 +248,7 @@ impl Expr {
             },
             Expr::Access(record, _) => record.visit_inner(order, repr, binding, expr),
             Expr::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
+            Expr::AccessVariant(inner, _) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {

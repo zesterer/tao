@@ -10,10 +10,62 @@ def len A = fn
 	| []: [A] => 0
 	| [_ .. tail] => 1 + tail:len
 
+def sum = fn
+	| []: [Int] => 0
+	| [x .. tail] => x + tail:sum
+
+def append A = fn x: A, xs: [A] => xs ++ [x]
+
+def map A, B : (A -> B) -> [A] -> [B] = fn
+	| _, [] => []
+	| f, [x .. tail] => [x:f] ++ tail:map(f)
+
+data Result A, E =
+	| Ok A
+	| Err E
+
+def none A : Result A () = Err ()
+
+data InvalidIndex = ()
+
+data List A =
+	| Nil
+	| Item (A, List A)
+
+def nth A = fn
+	| 0, Item (x, _): List A => Ok x
+	| x, Item (_, tail) => tail:nth(x - 1)
+	| x, Nil => none
+
+data Add T = {
+	add: T -> T -> T,
+}
+
+def add_int = Add {
+	add: fn x: Int, y => x + y,
+}
+
+data Zero T = {
+	zero: T,
+}
+
+def zero_int = Zero {
+	zero: 0,
+}
+
+def sum2 A = fn
+	| zero: Zero A, add: Add A, [] => zero.zero
+	| zero, add, [x .. tail] => add.add(x, tail:sum2(zero, add))
+
+$[main]
+def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:sum2(zero_int, add_int)
+
+#def main = add_int.add(4, 5)
+
 # def main = fibonacci(35)
 # def main = factorial(10)
-$[main]
-def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:len
+# def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:sum
+# def main = [1, 2, 3, 4]:map(fn x => x * x)
 
 def test =
 	let five = 5 in

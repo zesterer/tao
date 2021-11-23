@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 
 #[derive(Clone, Debug)]
 pub enum Instr {
@@ -10,10 +11,17 @@ pub enum Instr {
     Ret,
     MakeFunc(isize, usize), // Make a function using the relative offset and by capturing the last N items on the stack
     ApplyFunc,
+
     MakeList(usize), // T * N => [T]
     IndexList(usize), // Nth field of list/tuple
     SkipList(usize), // (N..) fields of list/tuple
     LenList,
+    JoinList,
+
+    MakeSum(usize),
+    IndexSum(usize),
+    VariantSum,
+
     Jump(isize),
     IfNot,
 
@@ -86,11 +94,11 @@ impl Program {
         self.instrs[addr.0] = make_instr(addr.jump_to(tgt));
     }
 
-    pub fn display(&self) {
+    pub fn write(&self, mut writer: impl Write) {
         let mut debug = self.debug.iter().peekable();
         for addr in (0..self.instrs.len()).map(Addr) {
             while debug.peek().map_or(false, |(a, _)| *a == addr) {
-                println!(" ...  | <--------- {}", debug.next().unwrap().1);
+                writeln!(writer, " ...  | <--------- {}", debug.next().unwrap().1).unwrap();
             }
 
             let instr = self.instr(addr);
@@ -108,6 +116,10 @@ impl Program {
                 Instr::IndexList(_) => 0,
                 Instr::SkipList(_) => 0,
                 Instr::LenList => 0,
+                Instr::JoinList => -1,
+                Instr::MakeSum(_) => 0,
+                Instr::IndexSum(_) => 0,
+                Instr::VariantSum => 0,
                 Instr::Dup => 1,
                 Instr::Jump(_) => 0,
                 Instr::IfNot => -1,
@@ -142,6 +154,10 @@ impl Program {
                 Instr::IndexList(i) => format!("list.index #{}", i),
                 Instr::SkipList(i) => format!("list.skip #{}", i),
                 Instr::LenList => format!("list.len"),
+                Instr::JoinList => format!("list.join"),
+                Instr::MakeSum(i) => format!("sum.make #{}", i),
+                Instr::IndexSum(i) => format!("sum.index #{}", i),
+                Instr::VariantSum => format!("sum.variant"),
                 Instr::Dup => format!("dup"),
                 Instr::Jump(x) => format!("jump {:+} (0x{:03X})", x, addr.jump(x).0),
                 Instr::IfNot => format!("if_not"),
@@ -161,9 +177,9 @@ impl Program {
                 Instr::AndBool => format!("bool.and"),
             };
 
-            println!("0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display);
+            writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();
         }
 
-        println!("{} instructions in total.", self.instrs.len());
+        writeln!(writer, "{} instructions in total.", self.instrs.len()).unwrap();
     }
 }

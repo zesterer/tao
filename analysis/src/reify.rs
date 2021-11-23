@@ -35,7 +35,7 @@ impl Reify for hir::Binding<InferMeta> {
                     .into_iter()
                     .map(|item| item.reify(infer))
                     .collect(), tail.map(|tail| tail.reify(infer))),
-                hir::Pat::Decons(data, inner) => hir::Pat::Decons(data, inner.reify(infer)),
+                hir::Pat::Decons(data, variant, inner) => hir::Pat::Decons(data, variant, inner.reify(infer)),
             }),
             name: this.name,
         }, (span, infer.reify(ty)))
@@ -77,7 +77,7 @@ impl Reify for hir::Expr<InferMeta> {
                 .collect()),
             hir::Expr::Func(param, body) => hir::Expr::Func(TyNode::new(*param, (param.meta().0, infer.reify(param.meta().1))), body.reify(infer)),
             hir::Expr::Apply(f, param) => hir::Expr::Apply(f.reify(infer), param.reify(infer)),
-            hir::Expr::Cons(name, a) => hir::Expr::Cons(name, a.reify(infer)),
+            hir::Expr::Cons(name, variant, a) => hir::Expr::Cons(name, variant, a.reify(infer)),
         };
 
         TyNode::new(expr, (span, infer.reify(ty)))

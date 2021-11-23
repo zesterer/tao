@@ -12,7 +12,7 @@ pub enum Pat<M> {
     Record(HashMap<Ident, Node<Binding<M>, M>>),
     ListExact(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<Node<Binding<M>, M>>),
-    Decons(SrcNode<DataId>, Node<Binding<M>, M>),
+    Decons(SrcNode<DataId>, Ident, Node<Binding<M>, M>),
 }
 
 #[derive(Debug)]
@@ -61,7 +61,7 @@ impl Binding<InferMeta> {
                     .for_each(|item| item.get_bindings_inner(bindings));
                 if let Some(tail) = tail { tail.get_bindings_inner(bindings); }
             },
-            Pat::Decons(_, inner) => inner.get_bindings_inner(bindings),
+            Pat::Decons(_, _, inner) => inner.get_bindings_inner(bindings),
         }
     }
 }
@@ -85,7 +85,7 @@ pub enum Expr<M> {
     Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
     Func(Node<Ident, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>),
-    Cons(SrcNode<DataId>, Node<Self, M>),
+    Cons(SrcNode<DataId>, Ident, Node<Self, M>),
 }
 
 pub type InferExpr = InferNode<Expr<InferMeta>>;

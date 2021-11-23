@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 
 #[derive(Debug)]
 pub enum Error {
@@ -8,13 +9,13 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn print<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C) {
+    pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, writer: impl Write) {
         use ariadne::{Report, ReportKind, Label, Color, Fmt, Span};
 
         let (msg, spans, notes) = match self {
             Error::NoEntryPoint(root_span) => (
                 format!("No main definition"),
-                vec![(root_span, format!("Does not contrain a definition marked as the main entry point"), Color::Red)],
+                vec![(root_span, format!("Does not contain a definition marked as the main entry point"), Color::Red)],
                 vec![format!("Mark a definition as the main entry point with {}", "$[main]".fg(Color::Blue))],
             ),
             Error::MultipleEntryPoints(a, b) => (
@@ -51,7 +52,7 @@ impl Error {
 
         report
             .finish()
-            .print(cache)
+            .write(cache, writer)
             .unwrap();
     }
 }

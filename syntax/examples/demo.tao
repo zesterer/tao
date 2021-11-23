@@ -1,0 +1,6 @@
+def len = fn
+	| [] : [Int] => 0
+	| [_ .. tail] => 1 + len(tail)
+
+$[main]
+def main = len([1, 2, 3, 4])

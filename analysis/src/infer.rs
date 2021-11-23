@@ -264,6 +264,8 @@ impl<'a> Infer<'a> {
                 },
                 // Field access through a data type
                 TyInfo::Data(data, params) => {
+                    // TODO: Use `self.ctx.follow_field_access(...)` but work out how to instantiate type parameters
+                    // throughout the chain.
                     let data = self.ctx.datas.get_data(data);
                     // Field access on data only works for single-variant, record datatypes
                     if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {

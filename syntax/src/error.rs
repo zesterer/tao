@@ -1,5 +1,8 @@
 use super::*;
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    io::Write,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum ErrorKind {
@@ -25,7 +28,7 @@ impl Error {
         self
     }
 
-    pub fn print<C: ariadne::Cache<SrcId>>(self, cache: C) {
+    pub fn write<C: ariadne::Cache<SrcId>>(self, cache: C, writer: impl Write) {
         use ariadne::{Report, ReportKind, Label, Color, Fmt};
 
         let msg = format!(
@@ -72,7 +75,7 @@ impl Error {
 
         report
             .finish()
-            .print(cache)
+            .write(cache, writer)
             .unwrap();
     }
 }

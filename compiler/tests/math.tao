@@ -1,0 +1,20 @@
+# >>>> INPUT
+
+$[main]
+def main = 5
+
+# >>>> OUTPUT
+
+5
+
+# >>>> INPUT
+
+$[main]
+def main =
+	let five = 5 in
+	let four = 4 in
+	five + four
+
+# >>>> OUTPUT
+
+9

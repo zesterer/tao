@@ -14,31 +14,42 @@ pub enum Repr {
     Prim(Prim),
     List(Box<Repr>),
     Tuple(Vec<Repr>),
+    Sum(Vec<Repr>),
     Data(DataId, Vec<Repr>),
     Func(Box<Repr>, Box<Repr>),
 }
 
 #[derive(Default)]
 pub struct Reprs {
-    // datas: HashMap<(DataId, Vec<Repr>), Repr>,
-    // lut: HashMap<Repr, ReprId>,
+    datas: HashMap<(DataId, Vec<Repr>), Option<Repr>>,
 }
 
 impl Reprs {
-    // pub fn get(&self, repr: ReprId) -> &Repr {
-    //     &self.reprs[repr.0]
-    // }
+    pub fn get(&self, data: DataId, params: Vec<Repr>) -> &Repr {
+        self.datas
+            .get(&(data, params))
+            .unwrap()
+            .as_ref()
+            .expect("Repr declared but not defined")
+    }
 
-    // // Always performs deduplication
-    // pub fn get_or_insert(&mut self, repr: Repr) -> ReprId {
-    //     match self.lut.entry(repr.clone()) {
-    //         Entry::Occupied(repr) => *repr.get(),
-    //         Entry::Vacant(entry) => {
-    //             let id = ReprId(self.reprs.len());
-    //             self.reprs.push(repr);
-    //             entry.insert(id);
-    //             id
-    //         },
-    //     }
-    // }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Repr> {
+        self.datas
+            .values_mut()
+            .filter_map(|r| r.as_mut())
+    }
+
+    pub fn declare(&mut self, data: DataId, args: Vec<Repr>) -> bool {
+        match self.datas.entry((data, args)) {
+            Entry::Occupied(data) => false,
+            Entry::Vacant(data) => {
+                data.insert(None);
+                true
+            }
+        }
+    }
+
+    pub fn define(&mut self, data: DataId, args: Vec<Repr>, repr: Repr) {
+        assert!(self.datas.insert((data, args), Some(repr)).unwrap().is_none());
+    }
 }

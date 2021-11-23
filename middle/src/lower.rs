@@ -33,7 +33,31 @@ impl ToMir for ty::TyId {
                 Box::new(o.to_mir(ctx, hir, gen_tys)),
             ),
             ty::Ty::Gen(idx, _) => gen_tys[idx].clone(),
-            ty => todo!("{:?}", ty),
+            ty::Ty::Data(data, args) => {
+                let args = args
+                    .iter()
+                    .map(|arg| arg.to_mir(ctx, hir, gen_tys))
+                    .collect::<Vec<_>>();
+
+                if ctx.reprs.declare(data, args.clone()) {
+                    let variants = hir.datas
+                        .get_data(data)
+                        .cons
+                        .iter()
+                        .map(|(_, ty)| ty.to_mir(ctx, hir, &args))
+                        .collect();
+                    ctx.reprs.define(data, args.clone(), Repr::Sum(variants));
+                }
+                Repr::Data(data, args)
+            },
+            ty::Ty::Record(fields) => {
+                let mut fields = fields
+                    .iter()
+                    .map(|(name, ty)| (*name, ty.to_mir(ctx, hir, gen_tys)))
+                    .collect::<Vec<_>>();
+                fields.sort_by_key(|(name, _)| name.as_ref());
+                Repr::Tuple(fields.into_iter().map(|(_, ty)| ty).collect())
+            },
         }
     }
 }
@@ -46,6 +70,7 @@ impl ToMir for hir::Literal {
             hir::Literal::Nat(x) => mir::Const::Int(*x as i64), // TODO: Use Nat
             hir::Literal::Str(s) => mir::Const::Str(*s),
             hir::Literal::Bool(x) => mir::Const::Bool(*x),
+            hir::Literal::Char(c) => mir::Const::Char(*c),
             l => todo!("{:?}", l),
         }
     }
@@ -73,6 +98,17 @@ impl ToMir for hir::TyBinding {
                     .collect(),
                 tail.as_ref().map(|tail| tail.to_mir(ctx, hir, gen_tys)),
             ),
+            hir::Pat::Decons(data, variant, inner) => {
+                let variant = hir.datas
+                    .get_data(**data)
+                    .cons
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (name, _))| **name == *variant)
+                    .unwrap()
+                    .0;
+                mir::Pat::Variant(variant, inner.to_mir(ctx, hir, gen_tys))
+            },
             pat => todo!("{:?}", pat),
         };
 
@@ -90,6 +126,7 @@ impl ToMir for hir::TyExpr {
 
     fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         let expr = match &**self {
+            hir::Expr::Error => unreachable!(),
             hir::Expr::Literal(litr) => mir::Expr::Const(litr.to_mir(ctx, hir, gen_tys)),
             hir::Expr::Local(local) => mir::Expr::Local(*local),
             hir::Expr::Global(def_id, args) => {
@@ -97,7 +134,6 @@ impl ToMir for hir::TyExpr {
                     .iter()
                     .map(|(_, ty)| ty.to_mir(ctx, hir, gen_tys))
                     .collect();
-                println!("{:?} => {:?}", def_id, gen_tys);
                 mir::Expr::Global(lower_def(ctx, hir, *def_id, gen_tys), Default::default())
             },
             hir::Expr::Unary(op, x) => {
@@ -111,7 +147,7 @@ impl ToMir for hir::TyExpr {
             },
             hir::Expr::Binary(op, x, y) => {
                 use ast::BinaryOp::*;
-                use ty::{Ty::Prim, Prim::*};
+                use ty::{Ty::{Prim, List}, Prim::*};
                 let intrinsic = match (**op, hir.tys.get(x.meta().1), hir.tys.get(y.meta().1)) {
                     (Add, Prim(Nat), Prim(Nat)) => mir::Intrinsic::AddNat,
                     (Add, Prim(Int), Prim(Int)) => mir::Intrinsic::AddInt,
@@ -127,6 +163,7 @@ impl ToMir for hir::TyExpr {
                     (LessEq, Prim(Int), Prim(Int)) => mir::Intrinsic::LessEqInt,
                     (MoreEq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::MoreEqNat,
                     (MoreEq, Prim(Int), Prim(Int)) => mir::Intrinsic::MoreEqInt,
+                    (Join, List(x), List(y)) => mir::Intrinsic::Join(x.to_mir(ctx, hir, gen_tys)), // Assume x = y
                     op => panic!("Invalid binary op in HIR: {:?}", op),
                 };
                 mir::Expr::Intrinsic(intrinsic, vec![x.to_mir(ctx, hir, gen_tys), y.to_mir(ctx, hir, gen_tys)])
@@ -151,7 +188,51 @@ impl ToMir for hir::TyExpr {
                 mir::Expr::Func(body.required_locals(Some(**arg)), **arg, body)
             },
             hir::Expr::Apply(f, arg) => mir::Expr::Apply(f.to_mir(ctx, hir, gen_tys), arg.to_mir(ctx, hir, gen_tys)),
-            expr => todo!("{:?}", expr),
+            hir::Expr::Cons(data, variant, inner) => {
+                let variant = hir.datas
+                    .get_data(**data)
+                    .cons
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (name, _))| **name == *variant)
+                    .unwrap()
+                    .0;
+                mir::Expr::Variant(variant, inner.to_mir(ctx, hir, gen_tys))
+            },
+            hir::Expr::Access(record, field) => {
+                let (record_ty, _, indirections) = hir.follow_field_access(record.meta().1, **field).unwrap();
+                let field_idx = if let ty::Ty::Record(fields) = hir.tys.get(record_ty) {
+                    let mut fields = fields.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+                    fields.sort_by_key(|name| name.as_ref());
+                    fields.iter().enumerate().find(|(_, name)| **name == **field).unwrap().0
+                } else {
+                    unreachable!();
+                };
+                let mut expr = record.to_mir(ctx, hir, gen_tys);
+                // Perform indirections for field accesses
+                for _ in 0..indirections {
+                    let variant_repr = if let Repr::Data(data, params) = expr.meta() {
+                        if let Repr::Sum(variants) = ctx.reprs.get(*data, params.clone()) {
+                            variants[0].clone()
+                        } else {
+                            unreachable!()
+                        }
+                    } else {
+                        unreachable!()
+                    };
+                    expr = MirNode::new(mir::Expr::AccessVariant(expr, 0), variant_repr);
+                }
+
+                mir::Expr::Access(expr, field_idx)
+            },
+            hir::Expr::Record(fields) => {
+                let mut fields = fields
+                    .iter()
+                    .map(|(name, field)| (**name, field.to_mir(ctx, hir, gen_tys)))
+                    .collect::<Vec<_>>();
+                fields.sort_by_key(|(name, _)| name.as_ref());
+                mir::Expr::Tuple(fields.into_iter().map(|(_, field)| field).collect())
+            },
         };
 
         MirNode::new(expr, self.meta().1.to_mir(ctx, hir, gen_tys))

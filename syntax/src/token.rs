@@ -240,6 +240,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
     token
         .padded_by(comments)
         .repeated()
+        .padded()
         .then_ignore(end())
 }
 

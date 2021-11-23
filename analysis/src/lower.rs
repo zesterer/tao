@@ -206,7 +206,7 @@ impl ToHir for ast::Binding {
                 let inner = inner.to_hir(infer, scope);
                 infer.make_eq(inner.meta().1, inner_ty);
 
-                (TyInfo::Data(data, generic_tys), hir::Pat::Decons(SrcNode::new(data, name.span()), inner))
+                (TyInfo::Data(data, generic_tys), hir::Pat::Decons(SrcNode::new(data, name.span()), **name, inner))
             } else {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression
@@ -482,7 +482,7 @@ impl ToHir for ast::Expr {
                 let inner = inner.to_hir(infer, scope);
                 infer.make_eq(inner.meta().1, inner_ty);
 
-                (TyInfo::Data(data, generic_tys), hir::Expr::Cons(SrcNode::new(data, name.span()), inner))
+                (TyInfo::Data(data, generic_tys), hir::Expr::Cons(SrcNode::new(data, name.span()), **name, inner))
             } else {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression

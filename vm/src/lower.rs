@@ -18,6 +18,7 @@ fn const_to_value(constant: &mir::Const) -> Value {
             .iter()
             .map(const_to_value)
             .collect()),
+        mir::Const::Sum(variant, inner) => Value::Sum(*variant, Box::new(const_to_value(inner))),
     }
 }
 
@@ -44,9 +45,7 @@ impl Program {
             },
             mir::Pat::ListFront(items, tail) => {
                 if let Some(tail) = tail.as_ref() {
-                    self.push(Instr::Dup);
-                    self.push(Instr::SkipList(items.len()));
-                    self.compile_extractor(mir, tail);
+                    self.push(Instr::Dup); // Used for tail later
                 }
 
                 for (i, item) in items.iter().enumerate() {
@@ -57,19 +56,31 @@ impl Program {
                         self.compile_extractor(mir, item);
                     }
                 }
+
+                if let Some(tail) = tail.as_ref() {
+                    self.push(Instr::SkipList(items.len()));
+                    self.compile_extractor(mir, tail);
+                }
+            },
+            mir::Pat::Variant(variant, inner) => {
+                self.push(Instr::Dup);
+                self.push(Instr::IndexSum(*variant));
+                self.compile_extractor(mir, inner);
             },
         }
 
         self.push(Instr::Pop(1));
     }
 
-    pub fn compile_item_matcher(&mut self, items: &[MirNode<mir::Binding>], fail_fixup: impl IntoIterator<Item = Addr>) {
+    // [.., [T]] -> [.., Bool]
+    pub fn compile_item_matcher<'a>(&mut self, items: impl IntoIterator<Item = &'a MirNode<mir::Binding>>, is_list: bool, fail_fixup: impl IntoIterator<Item = Addr>) {
         let mut fixups = fail_fixup.into_iter().collect::<Vec<_>>();
 
-        for (i, item) in items.iter().enumerate() {
-
+        for (i, item) in items.into_iter().enumerate() {
             self.push(Instr::Dup);
-            self.push(Instr::IndexList(i));
+            if is_list {
+                self.push(Instr::IndexList(i));
+            }
             self.compile_matcher(item);
 
             self.push(Instr::IfNot);
@@ -113,7 +124,7 @@ impl Program {
                 },
             },
             mir::Pat::Tuple(items) => {
-                self.compile_item_matcher(items, None);
+                self.compile_item_matcher(items, true, None);
             },
             mir::Pat::ListExact(items) => if items.len() == 0 {
                 self.push(Instr::LenList);
@@ -127,7 +138,7 @@ impl Program {
                 self.push(Instr::IfNot);
                 let fail_fixup = Some(self.push(Instr::Jump(0))); // Fixed by #2
 
-                self.compile_item_matcher(items, fail_fixup);
+                self.compile_item_matcher(items, true, fail_fixup);
             },
             mir::Pat::ListFront(items, tail) => {
                 self.push(Instr::Dup);
@@ -140,12 +151,22 @@ impl Program {
                 if let Some(tail) = tail.as_ref() {
                     self.push(Instr::Dup);
                     self.push(Instr::SkipList(items.len()));
-                    self.compile_item_matcher(items, None);
+                    self.compile_item_matcher(items, true, None);
                     self.push(Instr::IfNot);
                     fail_fixup.push(self.push(Instr::Jump(0))); // Fixed by #2
                 }
 
-                self.compile_item_matcher(items, fail_fixup);
+                self.compile_item_matcher(items, true, fail_fixup);
+            },
+            mir::Pat::Variant(variant, inner) => {
+                self.push(Instr::Dup);
+                self.push(Instr::VariantSum);
+                self.push(Instr::Imm(Value::Int(*variant as i64)));
+                self.push(Instr::EqInt);
+                self.push(Instr::IfNot);
+                let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
+                self.push(Instr::IndexSum(*variant));
+                self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
             },
         }
     }
@@ -176,7 +197,7 @@ impl Program {
                     self.compile_expr(mir, arg, stack, proc_fixups);
                 }
                 self.push(match intrinsic {
-                    mir::Intrinsic::MakeList(n) => Instr::MakeList(*n),
+                    mir::Intrinsic::MakeList(_) => Instr::MakeList(args.len()),
                     mir::Intrinsic::NotBool => Instr::NotBool,
                     mir::Intrinsic::AddNat => Instr::AddInt,
                     mir::Intrinsic::AddInt => Instr::AddInt,
@@ -192,6 +213,7 @@ impl Program {
                     mir::Intrinsic::LessEqInt => Instr::LessEqInt,
                     mir::Intrinsic::MoreEqNat => Instr::MoreEqInt,
                     mir::Intrinsic::MoreEqInt => Instr::MoreEqInt,
+                    mir::Intrinsic::Join(_) => Instr::JoinList,
                 });
             },
             mir::Expr::Tuple(fields) => {
@@ -276,7 +298,7 @@ impl Program {
                         .rev()
                         .enumerate()
                         .find(|(_, name)| **name == capture)
-                        .unwrap()
+                        .unwrap_or_else(|| unreachable!("{}", capture))
                         .0;
                     self.push(Instr::GetLocal(idx));
                 }
@@ -291,7 +313,18 @@ impl Program {
                 self.push(Instr::PushLocal);
                 self.push(Instr::ApplyFunc);
             },
-            x => todo!("{:?}", x),
+            mir::Expr::Variant(variant, inner) => {
+                self.compile_expr(mir, inner, stack, proc_fixups);
+                self.push(Instr::MakeSum(*variant));
+            },
+            mir::Expr::Access(record, field) => {
+                self.compile_expr(mir, record, stack, proc_fixups);
+                self.push(Instr::IndexList(*field));
+            },
+            mir::Expr::AccessVariant(inner, variant) => {
+                self.compile_expr(mir, inner, stack, proc_fixups);
+                self.push(Instr::IndexSum(*variant));
+            },
         }
     }
 

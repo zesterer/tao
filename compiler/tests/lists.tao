@@ -1,0 +1,43 @@
+# >>>> INPUT
+
+$[main]
+def main: [()]= []
+
+# >>>> OUTPUT
+
+[]
+
+# >>>> INPUT
+
+$[main]
+def main = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# >>>> OUTPUT
+
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# >>>> INPUT
+
+def len = fn
+	| []: [Bool] => 0
+	| [_ .. tail] => 1 + tail:len
+
+$[main]
+def main = [True, False, False, True, True, False, False]:len
+
+# >>>> OUTPUT
+
+7
+
+# >>>> INPUT
+
+def sum = fn
+	| []: [Int] => 0
+	| [x .. tail] => x + tail:sum
+
+$[main]
+def main = [1, 2, 3, 4, 5]:sum
+
+# >>>> OUTPUT
+
+15

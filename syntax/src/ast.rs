@@ -15,6 +15,7 @@ impl fmt::Debug for Ident {
 
 impl Ident {
     pub fn new<S: ToString>(s: S) -> Self { Self(Intern::new(s.to_string())) }
+    pub fn as_ref(self) -> &'static String { self.0.as_ref() }
 }
 
 impl Deref for Ident {

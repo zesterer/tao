@@ -19,6 +19,8 @@ impl Pass for RemoveUnusedBindings {
                 Expr::Local(local) => if let Some((_, n)) = stack.iter_mut().rev().find(|(name, _)| *name == *local) {
                     // Increment uses
                     *n += 1;
+                } else {
+                    unreachable!()
                 },
                 Expr::Intrinsic(op, args) => {
                     for arg in args.iter_mut() {
@@ -66,6 +68,7 @@ impl Pass for RemoveUnusedBindings {
                                             .as_mut()
                                             .map(|tail| remove_unused(tail, stack));
                                     },
+                                    Pat::Variant(_, inner) => remove_unused(inner, stack),
                                 }
                             }
 
@@ -110,6 +113,15 @@ impl Pass for RemoveUnusedBindings {
                         let (capture, uses) = stack[old_stack..][i];
                         if uses > 0 {
                             new_captures.push(capture);
+
+                            if let Some((_, n)) = stack[..old_stack].iter_mut().rev().find(|(name, _)| *name == capture) {
+                                // Increment uses
+                                *n += 1;
+                            } else {
+                                unreachable!()
+                            }
+                        } else {
+                            println!("Capture {} will be removed from {:?}", captures[i], body);
                         }
                     }
                     *captures = new_captures;
@@ -120,7 +132,8 @@ impl Pass for RemoveUnusedBindings {
                     visit(mir, f, stack, proc_stack);
                     visit(mir, arg, stack, proc_stack);
                 },
-                Expr::Variant(_, expr) => visit(mir, expr, stack, proc_stack),
+                Expr::Variant(_, inner) => visit(mir, inner, stack, proc_stack),
+                Expr::AccessVariant(inner, _) => visit(mir, inner, stack, proc_stack),
             }
         }
 

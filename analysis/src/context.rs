@@ -154,4 +154,34 @@ impl Context {
     }
 
     pub fn emit(&mut self, error: Error) { self.errors.push(error) }
+
+    // Returns (record_ty, field_ty, number_of_indirections)
+    pub fn follow_field_access(&self, mut ty: TyId, field: Ident) -> Option<(TyId, TyId, usize)> {
+        let mut already_seen = Vec::new();
+
+        loop {
+            match self.tys.get(ty) {
+                Ty::Data(data, args) => if already_seen.contains(&data) {
+                    // We've already seen this data type, it must be recursive. Give up, it has no fields.
+                    break None
+                } else {
+                    already_seen.push(data);
+                    let data = self.datas.get_data(data);
+                    if data.cons.len() == 1 {
+                        ty = data.cons[0].1;
+                    } else {
+                        // Sum types have no fields
+                        break None;
+                    }
+                },
+                Ty::Record(fields) => if let Some((_, field_ty)) = fields.iter().find(|(name, _)| **name == field) {
+                    break Some((ty, *field_ty, already_seen.len()));
+                } else {
+                    // Record has no such field
+                    break None;
+                },
+                _ => break None, // Only `Data` or `Record` can have fields
+            }
+        }
+    }
 }

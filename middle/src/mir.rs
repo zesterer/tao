@@ -17,6 +17,7 @@ pub enum Const {
     Str(Intern<String>),
     Tuple(Vec<Self>),
     List(Vec<Self>),
+    Sum(usize, Box<Self>),
 }
 
 impl Const {
@@ -27,7 +28,7 @@ impl Const {
 
 #[derive(Clone, Debug)]
 pub enum Intrinsic {
-    MakeList(usize),
+    MakeList(Repr),
     NotBool,
     AddNat,
     AddInt,
@@ -43,6 +44,7 @@ pub enum Intrinsic {
     LessEqInt,
     MoreEqNat,
     MoreEqInt,
+    Join(Repr),
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +54,7 @@ pub enum Pat {
     Tuple(Vec<MirNode<Binding>>),
     ListExact(Vec<MirNode<Binding>>),
     ListFront(Vec<MirNode<Binding>>, Option<MirNode<Binding>>),
+    Variant(usize, MirNode<Binding>),
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +76,7 @@ impl Binding {
                 .any(|field| field.is_refutable()),
             Pat::ListExact(_) => true,
             Pat::ListFront(items, tail) => items.len() > 0 || tail.as_ref().map_or(false, |tail| tail.is_refutable()),
+            Pat::Variant(_, _) => true, // TODO: Check number of variants
         }
     }
 
@@ -93,6 +97,7 @@ impl Binding {
                     .for_each(|item| item.visit_bindings(bind));
                 tail.as_ref().map(|tail| tail.visit_bindings(bind));
             },
+            Pat::Variant(_, inner) => inner.visit_bindings(bind),
         }
     }
 
@@ -141,6 +146,7 @@ pub enum Expr {
     List(Vec<MirNode<Self>>),
 
     Variant(usize, MirNode<Self>),
+    AccessVariant(MirNode<Self>, usize), // Unsafely assume the value is a specific variant
 }
 
 impl Expr {
@@ -194,6 +200,7 @@ impl Expr {
                 .for_each(|item| item.required_locals_inner(stack, required)),
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Variant(_, inner) => inner.required_locals_inner(stack, required),
+            Expr::AccessVariant(inner, _) => inner.required_locals_inner(stack, required),
         }
     }
 

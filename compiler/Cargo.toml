@@ -1,0 +1,14 @@
+[package]
+name = "tao"
+version = "0.1.0"
+edition = "2021"
+default-run = "tao"
+
+[dependencies]
+tao_syntax = { path = "../syntax" }
+tao_analysis = { path = "../analysis" }
+tao_middle = { path = "../middle" }
+tao_vm = { path = "../vm" }
+
+ariadne = "0.1"
+structopt = "0.3"

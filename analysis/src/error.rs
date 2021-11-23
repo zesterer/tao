@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 
 #[derive(Debug)]
 pub enum Error {
@@ -20,7 +21,7 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn print<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C) {
+    pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, writer: impl Write) {
         use ariadne::{Report, ReportKind, Label, Color, Fmt, Span};
 
         let display = |id| ctx.tys.display(&ctx.datas, id);
@@ -164,7 +165,7 @@ impl Error {
 
         report
             .finish()
-            .print(cache)
+            .write(cache, writer)
             .unwrap();
     }
 }

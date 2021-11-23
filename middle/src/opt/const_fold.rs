@@ -98,6 +98,11 @@ impl Pass for ConstFold {
                             } else {
                                 unreachable!();
                             },
+                            Pat::Variant(a_variant, a) => if let Const::Sum(b_variant, b) = constant {
+                                a_variant == b_variant && matches(a, b)
+                            } else {
+                                unreachable!();
+                            },
                         }
                     }
 
@@ -172,7 +177,21 @@ impl Pass for ConstFold {
                     visit(mir, f, stack, proc_stack);
                     visit(mir, arg, stack, proc_stack);
                 },
-                Expr::Variant(_, expr) => visit(mir, expr, stack, proc_stack),
+                Expr::Variant(variant, inner) => {
+                    visit(mir, inner, stack, proc_stack);
+
+                    // if let Expr::Const(inner) = &mut **inner {
+                    //     *expr = Expr::Const(Const::Sum(*variant, Box::new(inner.clone())));
+                    // }
+                },
+                Expr::AccessVariant(inner, variant) => {
+                    visit(mir, inner, stack, proc_stack);
+
+                    // if let Expr::Const(Const::Sum(const_variant, inner)) = &mut **inner {
+                    //     debug_assert!(const_variant == variant);
+                    //     *expr = Expr::Const((**inner).clone());
+                    // }
+                },
             }
         }
 
@@ -201,6 +220,7 @@ impl Binding {
             }));
         }
 
+        // TODO: add extraction for complex patterns
         match &self.pat {
             Pat::Wildcard => {},
             Pat::Const(_) => {},
@@ -218,6 +238,7 @@ impl Binding {
                     .as_ref()
                     .map(|tail| tail.try_extract_inner(None, bindings));
             },
+            Pat::Variant(_, inner) => inner.try_extract_inner(None, bindings),
         }
     }
 
