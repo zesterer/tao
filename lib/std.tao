@@ -1,0 +1,19 @@
+data Maybe A =
+	| Just A
+	| None
+
+data Result A, E =
+	| Ok A
+	| Err E
+
+def len A : [A] -> Int = fn
+	| [] => 0
+	| [_ .. tail] => 1 + tail:len
+
+def nth A : Int -> [A] -> Maybe A = fn
+    | 0, [x ..] => Just x
+    | n, [_ .. tail] => tail:nth(n - 1)
+    | _, _ => None
+
+# TODO: Remove when libs are supported
+$[main] def main = ()

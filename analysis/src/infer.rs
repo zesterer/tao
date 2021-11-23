@@ -241,7 +241,27 @@ impl<'a> Infer<'a> {
             },
             // TODO: Reinstantiate type parameters with fresh type variables, but without creating inference problems
             TyInfo::Gen(x, _, origin) => ty,//self.insert(span, TyInfo::Unknown(Some(origin))),
-            info => todo!("{:?}", info),
+            TyInfo::Tuple(fields) => {
+                let fields = fields
+                    .into_iter()
+                    .map(|field| self.try_reinstantiate(span, field))
+                    .collect();
+                self.insert(self.span(ty), TyInfo::Tuple(fields))
+            },
+            TyInfo::Record(fields) => {
+                let fields = fields
+                    .into_iter()
+                    .map(|(name, field)| (name, self.try_reinstantiate(span, field)))
+                    .collect();
+                self.insert(self.span(ty), TyInfo::Record(fields))
+            },
+            TyInfo::Data(data, args) => {
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.try_reinstantiate(span, arg))
+                    .collect();
+                self.insert(self.span(ty), TyInfo::Data(data, args))
+            },
         }
     }
 
