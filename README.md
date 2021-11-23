@@ -33,7 +33,8 @@ Compile standard library
 cargo run -- lib/std.tao
 ```
 
-## Compiler parameters
+## Compiler arguments
 
-`--opt`: Specify an optimisation mode. Supported values: [`none`, `fast`, `size`]
-`--debug`: Enable debugging output for a compilation stage. Supported values: [`tokens`, `ast`, `hir`, `mir`, `bytecode`]
+- `--opt`: Specify an optimisation mode (`none`, `fast`, `size`)
+
+- `--debug`: Enable debugging output for a compilation stage (`tokens`, `ast`, `hir`, `mir`, `bytecode`)
