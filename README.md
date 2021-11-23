@@ -13,9 +13,38 @@ def nth A : Nat -> [A] -> Maybe A = fn
     | _, _ => None
 ```
 
+## Features
+
+- Type inference
+- Useful error messages
+- First-class functions
+- Currying
+- Sum types
+- Records
+- Polymorphism through type parameters
+- Pattern matching
+- Built-in lists
+- MIR optimiser
+- Bytecode compiler
+
+## Planned features
+
+- Better syntax
+- Typeclasses (or ML-style generic modules?)
+- Module system
+- Monadic IO (or an effect system?)
+- Do notation
+- LLVM backend
+
+## Why?
+
+Tao is primarily a personal hobby project. I have no real aspirations for the language, and I plan to spend a lot of
+time changing the syntax and semantics as my ideas about language design evolve. If you find the language interesting,
+feel free to give it a try!
+
 ## Commands
 
-Run compiler
+Compile/run a `.tao` file
 
 ```
 cargo run -- <FILE>
@@ -27,7 +56,7 @@ Run compiler tests
 cargo test
 ```
 
-Compile standard library
+Compile/run the standard library
 
 ```
 cargo run -- lib/std.tao
