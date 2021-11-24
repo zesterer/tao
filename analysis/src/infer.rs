@@ -27,6 +27,7 @@ pub enum InferError {
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
     RecursiveAlias(AliasId, TyVar, Span),
+    PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
 }
 
 #[derive(Clone)]
@@ -442,6 +443,7 @@ impl<'a> Infer<'a> {
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
                 InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),
+                InferError::PatternNotSupported(lhs, op, rhs, span) => Error::PatternNotSupported(checked.reify(lhs), op, checked.reify(rhs), span),
             })
             .collect();
 

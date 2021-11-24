@@ -3,7 +3,7 @@ use super::*;
 // TODO: use `ToHir`?
 fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
     match litr {
-        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Int /*Nat*/), // TODO: Numeric subtyping
+        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Nat), // TODO: Numeric subtyping
         ast::Literal::Num(_) => TyInfo::Prim(ty::Prim::Num),
         ast::Literal::Bool(_) => TyInfo::Prim(ty::Prim::Bool),
         ast::Literal::Char(_) => TyInfo::Prim(ty::Prim::Char),
@@ -128,6 +128,22 @@ impl ToHir for ast::Binding {
                 let binding = inner.to_hir(infer, scope);
                 // TODO: don't use `Ref` to link types
                 (TyInfo::Ref(binding.meta().1), hir::Pat::Single(binding))
+            },
+            ast::Pat::Binary(op, lhs, rhs) => {
+                let lhs = lhs.to_hir(infer, scope);
+                match (&**rhs, &**op) {
+                    (ast::Literal::Nat(rhs_nat), ast::BinaryOp::Add) => {
+                        let nat = infer.insert(rhs.span(), TyInfo::Prim(Prim::Nat));
+                        infer.make_eq(lhs.meta().1, nat);
+                        (TyInfo::Ref(nat), hir::Pat::Add(lhs, SrcNode::new(*rhs_nat, rhs.span())))
+                    },
+                    (_, _) => {
+                        let info = litr_ty_info(rhs, infer, self.pat.span());
+                        let rhs_ty = infer.insert(rhs.span(), info);
+                        infer.emit(InferError::PatternNotSupported(lhs.meta().1, op.clone(), rhs_ty, self.span()));
+                        (TyInfo::Error, hir::Pat::Error)
+                    },
+                }
             },
             ast::Pat::Tuple(items) => {
                 let items = items
@@ -289,6 +305,23 @@ impl ToHir for ast::Expr {
                     })
                     .collect::<Vec<_>>();
                 (TyInfo::List(item_ty), hir::Expr::List(items))
+            },
+            ast::Expr::ListFront(items, tail) => {
+                let item_ty = infer.unknown(self.span());
+                let list_ty = infer.insert(self.span(), TyInfo::List(item_ty));
+
+                let tail = tail.to_hir(infer, scope);
+                infer.make_eq(tail.meta().1, list_ty);
+
+                let items = items
+                    .iter()
+                    .map(|item| {
+                        let item = item.to_hir(infer, scope);
+                        infer.make_eq(item.meta().1, item_ty);
+                        item
+                    })
+                    .collect::<Vec<_>>();
+                (TyInfo::Ref(list_ty), hir::Expr::ListFront(items, tail))
             },
             ast::Expr::Record(fields) => {
                 let fields = fields

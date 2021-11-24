@@ -33,6 +33,16 @@ impl Program {
         match &binding.pat {
             mir::Pat::Wildcard => {},
             mir::Pat::Const(_) => {},
+            mir::Pat::Single(inner) => {
+                self.push(Instr::Dup);
+                self.compile_extractor(mir, inner);
+            },
+            mir::Pat::Add(lhs, rhs) => {
+                self.push(Instr::Dup);
+                self.push(Instr::Imm(Value::Int(*rhs as i64)));
+                self.push(Instr::SubInt);
+                self.compile_extractor(mir, lhs);
+            },
             mir::Pat::Tuple(items) | mir::Pat::ListExact(items) => {
                 for (i, item) in items.iter().enumerate() {
                     if item.binds() {
@@ -123,6 +133,15 @@ impl Program {
                     });
                 },
             },
+            mir::Pat::Single(inner) => self.compile_matcher(inner),
+            mir::Pat::Add(lhs, rhs) => {
+                self.push(Instr::Dup);
+                self.push(Instr::Imm(Value::Int(*rhs as i64)));
+                self.push(Instr::MoreEqInt);
+                self.push(Instr::IfNot);
+                let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
+                self.compile_item_matcher(Some(lhs), false, Some(fail_fixup));
+            },
             mir::Pat::Tuple(items) => {
                 self.compile_item_matcher(items, true, None);
             },
@@ -151,7 +170,7 @@ impl Program {
                 if let Some(tail) = tail.as_ref() {
                     self.push(Instr::Dup);
                     self.push(Instr::SkipList(items.len()));
-                    self.compile_item_matcher(items, true, None);
+                    self.compile_matcher(tail);
                     self.push(Instr::IfNot);
                     fail_fixup.push(self.push(Instr::Jump(0))); // Fixed by #2
                 }

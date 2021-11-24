@@ -9,6 +9,7 @@ macro_rules! test {
 
 test!(math);
 test!(lists);
+test!(records);
 
 use tao::{Options, Opt, SrcId, run};
 use std::fs;

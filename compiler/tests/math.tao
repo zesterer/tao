@@ -18,3 +18,16 @@ def main =
 # >>>> OUTPUT
 
 9
+
+# >>>> INPUT
+
+def factorial = fn
+	| 0 => 1
+	| y ~ x + 1 => y * factorial(x)
+
+$[main]
+def main = factorial(10)
+
+# >>>> OUTPUT
+
+3628800

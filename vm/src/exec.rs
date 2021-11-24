@@ -106,6 +106,9 @@ pub fn exec(prog: &Program) -> Option<Value> {
             },
             Instr::IndexList(i) => {
                 let mut x = stack.pop().unwrap().list();
+                if x.len() < i + 1 {
+                    panic!("Removing item {} from list {:?} at 0x{:X}", i, x, addr.0);
+                }
                 stack.push(x.remove(i));
             },
             Instr::SkipList(i) => {

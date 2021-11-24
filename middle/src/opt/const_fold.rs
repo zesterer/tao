@@ -73,6 +73,16 @@ impl Pass for ConstFold {
                         match &binding.pat {
                             Pat::Wildcard => true,
                             Pat::Const(x) => x == constant,
+                            Pat::Single(inner) => matches(inner, constant),
+                            Pat::Add(lhs, rhs) => if let Const::Nat(x) = constant {
+                                if *x >= *rhs {
+                                    matches(lhs, &Const::Nat(*x - *rhs))
+                                } else {
+                                    false
+                                }
+                            } else {
+                                unreachable!("Pat::Add must be matching a Nat")
+                            },
                             Pat::Tuple(fields) => if let Const::Tuple(const_fields) = constant {
                                 fields
                                     .iter()
@@ -224,6 +234,8 @@ impl Binding {
         match &self.pat {
             Pat::Wildcard => {},
             Pat::Const(_) => {},
+            Pat::Single(inner) => inner.try_extract_inner(None, bindings),
+            Pat::Add(lhs, _) => lhs.try_extract_inner(None, bindings),
             Pat::Tuple(fields) => fields
                 .iter()
                 .for_each(|field| field.try_extract_inner(None, bindings)),

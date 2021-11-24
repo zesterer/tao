@@ -106,6 +106,8 @@ impl Binding {
 
         match &mut self.pat {
             mir::Pat::Wildcard | mir::Pat::Const(_) => {},
+            mir::Pat::Single(inner) => inner.visit_inner(order, repr, binding, expr),
+            mir::Pat::Add(lhs, _) => lhs.visit_inner(order, repr, binding, expr),
             mir::Pat::Tuple(fields) => fields
                 .iter_mut()
                 .for_each(|field| field.visit_inner(order, repr, binding, expr)),

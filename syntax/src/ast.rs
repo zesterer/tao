@@ -134,6 +134,7 @@ pub enum Pat {
     Wildcard,
     Literal(Literal),
     Single(SrcNode<Binding>),
+    Binary(SrcNode<BinaryOp>, SrcNode<Binding>, SrcNode<Literal>), // x + N, only for nats
     Tuple(Vec<SrcNode<Binding>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Binding>)>),
     ListExact(Vec<SrcNode<Binding>>),
@@ -158,6 +159,7 @@ pub enum Expr {
     Local(Ident),
     Tuple(Vec<SrcNode<Self>>),
     List(Vec<SrcNode<Self>>),
+    ListFront(Vec<SrcNode<Self>>, SrcNode<Self>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Access(SrcNode<Self>, SrcNode<Ident>),
     Unary(SrcNode<UnaryOp>, SrcNode<Self>),

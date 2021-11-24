@@ -19,6 +19,7 @@ impl Reify for hir::Binding<InferMeta> {
                 hir::Pat::Wildcard => hir::Pat::Wildcard,
                 hir::Pat::Literal(litr) => hir::Pat::Literal(litr),
                 hir::Pat::Single(inner) => hir::Pat::Single(inner.reify(infer)),
+                hir::Pat::Add(lhs, rhs) => hir::Pat::Add(lhs.reify(infer), rhs),
                 hir::Pat::Tuple(items) => hir::Pat::Tuple(items
                     .into_iter()
                     .map(|item| item.reify(infer))
@@ -64,6 +65,10 @@ impl Reify for hir::Expr<InferMeta> {
                 .into_iter()
                 .map(|item| item.reify(infer))
                 .collect()),
+            hir::Expr::ListFront(items, tail) => hir::Expr::ListFront(items
+                .into_iter()
+                .map(|item| item.reify(infer))
+                .collect(), tail.reify(infer)),
             hir::Expr::Record(fields) => hir::Expr::Record(fields
                 .into_iter()
                 .map(|(name, field)| (name, field.reify(infer)))

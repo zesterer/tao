@@ -67,7 +67,7 @@ impl ToMir for hir::Literal {
 
     fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         match &*self {
-            hir::Literal::Nat(x) => mir::Const::Int(*x as i64), // TODO: Use Nat
+            hir::Literal::Nat(x) => mir::Const::Nat(*x),
             hir::Literal::Str(s) => mir::Const::Str(*s),
             hir::Literal::Bool(x) => mir::Const::Bool(*x),
             hir::Literal::Char(c) => mir::Const::Char(*c),
@@ -81,8 +81,11 @@ impl ToMir for hir::TyBinding {
 
     fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         let pat = match &*self.pat {
+            hir::Pat::Error => unreachable!(),
             hir::Pat::Wildcard => mir::Pat::Wildcard,
             hir::Pat::Literal(litr) => mir::Pat::Const(litr.to_mir(ctx, hir, gen_tys)),
+            hir::Pat::Single(inner) => mir::Pat::Single(inner.to_mir(ctx, hir, gen_tys)),
+            hir::Pat::Add(lhs, rhs) => mir::Pat::Add(lhs.to_mir(ctx, hir, gen_tys), **rhs),
             hir::Pat::Tuple(fields) => mir::Pat::Tuple(fields
                 .iter()
                 .map(|field| field.to_mir(ctx, hir, gen_tys))
@@ -183,6 +186,22 @@ impl ToMir for hir::TyExpr {
                 .iter()
                 .map(|item| item.to_mir(ctx, hir, gen_tys))
                 .collect()),
+            hir::Expr::ListFront(items, tail) => {
+                let tail = tail.to_mir(ctx, hir, gen_tys);
+                mir::Expr::Intrinsic(
+                    mir::Intrinsic::Join(match tail.meta() {
+                        Repr::List(item) => (**item).clone(),
+                        _ => unreachable!(),
+                    }),
+                    vec![
+                        MirNode::new(mir::Expr::List(items
+                            .iter()
+                            .map(|item| item.to_mir(ctx, hir, gen_tys))
+                            .collect()), tail.meta().clone()),
+                        tail,
+                    ],
+                )
+            },
             hir::Expr::Func(arg, body) => {
                 let body = body.to_mir(ctx, hir, gen_tys);
                 mir::Expr::Func(body.required_locals(Some(**arg)), **arg, body)

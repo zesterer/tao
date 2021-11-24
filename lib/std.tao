@@ -15,5 +15,11 @@ def nth A : Int -> [A] -> Maybe A = fn
     | n, [_ .. tail] => tail:nth(n - 1)
     | _, _ => None
 
+def fold A, B : A -> (A -> B -> A) -> [B] -> A = fn
+	| init, _, [] => init
+	| init, f, [x .. tail] => fold(f(init, x), f, tail)
+
+def sum : [Int] -> Int = fold(0, fn x, y => x + y)
+
 # TODO: Remove when libs are supported
-$[main] def main = ()
+$[main] def main = [1, 2, 3, 4]:sum

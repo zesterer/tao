@@ -18,6 +18,7 @@ pub enum Error {
     DuplicateTypeName(Ident, Span, Span),
     DuplicateDefName(Ident, Span, Span),
     DuplicateConsName(Ident, Span, Span),
+    PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
 }
 
 impl Error {
@@ -146,6 +147,14 @@ impl Error {
                     (new, format!("Conflicting declaration"), Color::Red),
                 ],
                 vec![],
+            ),
+            Error::PatternNotSupported(lhs, op, rhs, span) => (
+                format!("Arithmetic pattern {} {} {} is not supported", display(lhs).fg(Color::Red), (*op).fg(Color::Red), display(rhs).fg(Color::Red)),
+                vec![(span, format!("Pattern {} used here", (*op).fg(Color::Red)), Color::Red)],
+                vec![format!(
+                    "Only specific arithmetic patterns, such as {}, are supported",
+                    format!("Nat + Nat").fg(Color::Blue),
+                )],
             ),
         };
 

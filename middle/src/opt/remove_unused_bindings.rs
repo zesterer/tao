@@ -54,6 +54,8 @@ impl Pass for RemoveUnusedBindings {
                                 match &mut binding.pat {
                                     Pat::Wildcard => {},
                                     Pat::Const(_) => {},
+                                    Pat::Single(inner) => remove_unused(inner, stack),
+                                    Pat::Add(lhs, _) => remove_unused(lhs, stack),
                                     Pat::Tuple(fields) => fields
                                         .iter_mut()
                                         .for_each(|field| remove_unused(field, stack)),

@@ -8,6 +8,7 @@ pub enum Pat<M> {
     Wildcard,
     Literal(Literal),
     Single(Node<Binding<M>, M>),
+    Add(Node<Binding<M>, M>, SrcNode<u64>),
     Tuple(Vec<Node<Binding<M>, M>>),
     Record(HashMap<Ident, Node<Binding<M>, M>>),
     ListExact(Vec<Node<Binding<M>, M>>),
@@ -46,6 +47,7 @@ impl Binding<InferMeta> {
             Pat::Wildcard => {},
             Pat::Literal(_) => {},
             Pat::Single(inner) => inner.get_bindings_inner(bindings),
+            Pat::Add(lhs, _) => lhs.get_bindings_inner(bindings),
             Pat::Tuple(items) => items
                 .iter()
                 .for_each(|item| item.get_bindings_inner(bindings)),
@@ -78,6 +80,7 @@ pub enum Expr<M> {
     Global(DefId, Vec<M>),
     Tuple(Vec<Node<Self, M>>),
     List(Vec<Node<Self, M>>),
+    ListFront(Vec<Node<Self, M>>, Node<Self, M>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
     Access(Node<Self, M>, SrcNode<Ident>),
     Unary(SrcNode<ast::UnaryOp>, Node<Self, M>),

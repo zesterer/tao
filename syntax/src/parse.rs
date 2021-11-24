@@ -233,23 +233,57 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
                 SrcNode::new(ast::Pat::Deconstruct(data, inner), span)
             });
 
-        let pat = wildcard
+        let atom = wildcard
             .or(litr)
-            .or(deconstruct)
             .or(paren_expr)
             .or(tuple)
             .or(record)
             .or(list)
+            .or(deconstruct)
+            .map(|atom| (atom, None))
+            .or(term_ident_parser().map_with_span(|ident, span| {
+                (SrcNode::new(ast::Pat::Wildcard, span), Some(SrcNode::new(ident, span)))
+            }))
             .boxed();
+
+        let sum = atom
+            .then(just(Token::Op(Op::Add))
+                .to(ast::BinaryOp::Add)
+                .map_with_span(SrcNode::new)
+                .then(literal_parser().map_with_span(SrcNode::new))
+                .repeated())
+            .foldl(|(lhs_pat, lhs_name), (op, rhs)| {
+                let span = lhs_pat.span().union(op.span()).union(rhs.span());
+                let lhs_span = lhs_pat.span();
+                (SrcNode::new(ast::Pat::Binary(
+                    op,
+                    SrcNode::new(ast::Binding {
+                        pat: lhs_pat,
+                        name: lhs_name,
+                        ty: None,
+                    }, lhs_span),
+                    rhs,
+                ), span), None)
+            });
+
+        let pat = sum;
 
         // Bound pattern
         term_ident_parser()
             .map_with_span(SrcNode::new)
             .then_ignore(just(Token::Tilde))
             .then(pat.clone())
-            .map(|(binding, pat)| (pat, Some(binding)))
+            .map(|(binding, (pat, name))| {
+                let pat_span = pat.span();
+                let inner_binding = SrcNode::new(ast::Binding {
+                    pat,
+                    name,
+                    ty: None,
+                }, pat_span);
+                (SrcNode::new(ast::Pat::Single(inner_binding), pat_span), Some(binding))
+            })
             // Unbound pattern
-            .or(pat.map(|pat| (pat, None)))
+            .or(pat)
             // Ident
             .or(term_ident_parser().map_with_span(|name, span| (
                 SrcNode::new(ast::Pat::Wildcard, span),
@@ -327,11 +361,18 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .map_with_span(SrcNode::new)
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
+                .then(just(Token::Op(Op::Ellipsis))
+                    .ignore_then(expr.clone().map_with_span(SrcNode::new))
+                    .or_not())
                 .map(Some),
             Delimiter::Brack,
             |_| None,
         )
-            .map(|x| x.map(ast::Expr::List).unwrap_or(ast::Expr::Error))
+            .map(|x| match x {
+                Some((items, None)) => ast::Expr::List(items),
+                Some((items, Some(tail))) => ast::Expr::ListFront(items, tail),
+                None => ast::Expr::Error,
+            })
             .labelled("list");
 
         let branch = binding_parser()

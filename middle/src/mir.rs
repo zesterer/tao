@@ -21,9 +21,9 @@ pub enum Const {
 }
 
 impl Const {
-    pub fn nat(&self) -> u64 { if let Const::Nat(x) = self { *x } else { panic!() } }
-    pub fn int(&self) -> i64 { if let Const::Int(x) = self { *x } else { panic!() } }
-    pub fn bool(&self) -> bool { if let Const::Bool(x) = self { *x } else { panic!() } }
+    pub fn nat(&self) -> u64 { if let Const::Nat(x) = self { *x } else { panic!("{:?}", self) } }
+    pub fn int(&self) -> i64 { if let Const::Int(x) = self { *x } else { panic!("{:?}", self) } }
+    pub fn bool(&self) -> bool { if let Const::Bool(x) = self { *x } else { panic!("{:?}", self) } }
 }
 
 #[derive(Clone, Debug)]
@@ -51,6 +51,8 @@ pub enum Intrinsic {
 pub enum Pat {
     Wildcard,
     Const(Const), // Expression is evaluated and then compared
+    Single(MirNode<Binding>),
+    Add(MirNode<Binding>, u64),
     Tuple(Vec<MirNode<Binding>>),
     ListExact(Vec<MirNode<Binding>>),
     ListFront(Vec<MirNode<Binding>>, Option<MirNode<Binding>>),
@@ -71,6 +73,8 @@ impl Binding {
                 Const::Tuple(fields) if fields.is_empty() => false,
                 _ => true,
             },
+            Pat::Single(inner) => inner.is_refutable(),
+            Pat::Add(lhs, rhs) => *rhs > 0 || lhs.is_refutable(),
             Pat::Tuple(fields) => fields
                 .iter()
                 .any(|field| field.is_refutable()),
@@ -85,6 +89,8 @@ impl Binding {
         match &self.pat {
             Pat::Wildcard => {},
             Pat::Const(_) => {},
+            Pat::Single(inner) => inner.visit_bindings(bind),
+            Pat::Add(lhs, _) => lhs.visit_bindings(bind),
             Pat::Tuple(fields) => fields
                 .iter()
                 .for_each(|field| field.visit_bindings(bind)),

@@ -1,0 +1,11 @@
+data Result A, E =
+	| Ok A
+	| Err E
+
+type Parser I, O, E = [I] -> Result O E
+
+def just = fn c =>
+
+
+$[main]
+def main = ()

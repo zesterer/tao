@@ -18,8 +18,8 @@ def main = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # >>>> INPUT
 
-def len = fn
-	| []: [Bool] => 0
+def len A = fn
+	| []: [A] => 0
 	| [_ .. tail] => 1 + tail:len
 
 $[main]
@@ -32,7 +32,7 @@ def main = [True, False, False, True, True, False, False]:len
 # >>>> INPUT
 
 def sum = fn
-	| []: [Int] => 0
+	| []: [Nat] => 0
 	| [x .. tail] => x + tail:sum
 
 $[main]
@@ -41,3 +41,47 @@ def main = [1, 2, 3, 4, 5]:sum
 # >>>> OUTPUT
 
 15
+
+# >>>> INPUT
+
+data Maybe A =
+	| Just A
+	| None
+
+def nth A : Nat -> [A] -> Maybe A = fn
+    | 0, [x ..] => Just x
+    | n + 1, [_ .. tail] => tail:nth(n)
+    | _, _ => None
+
+$[main]
+def main =
+	let xs = [5, 7, 2, 3, 9, 8] in
+	match xs:nth(0), xs:nth(1), xs:nth(5), xs:nth(6) in
+	| Just 5, Just 7, Just 8, None => True
+	| _, _, _, _ => False
+
+# >>>> OUTPUT
+
+true
+
+# >>>> INPUT
+
+def fold A, B : A -> (A -> B -> A) -> [B] -> A = fn
+	| init, _, [] => init
+	| init, f, [x .. tail] => fold(f(init, x), f, tail)
+
+$[main]
+def main = [1, 2, 3, 4, 5]:fold(0, fn x, y => x + y)
+
+# >>>> OUTPUT
+
+15
+
+# >>>> INPUT
+
+$[main]
+def main = [1, 2 .. [3, 4, 5]]
+
+# >>>> OUTPUT
+
+[1, 2, 3, 4, 5]

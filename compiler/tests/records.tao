@@ -1,0 +1,69 @@
+# >>>> INPUT
+
+$[main]
+def main = {}
+
+# >>>> OUTPUT
+
+[]
+
+# >>>> INPUT
+
+$[main]
+def main = { b: 6, a: True, c: () }
+
+# >>>> OUTPUT
+
+[true, 6, []]
+
+# >>>> INPUT
+
+$[main]
+def main =
+	let r = { a: True, b: 5 } in
+	if r.a
+	then r.b
+	else 0
+
+# >>>> OUTPUT
+
+5
+
+# >>>> INPUT
+
+def fold A, B : A -> (A -> B -> A) -> [B] -> A = fn
+	| init, _, [] => init
+	| init, f, [x .. tail] => fold(f(init, x), f, tail)
+
+# Emulated typeclass
+data Add A = {
+  add: A -> A -> A
+}
+
+# Implementation of a typeclass
+def add_nat = Add {
+  add: fn x: Nat, y => x + y
+}
+
+# Emulated typeclass
+data Summable A = {
+  add: Add A,
+  zero: A,
+}
+
+# Implementation of a typeclass
+def summable_nat = Summable {
+  add: add_nat,
+  zero: 0,
+}
+
+# Generic summing function
+def sum A : Summable A -> [A] -> A =
+  fn summable => fold(summable.zero, summable.add.add)
+
+$[main]
+def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:sum(summable_nat)
+
+# >>>> OUTPUT
+
+45

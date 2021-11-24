@@ -101,6 +101,7 @@ pub fn run(src: String, src_id: SrcId, options: Options, mut writer: impl Write)
             if options.debug.contains(&"bytecode".to_string()) {
                 prog.write(&mut writer);
             }
+            // prog.write(std::io::stdout());
 
             if let Some(result) = exec(&prog) {
                 writeln!(writer, "{}", result).unwrap();
