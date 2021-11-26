@@ -457,6 +457,9 @@ pub struct Checked<'a> {
 }
 
 impl<'a> Checked<'a> {
+    pub fn ctx(&self) -> &Context { &self.infer.ctx }
+    pub fn ctx_mut(&mut self) -> &mut Context { &mut self.infer.ctx }
+
     fn reify_inner(&mut self, var: TyVar) -> TyId {
         if let Some(ty) = self.cache.get(&var) {
             return *ty;

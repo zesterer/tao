@@ -14,26 +14,31 @@ def len A = fn
 
 ## Features
 
-- Type inference
-- Useful error messages
-- First-class functions
-- Currying
-- Sum types
-- Records
-- Polymorphism through type parameters
-- Pattern matching
-- Built-in lists
-- MIR optimiser
-- Bytecode compiler
+- [x] Type inference
+- [x] Useful error messages
+- [x] First-class functions
+- [x] Currying
+- [x] Sum types
+- [x] Records
+- [x] Type polymorphism (for both types and values)
+- [x] Pattern matching
+- [x] Built-in lists
+- [x] Bytecode compiler
+
+## Ongoing features
+
+- [ ] Pattern exhaustivity checking (sound, but unnecessarily conservative)
+- [ ] MIR optimiser (const folding, dead code removal, and unused binding removal implemented, waiting on inlining)
+- [ ] Arithmetic patterns (only nat addition is currently implemented)
 
 ## Planned features
 
-- Better syntax
-- Typeclasses (or ML-style generic modules?)
-- Module system
-- Monadic IO (or an effect system?)
-- Do notation
-- LLVM backend
+- [ ] Better syntax
+- [ ] Typeclasses (or ML-style generic modules?)
+- [ ] Module system
+- [ ] Monadic IO (or an effect system?)
+- [ ] Do notation
+- [ ] LLVM backend
 
 ## Why?
 
@@ -73,6 +78,10 @@ def five =
     let identity = fn x => x in
     identity(5)
 ```
+
+### Exhaustive pattern matching
+
+Tao requires that pattern matching is exhaustive and will produce errors if patterns are not handled.
 
 ### Very few delimiters, but whitespace *isn't* semantic
 

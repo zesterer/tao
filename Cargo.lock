@@ -414,6 +414,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "ranges"
+version = "0.4.0"
+source = "git+https://gitlab.com/bit-refined/ranges.git#91f6400cc8e491119593d1668a6c6d84786b32d7"
+
+[[package]]
 name = "redox_syscall"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -534,6 +539,7 @@ dependencies = [
  "ariadne",
  "hashbrown 0.11.2",
  "lazy_static",
+ "ranges",
  "rustyline",
  "tao_syntax",
 ]

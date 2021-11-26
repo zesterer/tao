@@ -1,9 +1,10 @@
-#![feature(arbitrary_self_types)]
+#![feature(arbitrary_self_types, option_zip, bool_to_option)]
 
 pub mod context;
 pub mod data;
 pub mod def;
 pub mod error;
+pub mod exhaustivity;
 pub mod infer;
 pub mod hir;
 pub mod lower;
@@ -15,6 +16,7 @@ pub use crate::{
     data::{Datas, Data, DataId, Alias, AliasId},
     def::{Defs, Def, DefId},
     error::Error,
+    exhaustivity::{exhaustivity, ExamplePat},
     hir::{InferExpr, InferBinding, TyExpr, TyBinding},
     infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError},
     lower::{Scope, ToHir},

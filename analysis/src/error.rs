@@ -19,6 +19,7 @@ pub enum Error {
     DuplicateDefName(Ident, Span, Span),
     DuplicateConsName(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
+    NotExhaustive(Span, ExamplePat),
 }
 
 impl Error {
@@ -154,6 +155,14 @@ impl Error {
                 vec![format!(
                     "Only specific arithmetic patterns, such as {}, are supported",
                     format!("Nat + Nat").fg(Color::Blue),
+                )],
+            ),
+            Error::NotExhaustive(span, example) => (
+                format!("Pattern match is not exhaustive"),
+                vec![(span, format!("Pattern {} not caught", (&example).fg(Color::Red)), Color::Red)],
+                vec![format!(
+                    "Add another arm like {} to ensure that this case is covered.",
+                    format!("| {} => ...", example).fg(Color::Blue),
                 )],
             ),
         };

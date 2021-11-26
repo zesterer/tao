@@ -117,9 +117,9 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
             Ty::Tuple(items) => write!(f, "({}{})", items
                 .iter()
-                .map(|item| format!("{}", self.with_ty(*item, false)))
+                .map(|item| format!("{},", self.with_ty(*item, false)))
                 .collect::<Vec<_>>()
-                .join(", "), if items.len() == 1 { "," } else { "" }),
+                .join(" "), if items.len() == 1 { "," } else { "" }),
             Ty::Record(fields) => write!(f, "{{ {} }}", fields
                 .into_iter()
                 .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
