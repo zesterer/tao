@@ -33,4 +33,5 @@ use tao_syntax::{
     ast,
 };
 use hashbrown::{HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::fmt;

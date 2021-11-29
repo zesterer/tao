@@ -159,7 +159,7 @@ impl ToHir for ast::Binding {
                 let fields = fields
                     .iter()
                     .map(|(name, field)| (**name, field.to_hir(infer, scope)))
-                    .collect::<HashMap<_, _>>();
+                    .collect::<BTreeMap<_, _>>();
                 (TyInfo::Record(fields
                     .iter()
                     .map(|(name, field)| (*name, field.meta().1))

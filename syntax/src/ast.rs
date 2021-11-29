@@ -2,7 +2,7 @@ use super::*;
 use internment::Intern;
 use std::ops::Deref;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ident(Intern<String>);
 
 impl fmt::Display for Ident {

@@ -336,8 +336,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             term_ident_parser()
                 .map_with_span(SrcNode::new)
                 .then(just(Token::Colon)
-                    .ignore_then(expr.clone())
-                    .map_with_span(SrcNode::new)
+                    .ignore_then(expr.clone().map_with_span(SrcNode::new))
                     .or_not())
                 .map(|(field, val)| match val {
                     Some(val) => (field, val),

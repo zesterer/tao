@@ -9,6 +9,7 @@ use ranges::Ranges;
 #[derive(Debug)]
 pub enum AbstractPat {
     Wildcard,
+    Bool([bool; 2]),
     Nat(Ranges<u64>),
     Tuple(Vec<Self>),
     Variant(DataId, Ident, Box<Self>),
@@ -21,6 +22,10 @@ impl AbstractPat {
     fn from_binding(ctx: &Context, binding: &TyBinding) -> Self {
         match &*binding.pat {
             hir::Pat::Wildcard => Self::Wildcard,
+            hir::Pat::Literal(hir::Literal::Bool(x)) => Self::Bool([
+                !x,
+                *x,
+            ]),
             hir::Pat::Literal(hir::Literal::Nat(x)) => Self::Nat({
                 let mut range = Ranges::new();
                 range.insert(*x..*x + 1);
@@ -89,7 +94,27 @@ impl AbstractPat {
                 }
                 covered.clone().invert().into_iter().next().map(ExamplePrim::Nat).map(ExamplePat::Prim)
             },
-            Ty::Prim(_) => todo!("Primitives"),
+            Ty::Prim(Prim::Bool) => {
+                let (mut caught_f, mut caught_t) = (false, false);
+                for pat in filter {
+                    match pat {
+                        AbstractPat::Wildcard => return None,
+                        AbstractPat::Bool([f, t]) => {
+                            caught_f |= f;
+                            caught_t |= t;
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+                if !caught_f {
+                    Some(ExamplePat::Prim(ExamplePrim::Bool(false)))
+                } else if !caught_t {
+                    Some(ExamplePat::Prim(ExamplePrim::Bool(true)))
+                } else {
+                    None
+                }
+            },
+            Ty::Prim(prim) => todo!("{:?}", prim),
             Ty::Tuple(fields) if fields.len() == 1 => {
                 let mut inners = Vec::new();
                 for pat in filter {
@@ -101,6 +126,16 @@ impl AbstractPat {
                 }
                 Self::inexhaustive_pat(ctx, fields[0], &mut inners.into_iter(), get_gen_ty)
                     .map(|inner| ExamplePat::Tuple(vec![inner]))
+            },
+            Ty::Record(fields) => {
+                if (&mut filter).any(|pat| !pat.is_refutable(ctx)) {
+                    None
+                } else {
+                    Some(ExamplePat::Record(fields
+                        .iter()
+                        .map(|(name, _)| (*name, ExamplePat::Wildcard))
+                        .collect()))
+                }
             },
             Ty::Tuple(fields) => {
                 let filter = (&mut filter).collect::<Vec<_>>();
@@ -211,12 +246,14 @@ impl AbstractPat {
 
 #[derive(Clone, Debug)]
 pub enum ExamplePrim {
+    Bool(bool),
     Nat(u64),
 }
 
 impl fmt::Display for ExamplePrim {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::Bool(x) => write!(f, "{}", x),
             Self::Nat(x) => write!(f, "{}", x),
         }
     }
@@ -227,6 +264,7 @@ pub enum ExamplePat {
     Wildcard,
     Prim(ExamplePrim),
     Tuple(Vec<Self>),
+    Record(Vec<(Ident, Self)>),
     List(Vec<Self>),
     Variant(Ident, Box<Self>),
 }
@@ -237,6 +275,7 @@ impl fmt::Display for ExamplePat {
             Self::Wildcard => write!(f, "_"),
             Self::Prim(prim) => write!(f, "{}", prim),
             Self::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", f)).collect::<Vec<_>>().join(" ")),
+            Self::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, f)).collect::<Vec<_>>().join(" ")),
             Self::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ")),
             Self::Variant(name, inner) => write!(f, "{} {}", name, inner),
         }

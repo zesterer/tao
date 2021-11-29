@@ -12,7 +12,7 @@ pub enum TyInfo {
     Prim(ty::Prim),
     List(TyVar),
     Tuple(Vec<TyVar>),
-    Record(HashMap<Ident, TyVar>),
+    Record(BTreeMap<Ident, TyVar>),
     Func(TyVar, TyVar),
     Data(DataId, Vec<TyVar>),
     Gen(usize, GenScopeId, Span),
@@ -44,7 +44,7 @@ pub struct TyVar(usize);
 pub struct Infer<'a> {
     ctx: &'a mut Context,
     gen_scope: Option<GenScopeId>,
-    vars: Vec<(Span, TyInfo)>,
+    vars: Vec<(Span, TyInfo, Result<(), ()>)>,
     constraints: VecDeque<Constraint>,
     errors: Vec<InferError>,
 }
@@ -79,10 +79,34 @@ impl<'a> Infer<'a> {
         }
     }
 
-    fn set_info(&mut self, ty: TyVar, info: TyInfo) {
+    fn set_info_inner(&mut self, ty: TyVar, info: TyInfo) -> TyVar {
         match self.vars[ty.0].1.clone() {
-            TyInfo::Ref(x) => self.set_info(x, info),
-            _ => self.vars[ty.0].1 = info,
+            TyInfo::Ref(x) => self.set_info_inner(x, info),
+            _ => {
+                self.vars[ty.0].1 = info;
+                ty
+            },
+        }
+    }
+
+    fn set_info(&mut self, ty: TyVar, info: TyInfo) {
+        let new_ty = self.set_info_inner(ty, info);
+        if self.vars[ty.0].2.is_err() {
+            self.vars[new_ty.0].2 = Err(());
+        }
+    }
+
+    fn set_error(&mut self, ty: TyVar) {
+        match self.vars[ty.0].1.clone() {
+            TyInfo::Ref(x) => self.set_error(x),
+            _ => self.vars[ty.0].2 = Err(()),
+        }
+    }
+
+    fn is_error(&self, ty: TyVar) -> bool {
+        match self.vars[ty.0].1.clone() {
+            TyInfo::Ref(x) => self.is_error(x),
+            _ => self.vars[ty.0].2.is_err(),
         }
     }
 
@@ -103,7 +127,8 @@ impl<'a> Infer<'a> {
 
     pub fn insert(&mut self, span: Span, info: TyInfo) -> TyVar {
         let id = TyVar(self.vars.len());
-        self.vars.push((span, info));
+        let err = if matches!(&info, TyInfo::Error) { Err(()) } else { Ok(()) };
+        self.vars.push((span, info, err));
         id
     }
 
@@ -175,9 +200,11 @@ impl<'a> Infer<'a> {
 
     pub fn make_eq(&mut self, x: TyVar, y: TyVar) {
         if let Err((a, b)) = self.make_eq_inner(x, y) {
-            // self.set_info(a, TyInfo::Error);
-            // self.set_info(b, TyInfo::Error);
-            self.errors.push(InferError::Mismatch(a, b));
+            if !self.is_error(a) && !self.is_error(b) {
+                self.set_error(a);
+                self.set_error(b);
+                self.errors.push(InferError::Mismatch(a, b));
+            }
         }
     }
 
@@ -191,7 +218,7 @@ impl<'a> Infer<'a> {
             // Unify unknown or erronoeus types
             (TyInfo::Unknown(_), _) => if self.occurs_in(x, y) {
                 self.errors.push(InferError::Recursive(y));
-                Ok(self.set_info(x, TyInfo::Error)) // TODO: Not actually ok
+                Ok(self.set_error(x)) // TODO: Not actually ok
             } else {
                 Ok(self.set_info(x, TyInfo::Ref(y)))
             },
@@ -270,8 +297,8 @@ impl<'a> Infer<'a> {
         use ast::{UnaryOp::*, BinaryOp::*};
         match c {
             Constraint::Access(record, field_name, field) => match self.follow_info(record) {
-                TyInfo::Error => {
-                    self.set_info(field, TyInfo::Error);
+                _ if self.is_error(record) => {
+                    self.set_error(field);
                     // Trying to access a field on an error type counts as success because we don't want to emit more
                     // errors than necessary.
                     Some(true)
@@ -310,7 +337,7 @@ impl<'a> Infer<'a> {
                 .map(|success| if success {
                     Ok(())
                 } else {
-                    self.set_info(field, TyInfo::Error);
+                    self.set_error(field);
                     Err(InferError::NoSuchField(record, field_name.clone()))
                 }),
             Constraint::Unary(op, a, output) => match (&*op, self.follow_info(a)) {
@@ -321,7 +348,7 @@ impl<'a> Infer<'a> {
                 (Neg, TyInfo::Prim(Prim::Int)) => Some(Ok(TyInfo::Prim(Prim::Int))),
                 (Not, TyInfo::Prim(Prim::Bool)) => Some(Ok(TyInfo::Prim(Prim::Bool))),
                 _ => {
-                    self.set_info(output, TyInfo::Error);
+                    self.set_error(output);
                     Some(Err(InferError::InvalidUnaryOp(op.clone(), a)))
                 },
             }
@@ -380,13 +407,13 @@ impl<'a> Infer<'a> {
                     if let Some(out) = PRIM_BINARY_IMPLS.get(&(*op, prim_a, prim_b)) {
                         Some(Ok(TyInfo::Prim(*out)))
                     } else {
-                        self.set_info(output, TyInfo::Error);
+                        self.set_error(output);
                         Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
                     }
                 },
                 (Join, TyInfo::List(a), TyInfo::List(b)) if self.follow_info(a) == self.follow_info(b) => Some(Ok(TyInfo::List(a))),
                 _ => {
-                    self.set_info(output, TyInfo::Error);
+                    self.set_error(output);
                     Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
                 },
             }
@@ -422,9 +449,13 @@ impl<'a> Infer<'a> {
         let mut errors = std::mem::take(&mut self.errors);
 
         // Report errors for types that cannot be inferred
-        for (ty, info) in self.iter() {
+        let tys = self.iter().collect::<Vec<_>>();
+        for (ty, info) in tys {
             if let TyInfo::Unknown(origin) = info {
-                errors.push(InferError::CannotInfer(ty, origin));
+                if !self.is_error(ty) {
+                    errors.push(InferError::CannotInfer(ty, origin));
+                    self.set_error(ty);
+                }
             }
         }
 

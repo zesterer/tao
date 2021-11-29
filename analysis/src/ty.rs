@@ -31,7 +31,7 @@ pub enum Ty {
     Prim(Prim),
     List(TyId),
     Tuple(Vec<TyId>),
-    Record(HashMap<Ident, TyId>),
+    Record(BTreeMap<Ident, TyId>),
     Func(TyId, TyId),
     Data(DataId, Vec<TyId>),
     Gen(usize, GenScopeId),

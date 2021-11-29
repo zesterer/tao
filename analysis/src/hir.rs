@@ -10,7 +10,7 @@ pub enum Pat<M> {
     Single(Node<Binding<M>, M>),
     Add(Node<Binding<M>, M>, SrcNode<u64>),
     Tuple(Vec<Node<Binding<M>, M>>),
-    Record(HashMap<Ident, Node<Binding<M>, M>>),
+    Record(BTreeMap<Ident, Node<Binding<M>, M>>),
     ListExact(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<Node<Binding<M>, M>>),
     Decons(SrcNode<DataId>, Ident, Node<Binding<M>, M>),
