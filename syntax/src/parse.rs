@@ -450,6 +450,13 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .map_with_span(SrcNode::new)
             .boxed();
 
+        // TODO: Remove
+        let atom = just(Token::Question)
+            .ignore_then(atom.clone())
+            .map(ast::Expr::Debug)
+            .map_with_span(SrcNode::new)
+            .or(atom);
+
         // Apply direct (a pattern like `f(arg)` more eagerly binds than a simple application chain
         let direct = atom
             .then(paren_exp_list.clone().or_not())

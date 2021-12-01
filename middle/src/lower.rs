@@ -120,7 +120,7 @@ impl ToMir for hir::TyBinding {
             name: self.name.as_ref().map(|n| **n),
         };
 
-        MirNode::new(binding, self.meta().1.to_mir(ctx, hir, gen_tys))
+        MirNode::new(binding, (self.meta().0, self.meta().1.to_mir(ctx, hir, gen_tys)))
     }
 }
 
@@ -158,6 +158,10 @@ impl ToMir for hir::TyExpr {
                     (Sub, Prim(Int), Prim(Int)) => mir::Intrinsic::SubInt,
                     (Mul, Prim(Nat), Prim(Nat)) => mir::Intrinsic::MulNat,
                     (Mul, Prim(Int), Prim(Int)) => mir::Intrinsic::MulInt,
+                    (Eq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::EqNat,
+                    (Eq, Prim(Int), Prim(Int)) => mir::Intrinsic::EqInt,
+                    (NotEq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::NotEqNat,
+                    (NotEq, Prim(Int), Prim(Int)) => mir::Intrinsic::NotEqInt,
                     (Less, Prim(Nat), Prim(Nat)) => mir::Intrinsic::LessNat,
                     (Less, Prim(Int), Prim(Int)) => mir::Intrinsic::LessInt,
                     (More, Prim(Nat), Prim(Nat)) => mir::Intrinsic::MoreNat,
@@ -166,6 +170,8 @@ impl ToMir for hir::TyExpr {
                     (LessEq, Prim(Int), Prim(Int)) => mir::Intrinsic::LessEqInt,
                     (MoreEq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::MoreEqNat,
                     (MoreEq, Prim(Int), Prim(Int)) => mir::Intrinsic::MoreEqInt,
+                    (Eq, Prim(Char), Prim(Char)) => mir::Intrinsic::EqChar,
+                    (NotEq, Prim(Char), Prim(Char)) => mir::Intrinsic::NotEqChar,
                     (Join, List(x), List(y)) => mir::Intrinsic::Join(x.to_mir(ctx, hir, gen_tys)), // Assume x = y
                     op => panic!("Invalid binary op in HIR: {:?}", op),
                 };
@@ -189,7 +195,7 @@ impl ToMir for hir::TyExpr {
             hir::Expr::ListFront(items, tail) => {
                 let tail = tail.to_mir(ctx, hir, gen_tys);
                 mir::Expr::Intrinsic(
-                    mir::Intrinsic::Join(match tail.meta() {
+                    mir::Intrinsic::Join(match &tail.meta().1 {
                         Repr::List(item) => (**item).clone(),
                         _ => unreachable!(),
                     }),
@@ -230,7 +236,7 @@ impl ToMir for hir::TyExpr {
                 let mut expr = record.to_mir(ctx, hir, gen_tys);
                 // Perform indirections for field accesses
                 for _ in 0..indirections {
-                    let variant_repr = if let Repr::Data(data, params) = expr.meta() {
+                    let variant_repr = if let Repr::Data(data, params) = &expr.meta().1 {
                         if let Repr::Sum(variants) = ctx.reprs.get(*data, params.clone()) {
                             variants[0].clone()
                         } else {
@@ -239,7 +245,7 @@ impl ToMir for hir::TyExpr {
                     } else {
                         unreachable!()
                     };
-                    expr = MirNode::new(mir::Expr::AccessVariant(expr, 0), variant_repr);
+                    expr = MirNode::new(mir::Expr::AccessVariant(expr, 0), (self.meta().0, variant_repr));
                 }
 
                 mir::Expr::Access(expr, field_idx)
@@ -252,9 +258,10 @@ impl ToMir for hir::TyExpr {
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 mir::Expr::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             },
+            hir::Expr::Debug(inner) => mir::Expr::Debug(inner.to_mir(ctx, hir, gen_tys)),
         };
 
-        MirNode::new(expr, self.meta().1.to_mir(ctx, hir, gen_tys))
+        MirNode::new(expr, (self.meta().0, self.meta().1.to_mir(ctx, hir, gen_tys)))
     }
 }
 

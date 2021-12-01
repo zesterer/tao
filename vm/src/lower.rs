@@ -125,7 +125,7 @@ impl Program {
                 },
                 constant => {
                     self.push(Instr::Imm(const_to_value(constant)));
-                    self.push(match binding.meta() {
+                    self.push(match &binding.meta().1 {
                         repr::Repr::Prim(repr::Prim::Bool) => Instr::EqBool,
                         repr::Repr::Prim(repr::Prim::Nat) => Instr::EqInt,
                         repr::Repr::Prim(repr::Prim::Int) => Instr::EqInt,
@@ -215,25 +215,29 @@ impl Program {
                 for arg in args {
                     self.compile_expr(mir, arg, stack, proc_fixups);
                 }
-                self.push(match intrinsic {
-                    mir::Intrinsic::MakeList(_) => Instr::MakeList(args.len()),
-                    mir::Intrinsic::NotBool => Instr::NotBool,
-                    mir::Intrinsic::AddNat => Instr::AddInt,
-                    mir::Intrinsic::AddInt => Instr::AddInt,
-                    mir::Intrinsic::SubNat => Instr::SubInt,
-                    mir::Intrinsic::SubInt => Instr::SubInt,
-                    mir::Intrinsic::MulNat => Instr::MulInt,
-                    mir::Intrinsic::MulInt => Instr::MulInt,
-                    mir::Intrinsic::LessNat => Instr::LessInt,
-                    mir::Intrinsic::LessInt => Instr::LessInt,
-                    mir::Intrinsic::MoreNat => Instr::MoreInt,
-                    mir::Intrinsic::MoreInt => Instr::MoreInt,
-                    mir::Intrinsic::LessEqNat => Instr::LessEqInt,
-                    mir::Intrinsic::LessEqInt => Instr::LessEqInt,
-                    mir::Intrinsic::MoreEqNat => Instr::MoreEqInt,
-                    mir::Intrinsic::MoreEqInt => Instr::MoreEqInt,
-                    mir::Intrinsic::Join(_) => Instr::JoinList,
-                });
+                use mir::Intrinsic::*;
+                match intrinsic {
+                    MakeList(_) => { self.push(Instr::MakeList(args.len())); },
+                    NotBool => { self.push(Instr::NotBool); },
+                    AddNat | AddInt => { self.push(Instr::AddInt); },
+                    SubNat | SubInt => { self.push(Instr::SubInt); },
+                    MulNat | MulInt => { self.push(Instr::MulInt); },
+                    EqNat | EqInt => { self.push(Instr::EqInt); },
+                    EqChar => { self.push(Instr::EqChar); },
+                    NotEqNat | NotEqInt => {
+                        self.push(Instr::EqInt);
+                        self.push(Instr::NotBool);
+                    },
+                    NotEqChar => {
+                        self.push(Instr::EqChar);
+                        self.push(Instr::NotBool);
+                    },
+                    LessNat | LessInt => { self.push(Instr::LessInt); },
+                    MoreNat | MoreInt => { self.push(Instr::MoreInt); },
+                    LessEqNat | LessEqInt => { self.push(Instr::LessEqInt); },
+                    MoreEqNat | MoreEqInt => { self.push(Instr::MoreEqInt); },
+                    Join(_) => { self.push(Instr::JoinList); },
+                };
             },
             mir::Expr::Tuple(fields) => {
                 for field in fields {
@@ -343,6 +347,10 @@ impl Program {
             mir::Expr::AccessVariant(inner, variant) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
                 self.push(Instr::IndexSum(*variant));
+            },
+            mir::Expr::Debug(inner) => {
+                self.compile_expr(mir, inner, stack, proc_fixups);
+                self.push(Instr::Break);
             },
         }
     }

@@ -11,6 +11,7 @@ pub enum AbstractPat {
     Wildcard,
     Bool([bool; 2]),
     Nat(Ranges<u64>),
+    Char(char),
     Tuple(Vec<Self>),
     Variant(DataId, Ident, Box<Self>),
     ListExact(Vec<Self>), // Exactly N in size
@@ -113,6 +114,16 @@ impl AbstractPat {
                 } else {
                     None
                 }
+            },
+            Ty::Prim(Prim::Char) => {
+                for pat in filter {
+                    match pat {
+                        AbstractPat::Wildcard => return None,
+                        AbstractPat::Char(_) => {},
+                        _ => unreachable!(),
+                    }
+                }
+                Some(ExamplePat::Wildcard)
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
             Ty::Tuple(fields) if fields.len() == 1 => {
@@ -238,6 +249,15 @@ impl AbstractPat {
                 covered_lens.clone().invert().into_iter().next().map(|n| {
                     ExamplePat::List((0..n).map(|_| ExamplePat::Wildcard).collect())
                 })
+            },
+            Ty::Func(_, _) => {
+                for pat in filter {
+                    match pat {
+                        AbstractPat::Wildcard => return None,
+                        _ => unreachable!(),
+                    }
+                }
+                Some(ExamplePat::Wildcard)
             },
             ty => todo!("{:?}", ty),
         }

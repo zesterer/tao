@@ -92,6 +92,7 @@ impl Reify for hir::Expr<InferMeta> {
             hir::Expr::Func(param, body) => hir::Expr::Func(TyNode::new(*param, (param.meta().0, infer.reify(param.meta().1))), body.reify(infer)),
             hir::Expr::Apply(f, param) => hir::Expr::Apply(f.reify(infer), param.reify(infer)),
             hir::Expr::Cons(name, variant, a) => hir::Expr::Cons(name, variant, a.reify(infer)),
+            hir::Expr::Debug(inner) => hir::Expr::Debug(inner.reify(infer)),
         };
 
         TyNode::new(expr, (span, infer.reify(ty)))

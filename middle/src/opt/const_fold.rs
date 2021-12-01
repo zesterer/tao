@@ -202,6 +202,9 @@ impl Pass for ConstFold {
                     //     *expr = Expr::Const((**inner).clone());
                     // }
                 },
+                Expr::Debug(inner) => {
+                    visit(mir, inner, stack, proc_stack);
+                },
             }
         }
 

@@ -16,18 +16,16 @@ impl Pass for FlattenSingleField {
                 }
             },
             |binding| {
-                if binding.name.is_none() {
-                    if let Pat::Tuple(fields) = &mut binding.pat {
-                        if fields.len() == 1 {
-                            *binding = fields.remove(0).into_inner();
-                        }
+                if let Pat::Tuple(fields) = &mut binding.pat {
+                    if fields.len() == 1 {
+                        *binding = fields.remove(0).into_inner();
                     }
                 }
             },
             |expr| {
                 match expr {
                     Expr::Tuple(fields) if fields.len() == 1 => *expr = fields.remove(0).into_inner(),
-                    Expr::Access(tuple, field) => if let Repr::Tuple(fields) = tuple.meta() {
+                    Expr::Access(tuple, field) => if let Repr::Tuple(fields) = &tuple.meta().1 {
                         if fields.len() == 1 {
                             *expr = tuple.inner().clone();
                         }

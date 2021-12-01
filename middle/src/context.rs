@@ -44,10 +44,13 @@ impl Context {
 
     pub fn optimize(&mut self) {
         opt::prepare(self);
-        for _ in 0..10 {
-            opt::FlattenSingleField::default().apply(self);
-            opt::ConstFold::default().apply(self);
-            opt::RemoveUnusedBindings::default().apply(self);
+
+        // println!("\nMIR before optimisation:\n\n{}", self.procs.get(self.entry.unwrap()).unwrap().body.print());
+
+        for _ in 0..2 {
+            opt::FlattenSingleField::default().run(self);
+            opt::ConstFold::default().run(self);
+            opt::RemoveUnusedBindings::default().run(self);
         }
     }
 }

@@ -1,11 +1,76 @@
+data Maybe A =
+	| Just A
+	| None
+
 data Result A, E =
 	| Ok A
 	| Err E
 
-type Parser I, O, E = [I] -> Result O E
+def map_res A, B, E : ? -> Result A E -> Result B E = fn
+	| f, Ok ok => Ok ok:f
+	| _, Err err => Err err
 
-def just = fn c =>
+data ParseErr I =
+	| UnexpectedEnd
+	| ExpectedFound (I, I)
 
+type Parser I, O = [I] -> Result (O, [I]) (ParseErr I)
+
+def filter I, O : (I -> Result O (ParseErr I)) -> Parser I O = fn
+	| _, [] => Err UnexpectedEnd
+	| f, [head .. tail] => head:f:map_res(fn o => (o, tail))
+
+def just = fn c: Char => filter(fn head => if head = c
+	then Ok head
+	else Err ExpectedFound (c, head))
+
+def and_then I, O, U : Parser I U -> Parser I O -> ? = fn b, a, xs => match xs:a in
+	| Err err => Err err
+	| Ok (a, xs) => match xs:b in
+		| Err err => Err err
+		| Ok (b, xs) => Ok ((a, b), xs)
+
+def or_else I, O : Parser I O -> Parser I O -> Parser I O = fn a, b, xs => match xs:a in
+	| ok ~ Ok _ => ok
+	| Err _ => match xs:b in
+		| ok ~ Ok _ => ok
+		| err ~ Err _ => err
+
+def repeated I, O : Parser I O -> Parser I [O] = fn a, xs => match xs:a in
+	| Err err => Ok ([], xs)
+	| Ok (out, tail) => match tail:repeated(a) in
+		| err ~ Err _ => Ok ([], tail)
+		| Ok (items, tail) => Ok ([out .. items], tail)
+
+def map I, O, U : (O -> U) -> Parser I O -> Parser I U = fn f, a, xs =>
+	xs:a:map_res(fn (out, tail) => (out:f, tail))
+
+def then_ignore I, O, U : Parser I U -> Parser I O -> Parser I O = fn b, a => a
+	:and_then(b)
+	:map(fn (a, _) => a)
+
+def ignore_then I, O, U : Parser I U -> Parser I O -> Parser I U = fn b, a => a
+	:and_then(b)
+	:map(fn (_, b) => b)
+
+def whitespace = just(' ')
+	:or_else(just('\t'))
+
+def whitespaces = whitespace:repeated
+
+def padded O : ? -> Parser Char O = fn a =>
+	whitespaces
+	:ignore_then(a)
+	:then_ignore(whitespaces)
 
 $[main]
-def main = ()
+def main =
+	let parser = just('f')
+		:repeated
+		:map(fn x => (x, 0))
+		:padded
+		:and_then(just('!'))
+	in
+	match parser("   ffff    !") in
+	| Ok (out, tail) => Ok ("parsed", out, tail)
+	| Err e => Err ("failed", e)

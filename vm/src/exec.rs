@@ -180,6 +180,11 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::Bool(x == y))
             },
+            Instr::EqChar => {
+                let y = stack.pop().unwrap().char();
+                let x = stack.pop().unwrap().char();
+                stack.push(Value::Bool(x == y))
+            },
             Instr::LessInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();

@@ -184,6 +184,12 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .or(just('r').to('\r'))
         .or(just('t').to('\t')));
 
+    let r#char = just('\'')
+        .ignore_then(filter(|c| *c != '\\' && *c != '\'').or(escape))
+        .then_ignore(just('\''))
+        .map(Token::Char)
+        .labelled("character");
+
     let string = just('"')
         .ignore_then(filter(|c| *c != '\\' && *c != '"').or(escape).repeated())
         .then_ignore(just('"'))
@@ -233,6 +239,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .or(op)
         .or(delim)
         .or(string)
+        .or(r#char)
         .recover_with(skip_then_retry_until([]))
         .map_with_span(move |token, span| (token, span))
         .padded();

@@ -20,6 +20,7 @@ pub enum Error {
     DuplicateConsName(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
     NotExhaustive(Span, ExamplePat),
+    WrongNumberOfGenerics(Span, usize, Span, usize),
 }
 
 impl Error {
@@ -164,6 +165,14 @@ impl Error {
                     "Add another arm like {} to ensure that this case is covered.",
                     format!("| {} => ...", example).fg(Color::Blue),
                 )],
+            ),
+            Error::WrongNumberOfGenerics(a, a_count, b, b_count) => (
+                format!("Wrong number of type parameters"),
+                vec![
+                    (a, format!("Provided with {} parameters", a_count), Color::Red),
+                    (b, format!("Has {} parameter(s)", b_count), Color::Yellow),
+                ],
+                vec![],
             ),
         };
 

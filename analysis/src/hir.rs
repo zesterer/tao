@@ -110,6 +110,8 @@ pub enum Expr<M> {
     Func(Node<Ident, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>),
     Cons(SrcNode<DataId>, Ident, Node<Self, M>),
+
+    Debug(Node<Self, M>),
 }
 
 pub type InferExpr = InferNode<Expr<InferMeta>>;

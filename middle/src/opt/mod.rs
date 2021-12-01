@@ -1,4 +1,5 @@
 use super::*;
+use std::any::{Any, type_name};
 
 mod const_fold;
 mod flatten_single_field;
@@ -10,8 +11,14 @@ pub use {
     remove_unused_bindings::RemoveUnusedBindings,
 };
 
-pub trait Pass {
+pub trait Pass: Any {
     fn apply(&mut self, ctx: &mut Context);
+
+    fn run(&mut self, ctx: &mut Context) {
+        self.apply(ctx);
+        opt::check(ctx);
+        // println!("\nMIR after {}:\n\n{}", type_name::<Self>(), ctx.procs.get(ctx.entry.unwrap()).unwrap().body.print());
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -102,7 +109,7 @@ impl Binding {
             binding(self);
         }
 
-        self.meta_mut().visit_inner(order, repr, binding, expr);
+        self.meta_mut().1.visit_inner(order, repr, binding, expr);
 
         match &mut self.pat {
             mir::Pat::Wildcard | mir::Pat::Const(_) => {},
@@ -130,7 +137,7 @@ impl Binding {
 }
 
 impl Expr {
-    pub fn for_children(&self, mut f: impl FnMut(&Self)) {
+    pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
         match self {
             Expr::Const(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
@@ -158,10 +165,11 @@ impl Expr {
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
+            Expr::Debug(inner) => f(inner),
         }
     }
 
-    pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut Self)) {
+    pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut MirNode<Self>)) {
         match self {
             Expr::Const(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
@@ -189,24 +197,27 @@ impl Expr {
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
+            Expr::Debug(inner) => f(inner),
         }
     }
 
     pub fn inline_local(&mut self, name: Ident, local_expr: &Self) {
         match self {
             Expr::Local(local) if *local == name => *self = local_expr.clone(),
-            _ => self.for_children_mut(|expr| match expr {
-                Expr::Local(local) if *local == name => *expr = local_expr.clone(),
-                Expr::Match(pred, arms) => {
-                    pred.inline_local(name, local_expr);
-                    for (arm, body) in arms {
-                        if !arm.binding_names().contains(&name) {
-                            body.inline_local(name, local_expr);
-                        }
+            Expr::Match(pred, arms) => {
+                pred.inline_local(name, local_expr);
+                for (arm, body) in arms {
+                    if !arm.binding_names().contains(&name) {
+                        body.inline_local(name, local_expr);
                     }
-                },
-                expr => expr.inline_local(name, local_expr),
-            }),
+                }
+            },
+            Expr::Func(captures, arg, body) => {
+                if *arg != name {
+                    body.inline_local(name, local_expr);
+                }
+            },
+            _ => self.for_children_mut(|expr| expr.inline_local(name, local_expr)),
         }
     }
 
@@ -221,7 +232,7 @@ impl Expr {
             expr(self);
         }
 
-        self.meta_mut().visit_inner(order, repr, binding, expr);
+        self.meta_mut().1.visit_inner(order, repr, binding, expr);
 
         match &mut **self {
             Expr::Const(_) | Expr::Local(_) | Expr::Global(_, _) => {},
@@ -251,6 +262,7 @@ impl Expr {
             Expr::Access(record, _) => record.visit_inner(order, repr, binding, expr),
             Expr::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             Expr::AccessVariant(inner, _) => inner.visit_inner(order, repr, binding, expr),
+            Expr::Debug(inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
@@ -281,4 +293,45 @@ pub fn prepare(ctx: &mut Context) {
     for (id, proc) in ctx.procs.iter() {
         mark_loop_breakers(ctx, &proc.body, &mut vec![id]);
     }
+}
+
+/// Check the self-consistency of the MIR
+pub fn check(ctx: &Context) {
+    fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Ident, Repr)>) {
+        match (&binding.pat, repr) {
+            (Pat::Wildcard, _) => {},
+            (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
+            (_, repr) => panic!("Inconsistency between binding\n\n {:?}\n\nand repr\n\n {:?}", binding, repr),
+        }
+    }
+
+    fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Ident, Repr)>) {
+        match (expr, repr) {
+            (Expr::Local(local), repr) if &stack
+                .iter()
+                .rev()
+                .find(|(name, _)| name == local)
+                .unwrap_or_else(|| panic!("Failed to find local {} in scope", local)).1 == repr => {},
+            (Expr::Func(_, _, _), Repr::Func(_, _)) => {},
+            (Expr::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
+            (Expr::Match(pred, arms), repr) => {
+                for (arm, body) in arms {
+                    // TODO: visit binding
+                    check_binding(ctx, arm.inner(), &pred.meta().1, stack);
+                }
+            },
+            // (Expr::Data(_, _, _), Repr::Func(_, _)) => {},
+            (expr, repr) => panic!("Inconsistency between expression\n\n {:?}\n\nand repr\n\n {:?}", expr, repr),
+        }
+    }
+
+    fn visit_expr(ctx: &Context, expr: &MirNode<Expr>, stack: &mut Vec<(Ident, Repr)>) {
+        check_expr(ctx, expr.inner(), &expr.meta().1, stack);
+
+        expr.for_children(|expr| visit_expr(ctx, expr, stack));
+    }
+
+    // for (id, proc) in ctx.procs.iter() {
+    //     visit_expr(ctx, &proc.body, &mut Vec::new());
+    // }
 }

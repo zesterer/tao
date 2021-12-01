@@ -170,6 +170,8 @@ pub enum Expr {
     Func(Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>),
     Apply(SrcNode<Self>, SrcNode<Self>),
     Cons(SrcNode<Ident>, SrcNode<Self>),
+
+    Debug(SrcNode<Self>),
 }
 
 #[derive(Debug, PartialEq)]

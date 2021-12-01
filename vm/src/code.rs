@@ -40,6 +40,7 @@ pub enum Instr {
 
     EqInt, // Int -> Int -> Bool
     EqBool, // Bool -> Bool -> Bool
+    EqChar, // Char -> Char -> Bool
     LessInt,
     MoreInt,
     LessEqInt,
@@ -132,6 +133,7 @@ impl Program {
                 | Instr::MulInt
                 | Instr::EqInt
                 | Instr::EqBool
+                | Instr::EqChar
                 | Instr::LessInt
                 | Instr::MoreInt
                 | Instr::LessEqInt
@@ -170,6 +172,7 @@ impl Program {
                 Instr::MulInt => format!("int.mul"),
                 Instr::EqInt => format!("int.eq"),
                 Instr::EqBool => format!("bool.eq"),
+                Instr::EqChar => format!("char.eq"),
                 Instr::LessInt => format!("int.less"),
                 Instr::MoreInt => format!("int.more"),
                 Instr::LessEqInt => format!("int.less_eq"),

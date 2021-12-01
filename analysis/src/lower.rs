@@ -91,19 +91,43 @@ impl ToHir for ast::Type {
                         TyInfo::Gen(gen_idx, scope, gen.span())
                     } else if let Some(alias_id) = infer.ctx().datas.lookup_alias(**name) {
                         if let Some(alias) = infer.ctx().datas.get_alias(alias_id) {
-                            let (alias_ty, alias_gen_scope) = (alias.ty, alias.gen_scope);
-                            let get_gen = |index, scope, ctx: &Context| {
-                                assert!(index < params.len(), "{:?}, {}, {:?}, {:?}, {:?}", name, ctx.datas.get_alias(alias_id).unwrap().name, ctx.tys.get_gen_scope(scope).get(index), alias_gen_scope, scope);
-                                params[index]
-                            };
-                            TyInfo::Ref(infer.instantiate(alias_ty, &get_gen))
+                            let alias_gen_scope = infer.ctx().tys.get_gen_scope(alias.gen_scope);
+                            if alias_gen_scope.len() != params.len() {
+                                let err = Error::WrongNumberOfGenerics(
+                                    self.span(),
+                                    params.len(),
+                                    alias_gen_scope.span,
+                                    alias_gen_scope.len(),
+                                );
+                                infer.ctx_mut().emit(err);
+                                TyInfo::Error
+                            } else {
+                                let (alias_ty, alias_gen_scope) = (alias.ty, alias.gen_scope);
+                                let get_gen = |index, scope, ctx: &Context| {
+                                    assert!(index < params.len(), "{:?}, {}, {:?}, {:?}, {:?}", name, ctx.datas.get_alias(alias_id).unwrap().name, ctx.tys.get_gen_scope(scope).get(index), alias_gen_scope, scope);
+                                    params[index]
+                                };
+                                TyInfo::Ref(infer.instantiate(alias_ty, &get_gen))
+                            }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error);
                             infer.emit(InferError::RecursiveAlias(alias_id, err_ty, name.span()));
                             TyInfo::Ref(err_ty)
                         }
                     } else if let Some(data) = infer.ctx().datas.lookup_data(**name) {
-                        TyInfo::Data(data, params)
+                        let data_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.name_gen_scope(**name));
+                        if data_gen_scope.len() != params.len() {
+                            let err = Error::WrongNumberOfGenerics(
+                                self.span(),
+                                params.len(),
+                                data_gen_scope.span,
+                                data_gen_scope.len(),
+                            );
+                            infer.ctx_mut().emit(err);
+                            TyInfo::Error
+                        } else {
+                            TyInfo::Data(data, params)
+                        }
                     } else {
                         infer.ctx_mut().emit(Error::NoSuchData(name.clone()));
                         TyInfo::Error
@@ -520,6 +544,10 @@ impl ToHir for ast::Expr {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression
                 (TyInfo::Error, hir::Expr::Error)
+            },
+            ast::Expr::Debug(inner) => {
+                let inner = inner.to_hir(infer, scope);
+                (TyInfo::Ref(inner.meta().1), hir::Expr::Debug(inner))
             },
         };
 

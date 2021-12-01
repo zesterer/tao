@@ -246,7 +246,7 @@ impl<'a> Infer<'a> {
                     .into_iter()
                     .zip(ys.into_iter())
                     .try_for_each(|(x, y)| self.make_eq_inner(x, y)),
-            (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == a && a_scope == b_scope => Ok(()),
+            (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
             (_, _) => Err((x, y)),//self.errors.push(InferError::Mismatch(x, y)),
         }
     }
@@ -397,6 +397,10 @@ impl<'a> Infer<'a> {
                             ((LessEq, Int, Int), Bool),
                             ((More, Int, Int), Bool),
                             ((MoreEq, Int, Int), Bool),
+
+                            // Char
+                            ((Eq, Char, Char), Bool),
+                            ((NotEq, Char, Char), Bool),
 
                             // TODO: Others
                         ]

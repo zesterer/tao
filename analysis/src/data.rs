@@ -23,7 +23,7 @@ pub struct Alias {
 #[derive(Default)]
 pub struct Datas {
     // TODO: Don't use `Result`
-    name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>)>,
+    name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>, GenScopeId)>,
     cons_lut: HashMap<Ident, (Span, DataId)>,
     alias_lut: HashMap<Ident, Alias>,
     datas: Vec<Option<Data>>,
@@ -31,6 +31,10 @@ pub struct Datas {
 }
 
 impl Datas {
+    pub fn name_gen_scope(&self, name: Ident) -> GenScopeId {
+        self.name_lut[&name].2
+    }
+
     pub fn lookup_data(&self, name: Ident) -> Option<DataId> {
         self.name_lut
             .get(&name)
@@ -65,20 +69,20 @@ impl Datas {
         self.aliases[alias.0].0
     }
 
-    pub fn declare_data(&mut self, name: Ident, span: Span) -> Result<DataId, Error> {
+    pub fn declare_data(&mut self, name: Ident, span: Span, gen_scope: GenScopeId) -> Result<DataId, Error> {
         let id = DataId(self.datas.len());
         self.datas.push(None);
-        if let Err(old) = self.name_lut.try_insert(name, (span, Ok(id))) {
+        if let Err(old) = self.name_lut.try_insert(name, (span, Ok(id), gen_scope)) {
             Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
         } else {
             Ok(id)
         }
     }
 
-    pub fn declare_alias(&mut self, name: Ident, span: Span) -> Result<AliasId, Error> {
+    pub fn declare_alias(&mut self, name: Ident, span: Span, gen_scope: GenScopeId) -> Result<AliasId, Error> {
         let id = AliasId(self.aliases.len());
         self.aliases.push((span, None));
-        if let Err(old) = self.name_lut.try_insert(name, (span, Err(id))) {
+        if let Err(old) = self.name_lut.try_insert(name, (span, Err(id), gen_scope)) {
             Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
         } else {
             Ok(id)

@@ -29,12 +29,12 @@ impl Pass for RemoveUnusedBindings {
                 },
                 Expr::Match(pred, arms) => {
                     // Remove any arms that follow an irrefutable arm
-                    for i in 0..arms.len() {
-                        if !arms[i].0.is_refutable() {
-                            arms.truncate(i + 1);
-                            break;
-                        }
-                    }
+                    // for i in 0..arms.len() {
+                    //     if !arms[i].0.is_refutable() {
+                    //         arms.truncate(i + 1);
+                    //         break;
+                    //     }
+                    // }
 
                     arms
                         .iter_mut()
@@ -82,13 +82,15 @@ impl Pass for RemoveUnusedBindings {
                     // Flatten matches with a single arm where the arm does not bind
                     if arms.len() == 1 && !arms.first().unwrap().0.binds() {
                         *expr = arms.remove(0).1.into_inner();
-                    } else if arms.get(0).map_or(false, |(b, _)| matches!(&b.pat, Pat::Wildcard)) {
+                    }
+                    // TODO: Inlining is currently unsound because it does not correctly handle shadowing
+                    /*else if arms.get(0).map_or(false, |(b, _)| matches!(&b.pat, Pat::Wildcard)) {
                         let (arm, mut body) = arms.remove(0);
                         if let Some(name) = arm.name {
                             body.inline_local(name, pred);
                         }
                         *expr = body.into_inner();
-                    } else {
+                    }*/ else {
                         // Visit predicate last to avoid visiting it again if the match was removed
                         visit(mir, pred, stack, proc_stack);
                     }
@@ -122,8 +124,6 @@ impl Pass for RemoveUnusedBindings {
                             } else {
                                 unreachable!()
                             }
-                        } else {
-                            println!("Capture {} will be removed from {:?}", captures[i], body);
                         }
                     }
                     *captures = new_captures;
@@ -136,6 +136,7 @@ impl Pass for RemoveUnusedBindings {
                 },
                 Expr::Variant(_, inner) => visit(mir, inner, stack, proc_stack),
                 Expr::AccessVariant(inner, _) => visit(mir, inner, stack, proc_stack),
+                Expr::Debug(inner) => visit(mir, inner, stack, proc_stack),
             }
         }
 

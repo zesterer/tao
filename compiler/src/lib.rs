@@ -93,7 +93,7 @@ pub fn run(src: String, src_id: SrcId, options: Options, mut writer: impl Write)
             }
 
             if options.debug.contains(&"mir".to_string()) {
-                writeln!(writer, "{:?}", ctx.procs.get(ctx.entry.unwrap()).unwrap().body).unwrap();
+                writeln!(writer, "{}", ctx.procs.get(ctx.entry.unwrap()).unwrap().body.print()).unwrap();
             }
 
             let prog = Program::from_mir(&ctx);

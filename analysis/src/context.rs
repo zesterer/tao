@@ -25,7 +25,8 @@ impl Context {
         let mut defs = Vec::new();
         // Define aliases, data types, and defs before declaration
         for (attr, alias) in module.aliases() {
-            if let Err(err) = this.datas.declare_alias(*alias.name, alias.name.span()) {
+            let gen_scope = this.tys.insert_gen_scope(GenScope::from_ast(&alias.generics));
+            if let Err(err) = this.datas.declare_alias(*alias.name, alias.name.span(), gen_scope) {
                 errors.push(err);
             } else {
                 // Only mark for further processing if no errors occurred during declaration
@@ -33,7 +34,8 @@ impl Context {
             }
         }
         for (attr, data) in module.datas() {
-            if let Err(err) = this.datas.declare_data(*data.name, data.name.span()) {
+            let gen_scope = this.tys.insert_gen_scope(GenScope::from_ast(&data.generics));
+            if let Err(err) = this.datas.declare_data(*data.name, data.name.span(), gen_scope) {
                 errors.push(err);
             } else {
                 // Only mark for further processing if no errors occurred during declaration
@@ -60,7 +62,7 @@ impl Context {
 
         // Declare aliases and data types
         for (attr, alias) in aliases {
-            let gen_scope = this.tys.insert_gen_scope(GenScope::from_ast(&alias.generics));
+            let gen_scope = this.datas.name_gen_scope(*alias.name);
 
             let mut infer = Infer::new(&mut this, Some(gen_scope));
 
@@ -84,7 +86,7 @@ impl Context {
             );
         }
         for (attr, data) in datas {
-            let gen_scope = this.tys.insert_gen_scope(GenScope::from_ast(&data.generics));
+            let gen_scope = this.datas.name_gen_scope(*data.name);
 
             let mut infer = Infer::new(&mut this, Some(gen_scope));
             let variants = data.variants
