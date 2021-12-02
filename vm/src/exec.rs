@@ -155,6 +155,10 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::Bool(!x))
             },
+            Instr::NegInt => {
+                let x = stack.pop().unwrap().int();
+                stack.push(Value::Int(-x))
+            },
             Instr::AddInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();

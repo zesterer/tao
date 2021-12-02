@@ -132,27 +132,27 @@ impl<'a> Infer<'a> {
         id
     }
 
-    pub fn instantiate(&mut self, ty: TyId, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar) -> TyVar {
+    pub fn instantiate(&mut self, ty: TyId, span: Span, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar) -> TyVar {
         let info = match self.ctx.tys.get(ty) {
             Ty::Error => TyInfo::Error,
             Ty::Prim(prim) => TyInfo::Prim(prim),
-            Ty::List(item) => TyInfo::List(self.instantiate(item, f)),
+            Ty::List(item) => TyInfo::List(self.instantiate(item, span, f)),
             Ty::Tuple(items) => TyInfo::Tuple(items
                 .into_iter()
-                .map(|item| self.instantiate(item, f))
+                .map(|item| self.instantiate(item, span, f))
                 .collect()),
             Ty::Record(fields) => TyInfo::Record(fields
                 .into_iter()
-                .map(|(name, field)| (name, self.instantiate(field, f)))
+                .map(|(name, field)| (name, self.instantiate(field, span, f)))
                 .collect()),
-            Ty::Func(i, o) => TyInfo::Func(self.instantiate(i, f), self.instantiate(o, f)),
+            Ty::Func(i, o) => TyInfo::Func(self.instantiate(i, span, f), self.instantiate(o, span, f)),
             Ty::Data(data, params) => TyInfo::Data(data, params
                 .into_iter()
-                .map(|param| self.instantiate(param, f))
+                .map(|param| self.instantiate(param, span, f))
                 .collect()),
             Ty::Gen(index, scope) => TyInfo::Ref(f(index, scope, self.ctx)), // TODO: Check scope is valid for recursive scopes
         };
-        self.insert(self.ctx.tys.get_span(ty), info)
+        self.insert(span /*self.ctx.tys.get_span(ty)*/, info)
     }
 
     pub fn unknown(&mut self, span: Span) -> TyVar {
@@ -319,7 +319,7 @@ impl<'a> Infer<'a> {
                     if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
                         if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
                             if let Some(field_ty) = fields.get(&field_name) {
-                                let field_ty = self.instantiate(*field_ty, &|index, _, _| params[index]);
+                                let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index]);
                                 self.make_eq(field_ty, field);
                                 Some(true)
                             } else {

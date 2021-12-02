@@ -4,9 +4,19 @@ def len A =
 	| []: [A] => 0
 	\ [_ .. tail] => 1 + tail:len
 
-def fold A, B : A -> (A -> B -> A) -> [B] -> A =
+def fold A, B : B -> (B -> A -> B) -> [A] -> B =
 	| init, _, [] => init
 	\ init, f, [x .. tail] => fold(f(init, x), f, tail)
+
+def reduce A, B =
+	\ f, (init, xs) : (A, [B]) => fold(init, f, xs)
+
+def fold_r A, B =
+	| init, _, [] => init
+	\ init, f : A -> B -> ?, [x .. xs] => f(x, fold_r(init, f, xs))
+
+def reduce_r A, B =
+	\ f, (xs, init) : ([B], A) => fold_r(init, f, xs)
 
 data Maybe A =
 	| Just A
@@ -52,10 +62,10 @@ def or_else I, O : Parser I O -> Parser I O -> Parser I O =
 
 def repeated I, O : Parser I O -> Parser I [O] =
 	\ a, xs => match xs:a in
-		| Err err => Ok ([], xs)
-		\ Ok (out, tail) => match tail:repeated(a) in
-			| err ~ Err _ => Ok ([], tail)
-			\ Ok (items, tail) => Ok ([out .. items], tail)
+		| Ok (out, tail) => match tail:repeated(a) in
+			| Ok (items, tail) => Ok ([out .. items], tail)
+			\ err ~ Err _ => Ok ([], tail)
+		\ Err err => Ok ([], xs)
 
 def repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
 	\ n, a, xs => match xs:repeated(a) in
@@ -87,6 +97,11 @@ def padded O : ? -> Parser Char O =
 		:ignore_then(a)
 		:then_ignore(whitespaces)
 
+def recurse I, O : Parser I O -> Parser I O =
+	\ f, xs => match xs:f in
+		| Ok (out, tail) => Ok (out, tail)
+		\ Err e => Err e
+
 data FindErr =
 	\ NotFound
 
@@ -110,15 +125,59 @@ def number = digit
 	:map(fn xs => xs:fold(0, fn a, x => a * 10 + x))
 	:padded
 
+data Unary =
+	\ Neg
+
+data Binary =
+	| Add
+	| Sub
+	\ Mul
+
+data Expr =
+	| Natural Nat
+	| Unary (Unary, Expr)
+	\ Binary (Binary, Expr, Expr)
+
+def atom = number
+	:map(fn x => Natural x)
+	:or_else(just('(')
+		:padded
+		:ignore_then(recurse(fn xs => xs:expr))
+		:then_ignore(just(')'))
+		:padded)
+
+def op =
+	\ c => just(c):padded
+
+def unary = op('-')
+	:map(fn _ => Neg)
+	:repeated
+	:and_then(atom)
+	:map(reduce_r(fn op, a => Unary (op, a)))
+
+def product = unary
+	:and_then(op('*'):map(fn _ => Mul)
+		:and_then(unary)
+		:repeated)
+	:map(reduce(fn a, (op, b) => Binary (op, a, b)))
+
+def sum = product
+	:and_then(op('*'):map(fn _ => Add)
+		:or_else(op('-'):map(fn _ => Sub))
+		:and_then(product)
+		:repeated)
+	:map(reduce(fn a, (op, b) => Binary (op, a, b)))
+
+def expr = sum
+
+def eval =
+	| Natural x => --x
+	| Unary (Neg, a) => -a:eval
+	| Binary (Add, a, b) => a:eval + b:eval
+	| Binary (Sub, a, b) => a:eval - b:eval
+	\ Binary (Mul, a, b) => a:eval * b:eval
+
 $[main]
 def main =
-	let parser = just('f')
-		:repeated
-		:map(fn x => (x, 0))
-		:padded
-		:and_then(just('!'))
-	in
-	let parser = number in
-	match parser("475") in
-	| Ok (out, tail) => Ok ("parsed", out, tail)
-	\ Err e => Err ("failed", e)
+	let parser = expr:map(eval) in
+	parser("2 * (5 - 1)")

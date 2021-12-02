@@ -107,7 +107,7 @@ impl ToHir for ast::Type {
                                     assert!(index < params.len(), "{:?}, {}, {:?}, {:?}, {:?}", name, ctx.datas.get_alias(alias_id).unwrap().name, ctx.tys.get_gen_scope(scope).get(index), alias_gen_scope, scope);
                                     params[index]
                                 };
-                                TyInfo::Ref(infer.instantiate(alias_ty, &get_gen))
+                                TyInfo::Ref(infer.instantiate(alias_ty, name.span(), &get_gen))
                             }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error);
@@ -240,7 +240,7 @@ impl ToHir for ast::Binding {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
                     let get_gen = |index, _, ctx: &Context| generic_tys[index];
-                    infer.instantiate(inner_ty, &get_gen)
+                    infer.instantiate(inner_ty, name.span(), &get_gen)
                 };
 
                 let inner = inner.to_hir(infer, scope);
@@ -297,8 +297,9 @@ impl ToHir for ast::Expr {
                     let def_gen_scope = def.gen_scope;
                     let def_ty = body.meta().1;
                     let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
-                    infer.instantiate(def_ty, &get_gen)
+                    infer.instantiate(def_ty, self.span(), &get_gen)
                 } else {
+                    // TODO: This is unsound. We can't just assume that globals are anything!
                     infer.unknown(self.span())
                 };
 
@@ -533,7 +534,7 @@ impl ToHir for ast::Expr {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
                     let get_gen = |index, _, ctx: &Context| generic_tys[index];
-                    infer.instantiate(inner_ty, &get_gen)
+                    infer.instantiate(inner_ty, name.span(), &get_gen)
                 };
 
                 let inner = inner.to_hir(infer, scope);

@@ -219,6 +219,7 @@ impl Program {
                 match intrinsic {
                     MakeList(_) => { self.push(Instr::MakeList(args.len())); },
                     NotBool => { self.push(Instr::NotBool); },
+                    NegNat | NegInt => { self.push(Instr::NegInt); },
                     AddNat | AddInt => { self.push(Instr::AddInt); },
                     SubNat | SubInt => { self.push(Instr::SubInt); },
                     MulNat | MulInt => { self.push(Instr::MulInt); },

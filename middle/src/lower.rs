@@ -144,6 +144,8 @@ impl ToMir for hir::TyExpr {
                 use ty::{Ty::Prim, Prim::*};
                 let intrinsic = match (**op, hir.tys.get(x.meta().1)) {
                     (Not, Prim(Bool)) => mir::Intrinsic::NotBool,
+                    (Neg, Prim(Nat)) => mir::Intrinsic::NegNat,
+                    (Neg, Prim(Int)) => mir::Intrinsic::NegInt,
                     op => panic!("Invalid unary op in HIR: {:?}", op),
                 };
                 mir::Expr::Intrinsic(intrinsic, vec![x.to_mir(ctx, hir, gen_tys)])

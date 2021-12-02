@@ -34,6 +34,8 @@ pub enum Instr {
     GetLocal(usize), // Duplicate value in locals position (len - 1 - N) and put on stack
 
     NotBool, // Bool -> Bool
+    NegInt, // Int -> Int
+
     AddInt, // Int -> Int -> Int
     SubInt, // Int -> Int -> Int
     MulInt,
@@ -127,7 +129,8 @@ impl Program {
                 Instr::PushLocal => -1,
                 Instr::PopLocal(_) => 0,
                 Instr::GetLocal(_) => 1,
-                Instr::NotBool => 0,
+                Instr::NotBool
+                | Instr::NegInt => 0,
                 Instr::AddInt
                 | Instr::SubInt
                 | Instr::MulInt
@@ -167,6 +170,7 @@ impl Program {
                 Instr::PopLocal(n) => format!("local.pop {}", n),
                 Instr::GetLocal(x) => format!("local.get +{}", x),
                 Instr::NotBool => format!("bool.not"),
+                Instr::NegInt => format!("int.neg"),
                 Instr::AddInt => format!("int.add"),
                 Instr::SubInt => format!("int.sub"),
                 Instr::MulInt => format!("int.mul"),

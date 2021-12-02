@@ -33,6 +33,8 @@ impl Const {
 pub enum Intrinsic {
     MakeList(Repr),
     NotBool,
+    NegNat,
+    NegInt,
     AddNat,
     AddInt,
     SubNat,
@@ -264,6 +266,7 @@ impl Expr {
 
         impl<'a> fmt::Display for DisplayExpr<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                use Intrinsic::*;
                 match self.0 {
                     Expr::Local(local) => write!(f, "{}", local),
                     Expr::Global(global, _) => write!(f, "global {:?}", global),
@@ -273,12 +276,15 @@ impl Expr {
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
-                    Expr::Intrinsic(Intrinsic::EqChar, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(Intrinsic::AddNat, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(Intrinsic::MulNat, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(Intrinsic::MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(Intrinsic::MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(Intrinsic::Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(NotBool, args) => write!(f, "!{}", DisplayExpr(&args[0], self.1)),
+                    Expr::Intrinsic(NegNat | NegInt, args) => write!(f, "-{}", DisplayExpr(&args[0], self.1)),
+                    Expr::Intrinsic(EqChar | EqNat | EqInt, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(AddNat | AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(SubNat | SubInt, args) => write!(f, "{} - {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(MulNat | MulInt, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Match(pred, arms) => {
                         write!(f, "match {} in", DisplayExpr(pred, self.1))?;
                         for (arm, body) in arms {
