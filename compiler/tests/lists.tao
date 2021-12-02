@@ -18,9 +18,9 @@ def main = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # >>>> INPUT
 
-def len A = fn
+def len A =
 	| []: [A] => 0
-	| [_ .. tail] => 1 + tail:len
+	\ [_ .. tail] => 1 + tail:len
 
 $[main]
 def main = [True, False, False, True, True, False, False]:len
@@ -31,9 +31,9 @@ def main = [True, False, False, True, True, False, False]:len
 
 # >>>> INPUT
 
-def sum = fn
+def sum =
 	| []: [Nat] => 0
-	| [x .. tail] => x + tail:sum
+	\ [x .. tail] => x + tail:sum
 
 $[main]
 def main = [1, 2, 3, 4, 5]:sum
@@ -46,19 +46,19 @@ def main = [1, 2, 3, 4, 5]:sum
 
 data Maybe A =
 	| Just A
-	| None
+	\ None
 
-def nth A : Nat -> [A] -> Maybe A = fn
+def nth A : Nat -> [A] -> Maybe A =
     | 0, [x ..] => Just x
     | n + 1, [_ .. tail] => tail:nth(n)
-    | _, _ => None
+    \ _, _ => None
 
 $[main]
 def main =
 	let xs = [5, 7, 2, 3, 9, 8] in
 	match xs:nth(0), xs:nth(1), xs:nth(5), xs:nth(6) in
 	| Just 5, Just 7, Just 8, None => True
-	| _, _, _, _ => False
+	\ _, _, _, _ => False
 
 # >>>> OUTPUT
 
@@ -66,9 +66,9 @@ true
 
 # >>>> INPUT
 
-def fold A, B : A -> (A -> B -> A) -> [B] -> A = fn
+def fold A, B : A -> (A -> B -> A) -> [B] -> A =
 	| init, _, [] => init
-	| init, f, [x .. tail] => fold(f(init, x), f, tail)
+	\ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
 $[main]
 def main = [1, 2, 3, 4, 5]:fold(0, fn x, y => x + y)

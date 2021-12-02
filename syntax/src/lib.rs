@@ -9,7 +9,7 @@ pub mod node;
 pub mod parse;
 
 pub use crate::{
-    error::Error,
+    error::{Error, ErrorKind},
     span::Span,
     node::{Node, SrcNode},
     src::SrcId,

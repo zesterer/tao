@@ -244,6 +244,7 @@ impl Expr {
                 match &self.0.pat {
                     Pat::Wildcard => write!(f, "_"),
                     Pat::Const(c) => write!(f, "{:?}", c),
+                    Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
                     Pat::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayBinding(inner, self.1)),
                     Pat::ListExact(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayBinding(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Pat::ListFront(items, tail) => write!(
@@ -271,7 +272,13 @@ impl Expr {
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1), DisplayExpr(arg, self.1)),
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
+                    Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Expr::Intrinsic(Intrinsic::EqChar, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(Intrinsic::AddNat, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(Intrinsic::MulNat, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(Intrinsic::MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(Intrinsic::MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(Intrinsic::Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Match(pred, arms) => {
                         write!(f, "match {} in", DisplayExpr(pred, self.1))?;
                         for (arm, body) in arms {

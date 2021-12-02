@@ -1,67 +1,114 @@
+type Str = [Char]
+
+def len A =
+	| []: [A] => 0
+	\ [_ .. tail] => 1 + tail:len
+
+def fold A, B : A -> (A -> B -> A) -> [B] -> A =
+	| init, _, [] => init
+	\ init, f, [x .. tail] => fold(f(init, x), f, tail)
+
 data Maybe A =
 	| Just A
-	| None
+	\ None
 
 data Result A, E =
 	| Ok A
-	| Err E
+	\ Err E
 
-def map_res A, B, E : ? -> Result A E -> Result B E = fn
+def map_res A, B, E : ? -> Result A E -> Result B E =
 	| f, Ok ok => Ok ok:f
-	| _, Err err => Err err
+	\ _, Err err => Err err
 
 data ParseErr I =
 	| UnexpectedEnd
 	| ExpectedFound (I, I)
+	| ExpectedPat Str
+	\ ExpectedMore
 
 type Parser I, O = [I] -> Result (O, [I]) (ParseErr I)
 
-def filter I, O : (I -> Result O (ParseErr I)) -> Parser I O = fn
+def filter I, O : (I -> Result O (ParseErr I)) -> Parser I O =
 	| _, [] => Err UnexpectedEnd
-	| f, [head .. tail] => head:f:map_res(fn o => (o, tail))
+	\ f, [head .. tail] => head:f:map_res(fn o => (o, tail))
 
 def just = fn c: Char => filter(fn head => if head = c
 	then Ok head
 	else Err ExpectedFound (c, head))
 
-def and_then I, O, U : Parser I U -> Parser I O -> ? = fn b, a, xs => match xs:a in
-	| Err err => Err err
-	| Ok (a, xs) => match xs:b in
+def and_then I, O, U : Parser I U -> Parser I O -> ? =
+	\ b, a, xs => match xs:a in
 		| Err err => Err err
-		| Ok (b, xs) => Ok ((a, b), xs)
+		\ Ok (a, xs) => match xs:b in
+			| Err err => Err err
+			\ Ok (b, xs) => Ok ((a, b), xs)
 
-def or_else I, O : Parser I O -> Parser I O -> Parser I O = fn a, b, xs => match xs:a in
-	| ok ~ Ok _ => ok
-	| Err _ => match xs:b in
+def or_else I, O : Parser I O -> Parser I O -> Parser I O =
+	\ a, b, xs => match xs:a in
 		| ok ~ Ok _ => ok
-		| err ~ Err _ => err
+		\ Err _ => match xs:b in
+			| ok ~ Ok _ => ok
+			\ err ~ Err _ => err
 
-def repeated I, O : Parser I O -> Parser I [O] = fn a, xs => match xs:a in
-	| Err err => Ok ([], xs)
-	| Ok (out, tail) => match tail:repeated(a) in
-		| err ~ Err _ => Ok ([], tail)
-		| Ok (items, tail) => Ok ([out .. items], tail)
+def repeated I, O : Parser I O -> Parser I [O] =
+	\ a, xs => match xs:a in
+		| Err err => Ok ([], xs)
+		\ Ok (out, tail) => match tail:repeated(a) in
+			| err ~ Err _ => Ok ([], tail)
+			\ Ok (items, tail) => Ok ([out .. items], tail)
 
-def map I, O, U : (O -> U) -> Parser I O -> Parser I U = fn f, a, xs =>
-	xs:a:map_res(fn (out, tail) => (out:f, tail))
+def repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
+	\ n, a, xs => match xs:repeated(a) in
+		| ok ~ Ok (out, tail) => if out:len >= n
+			then ok
+			else Err ExpectedMore
+		\ err ~ Err _ => err
 
-def then_ignore I, O, U : Parser I U -> Parser I O -> Parser I O = fn b, a => a
-	:and_then(b)
-	:map(fn (a, _) => a)
+def map I, O, U : (O -> U) -> Parser I O -> Parser I U =
+	\ f, a, xs => xs:a:map_res(fn (out, tail) => (out:f, tail))
 
-def ignore_then I, O, U : Parser I U -> Parser I O -> Parser I U = fn b, a => a
-	:and_then(b)
-	:map(fn (_, b) => b)
+def then_ignore I, O, U : Parser I U -> Parser I O -> Parser I O =
+	\ b, a => a
+		:and_then(b)
+		:map(fn (a, _) => a)
+
+def ignore_then I, O, U : Parser I U -> Parser I O -> Parser I U =
+	\ b, a => a
+		:and_then(b)
+		:map(fn (_, b) => b)
 
 def whitespace = just(' ')
 	:or_else(just('\t'))
 
 def whitespaces = whitespace:repeated
 
-def padded O : ? -> Parser Char O = fn a =>
-	whitespaces
-	:ignore_then(a)
-	:then_ignore(whitespaces)
+def padded O : ? -> Parser Char O =
+	\ a => whitespaces
+		:ignore_then(a)
+		:then_ignore(whitespaces)
+
+data FindErr =
+	\ NotFound
+
+def find_start : Nat -> Char -> Str -> Result Nat FindErr =
+	| idx, c, [head .. tail] => if c = head
+		then Ok idx
+		else tail:find_start(idx + 1, c)
+	\ idx, c, [] => Err NotFound
+
+def find = find_start(0)
+
+def char_to_num =
+	\ c => "0123456789":find(c)
+
+def digit = filter(fn c => match c:char_to_num in
+	| Ok n => Ok n
+	\ Err NotFound => Err ExpectedPat "digit")
+
+def number = digit
+	:repeated_at_least(1)
+	:map(fn xs => xs:fold(0, fn a, x => a * 10 + x))
+	:padded
 
 $[main]
 def main =
@@ -71,6 +118,7 @@ def main =
 		:padded
 		:and_then(just('!'))
 	in
-	match parser("   ffff    !") in
+	let parser = number in
+	match parser("475") in
 	| Ok (out, tail) => Ok ("parsed", out, tail)
-	| Err e => Err ("failed", e)
+	\ Err e => Err ("failed", e)

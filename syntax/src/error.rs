@@ -9,6 +9,7 @@ pub enum ErrorKind {
     UnexpectedEnd,
     Unexpected(Pattern),
     Unclosed { start: Pattern, before_span: Span, before: Option<Pattern> },
+    NoEndBranch,
 }
 
 #[derive(Debug)]
@@ -20,6 +21,15 @@ pub struct Error {
 }
 
 impl Error {
+    pub fn new(kind: ErrorKind, span: Span) -> Self {
+        Self {
+            kind,
+            span,
+            expected: HashSet::default(),
+            label: None,
+        }
+    }
+
     pub fn merge(mut self, other: Self) -> Self {
         // TODO: Use HashSet
         for expected in other.expected.into_iter() {
@@ -37,6 +47,7 @@ impl Error {
                 ErrorKind::UnexpectedEnd => "Unexpected end of input".to_string(),
                 ErrorKind::Unexpected(pat) => format!("Unexpected {}", pat.fg(Color::Red)),
                 ErrorKind::Unclosed { start, .. } => format!("Unclosed delimiter {}", start.fg(Color::Red)),
+                ErrorKind::NoEndBranch => format!("No end branch"),
             },
             if let Some(label) = self.label {
                 format!(" while parsing {}", label)
@@ -58,6 +69,7 @@ impl Error {
                     ErrorKind::UnexpectedEnd => "End of input".to_string(),
                     ErrorKind::Unexpected(pat) => format!("Unexpected {}", pat.fg(Color::Red)),
                     ErrorKind::Unclosed { start, .. } => format!("Delimiter {} is never closed", start.fg(Color::Red)),
+                    ErrorKind::NoEndBranch => format!("Requires a {} branch", "\\ ...".fg(Color::Blue)),
                 })
                 .with_color(Color::Red));
 

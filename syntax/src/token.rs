@@ -75,6 +75,7 @@ pub enum Token {
     Wildcard,
     Question,
     Pipe,
+    EndPipe,
     Data,
     Type,
     Def,
@@ -112,6 +113,7 @@ impl fmt::Display for Token {
             Token::Wildcard => write!(f, "_"),
             Token::Question => write!(f, "?"),
             Token::Pipe => write!(f, "|"),
+            Token::EndPipe => write!(f, "\\"),
             Token::Data => write!(f, "data"),
             Token::Type => write!(f, "type"),
             Token::Def => write!(f, "def"),
@@ -144,6 +146,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .or(just(':').to(Token::Colon))
         .or(just('?').to(Token::Question))
         .or(just('|').to(Token::Pipe))
+        .or(just('\\').to(Token::EndPipe))
         .or(just('~').to(Token::Tilde))
         .or(just('$').to(Token::Dollar));
 

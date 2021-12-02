@@ -5,11 +5,11 @@ Tao is a statically-typed functional programming language.
 ```py
 data Maybe A =
     | Just A
-    | None
+    \ None
 
-def len A = fn
+def len A =
     | []: [A] => 0
-    | [_ .. tail] => 1 + tail:len
+    \ [_ .. tail] => 1 + tail:len
 ```
 
 ## Features
@@ -62,9 +62,9 @@ operations and guarantee that no runtime errors or overflows can ever occur. Che
 program!
 
 ```py
-def factorial = fn
+def factorial =
     | 0 => 1
-    | y ~ x + 1 => y * factorial(x)
+    \ y ~ x + 1 => y * factorial(x)
 ```
 
 ### All functions are lambdas and permit pattern matching

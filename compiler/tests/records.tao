@@ -31,9 +31,9 @@ def main =
 
 # >>>> INPUT
 
-def fold A, B : A -> (A -> B -> A) -> [B] -> A = fn
+def fold A, B : A -> (A -> B -> A) -> [B] -> A =
 	| init, _, [] => init
-	| init, f, [x .. tail] => fold(f(init, x), f, tail)
+	\ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
 # Emulated typeclass
 data Add A = {
@@ -59,7 +59,7 @@ def summable_nat = Summable {
 
 # Generic summing function
 def sum A : Summable A -> [A] -> A =
-  fn summable => fold(summable.zero, summable.add.add)
+	\ summable => fold(summable.zero, summable.add.add)
 
 $[main]
 def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:sum(summable_nat)

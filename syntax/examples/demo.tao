@@ -1,6 +1,18 @@
-def factorial = fn
-	| 0 => 1
-	| y ~ x + 1 => y * factorial(x)
+def foo =
+	\ f: Nat -> Nat => f(5)
 
 $[main]
-def main = factorial(10)
+def main = foo(\o: Nat => o)
+
+# def len =
+#	 | [] => 0
+#	 \ [_ .. xs] => 1 + xs:len
+
+# def sum =
+#	 | [] => 0
+#	 \ [x .. xs] => x + xs:sum
+
+# def fold =
+#	 | init, _, [] => init
+#	 \ init, f, [x .. xs] => f(x, xs:fold(init, f))
+

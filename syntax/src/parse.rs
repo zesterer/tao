@@ -145,6 +145,25 @@ pub fn ty_hint_parser() -> impl Parser<Option<SrcNode<ast::Type>>> {
         .or_not()
 }
 
+pub fn branches<T>(branch: impl Parser<T> + Clone) -> impl Parser<Vec<T>> {
+    branch.clone().map(|x| vec![x])
+        .or(just(Token::Pipe)
+            .ignore_then(branch.clone())
+            .repeated()
+            .then(just(Token::EndPipe)
+                .ignore_then(branch.clone())
+                .or_not())
+            .validate(|(mut init, end), span, emit| {
+                if let Some(end) = end {
+                    init.push(end);
+                } else {
+                    emit(Error::new(ErrorKind::NoEndBranch, span));
+                }
+                (init, None)
+            })
+            .map(|(branches, _)| branches))
+}
+
 pub fn binding_parser() -> impl Parser<ast::Binding> {
     recursive(move |binding| {
         let wildcard = just(Token::Wildcard)
@@ -385,9 +404,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .map_with_span(SrcNode::new))
             .boxed();
 
-        let branches = branch.clone()
-            .separated_by(just(Token::Pipe))
-            .allow_leading();
+        let branches = branches(branch);
 
         let func = just(Token::Fn)
             .ignore_then(branches.clone())
@@ -645,10 +662,7 @@ pub fn data_parser() -> impl Parser<ast::Data> {
         .then(just(Token::Op(Op::Eq))
             // TODO: Don't use `Result`
             .ignore_then(type_parser().map_with_span(SrcNode::new).map(Err)
-                .or(variant
-                    .separated_by(just(Token::Pipe))
-                    .allow_leading()
-                    .map(Ok)))
+                .or(branches(variant).map(Ok)))
             .or_not())
         .map(|((name, generics), variants)| ast::Data {
             generics,
@@ -676,14 +690,22 @@ pub fn alias_parser() -> impl Parser<ast::Alias> {
 }
 
 pub fn def_parser() -> impl Parser<ast::Def> {
+    let branches = branches(binding_parser()
+        .map_with_span(SrcNode::new)
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .map_with_span(SrcNode::new)
+        .then_ignore(just(Token::Op(Op::RFlow)))
+        .then(expr_parser().map_with_span(SrcNode::new)))
+        .map_with_span(|branches, span| SrcNode::new(ast::Expr::Func(branches), span));
+
     just(Token::Def)
         .ignore_then(term_ident_parser()
             .map_with_span(SrcNode::new))
         .then(generics_parser().map_with_span(SrcNode::new))
         .then(ty_hint_parser())
         .then_ignore(just(Token::Op(Op::Eq)))
-        .then(expr_parser()
-            .map_with_span(SrcNode::new))
+        .then(branches.or(expr_parser().map_with_span(SrcNode::new)))
         .map(|(((name, generics), ty_hint), body)| ast::Def {
             generics,
             ty_hint: ty_hint.unwrap_or_else(|| SrcNode::new(ast::Type::Unknown, name.span())),
