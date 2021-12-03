@@ -25,9 +25,15 @@ impl fmt::Display for Prim {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum ErrorReason {
+    Unknown,
+    Recursive,
+}
+
 #[derive(Clone, Debug)]
 pub enum Ty {
-    Error,
+    Error(ErrorReason),
     Prim(Prim),
     List(TyId),
     Tuple(Vec<TyId>),
@@ -112,14 +118,15 @@ impl<'a> fmt::Display for TyDisplay<'a> {
         }
 
         match self.types.get(self.ty) {
-            Ty::Error => write!(f, "?"),
+            Ty::Error(ErrorReason::Unknown) => write!(f, "?"),
+            Ty::Error(ErrorReason::Recursive) => write!(f, "..."),
             Ty::Prim(prim) => write!(f, "{}", prim),
             Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
-            Ty::Tuple(items) => write!(f, "({}{})", items
+            Ty::Tuple(fields) => write!(f, "({}{})", fields
                 .iter()
-                .map(|item| format!("{},", self.with_ty(*item, false)))
+                .map(|field| format!("{}", self.with_ty(*field, false)))
                 .collect::<Vec<_>>()
-                .join(" "), if items.len() == 1 { "," } else { "" }),
+                .join(", "), if fields.len() == 1 { "," } else { "" }),
             Ty::Record(fields) => write!(f, "{{ {} }}", fields
                 .into_iter()
                 .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
@@ -149,14 +156,23 @@ pub struct GenScope {
 }
 
 impl GenScope {
-    pub fn from_ast(generics: &SrcNode<ast::Generics>) -> Self {
-        Self {
+    pub fn from_ast(generics: &SrcNode<ast::Generics>) -> (Self, Vec<Error>) {
+        let mut existing = HashMap::new();
+
+        let mut errors = Vec::new();
+        for gen in &generics.tys {
+            if let Some(old_span) = existing.insert(**gen, gen.span()) {
+                errors.push(Error::DuplicateGenName(**gen, old_span, gen.span()));
+            }
+        }
+
+        (Self {
             span: generics.span(),
             types: generics.tys
                 .iter()
                 .cloned()
                 .collect(),
-        }
+        }, errors)
     }
 
     pub fn len(&self) -> usize { self.types.len() }

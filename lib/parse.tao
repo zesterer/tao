@@ -26,7 +26,7 @@ data Result A, E =
 	| Ok A
 	\ Err E
 
-def map_res A, B, E : ? -> Result A ? -> Result B E =
+def map_res A, B, E : (A -> B) -> Result A E -> Result B E =
 	| f, Ok ok => Ok ok:f
 	\ _, Err err => Err err
 
@@ -46,7 +46,7 @@ def just = fn c: Char => filter(fn head => if head = c
 	then Ok head
 	else Err ExpectedFound (c, head))
 
-def and_then I, O, U : Parser I U -> Parser I O -> ? =
+def and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
 	\ b, a, xs => match xs:a in
 		| Err err => Err err
 		\ Ok (a, xs) => match xs:b in

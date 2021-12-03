@@ -84,7 +84,7 @@ impl AbstractPat {
         };
 
         match ctx.tys.get(ty) {
-            Ty::Error => None,
+            Ty::Error(_) => None,
             Ty::Prim(Prim::Nat) => {
                 let mut covered = Ranges::new();
                 for pat in filter {
@@ -308,7 +308,11 @@ impl fmt::Display for ExamplePat {
         match self {
             Self::Wildcard => write!(f, "_"),
             Self::Prim(prim) => write!(f, "{}", prim),
-            Self::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", f)).collect::<Vec<_>>().join(" ")),
+            Self::Tuple(fields) => write!(f, "({}{})", fields
+                .iter()
+                .map(|f| format!("{}", f))
+                .collect::<Vec<_>>()
+                .join(", "), if fields.len() == 1 { "," } else { "" }),
             Self::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, f)).collect::<Vec<_>>().join(" ")),
             Self::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ")),
             Self::Variant(name, inner) => write!(f, "{} {}", name, inner),

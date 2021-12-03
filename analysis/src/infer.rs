@@ -7,7 +7,7 @@ pub type InferNode<T> = Node<T, InferMeta>;
 #[derive(Clone, Debug, PartialEq)]
 pub enum TyInfo {
     Ref(TyVar),
-    Error,
+    Error(ErrorReason),
     Unknown(Option<Span>), // With optional instantiation origin
     Prim(ty::Prim),
     List(TyVar),
@@ -22,7 +22,8 @@ pub enum TyInfo {
 pub enum InferError {
     Mismatch(TyVar, TyVar, Option<Span>),
     CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
-    Recursive(TyVar),
+    // Type, recursive element
+    Recursive(TyVar, TyVar),
     NoSuchField(TyVar, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
@@ -127,14 +128,14 @@ impl<'a> Infer<'a> {
 
     pub fn insert(&mut self, span: Span, info: TyInfo) -> TyVar {
         let id = TyVar(self.vars.len());
-        let err = if matches!(&info, TyInfo::Error) { Err(()) } else { Ok(()) };
+        let err = if matches!(&info, TyInfo::Error(_)) { Err(()) } else { Ok(()) };
         self.vars.push((span, info, err));
         id
     }
 
     pub fn instantiate(&mut self, ty: TyId, span: Span, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar) -> TyVar {
         let info = match self.ctx.tys.get(ty) {
-            Ty::Error => TyInfo::Error,
+            Ty::Error(reason) => TyInfo::Error(reason),
             Ty::Prim(prim) => TyInfo::Prim(prim),
             Ty::List(item) => TyInfo::List(self.instantiate(item, span, f)),
             Ty::Tuple(items) => TyInfo::Tuple(items
@@ -179,26 +180,40 @@ impl<'a> Infer<'a> {
         self.errors.push(err);
     }
 
-    // Returns true if `x` occurs in `y`.
-    fn occurs_in(&self, x: TyVar, y: TyVar) -> bool {
-        match self.info(y) {
+    fn occurs_in_inner(&self, x: TyVar, y: TyVar, seen: &mut Vec<TyVar>) -> bool {
+        if seen.contains(&y) {
+            return true;
+        } else {
+            seen.push(y);
+        }
+
+        let occurs = match self.info(y) {
             TyInfo::Unknown(_)
-            | TyInfo::Error
+            | TyInfo::Error(_)
             | TyInfo::Prim(_)
             | TyInfo::Gen(_, _, _) => false,
-            TyInfo::Ref(y) => x == y || self.occurs_in(x, y),
-            TyInfo::List(item) => x == item || self.occurs_in(x, item),
-            TyInfo::Func(i, o) => x == i || x == o || self.occurs_in(x, i) || self.occurs_in(x, o),
+            TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
+            TyInfo::List(item) => x == item || self.occurs_in_inner(x, item, seen),
+            TyInfo::Func(i, o) => x == i || x == o || self.occurs_in_inner(x, i, seen) || self.occurs_in_inner(x, o, seen),
             TyInfo::Tuple(ys) => ys
                 .into_iter()
-                .any(|y| x == y || self.occurs_in(x, y)),
+                .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
             TyInfo::Record(ys) => ys
                 .into_iter()
-                .any(|(_, y)| x == y || self.occurs_in(x, y)),
+                .any(|(_, y)| x == y || self.occurs_in_inner(x, y, seen)),
             TyInfo::Data(_, ys) => ys
                 .into_iter()
-                .any(|y| x == y || self.occurs_in(x, y)),
-        }
+                .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+        };
+
+        seen.pop();
+
+        occurs
+    }
+
+    // Returns true if `x` occurs in `y`.
+    fn occurs_in(&self, x: TyVar, y: TyVar) -> bool {
+        self.occurs_in_inner(x, y, &mut Vec::new())
     }
 
     pub fn make_eq(&mut self, x: TyVar, y: TyVar, loc: impl Into<Option<Span>>) {
@@ -212,6 +227,18 @@ impl<'a> Infer<'a> {
     }
 
     pub fn make_eq_inner(&mut self, x: TyVar, y: TyVar) -> Result<(), (TyVar, TyVar)> {
+        fn make_eq_many(
+            infer: &mut Infer,
+            xs: impl IntoIterator<Item = TyVar>,
+            ys: impl IntoIterator<Item = TyVar>,
+        ) -> Result<(), (TyVar, TyVar)> {
+            xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .fold(None, |err, (x, y)| err.or(infer.make_eq_inner(x, y).err()))
+                .map(Err).unwrap_or(Ok(()))
+        }
+
         if x == y { return Ok(()) } // If the vars are equal, we have no need to check equivalence
         match (self.info(x), self.info(y)) {
             // Follow references
@@ -220,40 +247,35 @@ impl<'a> Infer<'a> {
 
             // Unify unknown or erronoeus types
             (TyInfo::Unknown(_), _) => if self.occurs_in(x, y) {
-                self.errors.push(InferError::Recursive(y));
+                self.errors.push(InferError::Recursive(y, self.follow(x)));
+                self.set_info(x, TyInfo::Error(ErrorReason::Recursive));
                 Ok(self.set_error(x)) // TODO: Not actually ok
             } else {
                 Ok(self.set_info(x, TyInfo::Ref(y)))
             },
             (_, TyInfo::Unknown(_)) => self.make_eq_inner(y, x),
 
-            (_, TyInfo::Error) => {
+            (_, TyInfo::Error(_)) => {
                 self.set_error(x);
                 Ok(self.set_info(x, TyInfo::Ref(y)))
             },
-            (TyInfo::Error, _) => self.make_eq_inner(y, x),
+            (TyInfo::Error(_), _) => self.make_eq_inner(y, x),
 
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
             (TyInfo::List(x), TyInfo::List(y)) => self.make_eq_inner(x, y),
-            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => xs
-                .into_iter()
-                .zip(ys.into_iter())
-                .try_for_each(|(x, y)| self.make_eq_inner(x, y)),
+            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => make_eq_many(self, xs, ys),
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
                 .keys()
                 .all(|x| ys.contains_key(x)) => xs
                     .into_iter()
                     .try_for_each(|(x, x_ty)| self.make_eq_inner(x_ty, ys[&x])),
             (TyInfo::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                self.make_eq_inner(x_i, y_i)?;
-                self.make_eq_inner(x_o, y_o)?;
-                Ok(())
+                let i_err = self.make_eq_inner(x_i, y_i).err();
+                let o_err = self.make_eq_inner(x_o, y_o).err();
+                i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
-                xs.len() == ys.len() => xs
-                    .into_iter()
-                    .zip(ys.into_iter())
-                    .try_for_each(|(x, y)| self.make_eq_inner(x, y)),
+                xs.len() == ys.len() => make_eq_many(self, xs, ys),
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
             (_, _) => Err((x, y)),//self.errors.push(InferError::Mismatch(x, y)),
         }
@@ -265,7 +287,7 @@ impl<'a> Infer<'a> {
     pub fn try_reinstantiate(&mut self, span: Span, ty: TyVar) -> TyVar {
         match self.info(ty) {
             TyInfo::Ref(x) => self.try_reinstantiate(span, x),
-            TyInfo::Error => self.insert(self.span(ty), TyInfo::Error),
+            TyInfo::Error(reason) => self.insert(self.span(ty), TyInfo::Error(reason)),
             TyInfo::Unknown(_) | TyInfo::Prim(_) => ty,
             TyInfo::List(item) => {
                 let item = self.try_reinstantiate(span, item);
@@ -351,7 +373,7 @@ impl<'a> Infer<'a> {
                     Err(InferError::NoSuchField(record, field_name.clone()))
                 }),
             Constraint::Unary(op, a, output) => match (&*op, self.follow_info(a)) {
-                (_, TyInfo::Error) => Some(Ok(TyInfo::Error)),
+                (_, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
                 (_, TyInfo::Unknown(_)) => None,
                 (Neg, TyInfo::Prim(Prim::Num)) => Some(Ok(TyInfo::Prim(Prim::Num))),
                 (Neg, TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Int))),
@@ -368,8 +390,8 @@ impl<'a> Infer<'a> {
                     self.make_eq(output, result_ty, op.span());
                 })),
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
-                (_, _, TyInfo::Error) => Some(Ok(TyInfo::Error)),
-                (_, TyInfo::Error, _) => Some(Ok(TyInfo::Error)),
+                (_, _, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
+                (_, TyInfo::Error(reason), _) => Some(Ok(TyInfo::Error(reason))),
                 (_, _, TyInfo::Unknown(_)) => None,
                 (_, TyInfo::Unknown(_), _) => None,
                 (_, TyInfo::Prim(prim_a), TyInfo::Prim(prim_b)) => {
@@ -483,7 +505,7 @@ impl<'a> Infer<'a> {
             .map(|error| match error {
                 InferError::Mismatch(a, b, loc) => Error::Mismatch(checked.reify(a), checked.reify(b), loc),
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
-                InferError::Recursive(a) => Error::Recursive(checked.infer.span(a)),
+                InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
                 InferError::NoSuchField(a, field) => Error::NoSuchField(checked.reify(a), field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
@@ -514,7 +536,8 @@ impl<'a> Checked<'a> {
             // Follow references
             TyInfo::Ref(x) => return self.reify_inner(x),
             // Unknown types are treated as errors from here on out
-            TyInfo::Error | TyInfo::Unknown(_) => Ty::Error,
+            TyInfo::Unknown(_) => Ty::Error(ErrorReason::Unknown),
+            TyInfo::Error(reason) => Ty::Error(reason),
             TyInfo::Prim(prim) => Ty::Prim(prim),
             TyInfo::List(item) => Ty::List(self.reify_inner(item)),
             TyInfo::Tuple(items) => Ty::Tuple(items

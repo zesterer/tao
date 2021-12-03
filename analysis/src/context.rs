@@ -25,7 +25,9 @@ impl Context {
         let mut defs = Vec::new();
         // Define aliases, data types, and defs before declaration
         for (attr, alias) in module.aliases() {
-            let gen_scope = this.tys.insert_gen_scope(GenScope::from_ast(&alias.generics));
+            let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
             if let Err(err) = this.datas.declare_alias(*alias.name, alias.name.span(), gen_scope) {
                 errors.push(err);
             } else {
@@ -34,7 +36,9 @@ impl Context {
             }
         }
         for (attr, data) in module.datas() {
-            let gen_scope = this.tys.insert_gen_scope(GenScope::from_ast(&data.generics));
+            let (gen_scope, mut errs) = GenScope::from_ast(&data.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
             if let Err(err) = this.datas.declare_data(*data.name, data.name.span(), gen_scope) {
                 errors.push(err);
             } else {
@@ -43,7 +47,9 @@ impl Context {
             }
         }
         for (attr, def) in module.defs() {
-            let gen_scope = this.tys.insert_gen_scope(GenScope::from_ast(&def.generics));
+            let (gen_scope, mut errs) = GenScope::from_ast(&def.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
             if let Err(err) = this.defs.declare(Def {
                 name: def.name.clone(),
                 attr: attr.clone(),
@@ -138,7 +144,7 @@ impl Context {
                 .collect();
 
             let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
-            infer.make_eq(ty_hint.meta().1, body.meta().1, ty_hint.meta().0);
+            infer.make_eq(ty_hint.meta().1, body.meta().1, None);
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);

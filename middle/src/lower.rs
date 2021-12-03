@@ -21,7 +21,7 @@ impl ToMir for ty::TyId {
 
     fn to_mir(&self, ctx: &mut Context, hir: &HirContext, gen_tys: &[Repr]) -> Self::Output {
         match hir.tys.get(*self) {
-            ty::Ty::Error => unreachable!("Error types should not exist during MIR compilation"),
+            ty::Ty::Error(_) => unreachable!("Error types should not exist during MIR compilation"),
             ty::Ty::Prim(prim) => Repr::Prim(prim_to_mir(prim)),
             ty::Ty::List(ty) => Repr::List(Box::new(ty.to_mir(ctx, hir, gen_tys))),
             ty::Ty::Tuple(fields) => Repr::Tuple(fields

@@ -60,7 +60,7 @@ impl ToHir for ast::Type {
 
     fn to_hir(self: &SrcNode<Self>, infer: &mut Infer, scope: &Scope) -> InferNode<()> {
         let info = match &**self {
-            ast::Type::Error => TyInfo::Error,
+            ast::Type::Error => TyInfo::Error(ErrorReason::Unknown),
             ast::Type::Unknown => TyInfo::Unknown(None),
             ast::Type::List(item) => TyInfo::List(item.to_hir(infer, scope).meta().1),
             ast::Type::Tuple(items) => TyInfo::Tuple(items
@@ -100,7 +100,7 @@ impl ToHir for ast::Type {
                                     alias_gen_scope.len(),
                                 );
                                 infer.ctx_mut().emit(err);
-                                TyInfo::Error
+                                TyInfo::Error(ErrorReason::Unknown)
                             } else {
                                 let (alias_ty, alias_gen_scope) = (alias.ty, alias.gen_scope);
                                 let get_gen = |index, scope, ctx: &Context| {
@@ -110,7 +110,7 @@ impl ToHir for ast::Type {
                                 TyInfo::Ref(infer.instantiate(alias_ty, name.span(), &get_gen))
                             }
                         } else {
-                            let err_ty = infer.insert(self.span(), TyInfo::Error);
+                            let err_ty = infer.insert(self.span(), TyInfo::Error(ErrorReason::Unknown));
                             infer.emit(InferError::RecursiveAlias(alias_id, err_ty, name.span()));
                             TyInfo::Ref(err_ty)
                         }
@@ -124,13 +124,13 @@ impl ToHir for ast::Type {
                                 data_gen_scope.len(),
                             );
                             infer.ctx_mut().emit(err);
-                            TyInfo::Error
+                            TyInfo::Error(ErrorReason::Unknown)
                         } else {
                             TyInfo::Data(data, params)
                         }
                     } else {
                         infer.ctx_mut().emit(Error::NoSuchData(name.clone()));
-                        TyInfo::Error
+                        TyInfo::Error(ErrorReason::Unknown)
                     }
                 },
             },
@@ -145,7 +145,7 @@ impl ToHir for ast::Binding {
 
     fn to_hir(self: &SrcNode<Self>, infer: &mut Infer, scope: &Scope) -> InferNode<Self::Output> {
         let (info, pat) = match &*self.pat {
-            ast::Pat::Error => (TyInfo::Error, hir::Pat::Error),
+            ast::Pat::Error => (TyInfo::Error(ErrorReason::Unknown), hir::Pat::Error),
             ast::Pat::Wildcard => (TyInfo::Unknown(None), hir::Pat::Wildcard),
             ast::Pat::Literal(litr) => (litr_ty_info(litr, infer, self.pat.span()), hir::Pat::Literal(*litr)),
             ast::Pat::Single(inner) => {
@@ -165,7 +165,7 @@ impl ToHir for ast::Binding {
                         let info = litr_ty_info(rhs, infer, self.pat.span());
                         let rhs_ty = infer.insert(rhs.span(), info);
                         infer.emit(InferError::PatternNotSupported(lhs.meta().1, op.clone(), rhs_ty, self.span()));
-                        (TyInfo::Error, hir::Pat::Error)
+                        (TyInfo::Error(ErrorReason::Unknown), hir::Pat::Error)
                     },
                 }
             },
@@ -250,7 +250,7 @@ impl ToHir for ast::Binding {
             } else {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression
-                (TyInfo::Error, hir::Pat::Error)
+                (TyInfo::Error(ErrorReason::Unknown), hir::Pat::Error)
             },
         };
 
@@ -273,7 +273,7 @@ impl ToHir for ast::Expr {
 
     fn to_hir(self: &SrcNode<Self>, infer: &mut Infer, scope: &Scope) -> InferNode<Self::Output> {
         let (info, expr) = match &**self {
-            ast::Expr::Error => (TyInfo::Error, hir::Expr::Error),
+            ast::Expr::Error => (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error),
             ast::Expr::Literal(litr) => (litr_ty_info(litr, infer, self.span()), hir::Expr::Literal(*litr)),
             ast::Expr::Local(local) => if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
                 if let Some((def_id, gens)) = rec {
@@ -313,11 +313,11 @@ impl ToHir for ast::Expr {
                     (TyInfo::Ref(ty), hir::Expr::Global(def_id, generic_tys))
                 } else {
                     infer.ctx_mut().emit(Error::DefTypeNotSpecified(def_name.span(), self.span(), *def_name));
-                    (TyInfo::Error, hir::Expr::Error)
+                    (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                 }
             } else {
                 infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
-                (TyInfo::Error, hir::Expr::Error)
+                (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
             },
             ast::Expr::Tuple(items) => {
                 let items = items
@@ -421,7 +421,7 @@ impl ToHir for ast::Expr {
                 }
 
                 if is_err {
-                    (TyInfo::Error, hir::Expr::Error)
+                    (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                 } else {
                     let pred = tupleify_expr(preds, infer, scope);
 
@@ -468,7 +468,7 @@ impl ToHir for ast::Expr {
                     }
 
                     if is_err {
-                        (TyInfo::Error, hir::Expr::Error)
+                        (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                     } else {
                         let output_ty = infer.unknown(self.span());
 
@@ -512,7 +512,7 @@ impl ToHir for ast::Expr {
                     }
                 } else {
                     infer.ctx_mut().emit(Error::NoBranches(self.span()));
-                    (TyInfo::Error, hir::Expr::Error)
+                    (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                 }
             },
             ast::Expr::Apply(f, param) => {
@@ -555,7 +555,7 @@ impl ToHir for ast::Expr {
             } else {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression
-                (TyInfo::Error, hir::Expr::Error)
+                (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
             },
             ast::Expr::Debug(inner) => {
                 let inner = inner.to_hir(infer, scope);

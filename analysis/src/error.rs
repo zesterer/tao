@@ -5,7 +5,7 @@ use std::io::Write;
 pub enum Error {
     Mismatch(TyId, TyId, Option<Span>),
     CannotInfer(TyId, Option<Span>),
-    Recursive(Span),
+    Recursive(TyId, Span, Span),
     NoSuchField(TyId, SrcNode<Ident>),
     NoSuchLocal(SrcNode<Ident>),
     WrongNumberOfParams(Span, usize, Span, usize),
@@ -18,6 +18,7 @@ pub enum Error {
     DuplicateTypeName(Ident, Span, Span),
     DuplicateDefName(Ident, Span, Span),
     DuplicateConsName(Ident, Span, Span),
+    DuplicateGenName(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
     NotExhaustive(Span, ExamplePat),
     WrongNumberOfGenerics(Span, usize, Span, usize),
@@ -56,9 +57,12 @@ impl Error {
                 },
                 vec![],
             ),
-            Error::Recursive(span) => (
-                format!("Recursive type {}", "!".fg(Color::Red)),
-                vec![(span, format!("Mentions itself"), Color::Red)],
+            Error::Recursive(a, span, part) => (
+                format!("Recursive type {}", display(a).fg(Color::Red)),
+                vec![
+                    (span, format!("Mentions itself"), Color::Red),
+                    (part, format!("Recursive element is here"), Color::Red),
+                ],
                 vec![],
             ),
             Error::NoSuchField(a, field) => (
@@ -154,6 +158,14 @@ impl Error {
                 vec![
                     (old, format!("Previous declaration"), Color::Yellow),
                     (new, format!("Conflicting declaration"), Color::Red),
+                ],
+                vec![],
+            ),
+            Error::DuplicateGenName(name, old, new) => (
+                format!("Type parameter {} declared multiple times", name.fg(Color::Red)),
+                vec![
+                    (old, format!("Previous type parameter"), Color::Yellow),
+                    (new, format!("Conflicting type parameter"), Color::Red),
                 ],
                 vec![],
             ),
