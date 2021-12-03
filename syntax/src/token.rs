@@ -226,10 +226,9 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
     });
 
     let comments = just('#')
-        .then_ignore(none_of("}".chars())
-            .ignored()
-            .repeated()
-            .delimited_by('{', '}')
+        .then_ignore(just('(')
+            .ignore_then(none_of(")".chars()).ignored().repeated())
+            .then_ignore(seq(")#".chars()))
             .or(none_of("\n".chars()).ignored().repeated()))
         .padded()
         .ignored()

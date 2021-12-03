@@ -11,6 +11,7 @@ pub enum AbstractPat {
     Wildcard,
     Bool([bool; 2]),
     Nat(Ranges<u64>),
+    Int(Ranges<i64>),
     Char(char),
     Tuple(Vec<Self>),
     Variant(DataId, Ident, Box<Self>),
@@ -94,6 +95,17 @@ impl AbstractPat {
                     }
                 }
                 covered.clone().invert().into_iter().next().map(ExamplePrim::Nat).map(ExamplePat::Prim)
+            },
+            Ty::Prim(Prim::Int) => {
+                let mut covered = Ranges::new();
+                for pat in filter {
+                    match pat {
+                        AbstractPat::Wildcard => return None,
+                        AbstractPat::Int(x) => covered = covered.clone().union(x.clone()),
+                        _ => unreachable!(),
+                    }
+                }
+                covered.clone().invert().into_iter().next().map(ExamplePrim::Int).map(ExamplePat::Prim)
             },
             Ty::Prim(Prim::Bool) => {
                 let (mut caught_f, mut caught_t) = (false, false);
@@ -268,6 +280,7 @@ impl AbstractPat {
 pub enum ExamplePrim {
     Bool(bool),
     Nat(u64),
+    Int(i64),
 }
 
 impl fmt::Display for ExamplePrim {
@@ -275,6 +288,7 @@ impl fmt::Display for ExamplePrim {
         match self {
             Self::Bool(x) => write!(f, "{}", x),
             Self::Nat(x) => write!(f, "{}", x),
+            Self::Int(x) => write!(f, "{}", x),
         }
     }
 }

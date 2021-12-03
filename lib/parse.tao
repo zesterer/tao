@@ -4,7 +4,7 @@ def len A =
 	| []: [A] => 0
 	\ [_ .. tail] => 1 + tail:len
 
-def fold A, B : B -> (B -> A -> B) -> [A] -> B =
+def fold A, B : ? -> (? -> A -> ?) -> ? -> B =
 	| init, _, [] => init
 	\ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
@@ -26,7 +26,7 @@ data Result A, E =
 	| Ok A
 	\ Err E
 
-def map_res A, B, E : ? -> Result A E -> Result B E =
+def map_res A, B, E : ? -> Result A ? -> Result B E =
 	| f, Ok ok => Ok ok:f
 	\ _, Err err => Err err
 
@@ -168,7 +168,7 @@ def sum = product
 		:repeated)
 	:map(reduce(fn a, (op, b) => Binary (op, a, b)))
 
-def expr = sum
+def expr : Parser Char Expr = sum
 
 def eval =
 	| Natural x => --x

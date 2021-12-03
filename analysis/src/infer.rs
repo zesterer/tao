@@ -20,7 +20,7 @@ pub enum TyInfo {
 
 #[derive(Debug)]
 pub enum InferError {
-    Mismatch(TyVar, TyVar),
+    Mismatch(TyVar, TyVar, Option<Span>),
     CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
     Recursive(TyVar),
     NoSuchField(TyVar, SrcNode<Ident>),
@@ -182,7 +182,10 @@ impl<'a> Infer<'a> {
     // Returns true if `x` occurs in `y`.
     fn occurs_in(&self, x: TyVar, y: TyVar) -> bool {
         match self.info(y) {
-            TyInfo::Unknown(_) | TyInfo::Error | TyInfo::Prim(_) | TyInfo::Gen(_, _, _) => false,
+            TyInfo::Unknown(_)
+            | TyInfo::Error
+            | TyInfo::Prim(_)
+            | TyInfo::Gen(_, _, _) => false,
             TyInfo::Ref(y) => x == y || self.occurs_in(x, y),
             TyInfo::List(item) => x == item || self.occurs_in(x, item),
             TyInfo::Func(i, o) => x == i || x == o || self.occurs_in(x, i) || self.occurs_in(x, o),
@@ -198,12 +201,12 @@ impl<'a> Infer<'a> {
         }
     }
 
-    pub fn make_eq(&mut self, x: TyVar, y: TyVar) {
+    pub fn make_eq(&mut self, x: TyVar, y: TyVar, loc: impl Into<Option<Span>>) {
         if let Err((a, b)) = self.make_eq_inner(x, y) {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
-                self.errors.push(InferError::Mismatch(a, b));
+                self.errors.push(InferError::Mismatch(a, b, loc.into()));
             }
         }
     }
@@ -222,8 +225,13 @@ impl<'a> Infer<'a> {
             } else {
                 Ok(self.set_info(x, TyInfo::Ref(y)))
             },
-            (_, TyInfo::Error) => Ok(self.set_info(x, TyInfo::Ref(y))),
-            (TyInfo::Error, _) | (_, TyInfo::Unknown(_)) => self.make_eq_inner(y, x),
+            (_, TyInfo::Unknown(_)) => self.make_eq_inner(y, x),
+
+            (_, TyInfo::Error) => {
+                self.set_error(x);
+                Ok(self.set_info(x, TyInfo::Ref(y)))
+            },
+            (TyInfo::Error, _) => self.make_eq_inner(y, x),
 
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
             (TyInfo::List(x), TyInfo::List(y)) => self.make_eq_inner(x, y),
@@ -257,7 +265,8 @@ impl<'a> Infer<'a> {
     pub fn try_reinstantiate(&mut self, span: Span, ty: TyVar) -> TyVar {
         match self.info(ty) {
             TyInfo::Ref(x) => self.try_reinstantiate(span, x),
-            TyInfo::Unknown(_) | TyInfo::Error | TyInfo::Prim(_) => ty,
+            TyInfo::Error => self.insert(self.span(ty), TyInfo::Error),
+            TyInfo::Unknown(_) | TyInfo::Prim(_) => ty,
             TyInfo::List(item) => {
                 let item = self.try_reinstantiate(span, item);
                 self.insert(self.span(ty), TyInfo::List(item))
@@ -268,6 +277,7 @@ impl<'a> Infer<'a> {
                 self.insert(self.span(ty), TyInfo::Func(i, o))
             },
             // TODO: Reinstantiate type parameters with fresh type variables, but without creating inference problems
+            // TODO: Is this even correct?
             TyInfo::Gen(x, _, origin) => ty,//self.insert(span, TyInfo::Unknown(Some(origin))),
             TyInfo::Tuple(fields) => {
                 let fields = fields
@@ -305,7 +315,7 @@ impl<'a> Infer<'a> {
                 },
                 TyInfo::Unknown(_) => None,
                 TyInfo::Record(fields) => if let Some(field_ty) = fields.get(&field_name) {
-                    self.make_eq(*field_ty, field);
+                    self.make_eq(*field_ty, field, field_name.span());
                     Some(true)
                 } else {
                     Some(false)
@@ -320,7 +330,7 @@ impl<'a> Infer<'a> {
                         if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
                             if let Some(field_ty) = fields.get(&field_name) {
                                 let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index]);
-                                self.make_eq(field_ty, field);
+                                self.make_eq(field_ty, field, field_name.span());
                                 Some(true)
                             } else {
                                 Some(false)
@@ -355,7 +365,7 @@ impl<'a> Infer<'a> {
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
                     let result_ty = self.insert(op.span(), info);
-                    self.make_eq(output, result_ty);
+                    self.make_eq(output, result_ty, op.span());
                 })),
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
                 (_, _, TyInfo::Error) => Some(Ok(TyInfo::Error)),
@@ -424,7 +434,7 @@ impl<'a> Infer<'a> {
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
                     let result_ty = self.insert(self.span(output), info);
-                    self.make_eq(output, result_ty);
+                    self.make_eq(output, result_ty, op.span());
                 })),
         }
     }
@@ -471,7 +481,7 @@ impl<'a> Infer<'a> {
         let errors = errors
             .into_iter()
             .map(|error| match error {
-                InferError::Mismatch(a, b) => Error::Mismatch(checked.reify(a), checked.reify(b)),
+                InferError::Mismatch(a, b, loc) => Error::Mismatch(checked.reify(a), checked.reify(b), loc),
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
                 InferError::Recursive(a) => Error::Recursive(checked.infer.span(a)),
                 InferError::NoSuchField(a, field) => Error::NoSuchField(checked.reify(a), field),

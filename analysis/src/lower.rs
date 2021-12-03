@@ -158,7 +158,7 @@ impl ToHir for ast::Binding {
                 match (&**rhs, &**op) {
                     (ast::Literal::Nat(rhs_nat), ast::BinaryOp::Add) => {
                         let nat = infer.insert(rhs.span(), TyInfo::Prim(Prim::Nat));
-                        infer.make_eq(lhs.meta().1, nat);
+                        infer.make_eq(lhs.meta().1, nat, self.span());
                         (TyInfo::Ref(nat), hir::Pat::Add(lhs, SrcNode::new(*rhs_nat, rhs.span())))
                     },
                     (_, _) => {
@@ -195,7 +195,7 @@ impl ToHir for ast::Binding {
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty);
+                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
@@ -207,14 +207,14 @@ impl ToHir for ast::Binding {
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty);
+                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
                 let tail = tail.as_ref().map(|tail| {
                     let tail = tail.to_hir(infer, scope);
                     let ty = infer.insert(tail.meta().0, TyInfo::List(item_ty));
-                    infer.make_eq(tail.meta().1, ty);
+                    infer.make_eq(tail.meta().1, ty, tail.meta().0);
                     tail
                 });
                 (TyInfo::List(item_ty), hir::Pat::ListFront(items, tail))
@@ -244,7 +244,7 @@ impl ToHir for ast::Binding {
                 };
 
                 let inner = inner.to_hir(infer, scope);
-                infer.make_eq(inner.meta().1, inner_ty);
+                infer.make_eq(inner.meta().1, inner_ty, self.span());
 
                 (TyInfo::Data(data, generic_tys), hir::Pat::Decons(SrcNode::new(data, name.span()), **name, inner))
             } else {
@@ -258,7 +258,7 @@ impl ToHir for ast::Binding {
 
         if let Some(ty_hint) = &self.ty {
             let hint = ty_hint.to_hir(infer, scope);
-            infer.make_eq(ty, hint.meta().1);
+            infer.make_eq(ty, hint.meta().1, self.span());
         }
 
         InferNode::new(hir::Binding {
@@ -293,17 +293,28 @@ impl ToHir for ast::Expr {
 
                 // Recreate type in context
                 let def = infer.ctx().defs.get(def_id);
+                let def_gen_scope = def.gen_scope;
+                let def_name = def.name.clone();
+                let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
                 let ty = if let Some(body) = def.body.as_ref() {
-                    let def_gen_scope = def.gen_scope;
-                    let def_ty = body.meta().1;
-                    let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
-                    infer.instantiate(def_ty, self.span(), &get_gen)
+                    let body_ty = body.meta().1;
+                    Some(infer.instantiate(body_ty, self.span(), &get_gen))
                 } else {
-                    // TODO: This is unsound. We can't just assume that globals are anything!
-                    infer.unknown(self.span())
+                    let ty_hint = def.ty_hint.clone();
+                    if ty_hint.is_fully_specified() {
+                        let ty_hint_ty = ty_hint.to_hir(infer, &Scope::Empty).meta().1;
+                        Some(infer.try_reinstantiate(self.span(), ty_hint_ty))
+                    } else {
+                        None
+                    }
                 };
 
-                (TyInfo::Ref(ty), hir::Expr::Global(def_id, generic_tys))
+                if let Some(ty) = ty {
+                    (TyInfo::Ref(ty), hir::Expr::Global(def_id, generic_tys))
+                } else {
+                    infer.ctx_mut().emit(Error::DefTypeNotSpecified(def_name.span(), self.span(), *def_name));
+                    (TyInfo::Error, hir::Expr::Error)
+                }
             } else {
                 infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
                 (TyInfo::Error, hir::Expr::Error)
@@ -325,7 +336,7 @@ impl ToHir for ast::Expr {
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty);
+                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
@@ -336,13 +347,13 @@ impl ToHir for ast::Expr {
                 let list_ty = infer.insert(self.span(), TyInfo::List(item_ty));
 
                 let tail = tail.to_hir(infer, scope);
-                infer.make_eq(tail.meta().1, list_ty);
+                infer.make_eq(tail.meta().1, list_ty, tail.meta().0);
 
                 let items = items
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty);
+                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
@@ -385,7 +396,7 @@ impl ToHir for ast::Expr {
                         Some((binding, val)) => {
                             let binding = binding.to_hir(infer, scope);
                             let val = val.to_hir(infer, scope);
-                            infer.make_eq(binding.meta().1, val.meta().1);
+                            infer.make_eq(binding.meta().1, val.meta().1, binding.meta().0);
                             let then = fold(then, bindings, infer, &scope.with_many(binding.get_bindings()));
                             let meta = *then.meta(); // TODO: Make a TyInfo::Ref?
                             InferNode::new(hir::Expr::Match(
@@ -420,9 +431,9 @@ impl ToHir for ast::Expr {
                         .iter()
                         .map(|(bindings, body)| {
                             let binding = tupleify_binding(bindings, infer, scope);
-                            infer.make_eq(pred.meta().1, binding.meta().1);
+                            infer.make_eq(pred.meta().1, binding.meta().1, binding.meta().0);
                             let body = body.to_hir(infer, &scope.with_many(binding.get_bindings()));
-                            infer.make_eq(body.meta().1, output_ty);
+                            infer.make_eq(body.meta().1, output_ty, body.meta().0);
                             (binding, body)
                         })
                         .collect();
@@ -434,11 +445,11 @@ impl ToHir for ast::Expr {
                 let pred_ty = infer.insert(pred.span(), TyInfo::Prim(Prim::Bool));
                 let output_ty = infer.unknown(self.span());
                 let pred = pred.to_hir(infer, scope);
-                infer.make_eq(pred.meta().1, pred_ty);
+                infer.make_eq(pred.meta().1, pred_ty, pred.meta().0);
                 let a = a.to_hir(infer, scope);
                 let b = b.to_hir(infer, scope);
-                infer.make_eq(a.meta().1, output_ty);
-                infer.make_eq(b.meta().1, output_ty);
+                infer.make_eq(a.meta().1, output_ty, self.span());
+                infer.make_eq(b.meta().1, output_ty, self.span());
                 let arms = vec![
                     (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Literal(ast::Literal::Bool(true)), pred.meta().0)), *pred.meta()), a),
                     (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Literal(ast::Literal::Bool(false)), pred.meta().0)), *pred.meta()), b),
@@ -478,9 +489,9 @@ impl ToHir for ast::Expr {
                             .iter()
                             .map(|(bindings, body)| {
                                 let binding = tupleify_binding(bindings, infer, scope);
-                                infer.make_eq(pred.meta().1, binding.meta().1);
+                                infer.make_eq(pred.meta().1, binding.meta().1, binding.meta().0);
                                 let body = body.to_hir(infer, &scope.with_many(binding.get_bindings()));
-                                infer.make_eq(body.meta().1, output_ty);
+                                infer.make_eq(body.meta().1, output_ty, body.meta().0);
                                 (binding, body)
                             })
                             .collect();
@@ -509,7 +520,7 @@ impl ToHir for ast::Expr {
                 let param = param.to_hir(infer, scope);
                 let output_ty = infer.unknown(self.span());
                 let func = infer.insert(f.meta().0, TyInfo::Func(param.meta().1, output_ty));
-                infer.make_eq(f.meta().1, func);
+                infer.make_eq(f.meta().1, func, self.span());
 
                 (TyInfo::Ref(output_ty), hir::Expr::Apply(f, param))
             },
@@ -538,7 +549,7 @@ impl ToHir for ast::Expr {
                 };
 
                 let inner = inner.to_hir(infer, scope);
-                infer.make_eq(inner.meta().1, inner_ty);
+                infer.make_eq(inner.meta().1, inner_ty, self.span());
 
                 (TyInfo::Data(data, generic_tys), hir::Expr::Cons(SrcNode::new(data, name.span()), **name, inner))
             } else {

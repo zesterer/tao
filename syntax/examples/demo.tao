@@ -1,18 +1,18 @@
-def foo =
-	\ f: Nat -> Nat => f(5)
+len =
+	| [] = 0
+	| [_ .. xs] = 1 + xs:len
 
-$[main]
-def main = foo(\o: Nat => o)
+def len =
+	| [] => 0
+	\ [_ .. xs] => 1 + xs:len
 
-# def len =
-#	 | [] => 0
-#	 \ [_ .. xs] => 1 + xs:len
+def add =
+	\ x, y => x + y
 
-# def sum =
-#	 | [] => 0
-#	 \ [x .. xs] => x + xs:sum
+def sum =
+	| [] => 0
+	\ [x .. xs] => x + xs:sum
 
-# def fold =
-#	 | init, _, [] => init
-#	 \ init, f, [x .. xs] => f(x, xs:fold(init, f))
-
+def fold =
+	| init, _, [] => init
+	\ init, f, [x .. xs] => f(x, xs:fold(init, f))

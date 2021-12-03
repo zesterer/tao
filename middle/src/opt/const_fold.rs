@@ -59,7 +59,14 @@ impl Pass for ConstFold {
                         let res = match op {
                             Intrinsic::AddNat => Const::Nat(x.nat() + y.nat()),
                             Intrinsic::AddInt => Const::Int(x.int() + y.int()),
-                            _ => return,
+                            Intrinsic::SubNat => Const::Int(x.nat() as i64 - y.nat() as i64),
+                            Intrinsic::Join(_) => Const::List({
+                                let mut xs = x.list();
+                                xs.append(&mut y.list());
+                                xs
+                            }),
+                            // _ => return,
+                            op => todo!("{:?}", op),
                         };
                         *expr = Expr::Const(res);
                     })();

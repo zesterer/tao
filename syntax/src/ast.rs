@@ -127,6 +127,26 @@ pub enum Type {
     Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
 }
 
+impl Type {
+    pub fn is_fully_specified(&self) -> bool {
+        match self {
+            Self::Error => true,
+            Self::Unknown => false,
+            Self::List(item) => item.is_fully_specified(),
+            Self::Tuple(fields) => fields
+                .iter()
+                .all(|field| field.is_fully_specified()),
+            Self::Record(fields) => fields
+                .iter()
+                .all(|(_, field)| field.is_fully_specified()),
+            Self::Func(i, o) => i.is_fully_specified() && o.is_fully_specified(),
+            Self::Data(_, args) => args
+                .iter()
+                .all(|arg| arg.is_fully_specified()),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Pat {
     // Generated only by parser errors.

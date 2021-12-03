@@ -3,7 +3,7 @@ use std::io::Write;
 
 #[derive(Debug)]
 pub enum Error {
-    Mismatch(TyId, TyId),
+    Mismatch(TyId, TyId, Option<Span>),
     CannotInfer(TyId, Option<Span>),
     Recursive(Span),
     NoSuchField(TyId, SrcNode<Ident>),
@@ -21,6 +21,7 @@ pub enum Error {
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
     NotExhaustive(Span, ExamplePat),
     WrongNumberOfGenerics(Span, usize, Span, usize),
+    DefTypeNotSpecified(Span, Span, Ident),
 }
 
 impl Error {
@@ -30,12 +31,18 @@ impl Error {
         let display = |id| ctx.tys.display(&ctx.datas, id);
 
         let (msg, spans, notes) = match self {
-            Error::Mismatch(a, b) => (
+            Error::Mismatch(a, b, loc) => (
                 format!("Type mismatch between {} and {}", display(a).fg(Color::Red), display(b).fg(Color::Red)),
-                vec![
-                    (ctx.tys.get_span(a), format!("{}", display(a)), Color::Red),
-                    (ctx.tys.get_span(b), format!("{}", display(b)), Color::Red),
-                ],
+                {
+                    let mut labels = vec![
+                        (ctx.tys.get_span(a), format!("{}", display(a)), Color::Red),
+                        (ctx.tys.get_span(b), format!("{}", display(b)), Color::Red),
+                    ];
+                    if let Some(loc) = loc {
+                        labels.push((loc, format!("Types must be equal here"), Color::Yellow));
+                    }
+                    labels
+                },
                 vec![],
             ),
             Error::CannotInfer(a, origin) => (
@@ -160,7 +167,7 @@ impl Error {
             ),
             Error::NotExhaustive(span, example) => (
                 format!("Pattern match is not exhaustive"),
-                vec![(span, format!("Pattern {} not caught", (&example).fg(Color::Red)), Color::Red)],
+                vec![(span, format!("Pattern {} not covered", (&example).fg(Color::Red)), Color::Red)],
                 vec![format!(
                     "Add another arm like {} to ensure that this case is covered.",
                     format!("| {} => ...", example).fg(Color::Blue),
@@ -173,6 +180,17 @@ impl Error {
                     (b, format!("Has {} parameter(s)", b_count), Color::Yellow),
                 ],
                 vec![],
+            ),
+            Error::DefTypeNotSpecified(def, usage, name) => (
+                format!("Type of {} must be fully specified", name.fg(Color::Red)),
+                vec![
+                    (def, format!("Definition does not have a fully specified type hint"), Color::Red),
+                    (usage, format!("Type must be fully known here"), Color::Yellow),
+                ],
+                vec![format!(
+                    "Add a type hint to the def like {}",
+                    format!("def {} : ...", name).fg(Color::Blue),
+                )],
             ),
         };
 
