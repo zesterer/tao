@@ -1,0 +1,6 @@
+def len A : [A] -> Nat =
+    | [] => 0
+    \ [_ .. xs] => 1 + xs:len
+
+$[main]
+def main = ()

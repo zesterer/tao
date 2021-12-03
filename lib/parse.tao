@@ -92,8 +92,8 @@ def whitespace = just(' ')
 
 def whitespaces = whitespace:repeated
 
-def padded O : ? -> Parser Char O =
-	\ a => whitespaces
+def padded O : Parser Char O -> Parser Char O =
+    \ a => whitespaces
 		:ignore_then(a)
 		:then_ignore(whitespaces)
 

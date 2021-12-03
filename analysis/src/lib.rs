@@ -18,7 +18,7 @@ pub use crate::{
     error::Error,
     exhaustivity::{exhaustivity, ExamplePat},
     hir::{InferExpr, InferBinding, TyExpr, TyBinding},
-    infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError},
+    infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo},
     lower::{Scope, ToHir},
     reify::Reify,
     ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason},

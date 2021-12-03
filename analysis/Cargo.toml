@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 tao_syntax = { path = "../syntax" }
-ariadne = "0.1"
+#ariadne = "0.1"
+ariadne = { git = "https://github.com/zesterer/ariadne.git" }
 hashbrown = "0.11"
 lazy_static = "1.4"
 ranges = { git = "https://gitlab.com/bit-refined/ranges.git" }

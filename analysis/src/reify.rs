@@ -76,7 +76,7 @@ impl Reify for hir::Expr<InferMeta> {
             hir::Expr::Access(record, field_name) => hir::Expr::Access(record.reify(infer), field_name),
             hir::Expr::Unary(op, a) => hir::Expr::Unary(op, a.reify(infer)),
             hir::Expr::Binary(op, a, b) => hir::Expr::Binary(op, a.reify(infer), b.reify(infer)),
-            hir::Expr::Match(pred, arms) => {
+            hir::Expr::Match(hidden_outer, pred, arms) => {
                 let pred = pred.reify(infer);
                 let arms = arms
                     .into_iter()
@@ -84,10 +84,10 @@ impl Reify for hir::Expr<InferMeta> {
                     .collect::<Vec<_>>();
 
                 if let Err(example) = exhaustivity(infer.ctx(), pred.meta().1, arms.iter().map(|(b, _)| b)) {
-                    infer.ctx_mut().emit(Error::NotExhaustive(span, example));
+                    infer.ctx_mut().emit(Error::NotExhaustive(span, example, hidden_outer));
                 }
 
-                hir::Expr::Match(pred, arms)
+                hir::Expr::Match(hidden_outer, pred, arms)
             },
             hir::Expr::Func(param, body) => hir::Expr::Func(TyNode::new(*param, (param.meta().0, infer.reify(param.meta().1))), body.reify(infer)),
             hir::Expr::Apply(f, param) => hir::Expr::Apply(f.reify(infer), param.reify(infer)),

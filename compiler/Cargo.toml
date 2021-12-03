@@ -10,5 +10,6 @@ tao_analysis = { path = "../analysis" }
 tao_middle = { path = "../middle" }
 tao_vm = { path = "../vm" }
 
-ariadne = "0.1"
+#ariadne = "0.1"
+ariadne = { git = "https://github.com/zesterer/ariadne.git" }
 structopt = "0.3"

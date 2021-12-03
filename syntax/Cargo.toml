@@ -8,7 +8,8 @@ edition = "2018"
 chumsky = { git = "https://github.com/zesterer/chumsky.git" }
 #chumsky = "0.4.1"
 internment = "0.5"
-ariadne = "0.1"
+#ariadne = "0.1"
+ariadne = { git = "https://github.com/zesterer/ariadne.git" }
 hashbrown = "0.11"
 
 [dev-dependencies]

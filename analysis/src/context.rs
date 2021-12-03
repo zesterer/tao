@@ -144,7 +144,7 @@ impl Context {
                 .collect();
 
             let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
-            infer.make_eq(ty_hint.meta().1, body.meta().1, None);
+            infer.make_eq(ty_hint.meta().1, body.meta().1, EqInfo::default());
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);

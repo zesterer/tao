@@ -106,7 +106,8 @@ pub enum Expr<M> {
     Access(Node<Self, M>, SrcNode<Ident>),
     Unary(SrcNode<ast::UnaryOp>, Node<Self, M>),
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
-    Match(Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
+    // hidden_outer
+    Match(bool, Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
     Func(Node<Ident, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>),
     Cons(SrcNode<DataId>, Ident, Node<Self, M>),

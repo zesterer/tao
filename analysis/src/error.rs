@@ -3,10 +3,10 @@ use std::io::Write;
 
 #[derive(Debug)]
 pub enum Error {
-    Mismatch(TyId, TyId, Option<Span>),
+    Mismatch(TyId, TyId, EqInfo),
     CannotInfer(TyId, Option<Span>),
     Recursive(TyId, Span, Span),
-    NoSuchField(TyId, SrcNode<Ident>),
+    NoSuchField(TyId, Span, SrcNode<Ident>),
     NoSuchLocal(SrcNode<Ident>),
     WrongNumberOfParams(Span, usize, Span, usize),
     NoBranches(Span),
@@ -20,7 +20,8 @@ pub enum Error {
     DuplicateConsName(Ident, Span, Span),
     DuplicateGenName(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
-    NotExhaustive(Span, ExamplePat),
+    // Span, uncovered example, hidden_outer
+    NotExhaustive(Span, ExamplePat, bool),
     WrongNumberOfGenerics(Span, usize, Span, usize),
     DefTypeNotSpecified(Span, Span, Ident),
 }
@@ -32,19 +33,23 @@ impl Error {
         let display = |id| ctx.tys.display(&ctx.datas, id);
 
         let (msg, spans, notes) = match self {
-            Error::Mismatch(a, b, loc) => (
+            Error::Mismatch(a, b, info) => (
                 format!("Type mismatch between {} and {}", display(a).fg(Color::Red), display(b).fg(Color::Red)),
                 {
                     let mut labels = vec![
                         (ctx.tys.get_span(a), format!("{}", display(a)), Color::Red),
                         (ctx.tys.get_span(b), format!("{}", display(b)), Color::Red),
                     ];
-                    if let Some(loc) = loc {
-                        labels.push((loc, format!("Types must be equal here"), Color::Yellow));
+                    if let Some(at) = info.at {
+                        labels.push((at, format!("Types must be equal here"), Color::Yellow));
                     }
                     labels
                 },
-                vec![],
+                if let Some(reason) = info.reason {
+                    vec![reason]
+                } else {
+                    Vec::new()
+                },
             ),
             Error::CannotInfer(a, origin) => (
                 format!("Cannot infer type {}", display(a).fg(Color::Red)),
@@ -65,11 +70,11 @@ impl Error {
                 ],
                 vec![],
             ),
-            Error::NoSuchField(a, field) => (
-                format!("No such field {} on {}", (*field).fg(Color::Red), display(a).fg(Color::Red)),
+            Error::NoSuchField(a, record_span, field) => (
+                format!("Type {} has no field named {}", display(a).fg(Color::Red), (*field).fg(Color::Red)),
                 vec![
-                    (ctx.tys.get_span(a), format!("{}", display(a)), Color::Red),
-                    (field.span(), format!("Field"), Color::Red),
+                    (record_span, format!("Has type {}", display(a).fg(Color::Yellow)), Color::Yellow),
+                    (field.span(), format!("Field does not exist"), Color::Red),
                 ],
                 vec![],
             ),
@@ -177,13 +182,17 @@ impl Error {
                     format!("Nat + Nat").fg(Color::Blue),
                 )],
             ),
-            Error::NotExhaustive(span, example) => (
-                format!("Pattern match is not exhaustive"),
-                vec![(span, format!("Pattern {} not covered", (&example).fg(Color::Red)), Color::Red)],
-                vec![format!(
-                    "Add another arm like {} to ensure that this case is covered.",
-                    format!("| {} => ...", example).fg(Color::Blue),
-                )],
+            Error::NotExhaustive(span, example, is_match) => (
+                format!("{} is not exhaustive", if is_match { "Pattern match"} else { "Let" }),
+                vec![(span, format!("Pattern {} not covered", example.display(is_match).fg(Color::Red)), Color::Red)],
+                if is_match {
+                    vec![format!(
+                        "Add another arm like {} to ensure that this case is covered",
+                        format!("| {} => ...", example.display(is_match)).fg(Color::Blue),
+                    )]
+                } else {
+                    vec![format!("Let patterns must be exhaustive")]
+                },
             ),
             Error::WrongNumberOfGenerics(a, a_count, b, b_count) => (
                 format!("Wrong number of type parameters"),

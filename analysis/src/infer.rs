@@ -18,13 +18,31 @@ pub enum TyInfo {
     Gen(usize, GenScopeId, Span),
 }
 
+#[derive(Default, Debug)]
+pub struct EqInfo {
+    pub at: Option<Span>,
+    pub reason: Option<String>,
+}
+
+impl From<Span> for EqInfo {
+    fn from(span: Span) -> Self {
+        Self { at: Some(span), reason: None }
+    }
+}
+
+impl EqInfo {
+    pub fn new(at: Span, reason: String) -> Self {
+        Self { at: Some(at), reason: Some(reason) }
+    }
+}
+
 #[derive(Debug)]
 pub enum InferError {
-    Mismatch(TyVar, TyVar, Option<Span>),
+    Mismatch(TyVar, TyVar, EqInfo),
     CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
     // Type, recursive element
     Recursive(TyVar, TyVar),
-    NoSuchField(TyVar, SrcNode<Ident>),
+    NoSuchField(TyVar, Span, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
     RecursiveAlias(AliasId, TyVar, Span),
@@ -216,12 +234,12 @@ impl<'a> Infer<'a> {
         self.occurs_in_inner(x, y, &mut Vec::new())
     }
 
-    pub fn make_eq(&mut self, x: TyVar, y: TyVar, loc: impl Into<Option<Span>>) {
+    pub fn make_eq(&mut self, x: TyVar, y: TyVar, info: impl Into<EqInfo>) {
         if let Err((a, b)) = self.make_eq_inner(x, y) {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
-                self.errors.push(InferError::Mismatch(a, b, loc.into()));
+                self.errors.push(InferError::Mismatch(a, b, info.into()));
             }
         }
     }
@@ -370,7 +388,7 @@ impl<'a> Infer<'a> {
                     Ok(())
                 } else {
                     self.set_error(field);
-                    Err(InferError::NoSuchField(record, field_name.clone()))
+                    Err(InferError::NoSuchField(record, self.span(record), field_name.clone()))
                 }),
             Constraint::Unary(op, a, output) => match (&*op, self.follow_info(a)) {
                 (_, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
@@ -387,7 +405,7 @@ impl<'a> Infer<'a> {
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
                     let result_ty = self.insert(op.span(), info);
-                    self.make_eq(output, result_ty, op.span());
+                    self.make_eq(output, result_ty, self.span(output));
                 })),
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
                 (_, _, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
@@ -456,7 +474,7 @@ impl<'a> Infer<'a> {
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
                     let result_ty = self.insert(self.span(output), info);
-                    self.make_eq(output, result_ty, op.span());
+                    self.make_eq(output, result_ty, self.span(output));
                 })),
         }
     }
@@ -503,10 +521,10 @@ impl<'a> Infer<'a> {
         let errors = errors
             .into_iter()
             .map(|error| match error {
-                InferError::Mismatch(a, b, loc) => Error::Mismatch(checked.reify(a), checked.reify(b), loc),
+                InferError::Mismatch(a, b, info) => Error::Mismatch(checked.reify(a), checked.reify(b), info),
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
                 InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
-                InferError::NoSuchField(a, field) => Error::NoSuchField(checked.reify(a), field),
+                InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
                 InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),

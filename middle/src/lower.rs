@@ -179,7 +179,7 @@ impl ToMir for hir::TyExpr {
                 };
                 mir::Expr::Intrinsic(intrinsic, vec![x.to_mir(ctx, hir, gen_tys), y.to_mir(ctx, hir, gen_tys)])
             },
-            hir::Expr::Match(pred, arms) => {
+            hir::Expr::Match(_, pred, arms) => {
                 let arms = arms
                     .iter()
                     .map(|(binding, body)| (binding.to_mir(ctx, hir, gen_tys), body.to_mir(ctx, hir, gen_tys)))

@@ -59,6 +59,7 @@ impl AbstractPat {
     fn is_refutable(&self, ctx: &Context) -> bool {
         match self {
             AbstractPat::Wildcard => false,
+            AbstractPat::Bool([t, f]) => !(*t && *f),
             AbstractPat::Nat(set) => !set.clone().invert().is_empty(),
             AbstractPat::Tuple(fields) => !fields
                 .iter()
@@ -91,7 +92,7 @@ impl AbstractPat {
                     match pat {
                         AbstractPat::Wildcard => return None,
                         AbstractPat::Nat(x) => covered = covered.clone().union(x.clone()),
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 covered.clone().invert().into_iter().next().map(ExamplePrim::Nat).map(ExamplePat::Prim)
@@ -102,7 +103,7 @@ impl AbstractPat {
                     match pat {
                         AbstractPat::Wildcard => return None,
                         AbstractPat::Int(x) => covered = covered.clone().union(x.clone()),
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 covered.clone().invert().into_iter().next().map(ExamplePrim::Int).map(ExamplePat::Prim)
@@ -116,7 +117,7 @@ impl AbstractPat {
                             caught_f |= f;
                             caught_t |= t;
                         },
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 if !caught_f {
@@ -132,7 +133,7 @@ impl AbstractPat {
                     match pat {
                         AbstractPat::Wildcard => return None,
                         AbstractPat::Char(_) => {},
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 Some(ExamplePat::Wildcard)
@@ -144,7 +145,7 @@ impl AbstractPat {
                     match pat {
                         AbstractPat::Wildcard => return None,
                         AbstractPat::Tuple(fields) => inners.push(&fields[0]),
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 Self::inexhaustive_pat(ctx, fields[0], &mut inners.into_iter(), get_gen_ty)
@@ -177,7 +178,7 @@ impl AbstractPat {
                                     cols[i].push(pat);
                                 }
                             },
-                            _ => unreachable!(),
+                            _ => return None, // Type mismatch, don't yield an error because one was already generated
                         }
                     }
 
@@ -211,7 +212,7 @@ impl AbstractPat {
                             .entry(*x)
                             .or_default()
                             .push(&**inner),
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 for (cons, cons_ty) in &ctx.datas.get_data(data).cons {
@@ -254,7 +255,7 @@ impl AbstractPat {
                                 covered_lens.insert(items.len() as u64..);
                             }
                         },
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
 
@@ -266,7 +267,7 @@ impl AbstractPat {
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
-                        _ => unreachable!(),
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 Some(ExamplePat::Wildcard)
@@ -303,20 +304,33 @@ pub enum ExamplePat {
     Variant(Ident, Box<Self>),
 }
 
-impl fmt::Display for ExamplePat {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Wildcard => write!(f, "_"),
-            Self::Prim(prim) => write!(f, "{}", prim),
-            Self::Tuple(fields) => write!(f, "({}{})", fields
-                .iter()
-                .map(|f| format!("{}", f))
-                .collect::<Vec<_>>()
-                .join(", "), if fields.len() == 1 { "," } else { "" }),
-            Self::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, f)).collect::<Vec<_>>().join(" ")),
-            Self::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ")),
-            Self::Variant(name, inner) => write!(f, "{} {}", name, inner),
+impl ExamplePat {
+    pub fn display(&self, hidden_outer: bool) -> impl fmt::Display + '_ {
+        struct DisplayExamplePat<'a>(&'a ExamplePat, bool);
+
+        impl<'a> fmt::Display for DisplayExamplePat<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match &self.0 {
+                    ExamplePat::Wildcard => write!(f, "_"),
+                    ExamplePat::Prim(prim) => write!(f, "{}", prim),
+                    ExamplePat::Tuple(fields) if self.1 => write!(f, "{}", fields
+                        .iter()
+                        .map(|f| format!("{}", DisplayExamplePat(f, false)))
+                        .collect::<Vec<_>>()
+                        .join(", ")),
+                    ExamplePat::Tuple(fields) => write!(f, "({}{})", fields
+                        .iter()
+                        .map(|f| format!("{}", DisplayExamplePat(f, false)))
+                        .collect::<Vec<_>>()
+                        .join(", "), if fields.len() == 1 { "," } else { "" }),
+                    ExamplePat::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, DisplayExamplePat(f, false))).collect::<Vec<_>>().join(" ")),
+                    ExamplePat::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExamplePat(i, false))).collect::<Vec<_>>().join(", ")),
+                    ExamplePat::Variant(name, inner) => write!(f, "{} {}", name, DisplayExamplePat(inner, false)),
+                }
+            }
         }
+
+        DisplayExamplePat(self, hidden_outer)
     }
 }
 
