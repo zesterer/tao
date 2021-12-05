@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-#chumsky = { path = "../../chumsky" }
-chumsky = { git = "https://github.com/zesterer/chumsky.git" }
+chumsky = { path = "../../chumsky", features = ["nightly"] }
+#chumsky = { git = "https://github.com/zesterer/chumsky.git" }
 #chumsky = "0.4.1"
 internment = "0.5"
 #ariadne = "0.1"

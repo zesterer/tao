@@ -142,7 +142,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .map(Token::Num);
 
     let ctrl = just(',').to(Token::Comma)
-        .or(seq("::".chars()).to(Token::Separator))
+        .or(just("::").to(Token::Separator))
         .or(just(':').to(Token::Colon))
         .or(just('?').to(Token::Question))
         .or(just('|').to(Token::Pipe))
@@ -150,19 +150,19 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .or(just('~').to(Token::Tilde))
         .or(just('$').to(Token::Dollar));
 
-    let op = seq("=>".chars()).to(Op::RFlow)
+    let op = just("=>").to(Op::RFlow)
         .or(just('=').to(Op::Eq))
-        .or(seq("..".chars()).to(Op::Ellipsis))
+        .or(just("..").to(Op::Ellipsis))
         .or(just('.').to(Op::Dot))
-        .or(seq("!=".chars()).to(Op::NotEq))
+        .or(just("!=").to(Op::NotEq))
         .or(just('!').to(Op::Not))
-        .or(seq("<=".chars()).to(Op::LessEq))
+        .or(just("<=").to(Op::LessEq))
         .or(just('<').to(Op::Less))
-        .or(seq(">=".chars()).to(Op::MoreEq))
+        .or(just(">=").to(Op::MoreEq))
         .or(just('>').to(Op::More))
-        .or(seq("++".chars()).to(Op::Join))
+        .or(just("++").to(Op::Join))
         .or(just('+').to(Op::Add))
-        .or(seq("->".chars()).to(Op::RArrow))
+        .or(just("->").to(Op::RArrow))
         .or(just('-').to(Op::Sub))
         .or(just('*').to(Op::Mul))
         .or(just('/').to(Op::Div))
@@ -227,9 +227,9 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
 
     let comments = just('#')
         .then_ignore(just('(')
-            .ignore_then(none_of(")".chars()).ignored().repeated())
-            .then_ignore(seq(")#".chars()))
-            .or(none_of("\n".chars()).ignored().repeated()))
+            .ignore_then(none_of(')').ignored().repeated())
+            .then_ignore(just(")#"))
+            .or(none_of('\n').ignored().repeated()))
         .padded()
         .ignored()
         .repeated();
@@ -242,9 +242,9 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .or(delim)
         .or(string)
         .or(r#char)
-        .recover_with(skip_then_retry_until([]))
         .map_with_span(move |token, span| (token, span))
-        .padded();
+        .padded()
+        .recover_with(skip_then_retry_until([]));
 
     token
         .padded_by(comments)

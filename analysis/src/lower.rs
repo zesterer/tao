@@ -220,9 +220,13 @@ impl ToHir for ast::Binding {
                 (TyInfo::List(item_ty), hir::Pat::ListFront(items, tail))
             },
             ast::Pat::Deconstruct(name, inner) => if let Some(data) = infer.ctx().datas.lookup_cons(**name) {
-                let generics_count = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope).len();
+                let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
+                let generics_count = gen_scope.len();
                 let generic_tys = (0..generics_count)
-                    .map(|_| infer.unknown(name.span()))
+                    .map(|i| gen_scope.get(i).span())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|origin| infer.insert(self.span(), TyInfo::Unknown(Some(origin))))
                     .collect::<Vec<_>>();
 
                 let inner_ty = infer
@@ -246,7 +250,7 @@ impl ToHir for ast::Binding {
                 let inner = inner.to_hir(infer, scope);
                 infer.make_eq(inner.meta().1, inner_ty, self.span());
 
-                (TyInfo::Data(data, generic_tys), hir::Pat::Decons(SrcNode::new(data, name.span()), **name, inner))
+                (TyInfo::Data(data, generic_tys), hir::Pat::Decons(SrcNode::new(data, self.span()), **name, inner))
             } else {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression
@@ -531,9 +535,13 @@ impl ToHir for ast::Expr {
                 (TyInfo::Ref(output_ty), hir::Expr::Apply(f, param))
             },
             ast::Expr::Cons(name, inner) => if let Some(data) = infer.ctx().datas.lookup_cons(**name) {
-                let generics_count = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope).len();
+                let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
+                let generics_count = gen_scope.len();
                 let generic_tys = (0..generics_count)
-                    .map(|_| infer.unknown(name.span()))
+                    .map(|i| gen_scope.get(i).span())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|origin| infer.insert(self.span(), TyInfo::Unknown(Some(origin))))
                     .collect::<Vec<_>>();
 
                 let inner_ty = infer

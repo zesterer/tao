@@ -42,9 +42,10 @@ def filter I, O : (I -> Result O (ParseErr I)) -> Parser I O =
 	| _, [] => Err UnexpectedEnd
 	\ f, [head .. tail] => head:f:map_res(fn o => (o, tail))
 
-def just = fn c: Char => filter(fn head => if head = c
-	then Ok head
-	else Err ExpectedFound (c, head))
+def just : Char -> ? =
+    \ c => filter(fn head => if head = c
+        then Ok head
+        else Err ExpectedFound (c, head))
 
 def and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
 	\ b, a, xs => match xs:a in
