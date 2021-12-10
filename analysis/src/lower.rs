@@ -571,6 +571,7 @@ impl ToHir for ast::Expr {
                 // TODO: Don't use a hard, preserve inner expression
                 (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
             },
+            ast::Expr::ClassAccess(class, field) => todo!(),
             ast::Expr::Debug(inner) => {
                 let inner = inner.to_hir(infer, scope);
                 (TyInfo::Ref(inner.meta().1), hir::Expr::Debug(inner))

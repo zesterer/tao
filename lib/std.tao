@@ -2,6 +2,18 @@ data Maybe A =
 	| Just A
 	\ None
 
+class Add =
+    add : Self -> Self -> Self
+
+class Show =
+    show : Self -> Str
+
+member Nat of Show =
+    show = fn _ => "a nat"
+
+for A < Show, B < Show member (A, B) of Show =
+    show = fn (a, b) => "(" ++ A.show(a) ++ ", " ++ B.show(b) ++ ")"
+
 data Result A, E =
 	| Ok A
 	\ Err E

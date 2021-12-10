@@ -190,6 +190,7 @@ pub enum Expr {
     Func(Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>),
     Apply(SrcNode<Self>, SrcNode<Self>),
     Cons(SrcNode<Ident>, SrcNode<Self>),
+    ClassAccess(SrcNode<Ident>, SrcNode<Ident>),
 
     Debug(SrcNode<Self>),
 }
@@ -222,10 +223,43 @@ pub struct Def {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum ClassItem {
+    Value {
+        name: SrcNode<Ident>,
+        ty: SrcNode<Type>,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Class {
+    pub name: SrcNode<Ident>,
+    pub generics: SrcNode<Generics>,
+    pub items: Vec<ClassItem>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MemberItem {
+    Value {
+        name: SrcNode<Ident>,
+        val: SrcNode<Expr>,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Member {
+    pub generics: SrcNode<Generics>,
+    pub member: SrcNode<Type>,
+    pub class: SrcNode<Ident>,
+    pub items: Vec<MemberItem>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ItemKind {
     Data(Data),
     Alias(Alias),
     Def(Def),
+    Class(Class),
+    Member(Member),
 }
 
 pub type Attr = Vec<SrcNode<Ident>>;
@@ -242,6 +276,15 @@ pub struct Module {
 }
 
 impl Module {
+    pub fn classes(&self) -> impl Iterator<Item = (&Attr, &Class)> + '_ {
+        self.items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                ItemKind::Class(class) => Some((&item.attr, class)),
+                _ => None,
+            })
+    }
+
     pub fn datas(&self) -> impl Iterator<Item = (&Attr, &Data)> + '_ {
         self.items
             .iter()
@@ -256,6 +299,15 @@ impl Module {
             .iter()
             .filter_map(|item| match &item.kind {
                 ItemKind::Alias(alias) => Some((&item.attr, alias)),
+                _ => None,
+            })
+    }
+
+    pub fn members(&self) -> impl Iterator<Item = (&Attr, &Member)> + '_ {
+        self.items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                ItemKind::Member(member) => Some((&item.attr, member)),
                 _ => None,
             })
     }

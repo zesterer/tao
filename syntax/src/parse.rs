@@ -410,6 +410,12 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .ignore_then(branches.clone())
             .map(ast::Expr::Func);
 
+        let class_access = type_ident_parser()
+            .map_with_span(SrcNode::new)
+            .then(just(Token::Op(Op::Dot))
+                .ignore_then(term_ident_parser().map_with_span(SrcNode::new)))
+            .map(|(class, field)| ast::Expr::ClassAccess(class, field));
+
         let cons = type_ident_parser()
             .map_with_span(SrcNode::new)
             .then(expr.clone()
@@ -463,6 +469,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(if_)
             .or(match_)
             .or(func)
+            .or(class_access)
             .or(cons)
             .map_with_span(SrcNode::new)
             .boxed();
@@ -637,10 +644,13 @@ pub fn generics_parser() -> impl Parser<ast::Generics> {
         .map(|tys| ast::Generics { tys })
 }
 
-const ITEM_STARTS: [Token; 3] = [
+const ITEM_STARTS: [Token; 6] = [
     Token::Data,
     Token::Type,
     Token::Def,
+    Token::Class,
+    Token::Member,
+    Token::For,
 ];
 
 pub fn data_parser() -> impl Parser<ast::Data> {
@@ -715,6 +725,66 @@ pub fn def_parser() -> impl Parser<ast::Def> {
         .boxed()
 }
 
+pub fn class_parser() -> impl Parser<ast::Class> {
+    let value = term_ident_parser()
+        .map_with_span(SrcNode::new)
+        .then(ty_hint_parser())
+        .map(|(name, ty)| ast::ClassItem::Value {
+            ty: ty.unwrap_or_else(|| SrcNode::new(ast::Type::Unknown, name.span())),
+            name,
+        });
+
+    let item = value;
+        //.or(assoc_type);
+
+    just(Token::Class)
+        .ignore_then(type_ident_parser()
+            .map_with_span(SrcNode::new))
+        .then(generics_parser().map_with_span(SrcNode::new))
+        .then_ignore(just(Token::Op(Op::Eq)))
+        .then(item.separated_by(just(Token::Comma)).allow_trailing())
+        .map(|((name, generics), items)| ast::Class {
+            name,
+            generics,
+            items,
+        })
+        .boxed()
+}
+
+pub fn member_parser() -> impl Parser<ast::Member> {
+    let value = term_ident_parser()
+        .map_with_span(SrcNode::new)
+        .then_ignore(just(Token::Op(Op::Eq)))
+        .then(expr_parser()
+            .map_with_span(SrcNode::new))
+        .map(|(name, val)| ast::MemberItem::Value {
+            val,
+            name,
+        });
+
+    let item = value;
+        //.or(assoc_type);
+
+    just(Token::For)
+        .ignore_then(generics_parser().map_with_span(SrcNode::new))
+        .or_not()
+        .then(just(Token::Member)
+            .ignore_then(type_parser()
+                .map_with_span(SrcNode::new))
+            .then_ignore(just(Token::Of))
+            .then(type_ident_parser()
+                .map_with_span(SrcNode::new))
+            .then_ignore(just(Token::Op(Op::Eq)))
+            .then(item.separated_by(just(Token::Comma)).allow_trailing()))
+        .map(|(generics, ((member, class), items))| ast::Member {
+            generics: generics.unwrap_or_else(|| SrcNode::new(ast::Generics { tys: Vec::new() }, member.span())),
+            member,
+            class,
+            items,
+        })
+        .boxed()
+}
+
 pub fn item_parser() -> impl Parser<ast::Item> {
     let attr = just(Token::Dollar)
         .ignore_then(nested_parser(
@@ -730,7 +800,9 @@ pub fn item_parser() -> impl Parser<ast::Item> {
 
     let item = def_parser().map(ast::ItemKind::Def)
         .or(data_parser().map(ast::ItemKind::Data))
-        .or(alias_parser().map(ast::ItemKind::Alias));
+        .or(alias_parser().map(ast::ItemKind::Alias))
+        .or(class_parser().map(ast::ItemKind::Class))
+        .or(member_parser().map(ast::ItemKind::Member));
 
     attr.then(item).map(|(attr, kind)| ast::Item {
         attr,
