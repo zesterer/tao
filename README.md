@@ -16,6 +16,7 @@ def len A =
 
 - [x] Type inference
 - [x] Useful error messages
+- [x] Typeclasses
 - [x] First-class functions
 - [x] Currying
 - [x] Sum types
@@ -25,7 +26,7 @@ def len A =
 - [x] Built-in lists
 - [x] Bytecode compiler
 
-## Ongoing features
+## Current working on
 
 - [ ] Pattern exhaustivity checking (sound, but unnecessarily conservative)
 - [ ] MIR optimiser (const folding, dead code removal, and unused binding removal implemented, waiting on inlining)
@@ -47,7 +48,7 @@ Tao is primarily a personal hobby project. I have no real aspirations for the la
 time changing the syntax and semantics as my ideas about language design evolve. If you find the language interesting,
 feel free to give it a try!
 
-## Interesting Features
+## Interesting features
 
 Here follows a selection of features that are either unique to Tao or are uncommon among other languages.
 

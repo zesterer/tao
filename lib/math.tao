@@ -14,6 +14,12 @@ class Mul =
 
 class Ring < Zero + One + Add + Mul
 
+for A < Zero + One + Add + Mul member A of Ring
+
+def needs_ring A < Ring =
+    \ x : A => x
+def bar = needs_ring(5)
+
 member Nat of Zero =
     zero = 0
 
