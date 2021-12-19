@@ -30,15 +30,16 @@ def len A =
 - [ ] Pattern exhaustivity checking (sound, but unnecessarily conservative)
 - [ ] MIR optimiser (const folding, dead code removal, and unused binding removal implemented, waiting on inlining)
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
+- [ ] Typeclasses (simple implementation done, no compile-time coherence checker, compiler panics on detection of
+      incoherence during monomorphisation)
 
 ## Planned features
 
 - [ ] Better syntax
-- [ ] Typeclasses (or ML-style generic modules?)
 - [ ] Module system
 - [ ] Monadic IO (or an effect system?)
 - [ ] Do notation
-- [ ] LLVM backend
+- [ ] LLVM/Cranelift backend
 
 ## Why?
 
