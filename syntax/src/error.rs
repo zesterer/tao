@@ -16,8 +16,21 @@ pub enum ErrorKind {
 pub struct Error {
     kind: ErrorKind,
     span: Span,
+    while_parsing: Option<(Span, String)>,
     expected: HashSet<Pattern>,
     label: Option<&'static str>,
+}
+
+impl Error {
+    pub fn expected(mut self, pat: Pattern) -> Self {
+        self.expected.insert(pat);
+        self
+    }
+
+    pub fn while_parsing<S: ToString>(mut self, span: Span, structure: S) -> Self {
+        self.while_parsing = self.while_parsing.or_else(|| Some((span, structure.to_string())));
+        self
+    }
 }
 
 impl Error {
@@ -25,6 +38,7 @@ impl Error {
         Self {
             kind,
             span,
+            while_parsing: None,
             expected: HashSet::default(),
             label: None,
         }
@@ -55,7 +69,7 @@ impl Error {
                 "".to_string()
             },
             match self.expected.len() {
-                0 => "end of input".to_string(),
+                0 => "something else".to_string(),
                 1 => format!("{}", self.expected.into_iter().next().unwrap().fg(Color::Cyan)),
                 _ => format!("one of {}", self.expected.into_iter().map(|x| x.fg(Color::Cyan).to_string()).collect::<Vec<_>>().join(", ")),
             },
@@ -69,7 +83,7 @@ impl Error {
                     ErrorKind::UnexpectedEnd => "End of input".to_string(),
                     ErrorKind::Unexpected(pat) => format!("Unexpected {}", pat.fg(Color::Red)),
                     ErrorKind::Unclosed { start, .. } => format!("Delimiter {} is never closed", start.fg(Color::Red)),
-                    ErrorKind::NoEndBranch => format!("Requires a {} branch", "\\ ...".fg(Color::Blue)),
+                    ErrorKind::NoEndBranch => format!("Requires a {} branch", "\\ ... => ...".fg(Color::Blue)),
                 })
                 .with_color(Color::Red));
 
@@ -81,6 +95,14 @@ impl Error {
                         None => "end of input".to_string(),
                     }))
                 .with_color(Color::Yellow))
+        } else {
+            report
+        };
+
+        let report = if let Some((while_parsing, s)) = self.while_parsing {
+            report.with_label(Label::new(while_parsing)
+                .with_message(format!("encountered while parsing this {}", s))
+                .with_color(Color::Blue))
         } else {
             report
         };
@@ -104,7 +126,7 @@ impl<T: Into<Pattern>> chumsky::Error<T> for Error {
     type Span = Span;
     type Label = &'static str;
 
-    fn expected_input_found<Iter: IntoIterator<Item = T>>(
+    fn expected_input_found<Iter: IntoIterator<Item = Option<T>>>(
         span: Self::Span,
         expected: Iter,
         found: Option<T>,
@@ -115,7 +137,11 @@ impl<T: Into<Pattern>> chumsky::Error<T> for Error {
                 .map(ErrorKind::Unexpected)
                 .unwrap_or(ErrorKind::UnexpectedEnd),
             span,
-            expected: expected.into_iter().map(Into::into).collect(),
+            while_parsing: None,
+            expected: expected
+                .into_iter()
+                .map(|x| x.map(Into::into).unwrap_or(Pattern::End))
+                .collect(),
             label: None,
         }
     }
@@ -134,6 +160,7 @@ impl<T: Into<Pattern>> chumsky::Error<T> for Error {
                 before: before.map(Into::into),
             },
             span,
+            while_parsing: None,
             expected: std::iter::once(expected.into()).collect(),
             label: None,
         }
@@ -153,6 +180,10 @@ impl<T: Into<Pattern>> chumsky::Error<T> for Error {
 pub enum Pattern {
     Char(char),
     Token(Token),
+    Literal,
+    TypeIdent,
+    TermIdent,
+    End,
 }
 
 impl From<char> for Pattern { fn from(c: char) -> Self { Self::Char(c) } }
@@ -163,6 +194,10 @@ impl fmt::Display for Pattern {
         match self {
             Pattern::Token(token) => write!(f, "{}", token),
             Pattern::Char(c) => write!(f, "{}", c),
+            Pattern::Literal => write!(f, "literal"),
+            Pattern::TypeIdent => write!(f, "type name"),
+            Pattern::TermIdent => write!(f, "identifier"),
+            Pattern::End => write!(f, "end of input"),
         }
     }
 }

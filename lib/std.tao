@@ -35,3 +35,5 @@ def sum : [Nat] -> Nat = fold(0, fn x, y => x + y)
 
 # TODO: Remove when libs are supported
 $[main] def main = [1, 2, 3, 4]:sum
+
+type Str = [Char]

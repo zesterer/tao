@@ -1,6 +1,6 @@
 def map A, B : (A -> A) -> [B] -> [B] =
-    | _, [] => []
-    \ f, [x .. xs] => [x:f .. xs:map(f)]
+    | _, [] => [] @
+    \ f, [x .. xs] => [x:f .. xs:map(f)] !
 
 def doubled_then_squared = [1, 2, 3, 4, 5]
     :map(fn x => x * 2)

@@ -67,7 +67,7 @@ pub fn run(src: String, src_id: SrcId, options: Options, mut writer: impl Write)
     }
 
     if let Some(ast) = ast {
-        let (ctx, analysis_errors) = HirContext::from_module(&ast);
+        let (ctx, mut analysis_errors) = HirContext::from_module(&ast);
 
         if options.debug.contains(&"hir".to_string()) {
             for (_, def) in ctx.defs.iter() {
@@ -80,31 +80,40 @@ pub fn run(src: String, src_id: SrcId, options: Options, mut writer: impl Write)
                 e.write(&ctx, sources([(src_id, &src)]), &mut writer);
             }
         } else {
-            let (mut ctx, errors) = Context::from_hir(&ctx);
+            let (concrete, mut con_errors) = ctx.concretize();
 
-            for err in errors {
-                err.write(&ctx, sources([(src_id, &src)]), &mut writer);
-            }
+            if !con_errors.is_empty() {
+                for e in con_errors {
+                    e.write(&ctx, sources([(src_id, &src)]), &mut writer);
+                }
+            } else {
+                // let (mut ctx, errors) = Context::from_hir(&ctx);
+                let mut ctx = Context::from_concrete(&ctx, &concrete);
 
-            match options.opt {
-                Opt::None => {},
-                Opt::Fast => ctx.optimize(),
-                Opt::Size => todo!("Implement size optimization"),
-            }
+                // for err in errors {
+                //     err.write(&ctx, sources([(src_id, &src)]), &mut writer);
+                // }
 
-            if options.debug.contains(&"mir".to_string()) {
-                writeln!(writer, "{}", ctx.procs.get(ctx.entry.unwrap()).unwrap().body.print()).unwrap();
-            }
+                match options.opt {
+                    Opt::None => {},
+                    Opt::Fast => ctx.optimize(),
+                    Opt::Size => todo!("Implement size optimization"),
+                }
 
-            let prog = Program::from_mir(&ctx);
+                if options.debug.contains(&"mir".to_string()) {
+                    writeln!(writer, "{}", ctx.procs.get(ctx.entry.unwrap()).unwrap().body.print()).unwrap();
+                }
 
-            if options.debug.contains(&"bytecode".to_string()) {
-                prog.write(&mut writer);
-            }
-            // prog.write(std::io::stdout());
+                let prog = Program::from_mir(&ctx);
 
-            if let Some(result) = exec(&prog) {
-                writeln!(writer, "{}", result).unwrap();
+                if options.debug.contains(&"bytecode".to_string()) {
+                    prog.write(&mut writer);
+                }
+                // prog.write(std::io::stdout());
+
+                if let Some(result) = exec(&prog) {
+                    writeln!(writer, "{}", result).unwrap();
+                }
             }
         }
     }

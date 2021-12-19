@@ -125,7 +125,7 @@ impl Program {
                 },
                 constant => {
                     self.push(Instr::Imm(const_to_value(constant)));
-                    self.push(match &binding.meta().1 {
+                    self.push(match binding.meta() {
                         repr::Repr::Prim(repr::Prim::Bool) => Instr::EqBool,
                         repr::Repr::Prim(repr::Prim::Nat) => Instr::EqInt,
                         repr::Repr::Prim(repr::Prim::Int) => Instr::EqInt,

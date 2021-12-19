@@ -16,6 +16,7 @@ pub enum TyInfo {
     Func(TyVar, TyVar),
     Data(DataId, Vec<TyVar>),
     Gen(usize, GenScopeId, Span),
+    SelfType,
 }
 
 #[derive(Default, Debug)]
@@ -66,18 +67,28 @@ pub struct Infer<'a> {
     vars: Vec<(Span, TyInfo, Result<(), ()>)>,
     constraints: VecDeque<Constraint>,
     errors: Vec<InferError>,
+    self_type: Option<TyVar>,
 }
 
 impl<'a> Infer<'a> {
-    pub fn new(ctx: &'a mut Context, gen_scope: Option<GenScopeId>) -> Self {
-        Self {
+    pub fn new(ctx: &'a mut Context, gen_scope: Option<GenScopeId>, self_type: Option<Span>) -> Self {
+        let mut this = Self {
             ctx,
             gen_scope,
             vars: Vec::new(),
             constraints: VecDeque::new(),
             errors: Vec::new(),
+            self_type: None,
+        };
+
+        if let Some(span) = self_type {
+            this.self_type = Some(this.insert(span, TyInfo::SelfType));
         }
+
+        this
     }
+
+    pub fn self_type(&self) -> Option<TyVar> { self.self_type }
 
     pub fn ctx(&self) -> &Context { self.ctx }
     pub fn ctx_mut(&mut self) -> &mut Context { self.ctx }
@@ -151,27 +162,28 @@ impl<'a> Infer<'a> {
         id
     }
 
-    pub fn instantiate(&mut self, ty: TyId, span: Span, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar) -> TyVar {
+    pub fn instantiate(&mut self, ty: TyId, span: Span, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar, self_ty: Option<TyVar>) -> TyVar {
         let info = match self.ctx.tys.get(ty) {
             Ty::Error(reason) => TyInfo::Error(reason),
             Ty::Prim(prim) => TyInfo::Prim(prim),
-            Ty::List(item) => TyInfo::List(self.instantiate(item, span, f)),
+            Ty::List(item) => TyInfo::List(self.instantiate(item, span, f, self_ty)),
             Ty::Tuple(items) => TyInfo::Tuple(items
                 .into_iter()
-                .map(|item| self.instantiate(item, span, f))
+                .map(|item| self.instantiate(item, span, f, self_ty))
                 .collect()),
             Ty::Record(fields) => TyInfo::Record(fields
                 .into_iter()
-                .map(|(name, field)| (name, self.instantiate(field, span, f)))
+                .map(|(name, field)| (name, self.instantiate(field, span, f, self_ty)))
                 .collect()),
-            Ty::Func(i, o) => TyInfo::Func(self.instantiate(i, span, f), self.instantiate(o, span, f)),
+            Ty::Func(i, o) => TyInfo::Func(self.instantiate(i, span, f, self_ty), self.instantiate(o, span, f, self_ty)),
             Ty::Data(data, params) => TyInfo::Data(data, params
                 .into_iter()
-                .map(|param| self.instantiate(param, span, f))
+                .map(|param| self.instantiate(param, span, f, self_ty))
                 .collect()),
             Ty::Gen(index, scope) => TyInfo::Ref(f(index, scope, self.ctx)), // TODO: Check scope is valid for recursive scopes
+            Ty::SelfType => TyInfo::Ref(self_ty.expect("Found self type during instantiation but no self type is available to substitute")),
         };
-        self.insert(span /*self.ctx.tys.get_span(ty)*/, info)
+        self.insert(self.ctx.tys.get_span(ty) /*span*/, info)
     }
 
     pub fn unknown(&mut self, span: Span) -> TyVar {
@@ -209,6 +221,7 @@ impl<'a> Infer<'a> {
             TyInfo::Unknown(_)
             | TyInfo::Error(_)
             | TyInfo::Prim(_)
+            | TyInfo::SelfType
             | TyInfo::Gen(_, _, _) => false,
             TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
             TyInfo::List(item) => x == item || self.occurs_in_inner(x, item, seen),
@@ -340,6 +353,7 @@ impl<'a> Infer<'a> {
                     .collect();
                 self.insert(self.span(ty), TyInfo::Data(data, args))
             },
+            TyInfo::SelfType => todo!(), // ???
         }
     }
 
@@ -369,7 +383,7 @@ impl<'a> Infer<'a> {
                     if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
                         if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
                             if let Some(field_ty) = fields.get(&field_name) {
-                                let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index]);
+                                let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index], None);
                                 self.make_eq(field_ty, field, field_name.span());
                                 Some(true)
                             } else {
@@ -412,6 +426,10 @@ impl<'a> Infer<'a> {
                 (_, TyInfo::Error(reason), _) => Some(Ok(TyInfo::Error(reason))),
                 (_, _, TyInfo::Unknown(_)) => None,
                 (_, TyInfo::Unknown(_), _) => None,
+                (Join, TyInfo::List(a), TyInfo::List(b)) => {
+                    self.make_eq(a, b, EqInfo::new(op.span(), "The types of joined lists must be equal".to_string()));
+                    Some(Ok(TyInfo::List(a)))
+                },
                 (_, TyInfo::Prim(prim_a), TyInfo::Prim(prim_b)) => {
                     use ty::Prim::*;
                     lazy_static::lazy_static! {
@@ -465,7 +483,6 @@ impl<'a> Infer<'a> {
                         Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
                     }
                 },
-                (Join, TyInfo::List(a), TyInfo::List(b)) if self.follow_info(a) == self.follow_info(b) => Some(Ok(TyInfo::List(a))),
                 _ => {
                     self.set_error(output);
                     Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
@@ -572,6 +589,7 @@ impl<'a> Checked<'a> {
                 .map(|arg| self.reify_inner(arg))
                 .collect()),
             TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
+            TyInfo::SelfType => Ty::SelfType,
         };
         self.infer.ctx.tys.insert(self.infer.span(var), ty)
     }

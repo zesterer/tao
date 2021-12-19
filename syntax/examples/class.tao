@@ -1,0 +1,9 @@
+class Zero =
+    zero : Self
+
+member Nat of Zero =
+    zero = 0
+
+def zero A < Zero = A.zero
+
+$[main] def main: Nat = zero

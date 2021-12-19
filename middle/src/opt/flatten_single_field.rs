@@ -25,7 +25,7 @@ impl Pass for FlattenSingleField {
             |expr| {
                 match expr {
                     Expr::Tuple(fields) if fields.len() == 1 => *expr = fields.remove(0).into_inner(),
-                    Expr::Access(tuple, field) => if let Repr::Tuple(fields) = &tuple.meta().1 {
+                    Expr::Access(tuple, field) => if let Repr::Tuple(fields) = tuple.meta() {
                         if fields.len() == 1 {
                             *expr = tuple.inner().clone();
                         }

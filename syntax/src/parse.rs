@@ -3,42 +3,34 @@ use super::*;
 pub trait Parser<T> = chumsky::Parser<Token, T, Error = Error> + Clone;
 
 pub fn literal_parser() -> impl Parser<ast::Literal> {
-    filter_map(|span, token| match token {
-        Token::Nat(x) => Ok(ast::Literal::Nat(x)),
-        Token::Num(x) => Ok(ast::Literal::Num(x.parse().expect("Valid number could not be parsed as f64"))),
-        Token::Bool(x) => Ok(ast::Literal::Bool(x)),
-        Token::Char(x) => Ok(ast::Literal::Char(x)),
-        Token::Str(x) => Ok(ast::Literal::Str(x)),
-        token => Err(Error::expected_input_found(span, None, Some(token))),
-    })
+    select! {
+        Token::Nat(x) => ast::Literal::Nat(x),
+        Token::Num(x) => ast::Literal::Num(x.parse().expect("Valid number could not be parsed as f64")),
+        Token::Bool(x) => ast::Literal::Bool(x),
+        Token::Char(x) => ast::Literal::Char(x),
+        Token::Str(x) => ast::Literal::Str(x),
+    }
+        .map_err(|e: Error| e.expected(Pattern::Literal))
 }
 
 pub fn term_ident_parser() -> impl Parser<ast::Ident> {
-    filter_map(|span, token| match token {
-        Token::TermIdent(x) => Ok(x),
-        token => Err(Error::expected_input_found(span, None, Some(token))),
-    })
+    select! { Token::TermIdent(x) => x }
+        .map_err(|e: Error| e.expected(Pattern::TermIdent))
 }
 
 pub fn type_ident_parser() -> impl Parser<ast::Ident> {
-    filter_map(|span, token| match token {
-        Token::TypeIdent(x) => Ok(x),
-        token => Err(Error::expected_input_found(span, None, Some(token))),
-    })
+    select! { Token::TypeIdent(x) => x }
+        .map_err(|e: Error| e.expected(Pattern::TypeIdent))
 }
 
 pub fn nat_parser() -> impl Parser<u64> {
-    filter_map(|span, token| match token {
-        Token::Nat(x) => Ok(x),
-        token => Err(Error::expected_input_found(span, None, Some(token))),
-    })
+    select! { Token::Nat(x) => x }
+        .map_err(|e: Error| e.expected(Pattern::Literal))
 }
 
 pub fn bool_parser() -> impl Parser<bool> {
-    filter_map(|span, token| match token {
-        Token::Bool(x) => Ok(x),
-        token => Err(Error::expected_input_found(span, None, Some(token))),
-    })
+    select! { Token::Bool(x) => x }
+        .map_err(|e: Error| e.expected(Pattern::Literal))
 }
 
 pub fn nested_parser<'a, T: 'a>(parser: impl Parser<T> + 'a, delimiter: Delimiter, f: impl Fn(Span) -> T + Clone + 'a) -> impl Parser<T> + 'a {
@@ -145,23 +137,24 @@ pub fn ty_hint_parser() -> impl Parser<Option<SrcNode<ast::Type>>> {
         .or_not()
 }
 
+pub fn always_branches<T>(branch: impl Parser<T> + Clone) -> impl Parser<Vec<T>> {
+    just(Token::Pipe)
+        .ignore_then(branch.clone())
+        .repeated()
+        .then(just(Token::EndPipe)
+            .ignore_then(branch.clone())
+            .or_not())
+        .try_map(|(mut init, end), span| if let Some(end) = end {
+            init.push(end);
+            Ok(init)
+        } else {
+            Err(Error::new(ErrorKind::NoEndBranch, span))
+        })
+}
+
 pub fn branches<T>(branch: impl Parser<T> + Clone) -> impl Parser<Vec<T>> {
     branch.clone().map(|x| vec![x])
-        .or(just(Token::Pipe)
-            .ignore_then(branch.clone())
-            .repeated()
-            .then(just(Token::EndPipe)
-                .ignore_then(branch.clone())
-                .or_not())
-            .validate(|(mut init, end), span, emit| {
-                if let Some(end) = end {
-                    init.push(end);
-                } else {
-                    emit(Error::new(ErrorKind::NoEndBranch, span));
-                }
-                (init, None)
-            })
-            .map(|(branches, _)| branches))
+        .or(always_branches(branch))
 }
 
 pub fn binding_parser() -> impl Parser<ast::Binding> {
@@ -632,13 +625,18 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
 
 pub fn generics_parser() -> impl Parser<ast::Generics> {
     let constraint = just(Token::Op(Op::Less))
-        .ignore_then(type_parser()
+        .ignore_then(type_ident_parser()
+            .map_with_span(SrcNode::new)
             .separated_by(just(Token::Op(Op::Add)))
             .allow_leading());
 
     type_ident_parser()
         .map_with_span(SrcNode::new)
-        .then_ignore(constraint.or_not())
+        .then(constraint.or_not())
+        .map(|(name, constraints)| ast::GenericTy {
+            name,
+            constraints: constraints.unwrap_or_else(Vec::new),
+        })
         .separated_by(just(Token::Comma))
         .allow_trailing()
         .map(|tys| ast::Generics { tys })
@@ -682,6 +680,7 @@ pub fn data_parser() -> impl Parser<ast::Data> {
             name,
         })
         .boxed()
+        .map_err_with_span(|err, span| err.while_parsing(span, "data"))
 }
 
 pub fn alias_parser() -> impl Parser<ast::Alias> {
@@ -697,10 +696,11 @@ pub fn alias_parser() -> impl Parser<ast::Alias> {
             ty,
         })
         .boxed()
+        .map_err_with_span(|err, span| err.while_parsing(span, "type alias"))
 }
 
 pub fn def_parser() -> impl Parser<ast::Def> {
-    let branches = branches(binding_parser()
+    let branches = always_branches(binding_parser()
         .map_with_span(SrcNode::new)
         .separated_by(just(Token::Comma))
         .allow_trailing()
@@ -723,6 +723,7 @@ pub fn def_parser() -> impl Parser<ast::Def> {
             body,
         })
         .boxed()
+        .map_err_with_span(|err, span| err.while_parsing(span, "definition"))
 }
 
 pub fn class_parser() -> impl Parser<ast::Class> {
@@ -749,6 +750,7 @@ pub fn class_parser() -> impl Parser<ast::Class> {
             items,
         })
         .boxed()
+        .map_err_with_span(|err, span| err.while_parsing(span, "class"))
 }
 
 pub fn member_parser() -> impl Parser<ast::Member> {
@@ -783,6 +785,7 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             items,
         })
         .boxed()
+        .map_err_with_span(|err, span| err.while_parsing(span, "class member"))
 }
 
 pub fn item_parser() -> impl Parser<ast::Item> {
@@ -804,10 +807,26 @@ pub fn item_parser() -> impl Parser<ast::Item> {
         .or(class_parser().map(ast::ItemKind::Class))
         .or(member_parser().map(ast::ItemKind::Member));
 
-    attr.then(item).map(|(attr, kind)| ast::Item {
-        attr,
-        kind,
-    })
+    let tail = one_of::<_, _, Error>(ITEM_STARTS)
+        .ignored()
+        .or(just(Token::Dollar).ignored())
+        .or(end());
+
+    attr
+        .then(item)
+        .map(|(attr, kind)| ast::Item {
+            attr,
+            kind,
+        })
+        .map_with_span(|item, span| (item, span))
+        .then(tail.rewind().map(Ok).map(Some).or_else(|e| Ok(Some(Err(e)))))
+        .validate(|((item, span), mut r), _, emit| {
+            if let Some(Err(e)) = r.take() {
+                emit(e.while_parsing(span, "item"));
+            }
+            ((item, span), None)
+        })
+        .map(|((item, _), _)| item)
 }
 
 pub fn module_parser() -> impl Parser<ast::Module> {

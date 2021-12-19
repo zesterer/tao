@@ -1,6 +1,7 @@
 use super::*;
 
-pub type ProcId = Intern<(DefId, Vec<Repr>)>;
+// TODO: Just use ConDef
+pub type ProcId = Intern<Result<(DefId, Vec<Repr>), ConDef>>;
 
 pub struct Proc {
     pub body: mir::MirNode<mir::Expr>,
@@ -13,7 +14,11 @@ pub struct Procs {
 
 impl Procs {
     pub fn id_of(&self, id: DefId, gen: Vec<Repr>) -> ProcId {
-        Intern::new((id, gen))
+        Intern::new(Ok((id, gen)))
+    }
+
+    pub fn id_of_con(&self, def: ConDef) -> ProcId {
+        Intern::new(Err(def))
     }
 
     pub fn is_declared(&self, id: ProcId) -> bool {

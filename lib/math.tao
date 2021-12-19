@@ -1,0 +1,19 @@
+class Zero =
+    zero : Self
+
+member Nat of Zero =
+    zero = 0
+
+class Add =
+    add : Self -> Self -> Self
+
+member Nat of Add =
+    add = fn x, y => x + y
+
+def sum A < Add + Zero =
+    | []: [A] => A.zero
+    \ [x .. xs] => A.add(x, xs:sum)
+
+$[main]
+def main = [1, 2, 3, 4]:sum
+

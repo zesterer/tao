@@ -91,6 +91,7 @@ impl Binding<InferMeta> {
 
 pub type InferBinding = InferNode<Binding<InferMeta>>;
 pub type TyBinding = TyNode<Binding<TyMeta>>;
+pub type ConBinding = ConNode<Binding<ConMeta>>;
 
 #[derive(Debug)]
 pub enum Expr<M> {
@@ -112,8 +113,12 @@ pub enum Expr<M> {
     Apply(Node<Self, M>, Node<Self, M>),
     Cons(SrcNode<DataId>, Ident, Node<Self, M>),
 
+    // member, class, field
+    ClassAccess(TyId, ClassId, SrcNode<Ident>),
+
     Debug(Node<Self, M>),
 }
 
 pub type InferExpr = InferNode<Expr<InferMeta>>;
 pub type TyExpr = TyNode<Expr<TyMeta>>;
+pub type ConExpr = ConNode<Expr<ConMeta>>;

@@ -29,6 +29,7 @@ impl fmt::Display for Prim {
 pub enum ErrorReason {
     Unknown,
     Recursive,
+    Invalid,
 }
 
 #[derive(Clone, Debug)]
@@ -41,6 +42,7 @@ pub enum Ty {
     Func(TyId, TyId),
     Data(DataId, Vec<TyId>),
     Gen(usize, GenScopeId),
+    SelfType,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -61,6 +63,14 @@ impl Types {
         let id = GenScopeId(self.scopes.len());
         self.scopes.push(gen_scope);
         id
+    }
+
+    pub fn check_gen_scopes(&mut self, classes: &Classes) -> Vec<Error> {
+        let mut errors = Vec::new();
+        for scope in &mut self.scopes {
+            scope.check(classes, &mut errors);
+        }
+        errors
     }
 
     pub fn get(&self, ty: TyId) -> Ty {
@@ -120,6 +130,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
         match self.types.get(self.ty) {
             Ty::Error(ErrorReason::Unknown) => write!(f, "?"),
             Ty::Error(ErrorReason::Recursive) => write!(f, "..."),
+            Ty::Error(ErrorReason::Invalid) => write!(f, "!"),
             Ty::Prim(prim) => write!(f, "{}", prim),
             Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
             Ty::Tuple(fields) => write!(f, "({}{})", fields
@@ -142,9 +153,20 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            Ty::Gen(index, scope) => write!(f, "{}", **self.types.get_gen_scope(scope).get(index)),
+            Ty::Gen(index, scope) => write!(f, "{}", **self.types.get_gen_scope(scope).get(index).name),
+            Ty::SelfType => write!(f, "Self"),
         }
     }
+}
+
+pub enum Constraint {
+    MemberOf(ClassId),
+}
+
+pub struct GenTy {
+    pub name: SrcNode<Ident>,
+    pub ast_constraints: Vec<SrcNode<Ident>>,
+    pub constraints: Option<Vec<Constraint>>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -152,7 +174,7 @@ pub struct GenScopeId(usize);
 
 pub struct GenScope {
     pub span: Span,
-    types: Vec<SrcNode<Ident>>,
+    types: Vec<GenTy>,
 }
 
 impl GenScope {
@@ -161,8 +183,8 @@ impl GenScope {
 
         let mut errors = Vec::new();
         for gen in &generics.tys {
-            if let Some(old_span) = existing.insert(**gen, gen.span()) {
-                errors.push(Error::DuplicateGenName(**gen, old_span, gen.span()));
+            if let Some(old_span) = existing.insert(*gen.name, gen.name.span()) {
+                errors.push(Error::DuplicateGenName(*gen.name, old_span, gen.name.span()));
             }
         }
 
@@ -170,18 +192,42 @@ impl GenScope {
             span: generics.span(),
             types: generics.tys
                 .iter()
-                .cloned()
+                .map(|gen_ty| GenTy {
+                    name: gen_ty.name.clone(),
+                    ast_constraints: gen_ty.constraints.clone(),
+                    constraints: None,
+                    // constraints: gen_ty.constraints
+                    //     .iter()
+                    //     .map(|class| Constraint::MemberOf(class.clone()))
+                    //     .collect(),
+                })
                 .collect(),
         }, errors)
     }
 
     pub fn len(&self) -> usize { self.types.len() }
 
-    pub fn get(&self, index: usize) -> &SrcNode<Ident> {
+    pub fn get(&self, index: usize) -> &GenTy {
         &self.types[index]
     }
 
-    pub fn find(&self, name: Ident) -> Option<(usize, &SrcNode<Ident>)> {
-        self.types.iter().enumerate().find(|(_, ty)| &***ty == &name)
+    pub fn find(&self, name: Ident) -> Option<(usize, &GenTy)> {
+        self.types.iter().enumerate().find(|(_, ty)| &*ty.name == &name)
+    }
+
+    fn check(&mut self, classes: &Classes, errors: &mut Vec<Error>) {
+        for ty in &mut self.types {
+            let constraints = ty
+                .ast_constraints
+                .iter()
+                .filter_map(|class| if let Some(class) = classes.lookup(**class) {
+                    Some(Constraint::MemberOf(class))
+                } else {
+                    errors.push(Error::NoSuchClass(class.clone()));
+                    None
+                })
+                .collect();
+            ty.constraints = Some(constraints);
+        }
     }
 }

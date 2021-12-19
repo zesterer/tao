@@ -32,6 +32,12 @@ use tao_analysis::{
     DefId,
     Context as HirContext,
     data::DataId,
+    ConDef,
+    ConContext,
+    ConExpr,
+    ConBinding,
+    ConTy,
+    ConTyId,
 };
 use hashbrown::HashMap;
 use internment::Intern;

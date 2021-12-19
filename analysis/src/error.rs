@@ -14,16 +14,22 @@ pub enum Error {
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyId, Span, TyId, Span),
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
+    NoSuchClass(SrcNode<Ident>),
     RecursiveAlias(AliasId, TyId, Span),
     DuplicateTypeName(Ident, Span, Span),
     DuplicateDefName(Ident, Span, Span),
     DuplicateConsName(Ident, Span, Span),
     DuplicateGenName(Ident, Span, Span),
+    DuplicateClassName(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
     // Span, uncovered example, hidden_outer
     NotExhaustive(Span, ExamplePat, bool),
     WrongNumberOfGenerics(Span, usize, Span, usize),
     DefTypeNotSpecified(Span, Span, Ident),
+    SelfNotValidHere(Span),
+    NoEntryPoint(Span),
+    MultipleEntryPoints(Span, Span),
+    GenericEntryPoint(SrcNode<Ident>, Span, Span),
 }
 
 impl Error {
@@ -128,6 +134,11 @@ impl Error {
                 vec![(a.span(), format!("Does not exist"), Color::Red)],
                 vec![],
             ),
+            Error::NoSuchClass(a) => (
+                format!("No such class {}", (*a).fg(Color::Red)),
+                vec![(a.span(), format!("Does not exist"), Color::Red)],
+                vec![],
+            ),
             Error::RecursiveAlias(alias, ty, span) => (
                 format!("Recursive type alias"),
                 vec![
@@ -174,6 +185,14 @@ impl Error {
                 ],
                 vec![],
             ),
+            Error::DuplicateClassName(name, old, new) => (
+                format!("Type class {} declared multiple times", name.fg(Color::Red)),
+                vec![
+                    (old, format!("Previous type class"), Color::Yellow),
+                    (new, format!("Conflicting type class"), Color::Red),
+                ],
+                vec![],
+            ),
             Error::PatternNotSupported(lhs, op, rhs, span) => (
                 format!("Arithmetic pattern {} {} {} is not supported", display(lhs).fg(Color::Red), (*op).fg(Color::Red), display(rhs).fg(Color::Red)),
                 vec![(span, format!("Pattern {} used here", (*op).fg(Color::Red)), Color::Red)],
@@ -212,6 +231,34 @@ impl Error {
                     "Add a type hint to the def like {}",
                     format!("def {} : ...", name).fg(Color::Blue),
                 )],
+            ),
+            Error::SelfNotValidHere(span) => (
+                format!("Special type {} cannot be used here", "Self".fg(Color::Red)),
+                vec![
+                    (span, format!("Not valid in this context"), Color::Red),
+                ],
+                vec![format!("The {} type can only be used in type classes", "Self".fg(Color::Blue))],
+            ),
+            Error::NoEntryPoint(root_span) => (
+                format!("No main definition"),
+                vec![(root_span, format!("Does not contain a definition marked as the main entry point"), Color::Red)],
+                vec![format!("Mark a definition as the main entry point with {}", "$[main]".fg(Color::Blue))],
+            ),
+            Error::MultipleEntryPoints(a, b) => (
+                format!("Multiple entry points"),
+                vec![
+                    (a, format!("First entry point is here"), Color::Red),
+                    (b, format!("Second entry point is here"), Color::Red),
+                ],
+                vec![format!("A program may only have a single entry point")],
+            ),
+            Error::GenericEntryPoint(name, gen, entry) => (
+                format!("Entry point {} cannot be generic", (*name).fg(Color::Red)),
+                vec![
+                    (gen, format!("Generics are not allowed here"), Color::Red),
+                    (entry, format!("Declared as an entry point because of this attribute"), Color::Yellow),
+                ],
+                vec![format!("A program cannot be generic over types")],
             ),
         };
 

@@ -109,7 +109,7 @@ impl Binding {
             binding(self);
         }
 
-        self.meta_mut().1.visit_inner(order, repr, binding, expr);
+        self.meta_mut().visit_inner(order, repr, binding, expr);
 
         match &mut self.pat {
             mir::Pat::Wildcard | mir::Pat::Const(_) => {},
@@ -232,7 +232,7 @@ impl Expr {
             expr(self);
         }
 
-        self.meta_mut().1.visit_inner(order, repr, binding, expr);
+        self.meta_mut().visit_inner(order, repr, binding, expr);
 
         match &mut **self {
             Expr::Const(_) | Expr::Local(_) | Expr::Global(_, _) => {},
@@ -317,7 +317,7 @@ pub fn check(ctx: &Context) {
             (Expr::Match(pred, arms), repr) => {
                 for (arm, body) in arms {
                     // TODO: visit binding
-                    check_binding(ctx, arm.inner(), &pred.meta().1, stack);
+                    check_binding(ctx, arm.inner(), pred.meta(), stack);
                 }
             },
             // (Expr::Data(_, _, _), Repr::Func(_, _)) => {},
@@ -326,7 +326,7 @@ pub fn check(ctx: &Context) {
     }
 
     fn visit_expr(ctx: &Context, expr: &MirNode<Expr>, stack: &mut Vec<(Ident, Repr)>) {
-        check_expr(ctx, expr.inner(), &expr.meta().1, stack);
+        check_expr(ctx, expr.inner(), expr.meta(), stack);
 
         expr.for_children(|expr| visit_expr(ctx, expr, stack));
     }

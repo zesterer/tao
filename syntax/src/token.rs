@@ -149,41 +149,47 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .map(Intern::new)
         .map(Token::Num);
 
-    let ctrl = just(',').to(Token::Comma)
-        .or(just("::").to(Token::Separator))
-        .or(just(':').to(Token::Colon))
-        .or(just('?').to(Token::Question))
-        .or(just('|').to(Token::Pipe))
-        .or(just('\\').to(Token::EndPipe))
-        .or(just('~').to(Token::Tilde))
-        .or(just('$').to(Token::Dollar));
+    let ctrl = choice((
+        just(',').to(Token::Comma),
+        just("::").to(Token::Separator),
+        just(':').to(Token::Colon),
+        just('?').to(Token::Question),
+        just('|').to(Token::Pipe),
+        just('\\').to(Token::EndPipe),
+        just('~').to(Token::Tilde),
+        just('$').to(Token::Dollar),
+    ));
 
-    let op = just("=>").to(Op::RFlow)
-        .or(just('=').to(Op::Eq))
-        .or(just("..").to(Op::Ellipsis))
-        .or(just('.').to(Op::Dot))
-        .or(just("!=").to(Op::NotEq))
-        .or(just('!').to(Op::Not))
-        .or(just("<=").to(Op::LessEq))
-        .or(just('<').to(Op::Less))
-        .or(just(">=").to(Op::MoreEq))
-        .or(just('>').to(Op::More))
-        .or(just("++").to(Op::Join))
-        .or(just('+').to(Op::Add))
-        .or(just("->").to(Op::RArrow))
-        .or(just('-').to(Op::Sub))
-        .or(just('*').to(Op::Mul))
-        .or(just('/').to(Op::Div))
-        .or(just('%').to(Op::Rem))
-        .or(just('=').to(Op::Eq))
+    let op = choice((
+        just("=>").to(Op::RFlow),
+        just('=').to(Op::Eq),
+        just("..").to(Op::Ellipsis),
+        just('.').to(Op::Dot),
+        just("!=").to(Op::NotEq),
+        just('!').to(Op::Not),
+        just("<=").to(Op::LessEq),
+        just('<').to(Op::Less),
+        just(">=").to(Op::MoreEq),
+        just('>').to(Op::More),
+        just("++").to(Op::Join),
+        just('+').to(Op::Add),
+        just("->").to(Op::RArrow),
+        just('-').to(Op::Sub),
+        just('*').to(Op::Mul),
+        just('/').to(Op::Div),
+        just('%').to(Op::Rem),
+        just('=').to(Op::Eq),
+    ))
         .map(Token::Op);
 
-    let delim = just('(').to(Token::Open(Delimiter::Paren))
-        .or(just(')').to(Token::Close(Delimiter::Paren)))
-        .or(just('[').to(Token::Open(Delimiter::Brack)))
-        .or(just(']').to(Token::Close(Delimiter::Brack)))
-        .or(just('{').to(Token::Open(Delimiter::Brace)))
-        .or(just('}').to(Token::Close(Delimiter::Brace)));
+    let delim = choice((
+        just('(').to(Token::Open(Delimiter::Paren)),
+        just(')').to(Token::Close(Delimiter::Paren)),
+        just('[').to(Token::Open(Delimiter::Brack)),
+        just(']').to(Token::Close(Delimiter::Brack)),
+        just('{').to(Token::Open(Delimiter::Brace)),
+        just('}').to(Token::Close(Delimiter::Brace)),
+    ));
 
     let escape = just('\\')
         .ignore_then(just('\\')

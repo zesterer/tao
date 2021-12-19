@@ -4,7 +4,7 @@ use std::{
     fmt,
 };
 
-pub type MirMeta = (Span, Repr);
+pub type MirMeta = Repr;
 pub type MirNode<T> = Node<T, MirMeta>;
 
 // TODO: Keep track of scope, perhaps?

@@ -73,6 +73,12 @@ impl ToHir for ast::Type {
                 .collect()),
             ast::Type::Func(i, o) => TyInfo::Func(i.to_hir(infer, scope).meta().1, o.to_hir(infer, scope).meta().1),
             ast::Type::Data(name, params) => match (name.as_str(), params.len()) {
+                ("Self", 0) => if let Some(var) = infer.self_type() {
+                    TyInfo::Ref(var)
+                } else {
+                    infer.ctx_mut().emit(Error::SelfNotValidHere(name.span()));
+                    TyInfo::Error(ErrorReason::Invalid)
+                },
                 ("Nat", 0) => TyInfo::Prim(Prim::Nat),
                 ("Int", 0) => TyInfo::Prim(Prim::Int),
                 ("Num", 0) => TyInfo::Prim(Prim::Num),
@@ -84,11 +90,11 @@ impl ToHir for ast::Type {
                         .map(|param| param.to_hir(infer, scope).meta().1)
                         .collect::<Vec<_>>();
 
-                    if let Some((scope, (gen_idx, gen))) = infer
+                    if let Some((scope, (gen_idx, gen_ty))) = infer
                         .gen_scope()
                         .and_then(|scope| Some((scope, infer.ctx().tys.get_gen_scope(scope).find(**name)?)))
                     {
-                        TyInfo::Gen(gen_idx, scope, gen.span())
+                        TyInfo::Gen(gen_idx, scope, gen_ty.name.span())
                     } else if let Some(alias_id) = infer.ctx().datas.lookup_alias(**name) {
                         if let Some(alias) = infer.ctx().datas.get_alias(alias_id) {
                             let alias_gen_scope = infer.ctx().tys.get_gen_scope(alias.gen_scope);
@@ -104,10 +110,9 @@ impl ToHir for ast::Type {
                             } else {
                                 let (alias_ty, alias_gen_scope) = (alias.ty, alias.gen_scope);
                                 let get_gen = |index, scope, ctx: &Context| {
-                                    assert!(index < params.len(), "{:?}, {}, {:?}, {:?}, {:?}", name, ctx.datas.get_alias(alias_id).unwrap().name, ctx.tys.get_gen_scope(scope).get(index), alias_gen_scope, scope);
                                     params[index]
                                 };
-                                TyInfo::Ref(infer.instantiate(alias_ty, self.span(), &get_gen))
+                                TyInfo::Ref(infer.instantiate(alias_ty, self.span(), &get_gen, None))
                             }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error(ErrorReason::Unknown));
@@ -130,7 +135,7 @@ impl ToHir for ast::Type {
                         }
                     } else {
                         infer.ctx_mut().emit(Error::NoSuchData(name.clone()));
-                        TyInfo::Error(ErrorReason::Unknown)
+                        TyInfo::Error(ErrorReason::Invalid)
                     }
                 },
             },
@@ -223,7 +228,7 @@ impl ToHir for ast::Binding {
                 let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
                 let generics_count = gen_scope.len();
                 let generic_tys = (0..generics_count)
-                    .map(|i| gen_scope.get(i).span())
+                    .map(|i| gen_scope.get(i).name.span())
                     .collect::<Vec<_>>()
                     .into_iter()
                     .map(|origin| infer.insert(self.span(), TyInfo::Unknown(Some(origin))))
@@ -244,7 +249,7 @@ impl ToHir for ast::Binding {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
                     let get_gen = |index, _, ctx: &Context| generic_tys[index];
-                    infer.instantiate(inner_ty, name.span(), &get_gen)
+                    infer.instantiate(inner_ty, name.span(), &get_gen, None)
                 };
 
                 let inner = inner.to_hir(infer, scope);
@@ -290,7 +295,7 @@ impl ToHir for ast::Expr {
                 let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
                 let generics_count = scope.len();
                 let generic_tys = (0..generics_count)
-                    .map(|i| TyInfo::Unknown(Some(scope.get(i).span())))
+                    .map(|i| TyInfo::Unknown(Some(scope.get(i).name.span())))
                     .collect::<Vec<_>>()
                     .into_iter()
                     .map(|info| (self.span(), infer.insert(self.span(), info)))
@@ -303,7 +308,7 @@ impl ToHir for ast::Expr {
                 let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
                 let ty = if let Some(body) = def.body.as_ref() {
                     let body_ty = body.meta().1;
-                    Some(infer.instantiate(body_ty, self.span(), &get_gen))
+                    Some(infer.instantiate(body_ty, self.span(), &get_gen, None))
                 } else {
                     let ty_hint = def.ty_hint.clone();
                     if ty_hint.is_fully_specified() {
@@ -538,7 +543,7 @@ impl ToHir for ast::Expr {
                 let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
                 let generics_count = gen_scope.len();
                 let generic_tys = (0..generics_count)
-                    .map(|i| gen_scope.get(i).span())
+                    .map(|i| gen_scope.get(i).name.span())
                     .collect::<Vec<_>>()
                     .into_iter()
                     .map(|origin| infer.insert(self.span(), TyInfo::Unknown(Some(origin))))
@@ -559,7 +564,7 @@ impl ToHir for ast::Expr {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
                     let get_gen = |index, _, ctx: &Context| generic_tys[index];
-                    infer.instantiate(inner_ty, name.span(), &get_gen)
+                    infer.instantiate(inner_ty, name.span(), &get_gen, None)
                 };
 
                 let inner = inner.to_hir(infer, scope);
@@ -571,7 +576,26 @@ impl ToHir for ast::Expr {
                 // TODO: Don't use a hard, preserve inner expression
                 (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
             },
-            ast::Expr::ClassAccess(class, field) => todo!(),
+            ast::Expr::ClassAccess(data, field) => {
+                if let Some((scope, (gen_idx, gen))) = infer
+                    .gen_scope()
+                    .and_then(|scope| Some((scope, infer.ctx().tys.get_gen_scope(scope).find(**data)?)))
+                {
+                    let gen_span = gen.name.span();
+                    let gen_ty_var = infer.insert(data.span(), TyInfo::Gen(gen_idx, scope, gen_span));
+                    let gen_ty = infer.ctx_mut().tys.insert(data.span(), Ty::Gen(gen_idx, scope));
+                    if let Some((class_id, field_ty)) = infer.ctx_mut().lookup_access(gen_ty, field.clone()) {
+                        let field_ty = infer.instantiate(*field_ty, field_ty.span(), &|_, _, _| panic!("Tried to substitute generic type for non-generic class"), Some(gen_ty_var));
+                        (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(gen_ty, class_id, field.clone()))
+                    } else {
+                        infer.ctx_mut().emit(Error::NoSuchField(gen_ty, data.span(), field.clone())); // TODO: no such class item
+                        (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
+                    }
+                } else {
+                    infer.ctx_mut().emit(Error::NoSuchData(data.clone())); // TODO: No such type
+                    (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
+                }
+            },
             ast::Expr::Debug(inner) => {
                 let inner = inner.to_hir(infer, scope);
                 (TyInfo::Ref(inner.meta().1), hir::Expr::Debug(inner))
