@@ -23,6 +23,7 @@ pub enum AbstractPat {
 impl AbstractPat {
     fn from_binding(ctx: &Context, binding: &TyBinding) -> Self {
         match &*binding.pat {
+            hir::Pat::Error => Self::Wildcard,
             hir::Pat::Wildcard => Self::Wildcard,
             hir::Pat::Literal(hir::Literal::Bool(x)) => Self::Bool([
                 !x,

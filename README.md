@@ -1,20 +1,15 @@
 # Tao
 
-Tao is a statically-typed functional programming language.
+A statically-typed functional language with polymorphism, typeclasses, sum types, pattern-matching, first-class
+functions, currying, good diagnostics, and much more!
 
-```py
-data Maybe A =
-    | Just A
-    \ None
-
-def len A =
-    | []: [A] => 0
-    \ [_ .. tail] => 1 + tail:len
-```
+<a href = "https://www.github.com/zesterer/tao">
+    <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/example.png" alt="Demo of Tao's features"/>
+</a>
 
 ## Features
 
-- [x] Type inference
+- [x] Hindley-Milner type inference
 - [x] Useful error messages
 - [x] Typeclasses
 - [x] First-class functions
@@ -101,6 +96,18 @@ my_list
     :map(fn x => x * x)         # Square elements
     :sum                        # Sum elements
 ```
+
+### Useful, user-friendly error diagnostics
+
+This one is better demonstrated with an image.
+
+<a href = "https://www.github.com/zesterer/tao">
+    <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/error.png" alt="Example Tao error"/>
+</a>
+
+Tao preserves useful information about the input code such as the span of each element, allowing for rich error messages
+that guide users towards solutions to their programs. Diagnostic rendering itself is done by my crate
+[Ariadne](https://www.github.com/zesterer/ariadne).
 
 ## Commands
 

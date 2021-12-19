@@ -1,6 +1,6 @@
 data Maybe A =
-	| Just A
-	\ None
+    | Just A
+    \ None
 
 class Add =
     add : Self -> Self -> Self
