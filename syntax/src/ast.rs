@@ -239,6 +239,7 @@ pub enum ClassItem {
 #[derive(Debug, PartialEq)]
 pub struct Class {
     pub name: SrcNode<Ident>,
+    pub obligation: Vec<SrcNode<Ident>>,
     pub generics: SrcNode<Generics>,
     pub items: Vec<ClassItem>,
 }

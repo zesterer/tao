@@ -9,6 +9,7 @@ pub enum ClassItem {
 
 pub struct Class {
     pub name: SrcNode<Ident>,
+    pub obligations: Vec<SrcNode<Obligation>>,
     pub attr: ast::Attr,
     pub gen_scope: GenScopeId,
     pub items: Vec<ClassItem>,

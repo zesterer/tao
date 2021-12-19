@@ -623,12 +623,16 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         .labelled("expression")
 }
 
-pub fn generics_parser() -> impl Parser<ast::Generics> {
-    let obligations = just(Token::Op(Op::Less))
+pub fn obligation_parser() -> impl Parser<Vec<SrcNode<ast::Ident>>> {
+    just(Token::Op(Op::Less))
         .ignore_then(type_ident_parser()
             .map_with_span(SrcNode::new)
             .separated_by(just(Token::Op(Op::Add)))
-            .allow_leading());
+            .allow_leading())
+}
+
+pub fn generics_parser() -> impl Parser<ast::Generics> {
+    let obligations = obligation_parser();
 
     type_ident_parser()
         .map_with_span(SrcNode::new)
@@ -741,13 +745,16 @@ pub fn class_parser() -> impl Parser<ast::Class> {
     just(Token::Class)
         .ignore_then(type_ident_parser()
             .map_with_span(SrcNode::new))
+        .then(obligation_parser().or_not())
         .then(generics_parser().map_with_span(SrcNode::new))
-        .then_ignore(just(Token::Op(Op::Eq)))
-        .then(item.separated_by(just(Token::Comma)).allow_trailing())
-        .map(|((name, generics), items)| ast::Class {
+        .then(just(Token::Op(Op::Eq))
+            .ignore_then(item.separated_by(just(Token::Comma)).allow_trailing())
+            .or_not())
+        .map(|(((name, obligation), generics), items)| ast::Class {
             name,
+            obligation: obligation.unwrap_or_default(),
             generics,
-            items,
+            items: items.unwrap_or_default(),
         })
         .boxed()
         .map_err_with_span(|err, span| err.while_parsing(span, "class"))
@@ -776,13 +783,14 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             .then_ignore(just(Token::Of))
             .then(type_ident_parser()
                 .map_with_span(SrcNode::new))
-            .then_ignore(just(Token::Op(Op::Eq)))
-            .then(item.separated_by(just(Token::Comma)).allow_trailing()))
+            .then(just(Token::Op(Op::Eq))
+                .ignore_then(item.separated_by(just(Token::Comma)).allow_trailing())
+                .or_not()))
         .map(|(generics, ((member, class), items))| ast::Member {
             generics: generics.unwrap_or_else(|| SrcNode::new(ast::Generics { tys: Vec::new() }, member.span())),
             member,
             class,
-            items,
+            items: items.unwrap_or_default(),
         })
         .boxed()
         .map_err_with_span(|err, span| err.while_parsing(span, "class member"))

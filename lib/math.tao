@@ -1,10 +1,41 @@
 type Str = [Char]
 
-# class Zero =
-#     zero : Self
+class Zero =
+    zero : Self
 
-# member Nat of Zero =
-#     zero = 0
+class One =
+    one : Self
+
+class Add =
+    add: Self -> Self -> Self
+
+class Mul =
+    mul: Self -> Self -> Self
+
+class Ring < Zero + One + Add + Mul
+
+member Nat of Zero =
+    zero = 0
+
+member Nat of One =
+    one = 1
+
+member Nat of Add =
+    add = fn x, y => x + y
+
+member Nat of Mul =
+    mul = fn x, y => x * y
+
+class Sum < Zero + Add
+
+def sum A < Sum =
+    | [] => A.zero
+    \ [x .. xs] => A.add(x, xs:sum)
+
+# member Nat of Sum
+for A < Zero + Add member A of Sum
+
+def foo = [1, 2, 3, 4]:sum
 
 # class Add =
 #     add : Self -> Self -> Self
@@ -18,8 +49,6 @@ type Str = [Char]
 
 # # $[main]
 # def main = [1, 2, 3, 4]:sum
-
-
 
 class Show =
     show : Self -> Str

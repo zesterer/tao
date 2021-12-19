@@ -17,6 +17,8 @@ pub enum Error {
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
+    NoSuchClassItem(SrcNode<Ident>, SrcNode<Ident>),
+    MissingClassItem(Span, SrcNode<Ident>, SrcNode<Ident>),
     RecursiveAlias(AliasId, TyId, Span),
     DuplicateTypeName(Ident, Span, Span),
     DuplicateDefName(Ident, Span, Span),
@@ -158,6 +160,22 @@ impl Error {
                 format!("No such class {}", (*a).fg(Color::Red)),
                 vec![(a.span(), format!("Does not exist"), Color::Red)],
                 vec![],
+            ),
+            Error::NoSuchClassItem(item, class) => (
+                format!("No such item {} on class {}", (*item).fg(Color::Red), (*class).fg(Color::Red)),
+                vec![
+                    (item.span(), format!("This item is not required in the class contract"), Color::Red),
+                    (class.span(), format!("Does not have an item named {}", (*item).fg(Color::Red)), Color::Yellow),
+                ],
+                vec![format!("Class members must provide only the items required by their class")],
+            ),
+            Error::MissingClassItem(member, class, item) => (
+                format!("Member of class {} is missing class item {}", (*class).fg(Color::Red), (*item).fg(Color::Red)),
+                vec![
+                    (member, format!("This member does not contain a definition for {}", (*item).fg(Color::Yellow)), Color::Red),
+                    (item.span(), format!("A declaration of this item, {}, is missing from the class member", (*item).fg(Color::Yellow)), Color::Yellow),
+                ],
+                vec![format!("Class members must provide all items required by their class")],
             ),
             Error::RecursiveAlias(alias, ty, span) => (
                 format!("Recursive type alias"),

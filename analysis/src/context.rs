@@ -30,6 +30,7 @@ impl Context {
         // Declare items before declaration
         for (attr, class) in module.classes() {
             let (gen_scope, mut errs) = GenScope::from_ast(&class.generics);
+            assert_eq!(gen_scope.len(), 0, "Type parameters on classes not permitted yet");
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             if let Err(err) = this.classes.declare(class.name.clone(), gen_scope) {
@@ -204,6 +205,17 @@ impl Context {
                     .expect("Class must be pre-declared before definition"),
                 Class {
                     name: class.name.clone(),
+                    obligations: class
+                        .obligation
+                        .iter()
+                        .filter_map(|obl| match this.classes.lookup(**obl) {
+                            Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
+                            None => {
+                                errors.push(Error::NoSuchClass(obl.clone()));
+                                None
+                            },
+                        })
+                        .collect(),
                     attr: attr.clone(),
                     gen_scope,
                     items,
@@ -221,19 +233,28 @@ impl Context {
             let mut infer = Infer::new(&mut this, Some(gen_scope), None);
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
+            for obl in infer.ctx().classes.get(class_id).unwrap().obligations.clone() {
+                match obl.inner() {
+                    Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span()),
+                }
+            }
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
 
             let member_ty = checked.reify(member_ty.meta().1);
 
-            let member_ = Member {
-                gen_scope,
-                member: member_ty,
-                items: member.items
-                    .iter()
-                    .map(|item| match item {
-                        ast::MemberItem::Value { name, val } => {
+            let items = member.items
+                .iter()
+                .filter_map(|item| {
+                    let class = this.classes.get(class_id).unwrap();
+                    match item {
+                        ast::MemberItem::Value { name, val } => if class.field(**name).is_none() {
+                            errors.push(Error::NoSuchClassItem(name.clone(), class.name.clone()));
+                            None
+                        } else {
+                            // TODO: check that value is a member of the class
+
                             let mut infer = Infer::new(&mut this, Some(gen_scope), None);
 
                             let val = val.to_hir(&mut infer, &Scope::Empty);
@@ -249,17 +270,36 @@ impl Context {
                                 infer.make_eq(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
                             }
 
-
                             let (mut checked, mut errs) = infer.into_checked();
                             errors.append(&mut errs);
 
                             let val = val.reify(&mut checked);
 
                             // TODO: Detect duplicates!
-                            (**name, MemberItem::Value { name: name.clone(), val })
+                            Some((**name, MemberItem::Value { name: name.clone(), val }))
                         },
-                    })
-                    .collect(),
+                    }
+                })
+                .collect::<HashMap<_, _>>();
+
+            let class = this.classes.get(class_id).unwrap();
+            for item in &class.items {
+                match item {
+                    ClassItem::Value { name, .. } => if !items
+                        .iter()
+                        .any(|(_, item)| match item {
+                            MemberItem::Value { name: member_item_name, .. } => member_item_name == name,
+                        })
+                    {
+                        errors.push(Error::MissingClassItem(member.member.span(), class.name.clone(), name.clone()));
+                    },
+                }
+            }
+
+            let member_ = Member {
+                gen_scope,
+                member: member_ty,
+                items,
             };
 
             this.classes.define_member(member_id, class_id, member_);
@@ -340,6 +380,20 @@ impl Context {
     pub fn lookup_access(&self, ty: TyId, field: SrcNode<Ident>) -> Option<(ClassId, SrcNode<TyId>)> {
         match self.tys.get(ty) {
             Ty::Gen(idx, scope) => {
+                let mut classes = HashSet::new();
+
+                // Extract a list of all classes that the type is a member of
+                fn walk_classes(ctx: &Context, classes: &mut HashSet<ClassId>, class: ClassId) {
+                    if classes.insert(class) {
+                        for obl in &ctx.classes.get(class).unwrap().obligations {
+                            match obl.inner() {
+                                Obligation::MemberOf(class) => walk_classes(ctx, classes, *class),
+                            }
+                        }
+                    }
+                }
+
+                // Determine primary obligations
                 self.tys
                     .get_gen_scope(scope)
                     .get(idx)
@@ -347,17 +401,22 @@ impl Context {
                     .as_ref()
                     .expect("Lookup on unchecked gen scope")
                     .iter()
-                    .find_map(|c| match c {
-                        Obligation::MemberOf(class) => self.classes
-                            .get(*class)
-                            .unwrap()
-                            .items
-                            .iter()
-                            .find_map(|item| match item {
-                                ClassItem::Value { name, ty } if **name == *field => Some((*class, ty.clone())),
-                                _ => None,
-                            }),
-                    })
+                    .for_each(|c| match c {
+                        Obligation::MemberOf(class) => walk_classes(self, &mut classes, *class),
+                    });
+
+
+                classes
+                    .into_iter()
+                    .find_map(|class| self.classes
+                        .get(class)
+                        .unwrap()
+                        .items
+                        .iter()
+                        .find_map(|item| match item {
+                            ClassItem::Value { name, ty } if **name == *field => Some((class, ty.clone())),
+                            _ => None,
+                        }))
             },
             _ => None,
         }
