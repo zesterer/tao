@@ -159,14 +159,16 @@ impl<'a> fmt::Display for TyDisplay<'a> {
     }
 }
 
-pub enum Constraint {
+#[derive(Clone)]
+pub enum Obligation {
     MemberOf(ClassId),
 }
 
 pub struct GenTy {
     pub name: SrcNode<Ident>,
-    pub ast_constraints: Vec<SrcNode<Ident>>,
-    pub constraints: Option<Vec<Constraint>>,
+    // TODO: Don't store this here, it's silly
+    pub ast_obligations: Vec<SrcNode<Ident>>,
+    pub obligations: Option<Vec<Obligation>>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -194,12 +196,8 @@ impl GenScope {
                 .iter()
                 .map(|gen_ty| GenTy {
                     name: gen_ty.name.clone(),
-                    ast_constraints: gen_ty.constraints.clone(),
-                    constraints: None,
-                    // constraints: gen_ty.constraints
-                    //     .iter()
-                    //     .map(|class| Constraint::MemberOf(class.clone()))
-                    //     .collect(),
+                    ast_obligations: gen_ty.obligations.clone(),
+                    obligations: None,
                 })
                 .collect(),
         }, errors)
@@ -217,17 +215,17 @@ impl GenScope {
 
     fn check(&mut self, classes: &Classes, errors: &mut Vec<Error>) {
         for ty in &mut self.types {
-            let constraints = ty
-                .ast_constraints
+            let obligations = ty
+                .ast_obligations
                 .iter()
                 .filter_map(|class| if let Some(class) = classes.lookup(**class) {
-                    Some(Constraint::MemberOf(class))
+                    Some(Obligation::MemberOf(class))
                 } else {
                     errors.push(Error::NoSuchClass(class.clone()));
                     None
                 })
                 .collect();
-            ty.constraints = Some(constraints);
+            ty.obligations = Some(obligations);
         }
     }
 }

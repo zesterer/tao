@@ -4,7 +4,7 @@ pub struct Def {
     pub name: SrcNode<Ident>,
     pub attr: ast::Attr,
     pub gen_scope: GenScopeId,
-    pub ty_hint: SrcNode<ast::Type>,
+    pub ty_hint: Option<TyId>,
     pub body: Option<TyExpr>,
 }
 

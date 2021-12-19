@@ -198,7 +198,7 @@ pub enum Expr {
 #[derive(Debug, PartialEq)]
 pub struct GenericTy {
     pub name: SrcNode<Ident>,
-    pub constraints: Vec<SrcNode<Ident>>,
+    pub obligations: Vec<SrcNode<Ident>>,
 }
 
 #[derive(Debug, PartialEq)]

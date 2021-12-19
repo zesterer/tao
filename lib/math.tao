@@ -1,19 +1,37 @@
-class Zero =
-    zero : Self
+type Str = [Char]
 
-member Nat of Zero =
-    zero = 0
+# class Zero =
+#     zero : Self
 
-class Add =
-    add : Self -> Self -> Self
+# member Nat of Zero =
+#     zero = 0
 
-member Nat of Add =
-    add = fn x, y => x + y
+# class Add =
+#     add : Self -> Self -> Self
 
-def sum A < Add + Zero =
-    | []: [A] => A.zero
-    \ [x .. xs] => A.add(x, xs:sum)
+# member Nat of Add =
+#     add = fn x, y => x + y
+
+# def sum A < Add + Zero =
+#     | []: [A] => A.zero
+#     \ [x .. xs] => A.add(x, xs:sum)
+
+# # $[main]
+# def main = [1, 2, 3, 4]:sum
+
+
+
+class Show =
+    show : Self -> Str
+
+def show T < Show : T -> Str =
+    \ x => x:T.show
+
+member Nat of Show =
+    show = fn _ => "a nat"
+
+for A < Show, B < Show member (A, B) of Show =
+    show = fn (a, b) => "(" ++ a:A.show ++ ", " ++ b:B.show ++ ")"
 
 $[main]
-def main = [1, 2, 3, 4]:sum
-
+def test = ((1, 2), ((3, 4), 5)):show

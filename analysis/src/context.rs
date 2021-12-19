@@ -25,6 +25,7 @@ impl Context {
         let mut classes = Vec::new();
         let mut aliases = Vec::new();
         let mut datas = Vec::new();
+        let mut members = Vec::new();
         let mut defs = Vec::new();
         // Declare items before declaration
         for (attr, class) in module.classes() {
@@ -60,31 +61,9 @@ impl Context {
                 datas.push((attr, data));
             }
         }
-        for (attr, def) in module.defs() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&def.generics);
-            errors.append(&mut errs);
-            let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            if let Err(err) = this.defs.declare(Def {
-                name: def.name.clone(),
-                attr: attr.clone(),
-                gen_scope,
-                ty_hint: def.ty_hint.clone(),
-                body: None,
-            }) {
-                errors.push(err);
-            } else {
-                // Only mark for further processing if no errors occurred during declaration
-                defs.push((attr, def));
-            }
-        }
 
-        // Now that we have declarations for all classes and data types, we can check generic scope constraints
-        let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
-        this.errors.append(&mut gen_scope_errors);
-
-        // IMPORTANT: Aliases must be declared before everything else because their eagerly expand to the type they alias
-
-        // Define items
+        // Alias definition must go before members and defs because they might have type hints that make use of type
+        // aliases
         for (attr, alias) in aliases {
             let gen_scope = this.datas.name_gen_scope(*alias.name);
 
@@ -109,6 +88,53 @@ impl Context {
                 },
             );
         }
+
+        for (attr, member) in module.members() {
+            let (gen_scope, mut errs) = GenScope::from_ast(&member.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
+            let member_id = this.classes.declare_member(gen_scope);
+            members.push((attr, member, member_id, gen_scope));
+        }
+        for (attr, def) in module.defs() {
+            let (gen_scope, mut errs) = GenScope::from_ast(&def.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
+
+            // If the type hint is fully specified, check it
+            let ty_hint = if def.ty_hint.is_fully_specified() {
+                let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+                let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
+
+                let (mut checked, mut errs) = infer.into_checked();
+                errors.append(&mut errs);
+
+                Some(checked.reify(ty_hint.meta().1))
+            } else {
+                None
+            };
+
+            if let Err(err) = this.defs.declare(Def {
+                name: def.name.clone(),
+                attr: attr.clone(),
+                gen_scope,
+                ty_hint,
+                body: None,
+            }) {
+                errors.push(err);
+            } else {
+                // Only mark for further processing if no errors occurred during declaration
+                defs.push((attr, def));
+            }
+        }
+
+        // Now that we have declarations for all classes and data types, we can check generic scope constraints
+        let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
+        this.errors.append(&mut gen_scope_errors);
+
+        // IMPORTANT: Aliases must be declared before everything else because their eagerly expand to the type they alias
+
+        // Define items
         for (attr, data) in datas {
             let gen_scope = this.datas.name_gen_scope(*data.name);
 
@@ -184,17 +210,13 @@ impl Context {
                 },
             );
         }
-        for (attr, member) in module.members() {
+        for (attr, member, member_id, gen_scope) in members {
             let class_id = if let Some(class_id) = this.classes.lookup(*member.class) {
                 class_id
             } else {
                 errors.push(Error::NoSuchClass(member.class.clone()));
                 continue;
             };
-
-            let (gen_scope, mut errs) = GenScope::from_ast(&member.generics);
-            errors.append(&mut errs);
-            let gen_scope = this.tys.insert_gen_scope(gen_scope);
 
             let mut infer = Infer::new(&mut this, Some(gen_scope), None);
 
@@ -240,7 +262,7 @@ impl Context {
                     .collect(),
             };
 
-            this.classes.declare_member(class_id, member_);
+            this.classes.define_member(member_id, class_id, member_);
         }
         for (attr, def) in defs {
             let id = this.defs
@@ -321,12 +343,12 @@ impl Context {
                 self.tys
                     .get_gen_scope(scope)
                     .get(idx)
-                    .constraints
+                    .obligations
                     .as_ref()
                     .expect("Lookup on unchecked gen scope")
                     .iter()
                     .find_map(|c| match c {
-                        Constraint::MemberOf(class) => self.classes
+                        Obligation::MemberOf(class) => self.classes
                             .get(*class)
                             .unwrap()
                             .items

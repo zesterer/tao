@@ -624,7 +624,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
 }
 
 pub fn generics_parser() -> impl Parser<ast::Generics> {
-    let constraint = just(Token::Op(Op::Less))
+    let obligations = just(Token::Op(Op::Less))
         .ignore_then(type_ident_parser()
             .map_with_span(SrcNode::new)
             .separated_by(just(Token::Op(Op::Add)))
@@ -632,10 +632,10 @@ pub fn generics_parser() -> impl Parser<ast::Generics> {
 
     type_ident_parser()
         .map_with_span(SrcNode::new)
-        .then(constraint.or_not())
-        .map(|(name, constraints)| ast::GenericTy {
+        .then(obligations.or_not())
+        .map(|(name, obligations)| ast::GenericTy {
             name,
-            constraints: constraints.unwrap_or_else(Vec::new),
+            obligations: obligations.unwrap_or_else(Vec::new),
         })
         .separated_by(just(Token::Comma))
         .allow_trailing()

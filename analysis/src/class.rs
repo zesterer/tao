@@ -28,11 +28,15 @@ impl Class {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClassId(usize);
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MemberId(usize);
+
 #[derive(Default)]
 pub struct Classes {
     lut: HashMap<Ident, (Span, ClassId, GenScopeId)>,
     classes: Vec<Option<Class>>,
-    members: HashMap<ClassId, Vec<Member>>,
+    members: Vec<Option<Member>>,
+    member_lut: HashMap<ClassId, Vec<MemberId>>,
 }
 
 impl Classes {
@@ -63,17 +67,88 @@ impl Classes {
         self.classes[id.0] = Some(class);
     }
 
-    pub fn declare_member(&mut self, class: ClassId, member: Member) {
-        self.members.entry(class).or_default().push(member);
+    pub fn get_member(&self, id: MemberId) -> Option<&Member> {
+        self.members[id.0].as_ref()
     }
 
-    pub fn lookup_member(&self, ty: TyId, class: ClassId) -> Option<&Member> {
-        self.members
+    pub fn declare_member(&mut self, gen_scope: GenScopeId) -> MemberId {
+        let id = MemberId(self.members.len());
+        self.members.push(None);
+        id
+    }
+
+    pub fn define_member(&mut self, id: MemberId, class: ClassId, member: Member) {
+        self.members[id.0] = Some(member);
+        self.member_lut.entry(class).or_default().push(id);
+    }
+
+    // TODO: Remove this
+    pub fn lookup_member(&self, ctx: &Context, ty: TyId, class: ClassId) -> Option<&Member> {
+        // Returns true if member covers ty
+        fn covers(ctx: &Context, member: TyId, ty: TyId) -> bool {
+            match (ctx.tys.get(member), ctx.tys.get(ty)) {
+                (Ty::Gen(_, _), _) => true, // Blanket impls match everything
+                (Ty::Prim(a), Ty::Prim(b)) if a == b => true,
+                (Ty::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
+                    .into_iter()
+                    .zip(ys.into_iter())
+                    .all(|(x, y)| covers(ctx, x, y)),
+                _ => false,
+            }
+        }
+
+        self.member_lut
             .get(&class)
             .and_then(|xs| {
-                assert!(xs.len() <= 1, "Multiple implementors are not yet supported");
-                xs.first()
+                let candidates = xs
+                    .iter()
+                    .map(|m| self.get_member(*m).expect("Member must be defined before lookup"))
+                    .filter(|member| covers(ctx, member.member, ty))
+                    .collect::<Vec<_>>();
+
+                assert!(candidates.len() <= 1, "Multiple member candidates detected during lowering <{:?} as {:?}>, incoherence has occurred", ctx.tys.get(ty), class);
+
+                candidates.first().copied()
             })
+    }
+
+    // TODO: Is this needed?
+    pub fn lookup_member_concrete(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
+        // Returns true if member covers ty
+        fn covers(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId) -> bool {
+            match (hir.tys.get(member), ctx.get_ty(ty)) {
+                (Ty::Gen(_, _), _) => true, // Blanket impls match everything
+                (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
+                (Ty::Tuple(xs), ConTy::Tuple(ys)) if xs.len() == ys.len() => xs
+                    .into_iter()
+                    .zip(ys.into_iter())
+                    .all(|(x, y)| covers(hir, ctx, x, *y)),
+                _ => false,
+            }
+        }
+
+        self.member_lut
+            .get(&class)
+            .and_then(|xs| {
+                let candidates = xs
+                    .iter()
+                    .map(|m| self.get_member(*m).expect("Member must be defined before lookup"))
+                    .filter(|member| covers(hir, ctx, member.member, ty))
+                    .collect::<Vec<_>>();
+
+                assert!(candidates.len() <= 1, "Multiple member candidates detected during lowering <{:?} as {:?}>, incoherence has occurred", ctx.get_ty(ty), class);
+
+                candidates.first().copied()
+            })
+    }
+
+    pub fn members_of(&self, class: ClassId) -> impl Iterator<Item = &Member> {
+        self.member_lut
+            .get(&class)
+            .map(|m| m.as_slice())
+            .unwrap_or(&[])
+            .iter()
+            .map(|m| self.get_member(*m).expect("Member must be defined before lookup"))
     }
 }
 

@@ -274,7 +274,7 @@ impl ToMir for hir::TyExpr {
                 // let ty = hir.tys.concretize(ty, self_ty, ty_intrs.gen);
                 let self_ty = ty.to_mir(ctx, hir, ty_insts);
                 hir.classes
-                    .lookup_member(*ty, *class)
+                    .lookup_member(hir, *ty, *class)
                     .unwrap()
                     .field(**field)
                     .unwrap()

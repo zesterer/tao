@@ -25,7 +25,7 @@ pub use crate::{
     infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo},
     lower::{Scope, ToHir},
     reify::Reify,
-    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, Constraint},
+    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, Obligation},
 };
 pub use tao_syntax::ast::Ident;
 

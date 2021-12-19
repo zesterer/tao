@@ -12,6 +12,8 @@ pub enum Error {
     NoBranches(Span),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyId, Span),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyId, Span, TyId, Span),
+    // (obligation, type, obligation_origin, generic_definition
+    TypeDoesNotFulfil(ClassId, TyId, Span, Option<Span>),
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
@@ -107,7 +109,7 @@ impl Error {
                 vec![(op.span().union(a_span), format!("Operation {} applied here", (*op).fg(Color::Red)), Color::Red)],
                 match ctx.tys.get(a) {
                     Ty::Gen(_, _) => vec![format!(
-                        "Consider adding a typeclass constraint like {}",
+                        "Consider adding a class constraint like {}",
                         format!("{} < {:?}", display(a), *op).fg(Color::Blue),
                     )],
                     _ => vec![],
@@ -118,11 +120,29 @@ impl Error {
                 vec![(a_span.union(op.span()).union(b_span), format!("Operation {} applied here", (*op).fg(Color::Red)), Color::Red)],
                 match ctx.tys.get(a) {
                     Ty::Gen(_, _) => vec![format!(
-                        "Consider adding a typeclass constraint like {}",
+                        "Consider adding a class constraint like {}",
                         format!("{} < {:?} {}", display(a), *op, display(b)).fg(Color::Blue),
                     )],
                     _ => vec![],
                 },
+            ),
+            Error::TypeDoesNotFulfil(class, ty, span, gen_span) => (
+                format!("Type {} does not fulfil {} obligation", display(ty).fg(Color::Red), (*ctx.classes.get(class).unwrap().name).fg(Color::Red)),
+                {
+                    let mut labels = vec![(span, format!(
+                        "Type {} must be a member of {} here",
+                        display(ty).fg(Color::Red),
+                        (*ctx.classes.get(class).unwrap().name).fg(Color::Red),
+                    ), Color::Red)];
+                    if let Some(gen_span) = gen_span {
+                        labels.push((gen_span, format!(
+                            "Consider adding a class constraint like {}",
+                            format!("{} < {}", display(ty), *ctx.classes.get(class).unwrap().name).fg(Color::Blue),
+                        ), Color::Blue));
+                    }
+                    labels
+                },
+                vec![format!("Types must fulfil their class obligations")],
             ),
             Error::NoSuchData(a) => (
                 format!("No such type {}", (*a).fg(Color::Red)),

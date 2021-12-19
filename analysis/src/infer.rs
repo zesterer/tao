@@ -46,6 +46,7 @@ pub enum InferError {
     NoSuchField(TyVar, Span, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
+    TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>),
     RecursiveAlias(AliasId, TyVar, Span),
     PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
 }
@@ -56,6 +57,7 @@ enum Constraint {
     Access(TyVar, SrcNode<Ident>, TyVar),
     Unary(SrcNode<ast::UnaryOp>, TyVar, TyVar),
     Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
+    Impl(TyVar, ClassId, Span),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -206,6 +208,10 @@ impl<'a> Infer<'a> {
         self.constraints.push_back(Constraint::Binary(op, a, b, output));
     }
 
+    pub fn make_impl(&mut self, ty: TyVar, class: ClassId, span: Span) {
+        self.constraints.push_back(Constraint::Impl(ty, class, span));
+    }
+
     pub fn emit(&mut self, err: InferError) {
         self.errors.push(err);
     }
@@ -252,7 +258,7 @@ impl<'a> Infer<'a> {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
-                self.errors.push(InferError::Mismatch(a, b, info.into()));
+                self.errors.push(InferError::Mismatch(x, y, info.into()));
             }
         }
     }
@@ -493,6 +499,109 @@ impl<'a> Infer<'a> {
                     let result_ty = self.insert(self.span(output), info);
                     self.make_eq(output, result_ty, self.span(output));
                 })),
+            Constraint::Impl(ty, obligation, span) => self.resolve_obligation(ty, obligation, span),
+        }
+    }
+
+    fn resolve_obligation(&mut self, ty: TyVar, obligation: ClassId, span: Span) -> Option<Result<(), InferError>> {
+        match self.follow_info(ty) {
+            TyInfo::Unknown(_) => None, // No idea if it implements the trait yet
+            TyInfo::Gen(gen_idx, gen_scope, _) => {
+                let gen_scope = self.ctx.tys.get_gen_scope(gen_scope);
+                if gen_scope
+                    .get(gen_idx)
+                    .obligations
+                    .as_ref()
+                    .expect("Generic constraints must be resolved during inference")
+                    .iter()
+                    .find(|c| match c {
+                        Obligation::MemberOf(class) if *class == obligation => true,
+                        _ => false,
+                    })
+                    .is_some()
+                {
+                    Some(Ok(()))
+                } else {
+                    Some(Err(InferError::TypeDoesNotFulfil(
+                        obligation,
+                        ty,
+                        span,
+                        Some(gen_scope.get(gen_idx).name.span()),
+                    )))
+                }
+            },
+            _ => {
+                // Returns true if ty covers var (i.e: var is a structural subset of ty)
+                fn covers_var(infer: &Infer, var: TyVar, ty: TyId) -> bool {
+                    match (infer.follow_info(var), infer.ctx.tys.get(ty)) {
+                        (_, Ty::Gen(_, _)) => true, // Blanket impls match everything
+                        (TyInfo::Prim(a), Ty::Prim(b)) if a == b => true,
+                        (TyInfo::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
+                            .into_iter()
+                            .zip(ys.into_iter())
+                            .all(|(x, y)| covers_var(infer, x, y)),
+                        _ => false,
+                    }
+                }
+
+                // Find a class member declaration that covers our type
+                let covering_member = self.ctx.classes
+                    .members_of(obligation)
+                    .find(|member| covers_var(self, ty, member.member));
+
+                if let Some(covering_member) = covering_member {
+                    // Link the generic types of a class member with type variables in the current scope so obligations
+                    // can be generated
+                    fn derive_links(infer: &Infer, member: TyId, ty: TyVar, link_gen: &mut impl FnMut(usize, TyVar)) {
+                        match (infer.ctx.tys.get(member), infer.follow_info(ty)) {
+                            (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
+                            (Ty::List(x), TyInfo::List(y)) => derive_links(infer, x, y, link_gen),
+                            (Ty::Tuple(xs), TyInfo::Tuple(ys)) => xs
+                                .into_iter()
+                                .zip(ys.into_iter())
+                                .for_each(|(x, y)| derive_links(infer, x, y, link_gen)),
+                            (Ty::Record(xs), TyInfo::Record(ys)) => xs
+                                .into_iter()
+                                .zip(ys.into_iter())
+                                .for_each(|((_, x), (_, y))| derive_links(infer, x, y, link_gen)),
+                            (Ty::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
+                                derive_links(infer, x_i, y_i, link_gen);
+                                derive_links(infer, x_o, y_o, link_gen);
+                            },
+                            (Ty::Data(_, xs), TyInfo::Data(_, ys)) => xs
+                                .into_iter()
+                                .zip(ys.into_iter())
+                                .for_each(|(x, y)| derive_links(infer, x, y, link_gen)),
+                            (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
+                            _ => {}, // Only type constructors and generic types generate obligations
+                        }
+                    }
+
+                    let scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
+
+                    let mut links = HashSet::new();
+                    derive_links(self, covering_member.member, ty, &mut |gen_idx, var| { links.insert((gen_idx, var)); });
+
+                    for (gen_idx, ty) in links {
+                        for obl in scope.get(gen_idx).obligations.as_ref().unwrap() {
+                            match obl {
+                                Obligation::MemberOf(class) => {
+                                    self.constraints.push_back(Constraint::Impl(ty, *class, span));
+                                },
+                            }
+                        }
+                    }
+
+                    Some(Ok(()))
+                } else {
+                    Some(Err(InferError::TypeDoesNotFulfil(
+                        obligation,
+                        ty,
+                        span,
+                        None,
+                    )))
+                }
+            },
         }
     }
 
@@ -544,6 +653,7 @@ impl<'a> Infer<'a> {
                 InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
+                InferError::TypeDoesNotFulfil(class, ty, span, gen_span) => Error::TypeDoesNotFulfil(class, checked.reify(ty), span, gen_span),
                 InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),
                 InferError::PatternNotSupported(lhs, op, rhs, span) => Error::PatternNotSupported(checked.reify(lhs), op, checked.reify(rhs), span),
             })

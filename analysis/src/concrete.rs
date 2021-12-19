@@ -265,15 +265,48 @@ impl ConContext {
             ),
             hir::Expr::Cons(data, variant, inner) => hir::Expr::Cons(data.clone(), *variant, self.lower_expr(hir, inner, ty_insts)),
             hir::Expr::ClassAccess(ty, class, field) => {
-                let field = hir.classes
-                    .lookup_member(*ty, *class)
-                    .unwrap()
+                let self_ty = self.concretize_ty(hir, *ty, ty_insts);
+                let member = hir.classes
+                    .lookup_member_concrete(hir, self, self_ty, *class)
+                    .expect("Could not select member candidate");
+                let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
+
+                fn derive_links(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId, link_gen: &mut impl FnMut(usize, ConTyId)) {
+                    match (hir.tys.get(member), ctx.get_ty(ty)) {
+                        (Ty::Prim(x), ConTy::Prim(y)) => assert_eq!(x, *y),
+                        (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
+                        (Ty::List(x), ConTy::List(y)) => derive_links(hir, ctx, x, *y, link_gen),
+                        (Ty::Tuple(xs), ConTy::Tuple(ys)) => xs
+                            .into_iter()
+                            .zip(ys.into_iter())
+                            .for_each(|(x, y)| derive_links(hir, ctx, x, *y, link_gen)),
+                        (Ty::Record(xs), ConTy::Record(ys)) => xs
+                            .into_iter()
+                            .zip(ys.into_iter())
+                            .for_each(|((_, x), (_, y))| derive_links(hir, ctx, x, *y, link_gen)),
+                        (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
+                            derive_links(hir, ctx, x_i, *y_i, link_gen);
+                            derive_links(hir, ctx, x_o, *y_o, link_gen);
+                        },
+                        (Ty::Data(_, xs), ConTy::Data(_, ys)) => xs
+                            .into_iter()
+                            .zip(ys.into_iter())
+                            .for_each(|(x, y)| derive_links(hir, ctx, x, *y, link_gen)),
+                        (x, y) => todo!("{:?}", (x, y)),
+                    }
+                }
+                let mut links = HashMap::new();
+                derive_links(hir, self, member.member, self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                let gen = (0..member_gen_scope.len())
+                    .map(|idx| *links.get(&idx).expect("Generic type not mentioned in member"))
+                    .collect::<Vec<_>>();
+
+                let field = member
                     .field(**field)
                     .unwrap();
-                let self_ty = self.concretize_ty(hir, *ty, ty_insts);
                 self.lower_expr(hir, field, &TyInsts {
                     self_ty: Some(self_ty),
-                    gen: &[],
+                    gen: &gen,
                 }).into_inner()
             },
             hir::Expr::Debug(inner) => hir::Expr::Debug(self.lower_expr(hir, inner, ty_insts)),

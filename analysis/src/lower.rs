@@ -301,22 +301,36 @@ impl ToHir for ast::Expr {
                     .map(|info| (self.span(), infer.insert(self.span(), info)))
                     .collect::<Vec<_>>();
 
+                // Enforce class obligations
+                for (idx, (span, ty)) in generic_tys.iter().enumerate() {
+                    let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
+                    for obl in scope
+                        .get(idx)
+                        .obligations
+                        .as_ref()
+                        .expect("Obligations must be resolved during inference")
+                        .clone()
+                        .into_iter()
+                    {
+                        match obl {
+                            Obligation::MemberOf(class) => infer.make_impl(*ty, class, self.span()),
+                        }
+                    }
+                }
+
                 // Recreate type in context
                 let def = infer.ctx().defs.get(def_id);
                 let def_gen_scope = def.gen_scope;
                 let def_name = def.name.clone();
                 let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
-                let ty = if let Some(body) = def.body.as_ref() {
-                    let body_ty = body.meta().1;
+                let ty = if let Some(body_ty) = def.body
+                    .as_ref()
+                    .map(|body| body.meta().1)
+                    .or(def.ty_hint)
+                {
                     Some(infer.instantiate(body_ty, self.span(), &get_gen, None))
                 } else {
-                    let ty_hint = def.ty_hint.clone();
-                    if ty_hint.is_fully_specified() {
-                        let ty_hint_ty = ty_hint.to_hir(infer, &Scope::Empty).meta().1;
-                        Some(infer.try_reinstantiate(self.span(), ty_hint_ty))
-                    } else {
-                        None
-                    }
+                    None
                 };
 
                 if let Some(ty) = ty {
@@ -592,7 +606,8 @@ impl ToHir for ast::Expr {
                         (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
                     }
                 } else {
-                    infer.ctx_mut().emit(Error::NoSuchData(data.clone())); // TODO: No such type
+                    // TODO: Class access should work for concrete types too!
+                    infer.ctx_mut().emit(Error::NoSuchData(data.clone()));
                     (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
                 }
             },
