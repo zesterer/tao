@@ -1,0 +1,12 @@
+# Debug
+
+class Debug =
+    debug : Self -> Str
+
+for A < Debug, B < Debug member (A, B) of Debug =
+    debug = fn (a, b) => "(" ++ A.debug(a) ++ ", " ++ B.debug(b) ++ ")"
+
+# Show
+
+class Show =
+    show : Self -> Str

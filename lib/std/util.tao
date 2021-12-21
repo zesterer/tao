@@ -1,0 +1,25 @@
+# Default
+
+class Default =
+    default : Self
+
+member Nat of Default =
+    default = Nat.zero
+
+for A < Default, B < Default member (A, B) of Default =
+    default = (A.default, B.default)
+
+# Maybe
+
+data Maybe A =
+    | Just A
+    \ None
+
+for A member Maybe A of Default =
+    default = None
+
+# Result
+
+data Result A, E =
+    | Ok A
+    \ Err E

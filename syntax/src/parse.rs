@@ -851,12 +851,20 @@ pub fn item_parser() -> impl Parser<ast::Item> {
 }
 
 pub fn module_parser() -> impl Parser<ast::Module> {
-    item_parser()
-        .map(Some)
-        .recover_with(skip_until(ITEM_STARTS, |_| None))
-        .repeated()
+    let imports = just(Token::Import)
+        .ignore_then(select! { Token::Str(path) => path }.map_with_span(SrcNode::new))
+        .repeated();
+
+    imports
+        .then(item_parser()
+            .map(Some)
+            .recover_with(skip_until(ITEM_STARTS, |_| None))
+            .repeated())
         .then_ignore(end())
-        .map(|items| ast::Module { items: items.into_iter().flatten().collect() })
+        .map(|(imports, items)| ast::Module {
+            imports,
+            items: items.into_iter().flatten().collect(),
+        })
 }
 
 #[cfg(test)]

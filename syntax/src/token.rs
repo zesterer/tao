@@ -77,6 +77,7 @@ pub enum Token {
     Question,
     Pipe,
     EndPipe,
+    Import,
     Data,
     Type,
     Def,
@@ -120,6 +121,7 @@ impl fmt::Display for Token {
             Token::Question => write!(f, "?"),
             Token::Pipe => write!(f, "|"),
             Token::EndPipe => write!(f, "\\"),
+            Token::Import => write!(f, "import"),
             Token::Data => write!(f, "data"),
             Token::Type => write!(f, "type"),
             Token::Def => write!(f, "def"),
@@ -223,6 +225,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .map(Token::Intrinsic);
 
     let word = text::ident().map(|s: String| match s.as_str() {
+        "import" => Token::Import,
         "data" => Token::Data,
         "type" => Token::Type,
         "def" => Token::Def,

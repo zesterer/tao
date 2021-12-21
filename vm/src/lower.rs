@@ -4,6 +4,7 @@ fn const_to_value(constant: &mir::Const) -> Value {
     match constant {
         mir::Const::Nat(x) => Value::Int(*x as i64),
         mir::Const::Int(x) => Value::Int(*x),
+        mir::Const::Num(x) => Value::Num(*x),
         mir::Const::Char(c) => Value::Char(*c),
         mir::Const::Bool(x) => Value::Bool(*x),
         mir::Const::Str(s) => Value::List(s

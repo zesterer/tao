@@ -1,0 +1,11 @@
+class Zero =
+    zero : Self
+
+member Nat of Zero =
+    zero = 0
+
+class One =
+    one : Self
+
+member Nat of Zero =
+    zero = 1

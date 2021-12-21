@@ -631,16 +631,9 @@ impl<'a> Infer<'a> {
             TyInfo::Gen(gen_idx, gen_scope, _) => {
                 let gen_scope = self.ctx.tys.get_gen_scope(gen_scope);
                 if gen_scope
-                    .get(gen_idx)
-                    .obligations
-                    .as_ref()
-                    .expect("Generic constraints must be resolved during inference")
-                    .iter()
-                    .find(|c| match c {
-                        Obligation::MemberOf(class) if *class == obligation => true,
-                        _ => false,
-                    })
-                    .is_some()
+                    .find_obligations_for(self.ctx, gen_idx)
+                    .into_iter()
+                    .any(|c| c == obligation)
                 {
                     Some(Ok(()))
                 } else {

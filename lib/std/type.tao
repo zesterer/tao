@@ -1,0 +1,9 @@
+import "lib/std/str.tao"
+
+class Any =
+    type_name : Str
+
+for A member A of Any =
+    type_name =
+        let xs : [A] = [] in
+        @type_name(xs)

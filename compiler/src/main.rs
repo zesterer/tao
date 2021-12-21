@@ -16,5 +16,5 @@ fn main() {
     let src = fs::read_to_string(&args.file)
         .expect("Failed to read file");
     let src_id = SrcId::from_path(args.file);
-    run(src, src_id, args.options, std::io::stdout());
+    run(src, src_id, args.options, std::io::stdout(), |src| fs::read_to_string(src.to_path()).ok());
 }

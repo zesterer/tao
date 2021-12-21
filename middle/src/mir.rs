@@ -11,10 +11,11 @@ pub type MirNode<T> = Node<T, MirMeta>;
 #[derive(Copy, Clone, Debug)]
 pub struct LocalId(usize);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Const {
     Nat(u64),
     Int(i64),
+    Num(f64),
     Char(char),
     Bool(bool),
     Str(Intern<String>),
@@ -238,17 +239,18 @@ impl Expr {
         impl<'a> fmt::Display for DisplayBinding<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 if let Some(name) = self.0.name {
+                    write!(f, "{}{}", if name.starts_with(|c: char| c.is_alphabetic()) { "" } else { "$" }, name)?;
                     if let Pat::Wildcard = &self.0.pat {
-                        return write!(f, "{}", name);
+                        return Ok(());
                     } else {
-                        write!(f, "{} ~ ", name)?;
+                        write!(f, " ~ ")?;
                     }
                 }
                 match &self.0.pat {
                     Pat::Wildcard => write!(f, "_"),
-                    Pat::Const(c) => write!(f, "{:?}", c),
+                    Pat::Const(c) => write!(f, "const {:?}", c),
                     Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
-                    Pat::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayBinding(inner, self.1)),
+                    Pat::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayBinding(inner, self.1)),
                     Pat::ListExact(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayBinding(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Pat::ListFront(items, tail) => write!(
                         f,
@@ -269,12 +271,12 @@ impl Expr {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 use Intrinsic::*;
                 match self.0 {
-                    Expr::Local(local) => write!(f, "{}", local),
+                    Expr::Local(local) => write!(f, "{}{}", if local.starts_with(|c: char| c.is_alphabetic()) { "" } else { "$" }, local),
                     Expr::Global(global, _) => write!(f, "global {:?}", global),
-                    Expr::Const(c) => write!(f, "{:?}", c),
-                    Expr::Func(_, arg, body) => write!(f, "fn {} => {}", arg, DisplayExpr(body, self.1)),
+                    Expr::Const(c) => write!(f, "const {:?}", c),
+                    Expr::Func(_, arg, body) => write!(f, "fn {}{} => {}", if arg.starts_with(|c: char| c.is_alphabetic()) { "" } else { "$" }, arg, DisplayExpr(body, self.1)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1), DisplayExpr(arg, self.1)),
-                    Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1)),
+                    Expr::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayExpr(inner, self.1)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Expr::Intrinsic(NotBool, args) => write!(f, "!{}", DisplayExpr(&args[0], self.1)),

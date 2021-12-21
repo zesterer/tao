@@ -280,6 +280,7 @@ pub struct Item {
 
 #[derive(Debug, PartialEq)]
 pub struct Module {
+    pub imports: Vec<SrcNode<Intern<String>>>,
     pub items: Vec<Item>,
 }
 

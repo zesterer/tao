@@ -1,0 +1,38 @@
+import "lib/std/ops.tao"
+import "lib/std/util.tao"
+
+def map A, B : (A -> B) -> [A] -> [B] =
+    | _, [] => []
+    \ f, [x .. xs] => [x:f .. xs:map(f)]
+
+def filter A : (A -> Bool) -> [A] -> [A] =
+    | _, [] => []
+    \ f, [x .. xs] => (if x:f then [x] else []) ++ xs:filter(f)
+
+def len A : [A] -> Nat =
+    | [] => 0
+    \ [_ .. tail] => 1 + tail:len
+
+def nth A : Nat -> [A] -> Maybe A =
+    | 0, [x ..] => Just x
+    | n + 1, [_ .. tail] => tail:nth(n)
+    \ _, _ => None
+
+def fold A, B : A -> (A -> B -> A) -> [B] -> A =
+    | init, _, [] => init
+    \ init, f, [x .. tail] => fold(f(init, x), f, tail)
+
+def sort A < OrdExt : [A] -> [A] =
+    | [] => []
+    \ [mid .. xs] =>
+        xs:filter(fn x => A.less(x, mid)):sort
+            ++
+        [mid]
+            ++
+        xs:filter(fn x => A.greater(x, mid)):sort
+
+def sum A < Zero + Add : [A] -> A =
+    fold(A.zero, fn x, y => A.add(x, y))
+
+def product A < One + Mul : [A] -> A =
+    fold(A.one, fn x, y => A.mul(x, y))

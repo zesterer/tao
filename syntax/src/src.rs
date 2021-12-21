@@ -1,6 +1,6 @@
 use internment::Intern;
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     fmt,
 };
 
@@ -37,5 +37,9 @@ impl SrcId {
             .iter()
             .map(|c| c.to_string_lossy().into_owned())
             .collect()))
+    }
+
+    pub fn to_path(&self) -> PathBuf {
+        self.0.iter().map(|e| e.to_string()).collect()
     }
 }
