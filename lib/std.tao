@@ -1,3 +1,32 @@
+class Any =
+    type_name : Str
+
+for A member A of Any =
+    type_name =
+        # No way to specify type hints for intrinsics yet so...
+        # ...we create an empty list of the target type...
+        let xs : [A] = [] in
+        # ...then pass the list to the intrinsic, which uwraps the list and extracts the type,
+        # generates its name
+        @type_name(xs)
+
+def type_name A < Any =
+    \ x : A => A.type_name
+
+class Default =
+    default : Self
+
+member Nat of Default =
+    default = 0
+
+for A member Maybe A of Default =
+    default = None
+
+for A < Default, B < Default member (A, B) of Default =
+    default = (A.default, B.default)
+
+def zero = Nat.default
+
 data Maybe A =
     | Just A
     \ None
@@ -34,6 +63,6 @@ def fold A, B : A -> (A -> B -> A) -> [B] -> A =
 def sum : [Nat] -> Nat = fold(0, fn x, y => x + y)
 
 # TODO: Remove when libs are supported
-$[main] def main = [1, 2, 3, 4]:sum
+$[main] def main = <Maybe Nat>.default#[1, 2, 3, 4]:sum
 
 type Str = [Char]

@@ -49,6 +49,7 @@ pub enum InferError {
     TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>),
     RecursiveAlias(AliasId, TyVar, Span),
     PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
+    AmbiguousClassItem(SrcNode<Ident>, Vec<ClassId>),
 }
 
 #[derive(Clone)]
@@ -58,15 +59,20 @@ enum Constraint {
     Unary(SrcNode<ast::UnaryOp>, TyVar, TyVar),
     Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
     Impl(TyVar, ClassId, Span),
+    ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TyVar(usize);
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ClassVar(usize);
+
 pub struct Infer<'a> {
     ctx: &'a mut Context,
     gen_scope: Option<GenScopeId>,
     vars: Vec<(Span, TyInfo, Result<(), ()>)>,
+    class_vars: Vec<(Span, Option<ClassId>)>,
     constraints: VecDeque<Constraint>,
     errors: Vec<InferError>,
     self_type: Option<TyVar>,
@@ -78,6 +84,7 @@ impl<'a> Infer<'a> {
             ctx,
             gen_scope,
             vars: Vec::new(),
+            class_vars: Vec::new(),
             constraints: VecDeque::new(),
             errors: Vec::new(),
             self_type: None,
@@ -129,9 +136,30 @@ impl<'a> Infer<'a> {
     }
 
     fn set_error(&mut self, ty: TyVar) {
-        match self.vars[ty.0].1.clone() {
-            TyInfo::Ref(x) => self.set_error(x),
-            _ => self.vars[ty.0].2 = Err(()),
+        if self.vars[ty.0].2.is_ok() {
+            self.vars[ty.0].2 = Err(());
+            match self.vars[ty.0].1.clone() {
+                TyInfo::Ref(x) => return self.set_error(x),
+                TyInfo::Error(_)
+                | TyInfo::Unknown(_)
+                | TyInfo::Prim(_)
+                | TyInfo::Gen(..)
+                | TyInfo::SelfType => {},
+                TyInfo::List(item) => self.set_error(item),
+                TyInfo::Tuple(fields) => fields
+                    .into_iter()
+                    .for_each(|field| self.set_error(field)),
+                TyInfo::Record(fields) => fields
+                    .into_iter()
+                    .for_each(|(_, field)| self.set_error(field)),
+                TyInfo::Func(i, o) => {
+                    self.set_error(i);
+                    self.set_error(o);
+                },
+                TyInfo::Data(_, args) => args
+                    .into_iter()
+                    .for_each(|arg| self.set_error(arg)),
+            }
         }
     }
 
@@ -210,6 +238,13 @@ impl<'a> Infer<'a> {
 
     pub fn make_impl(&mut self, ty: TyVar, class: ClassId, span: Span) {
         self.constraints.push_back(Constraint::Impl(ty, class, span));
+    }
+
+    pub fn make_class_field(&mut self, ty: TyVar, field_name: SrcNode<Ident>, field_ty: TyVar, span: Span) -> ClassVar {
+        let class = ClassVar(self.class_vars.len());
+        self.class_vars.push((span, None));
+        self.constraints.push_back(Constraint::ClassField(ty, class, field_name, field_ty, span));
+        class
     }
 
     pub fn emit(&mut self, err: InferError) {
@@ -500,6 +535,84 @@ impl<'a> Infer<'a> {
                     self.make_eq(output, result_ty, self.span(output));
                 })),
             Constraint::Impl(ty, obligation, span) => self.resolve_obligation(ty, obligation, span),
+            Constraint::ClassField(ty, class, field, field_ty, span) => self.try_resolve_class_from_field(ty, class, field.clone(), field_ty, span),
+        }
+    }
+
+    fn try_resolve_class_from_field(&mut self, ty: TyVar, class_var: ClassVar, field: SrcNode<Ident>, field_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
+        let possible_classes: Vec<_> = match self.follow_info(ty) {
+            TyInfo::Unknown(_) => return None, // We don't know what the type is yet, so how can we possibly determine what classes it is a member of?
+            TyInfo::Gen(gen_idx, gen_scope, _) => {
+                let gen_scope = self.ctx.tys.get_gen_scope(gen_scope);
+                gen_scope
+                    .find_obligations_for(self.ctx, gen_idx)
+                    .into_iter()
+                    // Filter by class obligations that contain the given field
+                    .filter(|class_id| self.ctx.classes.get(*class_id).unwrap().field(*field).is_some())
+                    .collect()
+            },
+            _ => self.ctx.classes
+                .iter()
+                // Filter by classes that contain the given field
+                .filter(|(_, class)| class.field(*field).is_some())
+                // Filter further by classes that have members that cover our type
+                .filter(|(class_id, _)| self.ctx.classes
+                    .members_of(*class_id)
+                    .find(|member| Self::covers_var(self, ty, member.member))
+                    .is_some())
+                .map(|(class_id, _)| class_id)
+                .collect(),
+        };
+
+        match possible_classes.len() {
+            0 => Some(Err(InferError::NoSuchField(ty, span, field))),
+            1 => {
+                let class_id = *possible_classes.first().unwrap();
+                self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
+                self.make_impl(ty, class_id, span);
+                let field_ty_id = **self.ctx.classes
+                    .get(class_id)
+                    .unwrap()
+                    .field(*field)
+                    .unwrap();
+                let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|_, _, _| panic!("Tried to substitute generic type for non-generic class"), Some(ty));
+                self.make_eq(
+                    field_ty,
+                    inst_field_ty,
+                    field.span(),
+                );
+                Some(Ok(()))
+            },
+            _ => {
+                // TODO: Return `None` here instead, wait for more inference info
+                self.set_error(field_ty);
+                Some(Err(InferError::AmbiguousClassItem(field, possible_classes)))
+            },
+        }
+    }
+
+    // Returns true if ty covers var (i.e: var is a structural subset of ty)
+    fn covers_var(infer: &Infer, var: TyVar, ty: TyId) -> bool {
+        match (infer.follow_info(var), infer.ctx.tys.get(ty)) {
+            (_, Ty::Gen(_, _)) => true, // Blanket impls match everything
+            (TyInfo::Prim(x), Ty::Prim(y)) if x == y => true,
+            (TyInfo::List(x), Ty::List(y)) => Self::covers_var(infer, x, y),
+            (TyInfo::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .all(|(x, y)| Self::covers_var(infer, x, y)),
+            (TyInfo::Record(xs), Ty::Record(ys)) if xs.len() == ys.len() => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .all(|((_, x), (_, y))| Self::covers_var(infer, x, y)),
+            (TyInfo::Func(x_i, x_o), Ty::Func(y_i, y_o)) => {
+                Self::covers_var(infer, x_i, y_i) && Self::covers_var(infer, x_o, y_o)
+            },
+            (TyInfo::Data(x, xs), Ty::Data(y, ys)) if x == y && xs.len() == ys.len() => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .all(|(x, y)| Self::covers_var(infer, x, y)),
+            _ => false,
         }
     }
 
@@ -531,23 +644,10 @@ impl<'a> Infer<'a> {
                 }
             },
             _ => {
-                // Returns true if ty covers var (i.e: var is a structural subset of ty)
-                fn covers_var(infer: &Infer, var: TyVar, ty: TyId) -> bool {
-                    match (infer.follow_info(var), infer.ctx.tys.get(ty)) {
-                        (_, Ty::Gen(_, _)) => true, // Blanket impls match everything
-                        (TyInfo::Prim(a), Ty::Prim(b)) if a == b => true,
-                        (TyInfo::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
-                            .into_iter()
-                            .zip(ys.into_iter())
-                            .all(|(x, y)| covers_var(infer, x, y)),
-                        _ => false,
-                    }
-                }
-
                 // Find a class member declaration that covers our type
                 let covering_member = self.ctx.classes
                     .members_of(obligation)
-                    .find(|member| covers_var(self, ty, member.member));
+                    .find(|member| Self::covers_var(self, ty, member.member));
 
                 if let Some(covering_member) = covering_member {
                     // Link the generic types of a class member with type variables in the current scope so obligations
@@ -656,6 +756,7 @@ impl<'a> Infer<'a> {
                 InferError::TypeDoesNotFulfil(class, ty, span, gen_span) => Error::TypeDoesNotFulfil(class, checked.reify(ty), span, gen_span),
                 InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),
                 InferError::PatternNotSupported(lhs, op, rhs, span) => Error::PatternNotSupported(checked.reify(lhs), op, checked.reify(rhs), span),
+                InferError::AmbiguousClassItem(field, candidate_classes) => Error::AmbiguousClassItem(field, candidate_classes),
             })
             .collect();
 
@@ -708,5 +809,9 @@ impl<'a> Checked<'a> {
         let ty = self.reify_inner(var);
         self.cache.insert(var, ty);
         ty
+    }
+
+    pub fn reify_class(&mut self, class: ClassVar) -> Option<ClassId> {
+        self.infer.class_vars[class.0].1
     }
 }

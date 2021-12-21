@@ -49,6 +49,10 @@ impl Classes {
         self.classes[class.0].as_ref()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (ClassId, &Class)> {
+        self.classes.iter().enumerate().map(|(i, class)| (ClassId(i), class.as_ref().unwrap()))
+    }
+
     pub fn lookup(&self, name: Ident) -> Option<ClassId> {
         self.lut.get(&name).map(|(_, id, _)| *id)
     }
@@ -83,36 +87,6 @@ impl Classes {
         self.member_lut.entry(class).or_default().push(id);
     }
 
-    // TODO: Remove this
-    pub fn lookup_member(&self, ctx: &Context, ty: TyId, class: ClassId) -> Option<&Member> {
-        // Returns true if member covers ty
-        fn covers(ctx: &Context, member: TyId, ty: TyId) -> bool {
-            match (ctx.tys.get(member), ctx.tys.get(ty)) {
-                (Ty::Gen(_, _), _) => true, // Blanket impls match everything
-                (Ty::Prim(a), Ty::Prim(b)) if a == b => true,
-                (Ty::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
-                    .into_iter()
-                    .zip(ys.into_iter())
-                    .all(|(x, y)| covers(ctx, x, y)),
-                _ => false,
-            }
-        }
-
-        self.member_lut
-            .get(&class)
-            .and_then(|xs| {
-                let candidates = xs
-                    .iter()
-                    .map(|m| self.get_member(*m).expect("Member must be defined before lookup"))
-                    .filter(|member| covers(ctx, member.member, ty))
-                    .collect::<Vec<_>>();
-
-                assert!(candidates.len() <= 1, "Multiple member candidates detected during lowering <{:?} as {:?}>, incoherence has occurred", ctx.tys.get(ty), class);
-
-                candidates.first().copied()
-            })
-    }
-
     // TODO: Is this needed?
     pub fn lookup_member_concrete(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
         // Returns true if member covers ty
@@ -120,7 +94,19 @@ impl Classes {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
                 (Ty::Gen(_, _), _) => true, // Blanket impls match everything
                 (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
+                (Ty::List(x), ConTy::List(y)) => covers(hir, ctx, x, *y),
                 (Ty::Tuple(xs), ConTy::Tuple(ys)) if xs.len() == ys.len() => xs
+                    .into_iter()
+                    .zip(ys.into_iter())
+                    .all(|(x, y)| covers(hir, ctx, x, *y)),
+                (Ty::Record(xs), ConTy::Record(ys)) if xs.len() == ys.len() => xs
+                    .into_iter()
+                    .zip(ys.into_iter())
+                    .all(|((_, x), (_, y))| covers(hir, ctx, x, *y)),
+                (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
+                    covers(hir, ctx, x_i, *y_i) && covers(hir, ctx, x_o, *y_o)
+                },
+                (Ty::Data(x, xs), ConTy::Data(y, ys)) if x == *y && xs.len() == ys.len() => xs
                     .into_iter()
                     .zip(ys.into_iter())
                     .all(|(x, y)| covers(hir, ctx, x, *y)),

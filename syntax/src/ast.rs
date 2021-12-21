@@ -190,8 +190,9 @@ pub enum Expr {
     Func(Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>),
     Apply(SrcNode<Self>, SrcNode<Self>),
     Cons(SrcNode<Ident>, SrcNode<Self>),
-    ClassAccess(SrcNode<Ident>, SrcNode<Ident>),
+    ClassAccess(SrcNode<Type>, SrcNode<Ident>),
 
+    Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Debug(SrcNode<Self>),
 }
 

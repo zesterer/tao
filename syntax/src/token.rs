@@ -69,6 +69,7 @@ pub enum Token {
     Op(Op),
     TermIdent(ast::Ident),
     TypeIdent(ast::Ident),
+    Intrinsic(ast::Ident),
     Comma,
     Separator,
     Colon,
@@ -111,6 +112,7 @@ impl fmt::Display for Token {
             Token::Op(op) => write!(f, "{}", op),
             Token::TermIdent(ident) => write!(f, "{}", ident),
             Token::TypeIdent(ident) => write!(f, "{}", ident),
+            Token::Intrinsic(ident) => write!(f, "@{}", ident),
             Token::Comma => write!(f, ","),
             Token::Separator => write!(f, "::"),
             Token::Colon => write!(f, ":"),
@@ -215,6 +217,11 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .map(Token::Str)
         .labelled("string");
 
+    let intrinsic = just('@')
+        .ignore_then(text::ident())
+        .map(ast::Ident::new)
+        .map(Token::Intrinsic);
+
     let word = text::ident().map(|s: String| match s.as_str() {
         "data" => Token::Data,
         "type" => Token::Type,
@@ -252,14 +259,17 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .ignored()
         .repeated();
 
-    let token = ctrl
-        .or(word)
-        .or(num)
-        .or(nat)
-        .or(op)
-        .or(delim)
-        .or(string)
-        .or(r#char)
+    let token = choice((
+        ctrl,
+        word,
+        num,
+        nat,
+        op,
+        delim,
+        string,
+        r#char,
+        intrinsic,
+    ))
         .map_with_span(move |token, span| (token, span))
         .padded()
         .recover_with(skip_then_retry_until([]));

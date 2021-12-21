@@ -7,41 +7,6 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn from_hir(hir: &HirContext) -> (Self, Vec<Error>) {
-        let mut this = Self {
-            reprs: Reprs::default(),
-            procs: Procs::default(),
-            entry: None,
-        };
-
-        let mut errors = Vec::new();
-
-        let mut entries = hir.defs
-            .iter()
-            .filter_map(|(id, def)| def.attr
-                .iter()
-                .find(|attr| attr.as_str() == "main")
-                .zip(Some((id, def))));
-
-        if let Some((entry_attr, (id, main))) = entries.next() {
-            if let Some((_, (_, second))) = entries.next() {
-                errors.push(Error::MultipleEntryPoints(main.name.span(), second.name.span()));
-            }
-
-            let gen_scope = hir.tys.get_gen_scope(main.gen_scope);
-            if gen_scope.len() == 0 {
-                let main = lower::lower_def(&mut this, hir, id, Vec::new());
-                this.entry = Some(main);
-            } else {
-                errors.push(Error::GenericEntryPoint(main.name.clone(), gen_scope.span, entry_attr.span()));
-            }
-        } else {
-            errors.push(Error::NoEntryPoint(hir.root_span));
-        }
-
-        (this, errors)
-    }
-
     pub fn from_concrete(hir: &HirContext, con: &ConContext) -> Self {
         let mut this = Self {
             reprs: Reprs::default(),
@@ -322,6 +287,17 @@ impl Context {
             },
             hir::Expr::ClassAccess(ty, class, field) => panic!("Class access should not still exist during MIR lowering"),
             hir::Expr::Debug(inner) => mir::Expr::Debug(self.lower_expr(hir, con, inner)),
+            hir::Expr::Intrinsic(name, args) => {
+                match name.inner() {
+                    hir::Intrinsic::TypeName => {
+                        let name = match con.get_ty(*args.first().expect("type_name intrinsic must have an argument").meta()) {
+                            ConTy::List(inner) => con.display(hir, *inner).to_string(),
+                            _ => panic!("type_name argument must be list of type"),
+                        };
+                        mir::Expr::Const(Const::Str(Intern::new(name)))
+                    },
+                }
+            },
         };
 
         MirNode::new(expr, self.lower_ty(hir, con, *con_expr.meta()))

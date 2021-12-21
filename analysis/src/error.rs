@@ -18,6 +18,7 @@ pub enum Error {
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
     NoSuchClassItem(SrcNode<Ident>, SrcNode<Ident>),
+    AmbiguousClassItem(SrcNode<Ident>, Vec<ClassId>),
     MissingClassItem(Span, SrcNode<Ident>, SrcNode<Ident>),
     RecursiveAlias(AliasId, TyId, Span),
     DuplicateTypeName(Ident, Span, Span),
@@ -34,6 +35,7 @@ pub enum Error {
     NoEntryPoint(Span),
     MultipleEntryPoints(Span, Span),
     GenericEntryPoint(SrcNode<Ident>, Span, Span),
+    InvalidIntrinsic(SrcNode<Ident>),
 }
 
 impl Error {
@@ -297,6 +299,24 @@ impl Error {
                     (entry, format!("Declared as an entry point because of this attribute"), Color::Yellow),
                 ],
                 vec![format!("A program cannot be generic over types")],
+            ),
+            Error::AmbiguousClassItem(item, candidate_classes) => (
+                format!("Class item {} is ambiguous", (*item).fg(Color::Red)),
+                vec![
+                    (item.span(), format!("Item could be from multiple classes"), Color::Red),
+                ],
+                vec![format!("Possible candidates are members of {}", candidate_classes
+                    .into_iter()
+                    .map(|class| format!("{}", (ctx.classes.get(class).unwrap().name).fg(Color::Blue)))
+                    .collect::<Vec<_>>()
+                    .join(", "))],
+            ),
+            Error::InvalidIntrinsic(intrinsic) => (
+                format!("Intrinsic {} does not exist", (*intrinsic).fg(Color::Red)),
+                vec![
+                    (intrinsic.span(), format!("No such intrinsic"), Color::Red),
+                ],
+                vec![],
             ),
         };
 

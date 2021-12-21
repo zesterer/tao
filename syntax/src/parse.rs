@@ -403,11 +403,18 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .ignore_then(branches.clone())
             .map(ast::Expr::Func);
 
-        let class_access = type_ident_parser()
+        let class_access = type_parser()
             .map_with_span(SrcNode::new)
+            .delimited_by(Token::Op(Op::Less), Token::Op(Op::More))
+            .or(type_ident_parser()
+                .map_with_span(SrcNode::new)
+                .map(|ty| {
+                    let ty_span = ty.span();
+                    SrcNode::new(ast::Type::Data(ty, Vec::new()), ty_span)
+                }))
             .then(just(Token::Op(Op::Dot))
                 .ignore_then(term_ident_parser().map_with_span(SrcNode::new)))
-            .map(|(class, field)| ast::Expr::ClassAccess(class, field));
+            .map(|(ty, field)| ast::Expr::ClassAccess(ty, field));
 
         let cons = type_ident_parser()
             .map_with_span(SrcNode::new)
@@ -452,6 +459,11 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .map(|(inputs, branches)| ast::Expr::Match(inputs, branches))
             .boxed();
 
+        let intrinsic = select! { Token::Intrinsic(name) => name }
+            .map_with_span(SrcNode::new)
+            .then(paren_exp_list.clone().or_not())
+            .map(|(name, args)| ast::Expr::Intrinsic(name, args.flatten().unwrap_or_default()));
+
         let atom = litr
             .or(ident)
             .or(nested_parser(expr, Delimiter::Paren, |_| ast::Expr::Error))
@@ -464,6 +476,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(func)
             .or(class_access)
             .or(cons)
+            .or(intrinsic)
             .map_with_span(SrcNode::new)
             .boxed();
 

@@ -92,8 +92,14 @@ impl Reify for hir::Expr<InferMeta> {
             hir::Expr::Func(param, body) => hir::Expr::Func(TyNode::new(*param, (param.meta().0, infer.reify(param.meta().1))), body.reify(infer)),
             hir::Expr::Apply(f, param) => hir::Expr::Apply(f.reify(infer), param.reify(infer)),
             hir::Expr::Cons(name, variant, a) => hir::Expr::Cons(name, variant, a.reify(infer)),
-            hir::Expr::ClassAccess(ty, class, field) => hir::Expr::ClassAccess(ty, class, field),
+            hir::Expr::ClassAccess((ty_span, ty), class, field) => {
+                hir::Expr::ClassAccess((ty_span, infer.reify(ty)), infer.reify_class(class), field)
+            },
             hir::Expr::Debug(inner) => hir::Expr::Debug(inner.reify(infer)),
+            hir::Expr::Intrinsic(name, args) => hir::Expr::Intrinsic(name, args
+                .into_iter()
+                .map(|arg| arg.reify(infer))
+                .collect()),
         };
 
         TyNode::new(expr, (span, infer.reify(ty)))

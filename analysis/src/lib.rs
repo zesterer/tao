@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types, option_zip, bool_to_option)]
+#![feature(arbitrary_self_types, option_zip, bool_to_option, never_type)]
 
 pub mod class;
 pub mod concrete;
@@ -21,8 +21,8 @@ pub use crate::{
     def::{Defs, Def, DefId},
     error::Error,
     exhaustivity::{exhaustivity, ExamplePat},
-    hir::{InferExpr, InferBinding, TyExpr, TyBinding, ConBinding, ConExpr},
-    infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo},
+    hir::{InferExpr, InferBinding, TyExpr, TyBinding, ConBinding, ConExpr, Intrinsic},
+    infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo, ClassVar},
     lower::{Scope, ToHir},
     reify::Reify,
     ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, Obligation},

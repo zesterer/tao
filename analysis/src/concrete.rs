@@ -132,7 +132,7 @@ impl ConContext {
                     already_seen.push(data);
                     let data = hir.datas.get_data(data);
                     if data.cons.len() == 1 {
-                        todo!();
+                        todo!(); // TODO: Add concretized data types
                         // ty = self.concretize_ty(hir, data.cons[0].1, &TyInsts {
                         //     self_ty: None,
                         //     gen: &args,
@@ -265,9 +265,9 @@ impl ConContext {
             ),
             hir::Expr::Cons(data, variant, inner) => hir::Expr::Cons(data.clone(), *variant, self.lower_expr(hir, inner, ty_insts)),
             hir::Expr::ClassAccess(ty, class, field) => {
-                let self_ty = self.concretize_ty(hir, *ty, ty_insts);
+                let self_ty = self.concretize_ty(hir, ty.1, ty_insts);
                 let member = hir.classes
-                    .lookup_member_concrete(hir, self, self_ty, *class)
+                    .lookup_member_concrete(hir, self, self_ty, class.expect("Uninferred class during concretization"))
                     .expect("Could not select member candidate");
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
@@ -310,8 +310,64 @@ impl ConContext {
                 }).into_inner()
             },
             hir::Expr::Debug(inner) => hir::Expr::Debug(self.lower_expr(hir, inner, ty_insts)),
+            hir::Expr::Intrinsic(name, args) => hir::Expr::Intrinsic(name.clone(), args
+                .into_iter()
+                .map(|arg| self.lower_expr(hir, arg, ty_insts))
+                .collect()),
         };
 
         ConNode::new(expr, self.concretize_ty(hir, ty_expr.meta().1, ty_insts))
+    }
+
+    pub fn display<'a>(&'a self, hir: &'a Context, ty: ConTyId) -> ConTyDisplay<'a> {
+        ConTyDisplay {
+            con_ctx: self,
+            datas: &hir.datas,
+            ty,
+            lhs_exposed: false,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ConTyDisplay<'a> {
+    con_ctx: &'a ConContext,
+    datas: &'a Datas,
+    ty: ConTyId,
+    lhs_exposed: bool,
+}
+
+impl<'a> ConTyDisplay<'a> {
+    fn with_ty(&self, ty: ConTyId, lhs_exposed: bool) -> Self {
+        Self { ty, lhs_exposed, ..self.clone() }
+    }
+}
+
+impl<'a> fmt::Display for ConTyDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.con_ctx.get_ty(self.ty).clone() {
+            ConTy::Prim(prim) => write!(f, "{}", prim),
+            ConTy::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
+            ConTy::Tuple(fields) => write!(f, "({}{})", fields
+                .iter()
+                .map(|field| format!("{}", self.with_ty(*field, false)))
+                .collect::<Vec<_>>()
+                .join(", "), if fields.len() == 1 { "," } else { "" }),
+            ConTy::Record(fields) => write!(f, "{{ {} }}", fields
+                .into_iter()
+                .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
+                .collect::<Vec<_>>()
+                .join(", ")),
+            ConTy::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
+            ConTy::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
+            ConTy::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", self.datas.get_data(name).name, params
+                .iter()
+                .map(|param| format!(" {}", self.with_ty(*param, true)))
+                .collect::<String>()),
+            ConTy::Data(name, params) => write!(f, "{}{}", self.datas.get_data(name).name, params
+                .iter()
+                .map(|param| format!(" {}", self.with_ty(*param, true)))
+                .collect::<String>()),
+        }
     }
 }

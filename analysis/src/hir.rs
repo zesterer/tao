@@ -2,8 +2,28 @@ use super::*;
 
 pub use ast::Literal as Literal;
 
+pub trait Meta {
+    type Ty;
+    type Class;
+}
+
+impl Meta for InferMeta {
+    type Ty = TyVar;
+    type Class = ClassVar;
+}
+
+impl Meta for TyMeta {
+    type Ty = TyId;
+    type Class = Option<ClassId>;
+}
+
+impl Meta for ConMeta {
+    type Ty = ConTyId;
+    type Class = !;
+}
+
 #[derive(Debug)]
-pub enum Pat<M> {
+pub enum Pat<M: Meta> {
     Error,
     Wildcard,
     Literal(Literal),
@@ -17,12 +37,12 @@ pub enum Pat<M> {
 }
 
 #[derive(Debug)]
-pub struct Binding<M> {
+pub struct Binding<M: Meta> {
     pub pat: SrcNode<Pat<M>>,
     pub name: Option<SrcNode<Ident>>,
 }
 
-impl<M> Binding<M> {
+impl<M: Meta> Binding<M> {
     pub fn from_pat(pat: SrcNode<Pat<M>>) -> Self {
         Self { pat, name: None }
     }
@@ -93,8 +113,13 @@ pub type InferBinding = InferNode<Binding<InferMeta>>;
 pub type TyBinding = TyNode<Binding<TyMeta>>;
 pub type ConBinding = ConNode<Binding<ConMeta>>;
 
+#[derive(Clone, Debug)]
+pub enum Intrinsic {
+    TypeName,
+}
+
 #[derive(Debug)]
-pub enum Expr<M> {
+pub enum Expr<M: Meta> {
     Error,
     Literal(Literal),
     // TODO: replace with `Item` when scoping is added
@@ -114,9 +139,10 @@ pub enum Expr<M> {
     Cons(SrcNode<DataId>, Ident, Node<Self, M>),
 
     // member, class, field
-    ClassAccess(TyId, ClassId, SrcNode<Ident>),
+    ClassAccess(M, M::Class, SrcNode<Ident>),
 
     Debug(Node<Self, M>),
+    Intrinsic(SrcNode<Intrinsic>, Vec<Node<Self, M>>),
 }
 
 pub type InferExpr = InferNode<Expr<InferMeta>>;
