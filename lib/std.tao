@@ -25,8 +25,6 @@ for A member Maybe A of Default =
 for A < Default, B < Default member (A, B) of Default =
     default = (A.default, B.default)
 
-def zero = Nat.default
-
 data Maybe A =
     | Just A
     \ None
@@ -62,7 +60,44 @@ def fold A, B : A -> (A -> B -> A) -> [B] -> A =
 
 def sum : [Nat] -> Nat = fold(0, fn x, y => x + y)
 
-# TODO: Remove when libs are supported
-$[main] def main = <Maybe Nat>.default#[1, 2, 3, 4]:sum
+data Ordering =
+    | Less
+    | Greater
+    \ Eq
+
+class Ord =
+    cmp : Self -> Self -> Ordering
+
+member Nat of Ord =
+    cmp = fn x, y => if x < y
+        then Less
+        else if x > y
+        then Greater
+        else Eq
+
+def less A < Ord =
+    \ x, y => match A.cmp(x, y) in
+        | Less => True
+        \ _ => False
+
+def greater A < Ord =
+    \ x, y => match A.cmp(x, y) in
+        | Greater => True
+        \ _ => False
+
+def filter A : (A -> Bool) -> [A] -> [A] =
+    | _, [] => []
+    \ f, [x .. xs] => (if x:f then [x] else []) ++ xs:filter(f)
+
+def qsort A < Ord : [A] -> [A] =
+    | [] => []
+    \ xs ~ [mid ..] =>
+        xs:filter(fn x => less(x, mid)):qsort
+            ++
+        [mid]
+            ++
+        xs:filter(fn x => greater(x, mid)):qsort
+
+$[main] def main = [7, 9, 2, 1, 5, 8, 3]:qsort
 
 type Str = [Char]

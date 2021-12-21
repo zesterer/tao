@@ -225,7 +225,7 @@ impl ConContext {
                 .iter()
                 .map(|field| self.lower_expr(hir, field, ty_insts))
                 .collect()),
-            hir::Expr::List(items) => hir::Expr::Tuple(items
+            hir::Expr::List(items) => hir::Expr::List(items
                 .iter()
                 .map(|item| self.lower_expr(hir, item, ty_insts))
                 .collect()),

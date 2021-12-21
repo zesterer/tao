@@ -283,8 +283,10 @@ impl Expr {
                     Expr::Intrinsic(AddNat | AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Intrinsic(SubNat | SubInt, args) => write!(f, "{} - {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Intrinsic(MulNat | MulInt, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(LessNat, args) => write!(f, "{} < {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Intrinsic(MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
                     Expr::Match(pred, arms) => {
                         write!(f, "match {} in", DisplayExpr(pred, self.1))?;

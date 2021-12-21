@@ -541,6 +541,11 @@ impl<'a> Infer<'a> {
 
     fn try_resolve_class_from_field(&mut self, ty: TyVar, class_var: ClassVar, field: SrcNode<Ident>, field_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
         let possible_classes: Vec<_> = match self.follow_info(ty) {
+            TyInfo::Error(_) => {
+                self.set_error(ty);
+                self.set_error(field_ty);
+                return Some(Ok(())); // Resolving an error type always succeeds
+            }
             TyInfo::Unknown(_) => return None, // We don't know what the type is yet, so how can we possibly determine what classes it is a member of?
             TyInfo::Gen(gen_idx, gen_scope, _) => {
                 let gen_scope = self.ctx.tys.get_gen_scope(gen_scope);
@@ -618,6 +623,10 @@ impl<'a> Infer<'a> {
 
     fn resolve_obligation(&mut self, ty: TyVar, obligation: ClassId, span: Span) -> Option<Result<(), InferError>> {
         match self.follow_info(ty) {
+            TyInfo::Error(_) => {
+                self.set_error(ty);
+                return Some(Ok(())); // Resolving an error type always succeeds
+            },
             TyInfo::Unknown(_) => None, // No idea if it implements the trait yet
             TyInfo::Gen(gen_idx, gen_scope, _) => {
                 let gen_scope = self.ctx.tys.get_gen_scope(gen_scope);

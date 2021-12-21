@@ -14,10 +14,16 @@ pub use {
 pub trait Pass: Any {
     fn apply(&mut self, ctx: &mut Context);
 
-    fn run(&mut self, ctx: &mut Context) {
+    fn run(&mut self, ctx: &mut Context, debug: bool) {
         self.apply(ctx);
-        opt::check(ctx);
-        // println!("\nMIR after {}:\n\n{}", type_name::<Self>(), ctx.procs.get(ctx.entry.unwrap()).unwrap().body.print());
+
+        if debug {
+            println!("\nMIR after {}:\n\n", type_name::<Self>());
+            for (id, proc) in ctx.procs.iter() {
+                println!("PROCEDURE {:?}\n\n{}\n", id, proc.body.print());
+            }
+            opt::check(ctx);
+        }
     }
 }
 
@@ -98,6 +104,27 @@ impl Repr {
 }
 
 impl Binding {
+    pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
+        match &self.pat {
+            mir::Pat::Wildcard | mir::Pat::Const(_) => {},
+            mir::Pat::Single(inner) => f(inner),
+            mir::Pat::Add(lhs, _) => f(lhs),
+            mir::Pat::Tuple(fields) => fields
+                .iter()
+                .for_each(|field| f(field)),
+            mir::Pat::ListExact(items) => items
+                .iter()
+                .for_each(|item| f(item)),
+            mir::Pat::ListFront(items, tail) => {
+                items
+                    .iter()
+                    .for_each(|item| f(item));
+                tail.as_ref().map(|tail| f(tail));
+            },
+            mir::Pat::Variant(_, inner) => f(inner),
+        }
+    }
+
     fn visit_inner(
         self: &mut MirNode<Self>,
         order: VisitOrder,
@@ -301,37 +328,52 @@ pub fn check(ctx: &Context) {
         match (&binding.pat, repr) {
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
-            (_, repr) => panic!("Inconsistency between binding\n\n {:?}\n\nand repr\n\n {:?}", binding, repr),
+            (Pat::Variant(_, _), Repr::Data(_, _)) => {},
+            (Pat::ListExact(_), Repr::List(_)) => {},
+            (Pat::ListFront(_, _), Repr::List(_)) => {},
+            (_, repr) => panic!("Inconsistency between binding\n\n {:?}\n\nand repr {:?}", binding, repr),
         }
+
+        binding.for_children(|binding| check_binding(ctx, binding, binding.meta(), stack));
     }
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Ident, Repr)>) {
         match (expr, repr) {
+            (Expr::Const(Const::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Expr::Local(local), repr) if &stack
                 .iter()
                 .rev()
                 .find(|(name, _)| name == local)
                 .unwrap_or_else(|| panic!("Failed to find local {} in scope", local)).1 == repr => {},
-            (Expr::Func(_, _, _), Repr::Func(_, _)) => {},
-            (Expr::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
+            (Expr::Func(_, i, body), Repr::Func(i_repr, _)) => {
+                stack.push((*i, (**i_repr).clone()));
+                visit_expr(ctx, body, stack);
+                stack.pop();
+            },
+            (Expr::Apply(f, arg), _) => {
+                assert!(matches!(f.meta(), Repr::Func(_, _)));
+            },
+            (Expr::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {
+                expr.for_children(|expr| visit_expr(ctx, expr, stack));
+            },
             (Expr::Match(pred, arms), repr) => {
                 for (arm, body) in arms {
                     // TODO: visit binding
                     check_binding(ctx, arm.inner(), pred.meta(), stack);
                 }
+                expr.for_children(|expr| visit_expr(ctx, expr, stack));
             },
             // (Expr::Data(_, _, _), Repr::Func(_, _)) => {},
-            (expr, repr) => panic!("Inconsistency between expression\n\n {:?}\n\nand repr\n\n {:?}", expr, repr),
+            (expr, repr) => panic!("Inconsistency between expression\n\n {:?}\n\nand repr {:?}", expr, repr),
         }
     }
 
     fn visit_expr(ctx: &Context, expr: &MirNode<Expr>, stack: &mut Vec<(Ident, Repr)>) {
         check_expr(ctx, expr.inner(), expr.meta(), stack);
-
-        expr.for_children(|expr| visit_expr(ctx, expr, stack));
     }
 
-    // for (id, proc) in ctx.procs.iter() {
-    //     visit_expr(ctx, &proc.body, &mut Vec::new());
-    // }
+    for (id, proc) in ctx.procs.iter() {
+        println!("Checking {:?}...", id);
+        visit_expr(ctx, &proc.body, &mut Vec::new());
+    }
 }
