@@ -697,7 +697,6 @@ pub fn data_parser() -> impl Parser<ast::Data> {
             name,
         })
         .boxed()
-        .map_err_with_span(|err, span| err.while_parsing(span, "data"))
 }
 
 pub fn alias_parser() -> impl Parser<ast::Alias> {
@@ -713,7 +712,6 @@ pub fn alias_parser() -> impl Parser<ast::Alias> {
             ty,
         })
         .boxed()
-        .map_err_with_span(|err, span| err.while_parsing(span, "type alias"))
 }
 
 pub fn def_parser() -> impl Parser<ast::Def> {
@@ -740,7 +738,6 @@ pub fn def_parser() -> impl Parser<ast::Def> {
             body,
         })
         .boxed()
-        .map_err_with_span(|err, span| err.while_parsing(span, "definition"))
 }
 
 pub fn class_parser() -> impl Parser<ast::Class> {
@@ -770,7 +767,6 @@ pub fn class_parser() -> impl Parser<ast::Class> {
             items: items.unwrap_or_default(),
         })
         .boxed()
-        .map_err_with_span(|err, span| err.while_parsing(span, "class"))
 }
 
 pub fn member_parser() -> impl Parser<ast::Member> {
@@ -806,7 +802,6 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             items: items.unwrap_or_default(),
         })
         .boxed()
-        .map_err_with_span(|err, span| err.while_parsing(span, "class member"))
 }
 
 pub fn item_parser() -> impl Parser<ast::Item> {

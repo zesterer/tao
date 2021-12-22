@@ -40,16 +40,7 @@ dependencies = [
 [[package]]
 name = "ariadne"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7080ae01b2f0c312065d4914cd0f0de045eb8832e9415b355106a6cff3073cb4"
-dependencies = [
- "yansi",
-]
-
-[[package]]
-name = "ariadne"
-version = "0.1.3"
-source = "git+https://github.com/zesterer/ariadne.git#c2b5e3450348d56afc616e2e7eea412c44080a38"
+source = "git+https://github.com/zesterer/ariadne.git#689782a3531c3d4a3e53af998b059c733729c42e"
 dependencies = [
  "yansi",
 ]
@@ -533,7 +524,7 @@ dependencies = [
 name = "tao"
 version = "0.1.0"
 dependencies = [
- "ariadne 0.1.3 (git+https://github.com/zesterer/ariadne.git)",
+ "ariadne",
  "internment",
  "structopt",
  "tao_analysis",
@@ -546,7 +537,7 @@ dependencies = [
 name = "tao_analysis"
 version = "0.1.0"
 dependencies = [
- "ariadne 0.1.3 (git+https://github.com/zesterer/ariadne.git)",
+ "ariadne",
  "hashbrown 0.11.2",
  "lazy_static",
  "ranges",
@@ -558,7 +549,7 @@ dependencies = [
 name = "tao_middle"
 version = "0.1.0"
 dependencies = [
- "ariadne 0.1.3 (git+https://github.com/zesterer/ariadne.git)",
+ "ariadne",
  "hashbrown 0.11.2",
  "internment",
  "rustyline",
@@ -570,7 +561,7 @@ dependencies = [
 name = "tao_syntax"
 version = "0.1.0"
 dependencies = [
- "ariadne 0.1.3 (git+https://github.com/zesterer/ariadne.git)",
+ "ariadne",
  "chumsky",
  "hashbrown 0.11.2",
  "internment",
@@ -581,7 +572,6 @@ dependencies = [
 name = "tao_vm"
 version = "0.1.0"
 dependencies = [
- "ariadne 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "hashbrown 0.11.2",
  "tao_analysis",
  "tao_middle",

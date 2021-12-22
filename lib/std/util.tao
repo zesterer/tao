@@ -3,6 +3,8 @@
 class Default =
     => default : Self
 
+def default A < Default : A = A.default
+
 member Nat of Default =
     => default = Nat.zero
 

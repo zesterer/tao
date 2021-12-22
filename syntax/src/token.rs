@@ -94,6 +94,7 @@ pub enum Token {
     Of,
     Tilde,
     Dollar,
+    Semicolon,
 }
 
 impl fmt::Display for Token {
@@ -138,6 +139,7 @@ impl fmt::Display for Token {
             Token::Of => write!(f, "of"),
             Token::Tilde => write!(f, "~"),
             Token::Dollar => write!(f, "$"),
+            Token::Semicolon => write!(f, ";"),
         }
     }
 }
@@ -162,6 +164,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         just('\\').to(Token::EndPipe),
         just('~').to(Token::Tilde),
         just('$').to(Token::Dollar),
+        just(';').to(Token::Semicolon),
     ));
 
     let op = choice((

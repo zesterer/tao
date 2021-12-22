@@ -177,7 +177,7 @@ impl Error {
                     (member, format!("This member does not contain a definition for {}", (*item).fg(Color::Yellow)), Color::Red),
                     (item.span(), format!("A declaration of this item, {}, is missing from the class member", (*item).fg(Color::Yellow)), Color::Yellow),
                 ],
-                vec![format!("Class members must provide all items required by their class")],
+                vec![format!("Consider adding the item like {}", format!("=> {} = ...", *item).fg(Color::Blue))],
             ),
             Error::RecursiveAlias(alias, ty, span) => (
                 format!("Recursive type alias"),

@@ -1,0 +1,46 @@
+import "lib/std/ops.tao"
+
+data Map K, V =
+    | MEmpty
+    | MLeaf (K, V)
+    \ MBranch (K, Map K V, Map K V)
+
+for K, V member Map K V of Default =
+    => default = MEmpty
+
+for K < Debug, V < Debug member Map K V of Debug =
+    => debug = fn
+        | MEmpty => "{}"
+        | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
+        \ MBranch (_, a, b) => a:debug_helper ++ ", " ++ b:debug_helper
+
+def insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
+    | k, v, MEmpty => MLeaf (k, v)
+    | k, v, MLeaf (k_old, v_old) => match K.cmp(k, k_old) in
+        | Less => MBranch (k_old, MLeaf (k, v), MLeaf (k_old, v_old))
+        | Greater => MBranch (k, MLeaf (k_old, v_old), MLeaf (k, v))
+        \ Equal => MLeaf (k, v)
+    \ k, v, MBranch (k_ref, a, b) => if K.less(k, k_ref)
+        then MBranch (k_ref, a:insert(k, v), b)
+        else MBranch (k_ref, a, b:insert(k, v))
+
+def get K < OrdExt, V : K -> Map K V -> Maybe V =
+    | _, MEmpty => None
+    | k, MLeaf (k_old, v) => if K.eq(k, k_old)
+        then Just v
+        else None
+    \ k, MBranch (k_ref, a, b) => if K.less(k, k_ref)
+        then a:get(k)
+        else b:get(k)
+
+def contains K < OrdExt, V : K -> Map K V -> Bool =
+    \ k, m => match m:get(k) in
+        | Just _ => True
+        \ None => False
+
+def from_list K < OrdExt, V : [(K, V)] -> Map K V =
+    fold(default, fn m, (k, v) => m:insert(k, v))
+
+# TODO: Make type system smarter
+def debug_helper K < Debug, V < Debug : Map K V -> Str =
+    \ x => x:debug

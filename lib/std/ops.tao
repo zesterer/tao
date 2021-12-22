@@ -30,37 +30,35 @@ class Ord =
 data Ordering =
     | Less
     | Greater
-    \ Eq
+    \ Equal
 
 member Nat of Ord =
     => cmp = fn x, y => if x < y
         then Less
         else if x > y
         then Greater
-        else Eq
+        else Equal
 
-class OrdExt =
+class OrdExt < Ord =
+    => eq : Self -> Self -> Bool
     => less : Self -> Self -> Bool
     => less_eq : Self -> Self -> Bool
     => greater : Self -> Self -> Bool
     => greater_eq : Self -> Self -> Bool
 
 for A < Ord member A of OrdExt =
-    => less = fn
-        \ x, y => match A.cmp(x, y) in
-            | Less => True
-            \ _ => False
-    => less_eq = fn
-        \ x, y => match A.cmp(x, y) in
-            | Less => True
-            | Eq => True
-            \ _ => False
-    => greater = fn
-        \ x, y => match A.cmp(x, y) in
-            | Greater => True
-            \ _ => False
-    => greater_eq = fn
-        \ x, y => match A.cmp(x, y) in
-            | Greater => True
-            | Eq => True
-            \ _ => False
+    => eq = fn x, y => match A.cmp(x, y) in
+        | Equal => True
+        \ _ => False
+    => less = fn x, y => match A.cmp(x, y) in
+        | Less => True
+        \ _ => False
+    => less_eq = fn x, y => match A.cmp(x, y) in
+        | Greater => False
+        \ _ => True
+    => greater = fn x, y => match A.cmp(x, y) in
+        | Greater => True
+        \ _ => False
+    => greater_eq = fn x, y => match A.cmp(x, y) in
+        | Less => False
+        \ _ => True

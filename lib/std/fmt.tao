@@ -10,13 +10,26 @@ def debug A < Debug : A -> Str = A.debug
 member Nat of Debug =
     => debug = fn _ => "nat"
 
+member Bool of Debug =
+    => debug = fn
+        | True => "True"
+        \ False => "False"
+
+member Str of Debug =
+    => debug = fn s => s
+
+member Char of Debug =
+    => debug = fn c => [c]
+
 for A < Debug, B < Debug member (A, B) of Debug =
     => debug = fn (a, b) => "(" ++ A.debug(a) ++ ", " ++ B.debug(b) ++ ")"
 
-for A < Debug member [A] of Debug =
-    => debug = fn xs => "[" ++ xs:fold("", fn s, x => s ++ ", " ++ x:A.debug) ++ "]"
+#for A < Debug member [A] of Debug =
+#    => debug = fn xs => "[" ++ xs:fold("", fn s, x => s ++ ", " ++ x:A.debug) ++ "]"
 
 # Show
 
 class Show =
     => show : Self -> Str
+
+def show A < Show : A -> Str = A.show

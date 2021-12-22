@@ -1,4 +1,28 @@
 import "lib/std.tao"
 
+# $[main]
+# def main = [1, 2, 3, 4, 5]:sort
+
 $[main]
-def main = [1, 2, 3, 4, 5]:sort
+def main = [
+        (4, "e"),
+        (2, "c"),
+        (0, "a"),
+        (3, "d"),
+        (1, "b"),
+    ]
+        :from_list
+        :contains(4)
+        :debug
+
+# $[main]
+# def main = do {
+#     msg <- input;
+#     if msg = "exit" then do {
+#         print("Now exiting...");
+#         print("Goodbye!");
+#     } else do {
+#         print("Hello, world!");
+#         main;
+#     };
+# }
