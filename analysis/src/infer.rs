@@ -553,7 +553,7 @@ impl<'a> Infer<'a> {
                     .find_obligations_for(self.ctx, gen_idx)
                     .into_iter()
                     // Filter by class obligations that contain the given field
-                    .filter(|class_id| self.ctx.classes.get(*class_id).unwrap().field(*field).is_some())
+                    .filter(|class_id| self.ctx.classes.get(*class_id).field(*field).is_some())
                     .collect()
             },
             _ => self.ctx.classes
@@ -577,7 +577,6 @@ impl<'a> Infer<'a> {
                 self.make_impl(ty, class_id, span);
                 let field_ty_id = **self.ctx.classes
                     .get(class_id)
-                    .unwrap()
                     .field(*field)
                     .unwrap();
                 let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|_, _, _| panic!("Tried to substitute generic type for non-generic class"), Some(ty));
@@ -597,26 +596,26 @@ impl<'a> Infer<'a> {
     }
 
     // Returns true if ty covers var (i.e: var is a structural subset of ty)
-    fn covers_var(infer: &Infer, var: TyVar, ty: TyId) -> bool {
-        match (infer.follow_info(var), infer.ctx.tys.get(ty)) {
+    fn covers_var(&self, var: TyVar, ty: TyId) -> bool {
+        match (self.follow_info(var), self.ctx.tys.get(ty)) {
             (_, Ty::Gen(_, _)) => true, // Blanket impls match everything
             (TyInfo::Prim(x), Ty::Prim(y)) if x == y => true,
-            (TyInfo::List(x), Ty::List(y)) => Self::covers_var(infer, x, y),
+            (TyInfo::List(x), Ty::List(y)) => self.covers_var(x, y),
             (TyInfo::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .all(|(x, y)| Self::covers_var(infer, x, y)),
+                .all(|(x, y)| self.covers_var(x, y)),
             (TyInfo::Record(xs), Ty::Record(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .all(|((_, x), (_, y))| Self::covers_var(infer, x, y)),
+                .all(|((_, x), (_, y))| self.covers_var(x, y)),
             (TyInfo::Func(x_i, x_o), Ty::Func(y_i, y_o)) => {
-                Self::covers_var(infer, x_i, y_i) && Self::covers_var(infer, x_o, y_o)
+                self.covers_var(x_i, y_i) && self.covers_var(x_o, y_o)
             },
             (TyInfo::Data(x, xs), Ty::Data(y, ys)) if x == y && xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .all(|(x, y)| Self::covers_var(infer, x, y)),
+                .all(|(x, y)| self.covers_var(x, y)),
             _ => false,
         }
     }
@@ -633,6 +632,7 @@ impl<'a> Infer<'a> {
                 if gen_scope
                     .find_obligations_for(self.ctx, gen_idx)
                     .into_iter()
+                    // .any(|c| self.ctx.classes.implies(c, obligation))
                     .any(|c| c == obligation)
                 {
                     Some(Ok(()))

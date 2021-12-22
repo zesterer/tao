@@ -464,6 +464,21 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .then(paren_exp_list.clone().or_not())
             .map(|(name, args)| ast::Expr::Intrinsic(name, args.flatten().unwrap_or_default()));
 
+        let do_let = just(Token::Let)
+            .ignore_then(binding_parser().map_with_span(SrcNode::new))
+            .then_ignore(just(Token::Op(Op::Eq)))
+            .then(expr.clone().map_with_span(SrcNode::new));
+
+        let do_ = just(Token::Do)
+            .ignore_then(do_let
+                .map(|(lhs, rhs)| ast::DoItem::Let(lhs, rhs))
+                .or(expr.clone()
+                    .map_with_span(SrcNode::new)
+                    .map(ast::DoItem::Expr))
+                .separated_by(just(Token::Semicolon))
+                .allow_trailing())
+            .map(ast::Expr::Do);
+
         let atom = litr
             .or(ident)
             .or(nested_parser(expr, Delimiter::Paren, |_| ast::Expr::Error))
@@ -477,6 +492,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(class_access)
             .or(cons)
             .or(intrinsic)
+            .or(do_)
             .map_with_span(SrcNode::new)
             .boxed();
 

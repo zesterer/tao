@@ -171,6 +171,12 @@ pub struct Binding {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum DoItem {
+    Expr(SrcNode<Expr>),
+    Let(SrcNode<Binding>, SrcNode<Expr>),
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     // Generated only by parser errors.
     Error,
@@ -194,6 +200,7 @@ pub enum Expr {
 
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Debug(SrcNode<Self>),
+    Do(Vec<DoItem>),
 }
 
 #[derive(Debug, PartialEq)]

@@ -36,6 +36,7 @@ pub enum Error {
     MultipleEntryPoints(Span, Span),
     GenericEntryPoint(SrcNode<Ident>, Span, Span),
     InvalidIntrinsic(SrcNode<Ident>),
+    Unsupported(Span, &'static str),
 }
 
 impl Error {
@@ -131,17 +132,20 @@ impl Error {
                 },
             ),
             Error::TypeDoesNotFulfil(class, ty, span, gen_span) => (
-                format!("Type {} does not fulfil {} obligation", display(ty).fg(Color::Red), (*ctx.classes.get(class).unwrap().name).fg(Color::Red)),
+                format!("Type {} does not fulfil {} obligation", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Red)),
                 {
-                    let mut labels = vec![(span, format!(
-                        "Type {} must be a member of {} here",
-                        display(ty).fg(Color::Red),
-                        (*ctx.classes.get(class).unwrap().name).fg(Color::Red),
-                    ), Color::Red)];
+                    let mut labels = vec![
+                        (span, format!("Required by the bound here"), Color::Yellow),
+                        (ctx.tys.get_span(ty), format!(
+                            "{} must be a member of {}",
+                            display(ty).fg(Color::Red),
+                            (*ctx.classes.get(class).name).fg(Color::Red),
+                        ), Color::Red),
+                    ];
                     if let Some(gen_span) = gen_span {
                         labels.push((gen_span, format!(
                             "Consider adding a class constraint like {}",
-                            format!("{} < {}", display(ty), *ctx.classes.get(class).unwrap().name).fg(Color::Blue),
+                            format!("{} < {}", display(ty), *ctx.classes.get(class).name).fg(Color::Blue),
                         ), Color::Blue));
                     }
                     labels
@@ -307,7 +311,7 @@ impl Error {
                 ],
                 vec![format!("Possible candidates are members of {}", candidate_classes
                     .into_iter()
-                    .map(|class| format!("{}", (ctx.classes.get(class).unwrap().name).fg(Color::Blue)))
+                    .map(|class| format!("{}", (ctx.classes.get(class).name).fg(Color::Blue)))
                     .collect::<Vec<_>>()
                     .join(", "))],
             ),
@@ -315,6 +319,13 @@ impl Error {
                 format!("Intrinsic {} does not exist", (*intrinsic).fg(Color::Red)),
                 vec![
                     (intrinsic.span(), format!("No such intrinsic"), Color::Red),
+                ],
+                vec![],
+            ),
+            Error::Unsupported(span, feature) => (
+                format!("{} is not yet supported", feature.fg(Color::Red)),
+                vec![
+                    (span, format!("This is unsupported"), Color::Red),
                 ],
                 vec![],
             ),

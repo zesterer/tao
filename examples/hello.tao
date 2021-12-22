@@ -16,13 +16,11 @@ def main = [
         :debug
 
 # $[main]
-# def main = do {
-#     msg <- input;
-#     if msg = "exit" then do {
-#         print("Now exiting...");
-#         print("Goodbye!");
-#     } else do {
-#         print("Hello, world!");
-#         main;
-#     };
-# }
+def foo = do
+    let msg = input;
+    if msg = "exit" then do
+        print("Now exiting...");
+        print("Goodbye!");
+    else do
+        print("Hello, world!");
+        main; # Loop

@@ -636,6 +636,10 @@ impl ToHir for ast::Expr {
                     },
                 }
             },
+            ast::Expr::Do(_) => {
+                infer.ctx_mut().emit(Error::Unsupported(self.span(), "do notation"));
+                (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
+            },
         };
 
         InferNode::new(expr, (span, infer.insert(span, info)))

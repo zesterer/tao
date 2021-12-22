@@ -25,19 +25,24 @@ impl Context {
         let mut classes = Vec::new();
         let mut aliases = Vec::new();
         let mut datas = Vec::new();
-        let mut members = Vec::new();
-        let mut defs = Vec::new();
+        let mut members_init = Vec::new();
+        let mut defs_init = Vec::new();
         // Declare items before declaration
         for (attr, class) in module.classes() {
             let (gen_scope, mut errs) = GenScope::from_ast(&class.generics);
             assert_eq!(gen_scope.len(), 0, "Type parameters on classes not permitted yet");
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            if let Err(err) = this.classes.declare(class.name.clone(), gen_scope) {
-                errors.push(err);
-            } else {
+            match this.classes.declare(class.name.clone(), Class {
+                name: class.name.clone(),
+                obligations: None,
+                attr: attr.clone(),
+                gen_scope,
+                items: None,
+            }) {
+                Err(err) => errors.push(err),
                 // Only mark for further processing if no errors occurred during declaration
-                classes.push((attr, class));
+                Ok(class_id) => classes.push((attr, class, class_id, gen_scope)),
             }
         }
         for (attr, alias) in module.aliases() {
@@ -61,6 +66,25 @@ impl Context {
                 // Only mark for further processing if no errors occurred during declaration
                 datas.push((attr, data));
             }
+        }
+        for (attr, member) in module.members() {
+            let class_id = if let Some(class_id) = this.classes.lookup(*member.class) {
+                class_id
+            } else {
+                errors.push(Error::NoSuchClass(member.class.clone()));
+                continue;
+            };
+
+            let (gen_scope, mut errs) = GenScope::from_ast(&member.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
+            members_init.push((attr, member, gen_scope));
+        }
+        for (attr, def) in module.defs() {
+            let (gen_scope, mut errs) = GenScope::from_ast(&def.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
+            defs_init.push((attr, def, gen_scope));
         }
 
         // Alias definition must go before members and defs because they might have type hints that make use of type
@@ -90,18 +114,87 @@ impl Context {
             );
         }
 
-        for (attr, member) in module.members() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&member.generics);
-            errors.append(&mut errs);
-            let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            let member_id = this.classes.declare_member(gen_scope);
-            members.push((attr, member, member_id, gen_scope));
-        }
-        for (attr, def) in module.defs() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&def.generics);
-            errors.append(&mut errs);
-            let gen_scope = this.tys.insert_gen_scope(gen_scope);
+        // Now that we have declarations for all classes and data types, we can check generic scope constraints
+        let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
+        this.errors.append(&mut gen_scope_errors);
 
+        // Derive class obligations
+        for (attr, class, class_id, gen_scope) in classes {
+            this.classes.define_obligations(
+                class_id,
+                class
+                    .obligation
+                    .iter()
+                    .filter_map(|obl| match this.classes.lookup(**obl) {
+                        Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
+                        None => {
+                            errors.push(Error::NoSuchClass(obl.clone()));
+                            None
+                        },
+                    })
+                    .collect(),
+            );
+
+            let mut infer = Infer::new(&mut this, Some(gen_scope), Some(class.name.span()));
+
+            let values = class.items
+                .iter()
+                .filter_map(|item| match item {
+                    ast::ClassItem::Value { name, ty } => Some((
+                        name.clone(),
+                        ty.to_hir(&mut infer, &Scope::Empty),
+                    )),
+                })
+                .collect::<Vec<_>>();
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let items = values
+                .into_iter()
+                .map(|(name, ty)| ClassItem::Value {
+                    name,
+                    ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
+                })
+                // TODO:
+                //.zip(types.into_iter())
+                .collect::<Vec<_>>();
+
+            this.classes.define_items(class_id, items);
+        }
+
+        let mut members = Vec::new();
+        for (attr, member, gen_scope) in members_init {
+            let class_id = if let Some(class_id) = this.classes.lookup(*member.class) {
+                class_id
+            } else {
+                errors.push(Error::NoSuchClass(member.class.clone()));
+                continue;
+            };
+
+            let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+
+            let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
+            for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
+                match obl.inner() {
+                    Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span()),
+                }
+            }
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let member_ty = checked.reify(member_ty.meta().1);
+
+            let member_id = this.classes.declare_member(class_id, Member {
+                gen_scope,
+                member: member_ty,
+                items: None,
+            });
+            members.push((attr, member, class_id, member_id, gen_scope));
+        }
+        let mut defs = Vec::new();
+        for (attr, def, gen_scope) in defs_init {
             // If the type hint is fully specified, check it
             let ty_hint = if def.ty_hint.is_fully_specified() {
                 let mut infer = Infer::new(&mut this, Some(gen_scope), None);
@@ -128,12 +221,6 @@ impl Context {
                 defs.push((attr, def));
             }
         }
-
-        // Now that we have declarations for all classes and data types, we can check generic scope constraints
-        let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
-        this.errors.append(&mut gen_scope_errors);
-
-        // IMPORTANT: Aliases must be declared before everything else because their eagerly expand to the type they alias
 
         // Define items
         for (attr, data) in datas {
@@ -171,69 +258,62 @@ impl Context {
                 errors.append(&mut errs);
             }
         }
-        for (attr, class) in classes {
-            let gen_scope = this.classes.name_gen_scope(*class.name);
+        // for (attr, class) in classes {
+        //     let gen_scope = this.classes.name_gen_scope(*class.name);
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope), Some(class.name.span()));
+        //     let mut infer = Infer::new(&mut this, Some(gen_scope), Some(class.name.span()));
 
-            let values = class.items
-                .iter()
-                .filter_map(|item| match item {
-                    ast::ClassItem::Value { name, ty } => Some((
-                        name.clone(),
-                        ty.to_hir(&mut infer, &Scope::Empty),
-                    )),
-                })
-                .collect::<Vec<_>>();
+        //     let values = class.items
+        //         .iter()
+        //         .filter_map(|item| match item {
+        //             ast::ClassItem::Value { name, ty } => Some((
+        //                 name.clone(),
+        //                 ty.to_hir(&mut infer, &Scope::Empty),
+        //             )),
+        //         })
+        //         .collect::<Vec<_>>();
 
-            let (mut checked, mut errs) = infer.into_checked();
-            errors.append(&mut errs);
+        //     let (mut checked, mut errs) = infer.into_checked();
+        //     errors.append(&mut errs);
 
-            let items = values
-                .into_iter()
-                .map(|(name, ty)| ClassItem::Value {
-                    name,
-                    ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
-                })
-                // TODO:
-                //.zip(types.into_iter())
-                .collect::<Vec<_>>();
+        //     let items = values
+        //         .into_iter()
+        //         .map(|(name, ty)| ClassItem::Value {
+        //             name,
+        //             ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
+        //         })
+        //         // TODO:
+        //         //.zip(types.into_iter())
+        //         .collect::<Vec<_>>();
 
-            this.classes.define(
-                this.classes
-                    .lookup(*class.name)
-                    .expect("Class must be pre-declared before definition"),
-                Class {
-                    name: class.name.clone(),
-                    obligations: class
-                        .obligation
-                        .iter()
-                        .filter_map(|obl| match this.classes.lookup(**obl) {
-                            Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
-                            None => {
-                                errors.push(Error::NoSuchClass(obl.clone()));
-                                None
-                            },
-                        })
-                        .collect(),
-                    attr: attr.clone(),
-                    gen_scope,
-                    items,
-                },
-            );
-        }
-        for (attr, member, member_id, gen_scope) in members {
-            let class_id = if let Some(class_id) = this.classes.lookup(*member.class) {
-                class_id
-            } else {
-                errors.push(Error::NoSuchClass(member.class.clone()));
-                continue;
-            };
-
+        //     this.classes.define(
+        //         this.classes
+        //             .lookup(*class.name)
+        //             .expect("Class must be pre-declared before definition"),
+        //         Class {
+        //             name: class.name.clone(),
+        //             obligations: class
+        //                 .obligation
+        //                 .iter()
+        //                 .filter_map(|obl| match this.classes.lookup(**obl) {
+        //                     Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
+        //                     None => {
+        //                         errors.push(Error::NoSuchClass(obl.clone()));
+        //                         None
+        //                     },
+        //                 })
+        //                 .collect(),
+        //             attr: attr.clone(),
+        //             gen_scope,
+        //             items,
+        //         },
+        //     );
+        // }
+        for (attr, member, class_id, member_id, gen_scope) in members {
             let mut infer = Infer::new(&mut this, Some(gen_scope), None);
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
-            for obl in infer.ctx().classes.get(class_id).unwrap().obligations.clone() {
+            for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
                 match obl.inner() {
                     Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span()),
                 }
@@ -247,7 +327,7 @@ impl Context {
             let items = member.items
                 .iter()
                 .filter_map(|item| {
-                    let class = this.classes.get(class_id).unwrap();
+                    let class = this.classes.get(class_id);
                     match item {
                         ast::MemberItem::Value { name, val } => if class.field(**name).is_none() {
                             errors.push(Error::NoSuchClassItem(name.clone(), class.name.clone()));
@@ -258,7 +338,7 @@ impl Context {
                             let mut infer = Infer::new(&mut this, Some(gen_scope), None);
 
                             let val = val.to_hir(&mut infer, &Scope::Empty);
-                            let class = infer.ctx().classes.get(class_id).unwrap();
+                            let class = infer.ctx().classes.get(class_id);
                             if let Some(field_ty) = class.field(**name).cloned() {
                                 let self_ty = member.member.to_hir(&mut infer, &Scope::Empty).meta().1;
                                 let val_ty = infer.instantiate(
@@ -282,8 +362,8 @@ impl Context {
                 })
                 .collect::<HashMap<_, _>>();
 
-            let class = this.classes.get(class_id).unwrap();
-            for item in &class.items {
+            let class = this.classes.get(class_id);
+            for item in class.items.as_ref().expect("Class items must be known here") {
                 match item {
                     ClassItem::Value { name, .. } => if !items
                         .iter()
@@ -299,7 +379,7 @@ impl Context {
             let member_ = Member {
                 gen_scope,
                 member: member_ty,
-                items,
+                items: Some(items),
             };
 
             this.classes.define_member(member_id, class_id, member_);

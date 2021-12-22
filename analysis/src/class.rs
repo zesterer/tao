@@ -9,15 +9,17 @@ pub enum ClassItem {
 
 pub struct Class {
     pub name: SrcNode<Ident>,
-    pub obligations: Vec<SrcNode<Obligation>>,
+    pub obligations: Option<Vec<SrcNode<Obligation>>>,
     pub attr: ast::Attr,
     pub gen_scope: GenScopeId,
-    pub items: Vec<ClassItem>,
+    pub items: Option<Vec<ClassItem>>,
 }
 
 impl Class {
     pub fn field(&self, field: Ident) -> Option<&SrcNode<TyId>> {
         self.items
+            .as_ref()
+            .expect("Class fields must be known here")
             .iter()
             .find_map(|item| match item {
                 ClassItem::Value { name, ty } if **name == field => Some(ty),
@@ -34,58 +36,59 @@ pub struct MemberId(usize);
 
 #[derive(Default)]
 pub struct Classes {
-    lut: HashMap<Ident, (Span, ClassId, GenScopeId)>,
-    classes: Vec<Option<Class>>,
-    members: Vec<Option<Member>>,
+    lut: HashMap<Ident, (Span, ClassId)>,
+    classes: Vec<Class>,
+    members: Vec<Member>,
     member_lut: HashMap<ClassId, Vec<MemberId>>,
 }
 
 impl Classes {
-    pub fn name_gen_scope(&self, name: Ident) -> GenScopeId {
-        self.lut[&name].2
-    }
-
-    pub fn get(&self, class: ClassId) -> Option<&Class> {
-        self.classes[class.0].as_ref()
+    pub fn get(&self, class: ClassId) -> &Class {
+        &self.classes[class.0]
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (ClassId, &Class)> {
-        self.classes.iter().enumerate().map(|(i, class)| (ClassId(i), class.as_ref().unwrap()))
+        self.classes.iter().enumerate().map(|(i, class)| (ClassId(i), class))
     }
 
     pub fn lookup(&self, name: Ident) -> Option<ClassId> {
-        self.lut.get(&name).map(|(_, id, _)| *id)
+        self.lut.get(&name).map(|(_, id)| *id)
     }
 
-    pub fn declare(&mut self, name: SrcNode<Ident>, gen_scope: GenScopeId) -> Result<ClassId, Error> {
+    pub fn declare(&mut self, name: SrcNode<Ident>, class: Class) -> Result<ClassId, Error> {
         let id = ClassId(self.classes.len());
         let span = name.span();
-        self.classes.push(None);
-        if let Err(old) = self.lut.try_insert(*name, (span, id, gen_scope)) {
+        self.classes.push(class);
+        if let Err(old) = self.lut.try_insert(*name, (span, id)) {
             Err(Error::DuplicateClassName(*name, old.entry.get().0, span))
         } else {
             Ok(id)
         }
     }
 
-    pub fn define(&mut self, id: ClassId, class: Class) {
-        self.classes[id.0] = Some(class);
+    pub fn define_obligations(&mut self, id: ClassId, obligations: Vec<SrcNode<Obligation>>) {
+        self.classes[id.0].obligations = Some(obligations);
     }
 
-    pub fn get_member(&self, id: MemberId) -> Option<&Member> {
-        self.members[id.0].as_ref()
+    pub fn define_items(&mut self, id: ClassId, items: Vec<ClassItem>) {
+        self.classes[id.0].items = Some(items);
+    }
+
+    pub fn get_member(&self, id: MemberId) -> &Member {
+        &self.members[id.0]
     }
 
     // TODO: Pre-insert member here so we can do inference inside members themselves
-    pub fn declare_member(&mut self, gen_scope: GenScopeId) -> MemberId {
+    pub fn declare_member(&mut self, class: ClassId, member: Member) -> MemberId {
         let id = MemberId(self.members.len());
-        self.members.push(None);
+        self.members.push(member);
+
+        self.member_lut.entry(class).or_default().push(id);
         id
     }
 
     pub fn define_member(&mut self, id: MemberId, class: ClassId, member: Member) {
-        self.members[id.0] = Some(member);
-        self.member_lut.entry(class).or_default().push(id);
+        self.members[id.0] = member;
     }
 
     // TODO: Is this needed?
@@ -120,7 +123,7 @@ impl Classes {
             .and_then(|xs| {
                 let candidates = xs
                     .iter()
-                    .map(|m| self.get_member(*m).expect("Member must be defined before lookup"))
+                    .map(|m| self.get_member(*m))
                     .filter(|member| covers(hir, ctx, member.member, ty))
                     .collect::<Vec<_>>();
 
@@ -136,7 +139,31 @@ impl Classes {
             .map(|m| m.as_slice())
             .unwrap_or(&[])
             .iter()
-            .map(|m| self.get_member(*m).expect("Member must be defined before lookup"))
+            .map(|m| self.get_member(*m))
+    }
+
+    // Return true if implementing `known` implies also implementing `unknown`
+    pub fn implies(&self, known: ClassId, unknown: ClassId) -> bool {
+        self.implies_inner(known, unknown, &mut HashSet::default())
+    }
+
+    fn implies_inner(&self, known: ClassId, unknown: ClassId, tried: &mut HashSet<ClassId>) -> bool {
+        if known == unknown {
+            true
+        } else if tried.contains(&known) {
+            false
+        } else {
+            tried.insert(known);
+            self
+                .get(known)
+                .obligations
+                .as_ref()
+                .expect("Obligations must be known here")
+                .iter()
+                .any(|obl| match &**obl {
+                    Obligation::MemberOf(class) => self.implies(*class, unknown),
+                })
+        }
     }
 }
 
@@ -150,12 +177,14 @@ pub enum MemberItem {
 pub struct Member {
     pub gen_scope: GenScopeId,
     pub member: TyId,
-    pub items: HashMap<Ident, MemberItem>,
+    pub items: Option<HashMap<Ident, MemberItem>>,
 }
 
 impl Member {
     pub fn field(&self, field: Ident) -> Option<&TyExpr> {
         self.items
+            .as_ref()
+            .expect("Member items not initialised")
             .get(&field)
             .and_then(|item| match item {
                 MemberItem::Value { name, val } if **name == field => Some(val),

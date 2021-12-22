@@ -70,6 +70,11 @@ impl Types {
         for scope in &mut self.scopes {
             scope.check(classes, &mut errors);
         }
+        assert!(self.scopes
+            .iter()
+            .all(|s| s.types
+                .iter()
+                .all(|t| t.obligations.is_some())), "All generic scope obligations must be checked");
         errors
     }
 
@@ -235,7 +240,7 @@ impl GenScope {
         // Extract a list of all classes that the type is a member of
         fn walk_classes(ctx: &Context, classes: &mut HashSet<ClassId>, class: ClassId) {
             if classes.insert(class) {
-                for obl in &ctx.classes.get(class).unwrap().obligations {
+                for obl in ctx.classes.get(class).obligations.as_ref().expect("Obligations must be known here") {
                     match obl.inner() {
                         Obligation::MemberOf(class) => walk_classes(ctx, classes, *class),
                     }

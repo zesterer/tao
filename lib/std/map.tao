@@ -12,7 +12,7 @@ for K < Debug, V < Debug member Map K V of Debug =
     => debug = fn
         | MEmpty => "{}"
         | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
-        \ MBranch (_, a, b) => a:debug_helper ++ ", " ++ b:debug_helper
+        \ MBranch (_, a, b) => a:debug ++ ", " ++ b:debug
 
 def insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
     | k, v, MEmpty => MLeaf (k, v)
@@ -40,7 +40,3 @@ def contains K < OrdExt, V : K -> Map K V -> Bool =
 
 def from_list K < OrdExt, V : [(K, V)] -> Map K V =
     fold(default, fn m, (k, v) => m:insert(k, v))
-
-# TODO: Make type system smarter
-def debug_helper K < Debug, V < Debug : Map K V -> Str =
-    \ x => x:debug
