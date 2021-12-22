@@ -76,6 +76,7 @@ impl Classes {
         self.members[id.0].as_ref()
     }
 
+    // TODO: Pre-insert member here so we can do inference inside members themselves
     pub fn declare_member(&mut self, gen_scope: GenScopeId) -> MemberId {
         let id = MemberId(self.members.len());
         self.members.push(None);

@@ -1,13 +1,13 @@
 # Default
 
 class Default =
-    default : Self
+    => default : Self
 
 member Nat of Default =
-    default = Nat.zero
+    => default = Nat.zero
 
 for A < Default, B < Default member (A, B) of Default =
-    default = (A.default, B.default)
+    => default = (A.default, B.default)
 
 # Maybe
 
@@ -16,7 +16,7 @@ data Maybe A =
     \ None
 
 for A member Maybe A of Default =
-    default = None
+    => default = None
 
 # Result
 

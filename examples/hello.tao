@@ -1,4 +1,4 @@
 import "lib/std.tao"
 
 $[main]
-def main = [7, 9, 2, 1, 5, 8, 3]:sort
+def main = [1, 2, 3, 4, 5]:sort

@@ -1,11 +1,11 @@
 class Zero =
-    zero : Self
+    => zero : Self
 
 member Nat of Zero =
-    zero = 0
+    => zero = 0
 
 class One =
-    one : Self
+    => one : Self
 
 member Nat of Zero =
-    zero = 1
+    => zero = 1

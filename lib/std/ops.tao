@@ -1,31 +1,31 @@
 # Add
 
 class Add =
-    add: Self -> Self -> Self
+    => add: Self -> Self -> Self
 
 member Nat of Add =
-    add = fn x, y => x + y
+    => add = fn x, y => x + y
 
 # Mul
 
 class Mul =
-    mul: Self -> Self -> Self
+    => mul: Self -> Self -> Self
 
 member Nat of Mul =
-    mul = fn x, y => x * y
+    => mul = fn x, y => x * y
 
 # Eq
 
 class Eq =
-    eq : Self -> Self -> Bool
+    => eq : Self -> Self -> Bool
 
 member Nat of Eq =
-    eq = fn x, y => x = y
+    => eq = fn x, y => x = y
 
 # Ord
 
 class Ord =
-    cmp : Self -> Self -> Ordering
+    => cmp : Self -> Self -> Ordering
 
 data Ordering =
     | Less
@@ -33,24 +33,34 @@ data Ordering =
     \ Eq
 
 member Nat of Ord =
-    cmp = fn x, y => if x < y
+    => cmp = fn x, y => if x < y
         then Less
         else if x > y
         then Greater
         else Eq
 
 class OrdExt =
-    less : Self -> Self -> Bool,
-    greater : Self -> Self -> Bool,
+    => less : Self -> Self -> Bool
+    => less_eq : Self -> Self -> Bool
+    => greater : Self -> Self -> Bool
+    => greater_eq : Self -> Self -> Bool
 
 for A < Ord member A of OrdExt =
-    less = fn
+    => less = fn
         \ x, y => match A.cmp(x, y) in
             | Less => True
             \ _ => False
-    ,
-    greater = fn
+    => less_eq = fn
+        \ x, y => match A.cmp(x, y) in
+            | Less => True
+            | Eq => True
+            \ _ => False
+    => greater = fn
         \ x, y => match A.cmp(x, y) in
             | Greater => True
             \ _ => False
-    ,
+    => greater_eq = fn
+        \ x, y => match A.cmp(x, y) in
+            | Greater => True
+            | Eq => True
+            \ _ => False

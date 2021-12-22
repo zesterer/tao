@@ -22,6 +22,10 @@ def fold A, B : A -> (A -> B -> A) -> [B] -> A =
     | init, _, [] => init
     \ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
+def repeat A : Nat -> A -> [A] =
+    | 0, _ => []
+    \ n + 1, x => [x] ++ x:repeat(n)
+
 def sort A < OrdExt : [A] -> [A] =
     | [] => []
     \ [mid .. xs] =>
@@ -29,7 +33,7 @@ def sort A < OrdExt : [A] -> [A] =
             ++
         [mid]
             ++
-        xs:filter(fn x => A.greater(x, mid)):sort
+        xs:filter(fn x => A.greater_eq(x, mid)):sort
 
 def sum A < Zero + Add : [A] -> A =
     fold(A.zero, fn x, y => A.add(x, y))

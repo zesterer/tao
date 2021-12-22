@@ -752,8 +752,8 @@ pub fn class_parser() -> impl Parser<ast::Class> {
             name,
         });
 
-    let item = value;
-        //.or(assoc_type);
+    let item = just(Token::Op(Op::RFlow))
+        .ignore_then(value /*.or(assoc_type)*/);
 
     just(Token::Class)
         .ignore_then(type_ident_parser()
@@ -761,7 +761,7 @@ pub fn class_parser() -> impl Parser<ast::Class> {
         .then(obligation_parser().or_not())
         .then(generics_parser().map_with_span(SrcNode::new))
         .then(just(Token::Op(Op::Eq))
-            .ignore_then(item.separated_by(just(Token::Comma)).allow_trailing())
+            .ignore_then(item.repeated())
             .or_not())
         .map(|(((name, obligation), generics), items)| ast::Class {
             name,
@@ -784,8 +784,8 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             name,
         });
 
-    let item = value;
-        //.or(assoc_type);
+    let item = just(Token::Op(Op::RFlow))
+        .ignore_then(value /*.or(assoc_type)*/);
 
     just(Token::For)
         .ignore_then(generics_parser().map_with_span(SrcNode::new))
@@ -797,7 +797,7 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             .then(type_ident_parser()
                 .map_with_span(SrcNode::new))
             .then(just(Token::Op(Op::Eq))
-                .ignore_then(item.separated_by(just(Token::Comma)).allow_trailing())
+                .ignore_then(item.repeated())
                 .or_not()))
         .map(|(generics, ((member, class), items))| ast::Member {
             generics: generics.unwrap_or_else(|| SrcNode::new(ast::Generics { tys: Vec::new() }, member.span())),
