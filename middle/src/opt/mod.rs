@@ -48,6 +48,10 @@ impl Context {
         self.reprs
             .iter_mut()
             .for_each(|r| r.visit_inner(order, repr, binding, expr));
+
+        self.reprs.datas
+            .values_mut()
+            .for_each(|r| r.as_mut().unwrap().visit_inner(order, repr, binding, expr));
     }
     pub fn visit(
         &mut self,
@@ -88,9 +92,7 @@ impl Repr {
             Repr::Sum(variants) => variants
                 .iter_mut()
                 .for_each(|variant| variant.visit_inner(order, repr, binding, expr)),
-            Repr::Data(_, params) => params
-                .iter_mut()
-                .for_each(|param| param.visit_inner(order, repr, binding, expr)),
+            Repr::Data(data_id) => {},
             Repr::Func(i, o) => {
                 i.visit_inner(order, repr, binding, expr);
                 o.visit_inner(order, repr, binding, expr);
@@ -328,7 +330,7 @@ pub fn check(ctx: &Context) {
         match (&binding.pat, repr) {
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
-            (Pat::Variant(_, _), Repr::Data(_, _)) => {},
+            (Pat::Variant(_, _), Repr::Data(_)) => {},
             (Pat::ListExact(_), Repr::List(_)) => {},
             (Pat::ListFront(_, _), Repr::List(_)) => {},
             (_, repr) => panic!("Inconsistency between binding\n\n {:?}\n\nand repr {:?}", binding, repr),

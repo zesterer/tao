@@ -595,26 +595,6 @@ impl ToHir for ast::Expr {
                 let field_ty = infer.unknown(field.span());
                 let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, self.span());
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
-
-                // if let Some((scope, (gen_idx, gen))) = infer
-                //     .gen_scope()
-                //     .and_then(|scope| Some((scope, infer.ctx().tys.get_gen_scope(scope).find(**data)?)))
-                // {
-                //     let gen_span = gen.name.span();
-                //     let gen_ty_var = infer.insert(data.span(), TyInfo::Gen(gen_idx, scope, gen_span));
-                //     // let gen_ty = infer.ctx_mut().tys.insert(data.span(), Ty::Gen(gen_idx, scope));
-                //     if let Some((class_id, field_ty)) = infer.ctx_mut().lookup_access(gen_ty, field.clone()) {
-                //         let field_ty = infer.instantiate(*field_ty, field_ty.span(), &|_, _, _| panic!("Tried to substitute generic type for non-generic class"), Some(gen_ty_var));
-                //         (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(gen_ty_var, class_id, field.clone()))
-                //     } else {
-                //         infer.ctx_mut().emit(Error::NoSuchField(gen_ty, data.span(), field.clone())); // TODO: no such class item
-                //         (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
-                //     }
-                // } else {
-                //     // TODO: Class access should work for concrete types too!
-                //     infer.ctx_mut().emit(Error::NoSuchData(data.clone()));
-                //     (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
-                // }
             },
             ast::Expr::Debug(inner) => {
                 let inner = inner.to_hir(infer, scope);

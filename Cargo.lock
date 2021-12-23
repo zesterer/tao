@@ -539,6 +539,7 @@ version = "0.1.0"
 dependencies = [
  "ariadne",
  "hashbrown 0.11.2",
+ "internment",
  "lazy_static",
  "ranges",
  "rustyline",

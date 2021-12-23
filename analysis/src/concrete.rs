@@ -10,7 +10,7 @@ pub enum ConTy {
     Tuple(Vec<ConTyId>),
     Record(BTreeMap<Ident, ConTyId>),
     Func(ConTyId, ConTyId),
-    Data(DataId, Vec<ConTyId>),
+    Data(ConDataId),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -18,12 +18,19 @@ pub struct ConTyId(usize);
 
 pub type ConDef = (DefId, Vec<ConTyId>);
 
+pub type ConDataId = Intern<(DataId, Vec<ConTyId>)>;
+
 pub struct TyInsts<'a> {
     self_ty: Option<ConTyId>,
     gen: &'a [ConTyId],
 }
 
+pub struct ConData {
+    pub cons: Vec<(Ident, ConTyId)>,
+}
+
 pub struct ConContext {
+    datas: HashMap<ConDataId, Option<ConData>>,
     tys: Vec<ConTy>,
     ty_lookup: HashMap<ConTy, ConTyId>,
     defs: HashMap<ConDef, Option<ConExpr>>,
@@ -33,6 +40,7 @@ pub struct ConContext {
 impl ConContext {
     pub fn from_ctx(hir: &Context) -> (Self, Vec<Error>) {
         let mut this = Self {
+            datas: HashMap::default(),
             tys: Vec::new(),
             ty_lookup: HashMap::default(),
             defs: HashMap::default(),
@@ -81,6 +89,10 @@ impl ConContext {
         &self.tys[ty.0]
     }
 
+    pub fn get_data(&self, data: ConDataId) -> &ConData {
+        self.datas[&data].as_ref().expect("Data should be fully defined")
+    }
+
     pub fn insert_ty(&mut self, ty: ConTy) -> ConTyId {
         *self.ty_lookup
             .entry(ty.clone())
@@ -108,10 +120,29 @@ impl ConContext {
                 self.concretize_ty(hir, i, ty_insts),
                 self.concretize_ty(hir, o, ty_insts),
             ),
-            Ty::Data(data, args) => ConTy::Data(data, args
-                .into_iter()
-                .map(|arg| self.concretize_ty(hir, arg, ty_insts))
-                .collect()),
+            Ty::Data(data, args) => {
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.concretize_ty(hir, arg, ty_insts))
+                    .collect::<Vec<_>>();
+                let id = Intern::new((data, args.clone()));
+                if !self.datas.contains_key(&id) {
+                    self.datas.insert(id, None); // Prevent overflow with phoney value
+                    let data = ConData {
+                        cons: hir.datas
+                            .get_data(data)
+                            .cons
+                            .iter()
+                            .map(|(name, ty)| (**name, self.concretize_ty(hir, *ty, &TyInsts {
+                                self_ty: None,
+                                gen: &args,
+                            })))
+                            .collect(),
+                    };
+                    self.datas.insert(id, Some(data));
+                }
+                ConTy::Data(id)
+            },
             Ty::Gen(idx, _) => return ty_insts.gen[idx],
             Ty::SelfType => return ty_insts.self_ty.expect("Self type required during concretization but none was provided"),
         };
@@ -125,18 +156,14 @@ impl ConContext {
 
         loop {
             match self.get_ty(ty).clone() {
-                ConTy::Data(data, args) => if already_seen.contains(&data) {
+                ConTy::Data(data_id) => if already_seen.contains(&data_id.0) {
                     // We've already seen this data type, it must be recursive. Give up, it has no fields.
                     break None
                 } else {
-                    already_seen.push(data);
-                    let data = hir.datas.get_data(data);
+                    already_seen.push(data_id.0);
+                    let data = self.get_data(data_id);
                     if data.cons.len() == 1 {
-                        todo!(); // TODO: Add concretized data types
-                        // ty = self.concretize_ty(hir, data.cons[0].1, &TyInsts {
-                        //     self_ty: None,
-                        //     gen: &args,
-                        // });
+                        ty = data.cons[0].1;
                     } else {
                         // Sum types have no fields
                         break None;
@@ -267,7 +294,7 @@ impl ConContext {
             hir::Expr::ClassAccess(ty, class, field) => {
                 let self_ty = self.concretize_ty(hir, ty.1, ty_insts);
                 let member = hir.classes
-                    .lookup_member_concrete(hir, self, self_ty, class.expect("Uninferred class during concretization"))
+                    .lookup_member(hir, self, self_ty, class.expect("Uninferred class during concretization"))
                     .expect("Could not select member candidate");
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
@@ -288,9 +315,9 @@ impl ConContext {
                             derive_links(hir, ctx, x_i, *y_i, link_gen);
                             derive_links(hir, ctx, x_o, *y_o, link_gen);
                         },
-                        (Ty::Data(_, xs), ConTy::Data(_, ys)) => xs
+                        (Ty::Data(_, xs), ConTy::Data(y)) => xs
                             .into_iter()
-                            .zip(ys.into_iter())
+                            .zip(y.1.iter())
                             .for_each(|(x, y)| derive_links(hir, ctx, x, *y, link_gen)),
                         (x, y) => todo!("{:?}", (x, y)),
                     }
@@ -360,11 +387,11 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .join(", ")),
             ConTy::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
             ConTy::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-            ConTy::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", self.datas.get_data(name).name, params
+            ConTy::Data(data_id) if self.lhs_exposed && data_id.1.len() > 0 => write!(f, "({}{})", self.datas.get_data(data_id.0).name, data_id.1
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            ConTy::Data(name, params) => write!(f, "{}{}", self.datas.get_data(name).name, params
+            ConTy::Data(data_id) => write!(f, "{}{}", self.datas.get_data(data_id.0).name, data_id.1
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),

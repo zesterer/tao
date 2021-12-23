@@ -16,19 +16,19 @@ pub enum Repr {
     List(Box<Repr>),
     Tuple(Vec<Repr>),
     Sum(Vec<Repr>),
-    Data(DataId, Vec<Repr>),
+    Data(ConDataId),
     Func(Box<Repr>, Box<Repr>),
 }
 
 #[derive(Default)]
 pub struct Reprs {
-    datas: HashMap<(DataId, Vec<Repr>), Option<Repr>>,
+    pub datas: HashMap<ConDataId, Option<Repr>>,
 }
 
 impl Reprs {
-    pub fn get(&self, data: DataId, params: Vec<Repr>) -> &Repr {
+    pub fn get(&self, data: ConDataId) -> &Repr {
         self.datas
-            .get(&(data, params))
+            .get(&data)
             .unwrap()
             .as_ref()
             .expect("Repr declared but not defined")
@@ -40,8 +40,8 @@ impl Reprs {
             .filter_map(|r| r.as_mut())
     }
 
-    pub fn declare(&mut self, data: DataId, args: Vec<Repr>) -> bool {
-        match self.datas.entry((data, args)) {
+    pub fn declare(&mut self, data: ConDataId) -> bool {
+        match self.datas.entry(data) {
             Entry::Occupied(data) => false,
             Entry::Vacant(data) => {
                 data.insert(None);
@@ -50,7 +50,7 @@ impl Reprs {
         }
     }
 
-    pub fn define(&mut self, data: DataId, args: Vec<Repr>, repr: Repr) {
-        assert!(self.datas.insert((data, args), Some(repr)).unwrap().is_none());
+    pub fn define(&mut self, data: ConDataId, repr: Repr) {
+        assert!(self.datas.insert(data, Some(repr)).unwrap().is_none());
     }
 }

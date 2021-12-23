@@ -19,6 +19,9 @@ functions, currying, good diagnostics, and much more!
 - [x] Type polymorphism (for both types and values)
 - [x] Pattern matching
 - [x] Built-in lists
+- [x] Static dispatch
+- [x] Monomorphisation
+- [x] MIR optimiser
 - [x] Bytecode compiler
 
 ## Current working on

@@ -16,7 +16,7 @@ member Bool of Debug =
         \ False => "False"
 
 member Str of Debug =
-    => debug = fn s => s
+    => debug = fn s => "\"" ++ s ++ "\""
 
 member Char of Debug =
     => debug = fn c => [c]
@@ -33,3 +33,6 @@ class Show =
     => show : Self -> Str
 
 def show A < Show : A -> Str = A.show
+
+member Str of Show =
+    => show = fn s => s

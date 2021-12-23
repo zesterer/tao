@@ -38,6 +38,7 @@ use tao_analysis::{
     ConBinding,
     ConTy,
     ConTyId,
+    ConDataId,
 };
 use hashbrown::HashMap;
 use internment::Intern;

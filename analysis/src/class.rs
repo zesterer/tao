@@ -91,8 +91,7 @@ impl Classes {
         self.members[id.0] = member;
     }
 
-    // TODO: Is this needed?
-    pub fn lookup_member_concrete(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
+    pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
         // Returns true if member covers ty
         fn covers(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
@@ -110,9 +109,9 @@ impl Classes {
                 (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
                     covers(hir, ctx, x_i, *y_i) && covers(hir, ctx, x_o, *y_o)
                 },
-                (Ty::Data(x, xs), ConTy::Data(y, ys)) if x == *y && xs.len() == ys.len() => xs
+                (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0 && xs.len() == y.1.len() => xs
                     .into_iter()
-                    .zip(ys.into_iter())
+                    .zip(y.1.iter())
                     .all(|(x, y)| covers(hir, ctx, x, *y)),
                 _ => false,
             }
@@ -140,30 +139,6 @@ impl Classes {
             .unwrap_or(&[])
             .iter()
             .map(|m| self.get_member(*m))
-    }
-
-    // Return true if implementing `known` implies also implementing `unknown`
-    pub fn implies(&self, known: ClassId, unknown: ClassId) -> bool {
-        self.implies_inner(known, unknown, &mut HashSet::default())
-    }
-
-    fn implies_inner(&self, known: ClassId, unknown: ClassId, tried: &mut HashSet<ClassId>) -> bool {
-        if known == unknown {
-            true
-        } else if tried.contains(&known) {
-            false
-        } else {
-            tried.insert(known);
-            self
-                .get(known)
-                .obligations
-                .as_ref()
-                .expect("Obligations must be known here")
-                .iter()
-                .any(|obl| match &**obl {
-                    Obligation::MemberOf(class) => self.implies(*class, unknown),
-                })
-        }
     }
 }
 

@@ -15,11 +15,11 @@ def main = [
         :contains(4)
         :debug
 
-def foo = do
-    let msg = input;
-    if msg = "exit" then do
-        print("Now exiting...");
-        print("Goodbye!");
-    else do
-        print("Hello, world!");
-        main; # Loop
+# def foo = do
+#     let msg = input;
+#     if msg = "exit" then do
+#         print("Now exiting...");
+#         print("Goodbye!");
+#     else do
+#         print("Hello, world!");
+#         main; # Loop

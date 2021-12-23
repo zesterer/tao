@@ -15,7 +15,7 @@ pub mod ty;
 
 pub use crate::{
     class::{ClassId, Class, Classes, ClassItem, Member, MemberItem},
-    concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConDef},
+    concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConDef, ConDataId},
     context::Context,
     data::{Datas, Data, DataId, Alias, AliasId},
     def::{Defs, Def, DefId},
@@ -37,5 +37,6 @@ use tao_syntax::{
     ast,
 };
 use hashbrown::{HashMap, HashSet};
+use internment::Intern;
 use std::collections::BTreeMap;
 use std::fmt;
