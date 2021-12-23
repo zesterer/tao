@@ -636,7 +636,7 @@ impl ToHir for ast::Expr {
                     },
                 }
             },
-            ast::Expr::Do(_) => {
+            ast::Expr::Do(_, _) => {
                 infer.ctx_mut().emit(Error::Unsupported(self.span(), "do notation"));
                 (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
             },

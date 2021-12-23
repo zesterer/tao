@@ -200,7 +200,8 @@ pub enum Expr {
 
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Debug(SrcNode<Self>),
-    Do(Vec<DoItem>),
+    // statements, return
+    Do(Vec<DoItem>, Option<SrcNode<Self>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -242,6 +243,10 @@ pub enum ClassItem {
         name: SrcNode<Ident>,
         ty: SrcNode<Type>,
     },
+    Type {
+        name: SrcNode<Ident>,
+        obligations: Vec<SrcNode<Ident>>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -257,6 +262,10 @@ pub enum MemberItem {
     Value {
         name: SrcNode<Ident>,
         val: SrcNode<Expr>,
+    },
+    Type {
+        name: SrcNode<Ident>,
+        ty: SrcNode<Type>,
     },
 }
 

@@ -15,7 +15,6 @@ def main = [
         :contains(4)
         :debug
 
-# $[main]
 def foo = do
     let msg = input;
     if msg = "exit" then do

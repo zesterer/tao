@@ -144,6 +144,10 @@ impl Context {
                         name.clone(),
                         ty.to_hir(&mut infer, &Scope::Empty),
                     )),
+                    ast::ClassItem::Type { name, obligations } => {
+                        errors.push(Error::Unsupported(name.span(), "associated types"));
+                        None
+                    },
                 })
                 .collect::<Vec<_>>();
 
@@ -258,57 +262,6 @@ impl Context {
                 errors.append(&mut errs);
             }
         }
-        // for (attr, class) in classes {
-        //     let gen_scope = this.classes.name_gen_scope(*class.name);
-
-        //     let mut infer = Infer::new(&mut this, Some(gen_scope), Some(class.name.span()));
-
-        //     let values = class.items
-        //         .iter()
-        //         .filter_map(|item| match item {
-        //             ast::ClassItem::Value { name, ty } => Some((
-        //                 name.clone(),
-        //                 ty.to_hir(&mut infer, &Scope::Empty),
-        //             )),
-        //         })
-        //         .collect::<Vec<_>>();
-
-        //     let (mut checked, mut errs) = infer.into_checked();
-        //     errors.append(&mut errs);
-
-        //     let items = values
-        //         .into_iter()
-        //         .map(|(name, ty)| ClassItem::Value {
-        //             name,
-        //             ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
-        //         })
-        //         // TODO:
-        //         //.zip(types.into_iter())
-        //         .collect::<Vec<_>>();
-
-        //     this.classes.define(
-        //         this.classes
-        //             .lookup(*class.name)
-        //             .expect("Class must be pre-declared before definition"),
-        //         Class {
-        //             name: class.name.clone(),
-        //             obligations: class
-        //                 .obligation
-        //                 .iter()
-        //                 .filter_map(|obl| match this.classes.lookup(**obl) {
-        //                     Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
-        //                     None => {
-        //                         errors.push(Error::NoSuchClass(obl.clone()));
-        //                         None
-        //                     },
-        //                 })
-        //                 .collect(),
-        //             attr: attr.clone(),
-        //             gen_scope,
-        //             items,
-        //         },
-        //     );
-        // }
         for (attr, member, class_id, member_id, gen_scope) in members {
             let mut infer = Infer::new(&mut this, Some(gen_scope), None);
 
@@ -357,6 +310,10 @@ impl Context {
 
                             // TODO: Detect duplicates!
                             Some((**name, MemberItem::Value { name: name.clone(), val }))
+                        },
+                        ast::MemberItem::Type { name, ty } => {
+                            errors.push(Error::Unsupported(name.span(), "associated types"));
+                            None
                         },
                     }
                 })

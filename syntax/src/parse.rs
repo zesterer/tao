@@ -475,9 +475,12 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .or(expr.clone()
                     .map_with_span(SrcNode::new)
                     .map(ast::DoItem::Expr))
-                .separated_by(just(Token::Semicolon))
-                .allow_trailing())
-            .map(ast::Expr::Do);
+                .then_ignore(just(Token::Semicolon))
+                .repeated()
+                .then(expr.clone()
+                    .map_with_span(SrcNode::new)
+                    .or_not()))
+            .map(|(stmts, tail)| ast::Expr::Do(stmts, tail));
 
         let atom = litr
             .or(ident)
@@ -765,8 +768,16 @@ pub fn class_parser() -> impl Parser<ast::Class> {
             name,
         });
 
+    let assoc_type = type_ident_parser()
+        .map_with_span(SrcNode::new)
+        .then(obligation_parser().or_not())
+        .map(|(name, obligations)| ast::ClassItem::Type {
+            obligations: obligations.unwrap_or_default(),
+            name,
+        });
+
     let item = just(Token::Op(Op::RFlow))
-        .ignore_then(value /*.or(assoc_type)*/);
+        .ignore_then(value.or(assoc_type));
 
     just(Token::Class)
         .ignore_then(type_ident_parser()
@@ -796,8 +807,14 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             name,
         });
 
+    let assoc_type = type_ident_parser()
+        .map_with_span(SrcNode::new)
+        .then_ignore(just(Token::Op(Op::Eq)))
+        .then(type_parser().map_with_span(SrcNode::new))
+        .map(|(name, ty)| ast::MemberItem::Type { name, ty });
+
     let item = just(Token::Op(Op::RFlow))
-        .ignore_then(value /*.or(assoc_type)*/);
+        .ignore_then(value.or(assoc_type));
 
     just(Token::For)
         .ignore_then(generics_parser().map_with_span(SrcNode::new))

@@ -323,7 +323,7 @@ impl Error {
                 vec![],
             ),
             Error::Unsupported(span, feature) => (
-                format!("{} is not yet supported", feature.fg(Color::Red)),
+                format!("Feature {} is not yet supported", feature.fg(Color::Yellow)),
                 vec![
                     (span, format!("This is unsupported"), Color::Red),
                 ],

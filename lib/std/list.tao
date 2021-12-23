@@ -40,3 +40,13 @@ def sum A < Zero + Add : [A] -> A =
 
 def product A < One + Mul : [A] -> A =
     fold(A.one, fn x, y => A.mul(x, y))
+
+# class Iterator =
+#     => Output
+#     => next : Self -> (Self, Maybe Self#(.Output)#)
+
+# for A member [A] of Iterator =
+#     => Output = A
+#     => next = fn
+#         | [] => ([], None)
+#         \ [x .. xs] => (xs, Just x)
