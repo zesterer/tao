@@ -16,7 +16,7 @@ pub enum ConTy {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConTyId(usize);
 
-pub type ConDef = (DefId, Vec<ConTyId>);
+pub type ConDefId = Intern<(DefId, Vec<ConTyId>)>;
 
 pub type ConDataId = Intern<(DataId, Vec<ConTyId>)>;
 
@@ -33,8 +33,8 @@ pub struct ConContext {
     datas: HashMap<ConDataId, Option<ConData>>,
     tys: Vec<ConTy>,
     ty_lookup: HashMap<ConTy, ConTyId>,
-    defs: HashMap<ConDef, Option<ConExpr>>,
-    entry: Option<ConDef>,
+    defs: HashMap<ConDefId, Option<ConExpr>>,
+    entry: Option<ConDefId>,
 }
 
 impl ConContext {
@@ -63,9 +63,9 @@ impl ConContext {
 
             let gen_scope = hir.tys.get_gen_scope(main.gen_scope);
             if gen_scope.len() == 0 {
-                let main_def = (id, Vec::new());
+                let main_def = Intern::new((id, Vec::new()));
                 this.lower_def(hir, main_def);
-                this.entry = Some((id, Vec::new()));
+                this.entry = Some(main_def);
             } else {
                 errors.push(Error::GenericEntryPoint(main.name.clone(), gen_scope.span, entry_attr.span()));
             }
@@ -76,13 +76,13 @@ impl ConContext {
         (this, errors)
     }
 
-    pub fn entry_def(&self) -> ConDef {
+    pub fn entry_def(&self) -> ConDefId {
         self.entry.clone().unwrap()
     }
 
-    pub fn get_def(&self, def: &ConDef) -> &ConExpr {
+    pub fn get_def(&self, def: ConDefId) -> &ConExpr {
         // Can't fail
-        self.defs[def].as_ref().unwrap()
+        self.defs[&def].as_ref().unwrap()
     }
 
     pub fn get_ty(&self, ty: ConTyId) -> &ConTy {
@@ -180,9 +180,9 @@ impl ConContext {
         }
     }
 
-    pub fn lower_def(&mut self, hir: &Context, def: ConDef) {
+    pub fn lower_def(&mut self, hir: &Context, def: ConDefId) {
         if !self.defs.contains_key(&def) {
-            self.defs.insert(def.clone(), None);
+            self.defs.insert(def, None);
 
             let body = self.lower_expr(
                 hir,
@@ -245,7 +245,7 @@ impl ConContext {
                     .iter()
                     .map(|arg| self.concretize_ty(hir, arg.1, ty_insts))
                     .collect::<Vec<_>>();
-                self.lower_def(hir, (*x, args.clone()));
+                self.lower_def(hir, Intern::new((*x, args.clone())));
                 hir::Expr::Global(*x, args)
             },
             hir::Expr::Tuple(fields) => hir::Expr::Tuple(fields

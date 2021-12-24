@@ -32,7 +32,7 @@ use tao_analysis::{
     DefId,
     Context as HirContext,
     data::DataId,
-    ConDef,
+    ConDefId,
     ConContext,
     ConExpr,
     ConBinding,

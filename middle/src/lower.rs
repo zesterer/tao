@@ -17,14 +17,14 @@ pub struct TyInsts<'a> {
 }
 
 impl Context {
-    pub fn lower_def(&mut self, hir: &HirContext, con: &ConContext, def: ConDef) -> ProcId {
+    pub fn lower_def(&mut self, hir: &HirContext, con: &ConContext, def: ConDefId) -> ProcId {
         let id = self.procs.id_of_con(def.clone());
 
         // Instantiate proc if not already done
         if !self.procs.is_declared(id) {
             self.procs.declare(id);
             let proc = Proc {
-                body: self.lower_expr(hir, con, con.get_def(&def)),
+                body: self.lower_expr(hir, con, con.get_def(def)),
             };
             self.procs.define(id, proc);
         }
@@ -142,7 +142,7 @@ impl Context {
             hir::Expr::Literal(litr) => mir::Expr::Const(self.lower_litr(hir, con, litr)),
             hir::Expr::Local(local) => mir::Expr::Local(*local),
             hir::Expr::Global(def_id, args) => {
-                mir::Expr::Global(self.lower_def(hir, con, (*def_id, args.clone())), Default::default())
+                mir::Expr::Global(self.lower_def(hir, con, Intern::new((*def_id, args.clone()))), Default::default())
             },
             hir::Expr::Unary(op, x) => {
                 use ast::UnaryOp::*;

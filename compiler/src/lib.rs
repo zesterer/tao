@@ -60,6 +60,7 @@ pub struct Options {
 pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, options: Options, mut writer: impl Write, mut get_file: F) {
     let (mut ast, mut syntax_errors) = parse_module(&src, src_id);
 
+    // TODO: Write a proper module system you lazy git
     fn resolve_imports<F: FnMut(SrcId) -> Option<String>>(
         module: Option<&mut ast::Module>,
         imported: &mut HashMap<SrcId, String>,
@@ -112,7 +113,6 @@ pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, option
         e.write(&mut srcs, &mut writer);
     }
 
-    // println!("Items = {}", ast.as_ref().unwrap().items.len());
     if options.debug.contains(&"ast".to_string()) {
         writeln!(writer, "{:?}", ast).unwrap();
     }
@@ -138,12 +138,7 @@ pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, option
                     e.write(&ctx, &mut srcs, &mut writer);
                 }
             } else {
-                // let (mut ctx, errors) = Context::from_hir(&ctx);
                 let mut ctx = Context::from_concrete(&ctx, &concrete);
-
-                // for err in errors {
-                //     err.write(&ctx, srcs, &mut writer);
-                // }
 
                 match options.opt {
                     Opt::None => {},
@@ -162,7 +157,6 @@ pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, option
                 if options.debug.contains(&"bytecode".to_string()) {
                     prog.write(&mut writer);
                 }
-                // prog.write(std::io::stdout());
 
                 if let Some(result) = exec(&prog) {
                     writeln!(writer, "{}", result).unwrap();
