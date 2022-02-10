@@ -82,9 +82,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chumsky"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "091823bc52a25302827bc0d34813ecf770b84d663a3aaac396b5d0dbd4ef1dcb"
+checksum = "8d02796e4586c6c41aeb68eae9bfb4558a522c35f1430c14b40136c3706e09e4"
 dependencies = [
  "ahash 0.3.8",
 ]

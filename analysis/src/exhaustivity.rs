@@ -12,6 +12,7 @@ pub enum AbstractPat {
     Bool([bool; 2]),
     Nat(Ranges<u64>),
     Int(Ranges<i64>),
+    Real(f64),
     Char(char),
     Tuple(Vec<Self>),
     Variant(DataId, Ident, Box<Self>),
@@ -134,6 +135,16 @@ impl AbstractPat {
                     match pat {
                         AbstractPat::Wildcard => return None,
                         AbstractPat::Char(_) => {},
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
+                    }
+                }
+                Some(ExamplePat::Wildcard)
+            },
+            Ty::Prim(Prim::Real) => {
+                for pat in filter {
+                    match pat {
+                        AbstractPat::Wildcard => return None,
+                        AbstractPat::Real(_) => {},
                         _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }

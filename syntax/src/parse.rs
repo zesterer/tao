@@ -5,7 +5,7 @@ pub trait Parser<T> = chumsky::Parser<Token, T, Error = Error> + Clone;
 pub fn literal_parser() -> impl Parser<ast::Literal> {
     select! {
         Token::Nat(x) => ast::Literal::Nat(x),
-        Token::Num(x) => ast::Literal::Num(x.parse().expect("Valid number could not be parsed as f64")),
+        Token::Real(x) => ast::Literal::Real(x.parse().expect("Real could not be parsed as f64")),
         Token::Bool(x) => ast::Literal::Bool(x),
         Token::Char(x) => ast::Literal::Char(x),
         Token::Str(x) => ast::Literal::Str(x),
@@ -35,7 +35,7 @@ pub fn bool_parser() -> impl Parser<bool> {
 
 pub fn nested_parser<'a, T: 'a>(parser: impl Parser<T> + 'a, delimiter: Delimiter, f: impl Fn(Span) -> T + Clone + 'a) -> impl Parser<T> + 'a {
     parser
-        .delimited_by(Token::Open(delimiter), Token::Close(delimiter))
+        .delimited_by(just(Token::Open(delimiter)), just(Token::Close(delimiter)))
         .recover_with(nested_delimiters(
             Token::Open(delimiter), Token::Close(delimiter),
             [
@@ -106,6 +106,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(tuple)
             .or(record)
             .or(unknown)
+            .or(select! { Token::Error(_) => () }.map(|_| ast::Type::Error))
             .map_with_span(SrcNode::new)
             .boxed();
 
@@ -252,6 +253,7 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
             .or(record)
             .or(list)
             .or(deconstruct)
+            .or(select! { Token::Error(_) => () }.map_with_span(|_, span| SrcNode::new(ast::Pat::Error, span)))
             .map(|atom| (atom, None))
             .or(term_ident_parser().map_with_span(|ident, span| {
                 (SrcNode::new(ast::Pat::Wildcard, span), Some(SrcNode::new(ident, span)))
@@ -405,7 +407,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
 
         let class_access = type_parser()
             .map_with_span(SrcNode::new)
-            .delimited_by(Token::Op(Op::Less), Token::Op(Op::More))
+            .delimited_by(just(Token::Op(Op::Less)), just(Token::Op(Op::More)))
             .or(type_ident_parser()
                 .map_with_span(SrcNode::new)
                 .map(|ty| {
@@ -496,6 +498,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(cons)
             .or(intrinsic)
             .or(do_)
+            .or(select! { Token::Error(_) => () }.map(|_| ast::Expr::Error))
             .map_with_span(SrcNode::new)
             .boxed();
 
@@ -577,7 +580,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(just(Token::Op(Op::Not)).to(ast::UnaryOp::Not))
             .map_with_span(SrcNode::new);
         let unary = op.repeated()
-            .then(chained)
+            .then(chained.labelled("unary operand"))
             .foldr(|op, expr| {
                 let span = op.span().union(expr.span());
                 SrcNode::new(ast::Expr::Unary(op, expr), span)
@@ -590,7 +593,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(just(Token::Op(Op::Rem)).to(ast::BinaryOp::Rem))
             .map_with_span(SrcNode::new);
         let product = unary.clone()
-            .then(op.then(unary).repeated())
+            .then(op.then(unary.labelled("binary operand")).repeated())
             .foldl(|a, (op, b)| {
                 let span = a.span().union(b.span());
                 SrcNode::new(ast::Expr::Binary(op, a, b), span)
@@ -602,7 +605,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(just(Token::Op(Op::Sub)).to(ast::BinaryOp::Sub))
             .map_with_span(SrcNode::new);
         let sum = product.clone()
-            .then(op.then(product).repeated())
+            .then(op.then(product.labelled("binary operand")).repeated())
             .foldl(|a, (op, b)| {
                 let span = a.span().union(b.span());
                 SrcNode::new(ast::Expr::Binary(op, a, b), span)
@@ -613,7 +616,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         let op = just(Token::Op(Op::Join)).to(ast::BinaryOp::Join)
             .map_with_span(SrcNode::new);
         let join = sum.clone()
-            .then(op.then(sum).repeated())
+            .then(op.then(sum.labelled("binary operand")).repeated())
             .foldl(|a, (op, b)| {
                 let span = a.span().union(b.span());
                 SrcNode::new(ast::Expr::Binary(op, a, b), span)
@@ -629,7 +632,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(just(Token::Op(Op::NotEq)).to(ast::BinaryOp::NotEq))
             .map_with_span(SrcNode::new);
         let comparison = join.clone()
-            .then(op.then(join).repeated())
+            .then(op.then(join.labelled("binary operand")).repeated())
             .foldl(|a, (op, b)| {
                 let span = a.span().union(b.span());
                 SrcNode::new(ast::Expr::Binary(op, a, b), span)
@@ -642,7 +645,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(just(Token::Op(Op::Xor)).to(ast::BinaryOp::Xor))
             .map_with_span(SrcNode::new);
         let logical = comparison.clone()
-            .then(op.then(comparison).repeated())
+            .then(op.then(comparison.labelled("binary operand")).repeated())
             .foldl(|a, (op, b)| {
                 let span = a.span().union(b.span());
                 SrcNode::new(ast::Expr::Binary(op, a, b), span)
@@ -838,10 +841,22 @@ pub fn member_parser() -> impl Parser<ast::Member> {
 }
 
 pub fn item_parser() -> impl Parser<ast::Item> {
-    let attr = just(Token::Dollar)
+    let attr = recursive(|attr| term_ident_parser()
+        .map_with_span(SrcNode::new)
+        .then(nested_parser(
+                attr
+                        .separated_by(just(Token::Comma))
+                        .allow_trailing(),
+                Delimiter::Paren,
+                |_| Vec::new(),
+            )
+            .or_not())
+        .map(|(name, args)| ast::Attr { name, args })
+        .map_with_span(SrcNode::new));
+
+    let attrs = just(Token::Dollar)
         .ignore_then(nested_parser(
-            term_ident_parser()
-                .map_with_span(SrcNode::new)
+            attr
                 .separated_by(just(Token::Comma))
                 .allow_trailing(),
             Delimiter::Brack,
@@ -861,21 +876,17 @@ pub fn item_parser() -> impl Parser<ast::Item> {
         .or(just(Token::Dollar).ignored())
         .or(end());
 
-    attr
+    attrs
         .then(item)
-        .map(|(attr, kind)| ast::Item {
-            attr,
-            kind,
-        })
+        .map(|(attrs, kind)| ast::Item { attrs, kind })
         .map_with_span(|item, span| (item, span))
         .then(tail.rewind().map(Ok).map(Some).or_else(|e| Ok(Some(Err(e)))))
         .validate(|((item, span), mut r), _, emit| {
             if let Some(Err(e)) = r.take() {
                 emit(e.while_parsing(span, "item"));
             }
-            ((item, span), None)
+            item
         })
-        .map(|((item, _), _)| item)
 }
 
 pub fn module_parser() -> impl Parser<ast::Module> {
@@ -886,7 +897,7 @@ pub fn module_parser() -> impl Parser<ast::Module> {
     imports
         .then(item_parser()
             .map(Some)
-            .recover_with(skip_until(ITEM_STARTS, |_| None))
+            .recover_with(skip_until(ITEM_STARTS, |_| None).skip_start())
             .repeated())
         .then_ignore(end())
         .map(|(imports, items)| ast::Module {

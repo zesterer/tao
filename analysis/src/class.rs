@@ -10,7 +10,7 @@ pub enum ClassItem {
 pub struct Class {
     pub name: SrcNode<Ident>,
     pub obligations: Option<Vec<SrcNode<Obligation>>>,
-    pub attr: ast::Attr,
+    pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
     pub items: Option<Vec<ClassItem>>,
 }
@@ -87,8 +87,8 @@ impl Classes {
         id
     }
 
-    pub fn define_member(&mut self, id: MemberId, class: ClassId, member: Member) {
-        self.members[id.0] = member;
+    pub fn define_member_items(&mut self, id: MemberId, class: ClassId, items: HashMap<Ident, MemberItem>) {
+        self.members[id.0].items = Some(items);
     }
 
     pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
@@ -151,6 +151,7 @@ pub enum MemberItem {
 
 pub struct Member {
     pub gen_scope: GenScopeId,
+    pub attr: Vec<SrcNode<ast::Attr>>,
     pub member: TyId,
     pub items: Option<HashMap<Ident, MemberItem>>,
 }

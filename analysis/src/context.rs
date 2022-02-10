@@ -36,7 +36,7 @@ impl Context {
             match this.classes.declare(class.name.clone(), Class {
                 name: class.name.clone(),
                 obligations: None,
-                attr: attr.clone(),
+                attr: attr.to_vec(),
                 gen_scope,
                 items: None,
             }) {
@@ -107,7 +107,7 @@ impl Context {
                     .expect("Alias must be pre-declared before definition"),
                 Alias {
                     name: *alias.name,
-                    attr: attr.clone(),
+                    attr: attr.to_vec(),
                     gen_scope,
                     ty,
                 },
@@ -192,10 +192,11 @@ impl Context {
 
             let member_id = this.classes.declare_member(class_id, Member {
                 gen_scope,
+                attr: attr.to_vec(),
                 member: member_ty,
                 items: None,
             });
-            members.push((attr, member, class_id, member_id, gen_scope));
+            members.push((member, class_id, member_id, gen_scope));
         }
         let mut defs = Vec::new();
         for (attr, def, gen_scope) in defs_init {
@@ -214,7 +215,7 @@ impl Context {
 
             if let Err(err) = this.defs.declare(Def {
                 name: def.name.clone(),
-                attr: attr.clone(),
+                attr: attr.to_vec(),
                 gen_scope,
                 ty_hint,
                 body: None,
@@ -254,7 +255,7 @@ impl Context {
                 data.name.span(),
                 Data {
                     name: *data.name,
-                    attr: attr.clone(),
+                    attr: attr.to_vec(),
                     gen_scope,
                     cons,
                 },
@@ -262,7 +263,7 @@ impl Context {
                 errors.append(&mut errs);
             }
         }
-        for (attr, member, class_id, member_id, gen_scope) in members {
+        for (member, class_id, member_id, gen_scope) in members {
             let mut infer = Infer::new(&mut this, Some(gen_scope), None);
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
@@ -274,8 +275,6 @@ impl Context {
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
-
-            let member_ty = checked.reify(member_ty.meta().1);
 
             let items = member.items
                 .iter()
@@ -333,13 +332,7 @@ impl Context {
                 }
             }
 
-            let member_ = Member {
-                gen_scope,
-                member: member_ty,
-                items: Some(items),
-            };
-
-            this.classes.define_member(member_id, class_id, member_);
+            this.classes.define_member_items(member_id, class_id, items);
         }
         for (attr, def) in defs {
             let id = this.defs

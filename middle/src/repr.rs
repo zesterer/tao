@@ -5,7 +5,7 @@ use hashbrown::hash_map::Entry;
 pub enum Prim {
     Nat,
     Int,
-    Num,
+    Real,
     Char,
     Bool,
 }

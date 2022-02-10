@@ -53,7 +53,7 @@ impl ConContext {
             .iter()
             .filter_map(|(id, def)| def.attr
                 .iter()
-                .find(|attr| attr.as_str() == "main")
+                .find(|attr| attr.name.as_str() == "main")
                 .zip(Some((id, def))));
 
         if let Some((entry_attr, (id, main))) = entries.next() {

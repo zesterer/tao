@@ -8,7 +8,7 @@ pub type TyNode<T> = Node<T, TyMeta>;
 pub enum Prim {
     Nat,
     Int,
-    Num,
+    Real,
     Bool,
     Char,
 }
@@ -18,7 +18,7 @@ impl fmt::Display for Prim {
         match self {
             Prim::Nat => write!(f, "Nat"),
             Prim::Int => write!(f, "Int"),
-            Prim::Num => write!(f, "Num"),
+            Prim::Real => write!(f, "Real"),
             Prim::Bool => write!(f, "Bool"),
             Prim::Char => write!(f, "Char"),
         }

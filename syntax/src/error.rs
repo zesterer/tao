@@ -16,7 +16,7 @@ pub enum ErrorKind {
 pub struct Error {
     kind: ErrorKind,
     span: Span,
-    while_parsing: Option<(Span, String)>,
+    while_parsing: Option<(Span, &'static str)>,
     expected: HashSet<Pattern>,
     label: Option<&'static str>,
 }
@@ -27,8 +27,8 @@ impl Error {
         self
     }
 
-    pub fn while_parsing<S: ToString>(mut self, span: Span, structure: S) -> Self {
-        self.while_parsing = self.while_parsing.or_else(|| Some((span, structure.to_string())));
+    pub fn while_parsing(mut self, span: Span, structure: &'static str) -> Self {
+        self.while_parsing = self.while_parsing.or_else(|| Some((span, structure)));
         self
     }
 }
@@ -193,7 +193,7 @@ impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Pattern::Token(token) => write!(f, "{}", token),
-            Pattern::Char(c) => write!(f, "{}", c),
+            Pattern::Char(c) => write!(f, "{:?}", c),
             Pattern::Literal => write!(f, "literal"),
             Pattern::TypeIdent => write!(f, "type name"),
             Pattern::TermIdent => write!(f, "identifier"),

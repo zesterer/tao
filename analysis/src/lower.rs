@@ -1,13 +1,13 @@
 use super::*;
 
 // TODO: use `ToHir`?
-fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
+fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> (TyInfo, Option<NumLitr>) {
     match litr {
-        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Nat), // TODO: Numeric subtyping
-        ast::Literal::Num(_) => TyInfo::Prim(ty::Prim::Num),
-        ast::Literal::Bool(_) => TyInfo::Prim(ty::Prim::Bool),
-        ast::Literal::Char(_) => TyInfo::Prim(ty::Prim::Char),
-        ast::Literal::Str(_) => TyInfo::List(infer.insert(span, TyInfo::Prim(ty::Prim::Char))),
+        ast::Literal::Nat(_) => (TyInfo::Unknown(None), Some(NumLitr::Nat)), // TODO: Numeric subtyping
+        ast::Literal::Real(_) => (TyInfo::Unknown(None), Some(NumLitr::Real)),
+        ast::Literal::Bool(_) => (TyInfo::Prim(ty::Prim::Bool), None),
+        ast::Literal::Char(_) => (TyInfo::Prim(ty::Prim::Char), None),
+        ast::Literal::Str(_) => (TyInfo::List(infer.insert(span, TyInfo::Prim(ty::Prim::Char))), None),
     }
 }
 
@@ -81,7 +81,7 @@ impl ToHir for ast::Type {
                 },
                 ("Nat", 0) => TyInfo::Prim(Prim::Nat),
                 ("Int", 0) => TyInfo::Prim(Prim::Int),
-                ("Num", 0) => TyInfo::Prim(Prim::Num),
+                ("Real", 0) => TyInfo::Prim(Prim::Real),
                 ("Bool", 0) => TyInfo::Prim(Prim::Bool),
                 ("Char", 0) => TyInfo::Prim(Prim::Char),
                 _ => {
@@ -152,7 +152,14 @@ impl ToHir for ast::Binding {
         let (info, pat) = match &*self.pat {
             ast::Pat::Error => (TyInfo::Error(ErrorReason::Unknown), hir::Pat::Error),
             ast::Pat::Wildcard => (TyInfo::Unknown(None), hir::Pat::Wildcard),
-            ast::Pat::Literal(litr) => (litr_ty_info(litr, infer, self.pat.span()), hir::Pat::Literal(*litr)),
+            ast::Pat::Literal(litr) => {
+                let (ty_info, num_litr) = litr_ty_info(litr, infer, self.pat.span());
+                let ty = infer.insert(self.span(), ty_info);
+                if let Some(num_litr) = num_litr {
+                    infer.make_num_litr(ty, self.pat.span(), num_litr);
+                }
+                (TyInfo::Ref(ty), hir::Pat::Literal(*litr))
+            },
             ast::Pat::Single(inner) => {
                 let binding = inner.to_hir(infer, scope);
                 // TODO: don't use `Ref` to link types
@@ -167,7 +174,7 @@ impl ToHir for ast::Binding {
                         (TyInfo::Ref(nat), hir::Pat::Add(lhs, SrcNode::new(*rhs_nat, rhs.span())))
                     },
                     (_, _) => {
-                        let info = litr_ty_info(rhs, infer, self.pat.span());
+                        let (info, _) = litr_ty_info(rhs, infer, self.pat.span());
                         let rhs_ty = infer.insert(rhs.span(), info);
                         infer.emit(InferError::PatternNotSupported(lhs.meta().1, op.clone(), rhs_ty, self.span()));
                         (TyInfo::Error(ErrorReason::Unknown), hir::Pat::Error)
@@ -284,7 +291,14 @@ impl ToHir for ast::Expr {
         let mut span = self.span();
         let (info, expr) = match &**self {
             ast::Expr::Error => (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error),
-            ast::Expr::Literal(litr) => (litr_ty_info(litr, infer, self.span()), hir::Expr::Literal(*litr)),
+            ast::Expr::Literal(litr) => {
+                let (ty_info, num_litr) = litr_ty_info(litr, infer, span);
+                let ty = infer.insert(span, ty_info);
+                if let Some(num_litr) = num_litr {
+                    infer.make_num_litr(ty, span, num_litr);
+                }
+                (TyInfo::Ref(ty), hir::Expr::Literal(*litr))
+            }
             ast::Expr::Local(local) => if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
                 if let Some((def_id, gens)) = rec {
                     (TyInfo::Ref(ty), hir::Expr::Global(def_id, gens))

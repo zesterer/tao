@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Clone, Debug)]
 pub enum Value {
     Int(i64),
-    Num(f64),
+    Real(f64),
     Char(char),
     Bool(bool),
     List(Vec<Self>),
@@ -14,7 +14,7 @@ pub enum Value {
 
 impl Value {
     pub fn int(self) -> i64 { if let Value::Int(x) = self { x } else { panic!("{}", self) } }
-    pub fn num(self) -> f64 { if let Value::Num(x) = self { x } else { panic!("{}", self) } }
+    pub fn real(self) -> f64 { if let Value::Real(x) = self { x } else { panic!("{}", self) } }
     pub fn char(self) -> char { if let Value::Char(c) = self { c } else { panic!("{}", self) } }
     pub fn bool(self) -> bool { if let Value::Bool(x) = self { x } else { panic!("{}", self) } }
     pub fn list(self) -> Vec<Self> { if let Value::List(xs) = self { xs } else { panic!("{}", self) } }
@@ -26,7 +26,7 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Int(x) => write!(f, "{}", x),
-            Value::Num(x) => write!(f, "{}", x),
+            Value::Real(x) => write!(f, "{}", x),
             Value::Char(c) => write!(f, "{}", c),
             Value::Bool(x) => write!(f, "{}", x),
             Value::List(items) => match items.iter().next() {

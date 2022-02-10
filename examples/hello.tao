@@ -1,5 +1,13 @@
 import "lib/std.tao"
 
+def minux_seven: Int = (-2) - 5
+
+def foo =
+    let f = fn f => () in
+    f(f)
+
+type Foo = (Nat, Foo)
+
 # $[main]
 # def main = [1, 2, 3, 4, 5]:sort
 

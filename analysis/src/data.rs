@@ -2,7 +2,7 @@ use super::*;
 
 pub struct Data {
     pub name: Ident,
-    pub attr: ast::Attr,
+    pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
     pub cons: Vec<(SrcNode<Ident>, TyId)>,
 }
@@ -15,7 +15,7 @@ pub struct AliasId(usize);
 
 pub struct Alias {
     pub name: Ident,
-    pub attr: ast::Attr,
+    pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
     pub ty: TyId,
 }

@@ -96,7 +96,7 @@ impl fmt::Display for BinaryOp {
 #[derive(Copy, Clone, PartialEq)]
 pub enum Literal {
     Nat(u64),
-    Num(f64),
+    Real(f64),
     Bool(bool),
     Char(char),
     Str(Intern<String>),
@@ -106,7 +106,7 @@ impl fmt::Debug for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Nat(x) => write!(f, "`{}`", x),
-            Self::Num(x) => write!(f, "`{}`", x),
+            Self::Real(x) => write!(f, "`{}`", x),
             Self::Bool(x) => write!(f, "`{}`", x),
             Self::Char(c) => write!(f, "`{}`", c),
             Self::Str(s) => write!(f, "`\"{}\"`", s),
@@ -286,12 +286,16 @@ pub enum ItemKind {
     Member(Member),
 }
 
-pub type Attr = Vec<SrcNode<Ident>>;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attr {
+    pub name: SrcNode<Ident>,
+    pub args: Option<Vec<SrcNode<Self>>>,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Item {
     pub kind: ItemKind,
-    pub attr: Attr,
+    pub attrs: Vec<SrcNode<Attr>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -301,47 +305,47 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn classes(&self) -> impl Iterator<Item = (&Attr, &Class)> + '_ {
+    pub fn classes(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Class)> + '_ {
         self.items
             .iter()
             .filter_map(|item| match &item.kind {
-                ItemKind::Class(class) => Some((&item.attr, class)),
+                ItemKind::Class(class) => Some((item.attrs.as_slice(), class)),
                 _ => None,
             })
     }
 
-    pub fn datas(&self) -> impl Iterator<Item = (&Attr, &Data)> + '_ {
+    pub fn datas(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Data)> + '_ {
         self.items
             .iter()
             .filter_map(|item| match &item.kind {
-                ItemKind::Data(data) => Some((&item.attr, data)),
+                ItemKind::Data(data) => Some((item.attrs.as_slice(), data)),
                 _ => None,
             })
     }
 
-    pub fn aliases(&self) -> impl Iterator<Item = (&Attr, &Alias)> + '_ {
+    pub fn aliases(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Alias)> + '_ {
         self.items
             .iter()
             .filter_map(|item| match &item.kind {
-                ItemKind::Alias(alias) => Some((&item.attr, alias)),
+                ItemKind::Alias(alias) => Some((item.attrs.as_slice(), alias)),
                 _ => None,
             })
     }
 
-    pub fn members(&self) -> impl Iterator<Item = (&Attr, &Member)> + '_ {
+    pub fn members(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Member)> + '_ {
         self.items
             .iter()
             .filter_map(|item| match &item.kind {
-                ItemKind::Member(member) => Some((&item.attr, member)),
+                ItemKind::Member(member) => Some((item.attrs.as_slice(), member)),
                 _ => None,
             })
     }
 
-    pub fn defs(&self) -> impl Iterator<Item = (&Attr, &Def)> + '_ {
+    pub fn defs(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Def)> + '_ {
         self.items
             .iter()
             .filter_map(|item| match &item.kind {
-                ItemKind::Def(def) => Some((&item.attr, def)),
+                ItemKind::Def(def) => Some((item.attrs.as_slice(), def)),
                 _ => None,
             })
     }

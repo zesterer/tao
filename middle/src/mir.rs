@@ -15,7 +15,7 @@ pub struct LocalId(usize);
 pub enum Const {
     Nat(u64),
     Int(i64),
-    Num(f64),
+    Real(f64),
     Char(char),
     Bool(bool),
     Str(Intern<String>),

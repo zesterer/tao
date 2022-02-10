@@ -37,7 +37,7 @@ impl Context {
             hir::Literal::Nat(x) => mir::Const::Nat(*x),
             hir::Literal::Str(s) => mir::Const::Str(*s),
             hir::Literal::Bool(x) => mir::Const::Bool(*x),
-            hir::Literal::Num(x) => mir::Const::Num(*x),
+            hir::Literal::Real(x) => mir::Const::Real(*x),
             hir::Literal::Char(c) => mir::Const::Char(*c),
         }
     }
@@ -47,7 +47,7 @@ impl Context {
             match prim {
                 ty::Prim::Nat => repr::Prim::Nat,
                 ty::Prim::Int => repr::Prim::Int,
-                ty::Prim::Num => repr::Prim::Num,
+                ty::Prim::Real => repr::Prim::Real,
                 ty::Prim::Char => repr::Prim::Char,
                 ty::Prim::Bool => repr::Prim::Bool,
             }

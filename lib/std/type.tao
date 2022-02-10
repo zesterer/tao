@@ -7,3 +7,6 @@ for A member A of Any =
     => type_name =
         let xs : [A] = [] in
         @type_name(xs)
+
+def type_name_of A < Any =
+    \ x : A => A.type_name

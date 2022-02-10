@@ -6,7 +6,7 @@ edition = "2018"
 [dependencies]
 #chumsky = { path = "../../chumsky", features = ["nightly"] }
 #chumsky = { git = "https://github.com/zesterer/chumsky.git" }
-chumsky = "0.7.0"
+chumsky = "0.8.0"
 internment = "0.5"
 #ariadne = "0.1"
 ariadne = { git = "https://github.com/zesterer/ariadne.git" }

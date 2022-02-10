@@ -1,3 +1,5 @@
+import "lib/std/ops.tao"
+
 class Zero =
     => zero : Self
 
@@ -7,5 +9,7 @@ member Nat of Zero =
 class One =
     => one : Self
 
-member Nat of Zero =
-    => zero = 1
+member Nat of One =
+    => one = 1
+
+class Num < Zero + One + Add + Mul

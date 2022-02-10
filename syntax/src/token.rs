@@ -61,8 +61,9 @@ impl fmt::Display for Op {
 
 #[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub enum Token {
+    Error(char),
     Nat(u64),
-    Num(Intern<String>),
+    Real(Intern<String>),
     Char(char),
     Bool(bool),
     Str(Intern<String>),
@@ -103,8 +104,9 @@ pub enum Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Token::Error(c) => write!(f, "{:?}", c),
             Token::Nat(x) => write!(f, "{}", x),
-            Token::Num(x) => write!(f, "{}", x),
+            Token::Real(x) => write!(f, "{}", x),
             Token::Char(c) => write!(f, "{}", c),
             Token::Bool(x) => write!(f, "{}", x),
             Token::Str(s) => write!(f, "{}", s),
@@ -152,12 +154,12 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
     let nat = text::int(10)
         .map(|s: String| Token::Nat(s.parse().unwrap()));
 
-    let num = text::int(10)
+    let real = text::int(10)
         .then_ignore(just('.'))
         .chain::<char, _, _>(text::digits(10))
         .collect::<String>()
         .map(Intern::new)
-        .map(Token::Num);
+        .map(Token::Real);
 
     let ctrl = choice((
         just(',').to(Token::Comma),
@@ -230,7 +232,8 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
     let intrinsic = just('@')
         .ignore_then(text::ident())
         .map(ast::Ident::new)
-        .map(Token::Intrinsic);
+        .map(Token::Intrinsic)
+        .labelled("intrinsic");
 
     let word = text::ident().map(|s: String| match s.as_str() {
         "import" => Token::Import,
@@ -274,7 +277,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
     let token = choice((
         ctrl,
         word,
-        num,
+        real,
         nat,
         op,
         delim,
@@ -282,6 +285,12 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         r#char,
         intrinsic,
     ))
+        .or(any()
+            .map(Token::Error)
+            .validate(|t, span, mut emit| {
+                emit(Error::expected_input_found(span, None, Some(t)));
+                t
+            }))
         .map_with_span(move |token, span| (token, span))
         .padded()
         .recover_with(skip_then_retry_until([]));
