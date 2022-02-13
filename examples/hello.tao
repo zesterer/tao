@@ -1,13 +1,19 @@
 import "lib/std.tao"
 
-class Mappable B =
+class Bar =
+    => B
+
+class Foo2 < Bar =
+    => b : Self.B
+
+class Mappable =
     => Item
     => Output
-    => map : (Self.Item -> B) -> Self -> Self.Output
+    => map : (Self.Item -> Self.Item) -> Self -> Self.Output
 
-for A, B member [A] of Mappable B =
+for A member [A] of Mappable =
     => Item = A
-    => Output = [B]
+    => Output = [A]
     => map = fn f, self => self:map(f)
 
 def do_map A < Mappable =

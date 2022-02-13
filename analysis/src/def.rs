@@ -37,10 +37,10 @@ impl Defs {
         let id = DefId(self.defs.len());
         let name = *def.name;
         let span = def.name.span();
-        self.defs.push(def);
         if let Err(old) = self.lut.try_insert(name, (span, id)) {
             Err(Error::DuplicateDefName(name, old.entry.get().0, span))
         } else {
+            self.defs.push(def);
             Ok(id)
         }
     }

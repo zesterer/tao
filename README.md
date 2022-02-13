@@ -11,12 +11,13 @@ functions, currying, good diagnostics, and much more!
 
 - [x] Hindley-Milner type inference
 - [x] Useful error messages
-- [x] Typeclasses
-- [x] First-class functions
-- [x] Currying
 - [x] Sum types
 - [x] Records
+- [x] First-class functions
+- [x] Currying
 - [x] Type polymorphism (for both types and values)
+- [x] Typeclasses
+- [x] Associated types
 - [x] Pattern matching
 - [x] Built-in lists
 - [x] Static dispatch

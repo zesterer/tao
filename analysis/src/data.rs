@@ -71,20 +71,20 @@ impl Datas {
 
     pub fn declare_data(&mut self, name: Ident, span: Span, gen_scope: GenScopeId) -> Result<DataId, Error> {
         let id = DataId(self.datas.len());
-        self.datas.push(None);
         if let Err(old) = self.name_lut.try_insert(name, (span, Ok(id), gen_scope)) {
             Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
         } else {
+            self.datas.push(None);
             Ok(id)
         }
     }
 
     pub fn declare_alias(&mut self, name: Ident, span: Span, gen_scope: GenScopeId) -> Result<AliasId, Error> {
         let id = AliasId(self.aliases.len());
-        self.aliases.push((span, None));
         if let Err(old) = self.name_lut.try_insert(name, (span, Err(id), gen_scope)) {
             Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
         } else {
+            self.aliases.push((span, None));
             Ok(id)
         }
     }

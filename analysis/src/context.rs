@@ -44,7 +44,10 @@ impl Context {
                 fields: None,
                 assoc: None,
             }) {
-                Err(err) => errors.push(err),
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                },
                 // Only mark for further processing if no errors occurred during declaration
                 Ok(class_id) => classes.push((attr, class, class_id, gen_scope)),
             }
@@ -55,6 +58,7 @@ impl Context {
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             if let Err(err) = this.datas.declare_alias(*alias.name, alias.name.span(), gen_scope) {
                 errors.push(err);
+                continue;
             } else {
                 // Only mark for further processing if no errors occurred during declaration
                 aliases.push((attr, alias));
@@ -66,6 +70,7 @@ impl Context {
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             if let Err(err) = this.datas.declare_data(*data.name, data.name.span(), gen_scope) {
                 errors.push(err);
+                continue;
             } else {
                 // Only mark for further processing if no errors occurred during declaration
                 datas.push((attr, data));
@@ -314,6 +319,7 @@ impl Context {
                 body: None,
             }) {
                 errors.push(err);
+                continue;
             } else {
                 // Only mark for further processing if no errors occurred during declaration
                 defs.push((attr, def));

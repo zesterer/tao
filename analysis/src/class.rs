@@ -74,10 +74,10 @@ impl Classes {
     pub fn declare(&mut self, name: SrcNode<Ident>, class: Class) -> Result<ClassId, Error> {
         let id = ClassId(self.classes.len());
         let span = name.span();
-        self.classes.push(class);
         if let Err(old) = self.lut.try_insert(*name, (span, id)) {
             Err(Error::DuplicateClassName(*name, old.entry.get().0, span))
         } else {
+            self.classes.push(class);
             Ok(id)
         }
     }
