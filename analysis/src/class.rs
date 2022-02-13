@@ -1,5 +1,6 @@
 use super::*;
 
+// TODO: Remove this
 pub enum ClassItem {
     Value {
         name: SrcNode<Ident>,
@@ -15,22 +16,11 @@ pub struct Class {
     pub obligations: Option<Vec<SrcNode<Obligation>>>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
-    pub fields: Option<Vec<ClassItem>>,
     pub assoc: Option<Vec<ClassItem>>,
+    pub fields: Option<Vec<ClassItem>>,
 }
 
 impl Class {
-    pub fn field(&self, field: Ident) -> Option<&SrcNode<TyId>> {
-        self.fields
-            .as_ref()
-            .expect("Class fields must be known here")
-            .iter()
-            .find_map(|item| match item {
-                ClassItem::Value { name, ty } if **name == field => Some(ty),
-                _ => None,
-            })
-    }
-
     pub fn assoc_ty(&self, assoc: Ident) -> Option<()> {
         self.assoc
             .as_ref()
@@ -38,6 +28,17 @@ impl Class {
             .iter()
             .find_map(|item| match item {
                 ClassItem::Type { name } if **name == assoc => Some(()),
+                _ => None,
+            })
+    }
+
+    pub fn field(&self, field: Ident) -> Option<&SrcNode<TyId>> {
+        self.fields
+            .as_ref()
+            .expect("Class fields must be known here")
+            .iter()
+            .find_map(|item| match item {
+                ClassItem::Value { name, ty } if **name == field => Some(ty),
                 _ => None,
             })
     }
@@ -106,12 +107,12 @@ impl Classes {
         id
     }
 
-    pub fn define_member_fields(&mut self, id: MemberId, class: ClassId, fields: HashMap<Ident, MemberItem>) {
-        self.members[id.0].fields = Some(fields);
+    pub fn define_member_assoc(&mut self, id: MemberId, class: ClassId, assoc: HashMap<Ident, TyId>) {
+        self.members[id.0].assoc = Some(assoc);
     }
 
-    pub fn define_member_assoc(&mut self, id: MemberId, class: ClassId, assoc: HashMap<Ident, MemberItem>) {
-        self.members[id.0].assoc = Some(assoc);
+    pub fn define_member_fields(&mut self, id: MemberId, class: ClassId, fields: HashMap<Ident, TyExpr>) {
+        self.members[id.0].fields = Some(fields);
     }
 
     pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
@@ -180,30 +181,23 @@ pub struct Member {
     pub gen_scope: GenScopeId,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub member: TyId,
-    pub fields: Option<HashMap<Ident, MemberItem>>,
-    pub assoc: Option<HashMap<Ident, MemberItem>>,
+    pub assoc: Option<HashMap<Ident, TyId>>,
+    pub fields: Option<HashMap<Ident, TyExpr>>,
 }
 
 impl Member {
-    pub fn field(&self, field: Ident) -> Option<&TyExpr> {
-        self.fields
-            .as_ref()
-            .expect("Member fields not initialised")
-            .get(&field)
-            .and_then(|item| match item {
-                MemberItem::Value { name, val } if **name == field => Some(val),
-                _ => None,
-            })
-    }
-
     pub fn assoc_ty(&self, assoc: Ident) -> Option<TyId> {
         self.assoc
             .as_ref()
             .expect("Member associated types not initialised")
             .get(&assoc)
-            .and_then(|item| match item {
-                MemberItem::Type { name, ty } if **name == assoc => Some(*ty),
-                _ => None,
-            })
+            .copied()
+    }
+
+    pub fn field(&self, field: Ident) -> Option<&TyExpr> {
+        self.fields
+            .as_ref()
+            .expect("Member fields not initialised")
+            .get(&field)
     }
 }

@@ -323,7 +323,7 @@ impl Context {
 
                             let ty = checked.reify(ty.meta().1);
 
-                            Some((name.clone(), MemberItem::Type { name: name.clone(), ty }))
+                            Some((name.clone(), ty))
                         },
                         _ => None,
                     }
@@ -347,13 +347,7 @@ impl Context {
 
             for ty in class.assoc.as_ref().expect("Class associated types must be known here") {
                 if let ClassItem::Type { name, .. } = ty {
-                    if !assoc
-                        .iter()
-                        .any(|(_, item)| match item {
-                            MemberItem::Type { name: member_item_name, .. } => member_item_name == name,
-                            _ => false,
-                        })
-                    {
+                    if !assoc.contains_key(&name) {
                         errors.push(Error::MissingClassItem(member.member.span(), class.name.clone(), name.clone()));
                     }
                 }
@@ -395,7 +389,7 @@ impl Context {
 
                             let val = val.reify(&mut checked);
 
-                            Some((name.clone(), MemberItem::Value { name: name.clone(), val }))
+                            Some((name.clone(), val))
                         },
                         _ => None,
                     }
@@ -419,13 +413,7 @@ impl Context {
 
             for field in class.fields.as_ref().expect("Class fields must be known here") {
                 if let ClassItem::Value { name, .. } = field {
-                    if !fields
-                        .iter()
-                        .any(|(_, item)| match item {
-                            MemberItem::Value { name: member_item_name, .. } => member_item_name == name,
-                            _ => false,
-                        })
-                    {
+                    if !fields.contains_key(name) {
                         errors.push(Error::MissingClassItem(member.member.span(), class.name.clone(), name.clone()));
                     }
                 }
