@@ -221,71 +221,6 @@ impl Context {
             });
             members.push((member, class_id, member_id, gen_scope));
         }
-        let mut defs = Vec::new();
-        for (attr, def, gen_scope) in defs_init {
-            // If the type hint is fully specified, check it
-            let ty_hint = if def.ty_hint.is_fully_specified() {
-                let mut infer = Infer::new(&mut this, Some(gen_scope));
-                let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
-
-                let (mut checked, mut errs) = infer.into_checked();
-                errors.append(&mut errs);
-
-                Some(checked.reify(ty_hint.meta().1))
-            } else {
-                None
-            };
-
-            if let Err(err) = this.defs.declare(Def {
-                name: def.name.clone(),
-                attr: attr.to_vec(),
-                gen_scope,
-                ty_hint,
-                body: None,
-            }) {
-                errors.push(err);
-            } else {
-                // Only mark for further processing if no errors occurred during declaration
-                defs.push((attr, def));
-            }
-        }
-
-        // Define items
-        for (attr, data) in datas {
-            let gen_scope = this.datas.name_gen_scope(*data.name);
-
-            let mut infer = Infer::new(&mut this, Some(gen_scope));
-            let variants = data.variants
-                .iter()
-                .map(|(name, ty)| {
-                    let ty = ty.to_hir(&mut infer, &Scope::Empty);
-                    (name.clone(), ty)
-                })
-                .collect::<Vec<_>>();
-
-            let (mut checked, mut errs) = infer.into_checked();
-            errors.append(&mut errs);
-
-            let cons = variants
-                .into_iter()
-                .map(|(name, ty)| (name, checked.reify(ty.meta().1)))
-                .collect();
-
-            if let Err(mut errs) = this.datas.define_data(
-                this.datas
-                    .lookup_data(*data.name)
-                    .expect("Data must be pre-declared before definition"),
-                data.name.span(),
-                Data {
-                    name: *data.name,
-                    attr: attr.to_vec(),
-                    gen_scope,
-                    cons,
-                },
-            ) {
-                errors.append(&mut errs);
-            }
-        }
         // Member obligations
         for (member, class_id, member_id, gen_scope) in &members {
             let mut infer = Infer::new(&mut this, Some(*gen_scope));
@@ -354,6 +289,71 @@ impl Context {
             }
 
             this.classes.define_member_assoc(*member_id, *class_id, assoc);
+        }
+        let mut defs = Vec::new();
+        for (attr, def, gen_scope) in defs_init {
+            // If the type hint is fully specified, check it
+            let ty_hint = if def.ty_hint.is_fully_specified() {
+                let mut infer = Infer::new(&mut this, Some(gen_scope));
+                let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
+
+                let (mut checked, mut errs) = infer.into_checked();
+                errors.append(&mut errs);
+
+                Some(checked.reify(ty_hint.meta().1))
+            } else {
+                None
+            };
+
+            if let Err(err) = this.defs.declare(Def {
+                name: def.name.clone(),
+                attr: attr.to_vec(),
+                gen_scope,
+                ty_hint,
+                body: None,
+            }) {
+                errors.push(err);
+            } else {
+                // Only mark for further processing if no errors occurred during declaration
+                defs.push((attr, def));
+            }
+        }
+
+        // Define datas
+        for (attr, data) in datas {
+            let gen_scope = this.datas.name_gen_scope(*data.name);
+
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
+            let variants = data.variants
+                .iter()
+                .map(|(name, ty)| {
+                    let ty = ty.to_hir(&mut infer, &Scope::Empty);
+                    (name.clone(), ty)
+                })
+                .collect::<Vec<_>>();
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let cons = variants
+                .into_iter()
+                .map(|(name, ty)| (name, checked.reify(ty.meta().1)))
+                .collect();
+
+            if let Err(mut errs) = this.datas.define_data(
+                this.datas
+                    .lookup_data(*data.name)
+                    .expect("Data must be pre-declared before definition"),
+                data.name.span(),
+                Data {
+                    name: *data.name,
+                    attr: attr.to_vec(),
+                    gen_scope,
+                    cons,
+                },
+            ) {
+                errors.append(&mut errs);
+            }
         }
         // Member fields
         for (member, class_id, member_id, gen_scope) in &members {

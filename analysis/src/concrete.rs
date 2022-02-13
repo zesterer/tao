@@ -103,27 +103,52 @@ impl ConContext {
             })
     }
 
-    pub fn concretize_ty(&mut self, hir: &Context, ty: TyId, ty_insts: &TyInsts) -> ConTyId {
+    fn derive_links(&self, hir: &Context, member: TyId, ty: ConTyId, link_gen: &mut impl FnMut(usize, ConTyId)) {
+        match (hir.tys.get(member), self.get_ty(ty)) {
+            (Ty::Prim(x), ConTy::Prim(y)) => assert_eq!(x, *y),
+            (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
+            (Ty::List(x), ConTy::List(y)) => self.derive_links(hir, x, *y, link_gen),
+            (Ty::Tuple(xs), ConTy::Tuple(ys)) => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
+            (Ty::Record(xs), ConTy::Record(ys)) => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .for_each(|((_, x), (_, y))| self.derive_links(hir, x, *y, link_gen)),
+            (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
+                self.derive_links(hir, x_i, *y_i, link_gen);
+                self.derive_links(hir, x_o, *y_o, link_gen);
+            },
+            (Ty::Data(_, xs), ConTy::Data(y)) => xs
+                .into_iter()
+                .zip(y.1.iter())
+                .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
+            (x, y) => todo!("{:?}", (x, y)),
+        }
+    }
+
+    pub fn lower_ty(&mut self, hir: &Context, ty: TyId, ty_insts: &TyInsts) -> ConTyId {
         let cty = match hir.tys.get(ty) {
             Ty::Error(_) => panic!("Concretizable type cannot be an error"),
             Ty::Prim(prim) => ConTy::Prim(prim),
-            Ty::List(item) => ConTy::List(self.concretize_ty(hir, item, ty_insts)),
+            Ty::List(item) => ConTy::List(self.lower_ty(hir, item, ty_insts)),
             Ty::Tuple(fields) => ConTy::Tuple(fields
                 .into_iter()
-                .map(|field| self.concretize_ty(hir, field, ty_insts))
+                .map(|field| self.lower_ty(hir, field, ty_insts))
                 .collect()),
             Ty::Record(fields) => ConTy::Record(fields
                 .into_iter()
-                .map(|(name, field)| (name, self.concretize_ty(hir, field, ty_insts)))
+                .map(|(name, field)| (name, self.lower_ty(hir, field, ty_insts)))
                 .collect()),
             Ty::Func(i, o) => ConTy::Func(
-                self.concretize_ty(hir, i, ty_insts),
-                self.concretize_ty(hir, o, ty_insts),
+                self.lower_ty(hir, i, ty_insts),
+                self.lower_ty(hir, o, ty_insts),
             ),
             Ty::Data(data, args) => {
                 let args = args
                     .into_iter()
-                    .map(|arg| self.concretize_ty(hir, arg, ty_insts))
+                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
                     .collect::<Vec<_>>();
                 let id = Intern::new((data, args.clone()));
                 if !self.datas.contains_key(&id) {
@@ -133,7 +158,7 @@ impl ConContext {
                             .get_data(data)
                             .cons
                             .iter()
-                            .map(|(name, ty)| (**name, self.concretize_ty(hir, *ty, &TyInsts {
+                            .map(|(name, ty)| (**name, self.lower_ty(hir, *ty, &TyInsts {
                                 self_ty: None,
                                 gen: &args,
                             })))
@@ -145,8 +170,26 @@ impl ConContext {
             },
             Ty::Gen(idx, _) => return ty_insts.gen[idx],
             Ty::SelfType => return ty_insts.self_ty.expect("Self type required during concretization but none was provided"),
-            Ty::Assoc(inner, class_id, assoc) => {
-                todo!()
+            Ty::Assoc(ty, class, assoc) => {
+                let self_ty = self.lower_ty(hir, ty, ty_insts);
+                let member = hir.classes
+                    .lookup_member(hir, self, self_ty, class)
+                    .expect("Could not select member candidate");
+                let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
+
+                let mut links = HashMap::new();
+                self.derive_links(hir, member.member, self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                let gen = (0..member_gen_scope.len())
+                    .map(|idx| *links.get(&idx).expect("Generic type not mentioned in member"))
+                    .collect::<Vec<_>>();
+
+                let assoc = member
+                    .assoc_ty(*assoc)
+                    .unwrap();
+                return self.lower_ty(hir, assoc, &TyInsts {
+                    self_ty: Some(self_ty),
+                    gen: &gen,
+                });
             },
         };
 
@@ -234,7 +277,7 @@ impl ConContext {
                 pat: SrcNode::new(pat, binding.pat.span()),
                 name: binding.name.clone(),
             },
-            self.concretize_ty(hir, binding.meta().1, ty_insts),
+            self.lower_ty(hir, binding.meta().1, ty_insts),
         )
     }
 
@@ -246,7 +289,7 @@ impl ConContext {
             hir::Expr::Global(x, args) => {
                 let args = args
                     .iter()
-                    .map(|arg| self.concretize_ty(hir, arg.1, ty_insts))
+                    .map(|arg| self.lower_ty(hir, arg.1, ty_insts))
                     .collect::<Vec<_>>();
                 self.lower_def(hir, Intern::new((*x, args.clone())));
                 hir::Expr::Global(*x, args)
@@ -286,7 +329,7 @@ impl ConContext {
                     .collect(),
             ),
             hir::Expr::Func(arg, body) => hir::Expr::Func(
-                ConNode::new(**arg, self.concretize_ty(hir, arg.meta().1, ty_insts)),
+                ConNode::new(**arg, self.lower_ty(hir, arg.meta().1, ty_insts)),
                 self.lower_expr(hir, body, ty_insts),
             ),
             hir::Expr::Apply(f, arg) => hir::Expr::Apply(
@@ -295,38 +338,14 @@ impl ConContext {
             ),
             hir::Expr::Cons(data, variant, inner) => hir::Expr::Cons(data.clone(), *variant, self.lower_expr(hir, inner, ty_insts)),
             hir::Expr::ClassAccess(ty, class, field) => {
-                let self_ty = self.concretize_ty(hir, ty.1, ty_insts);
+                let self_ty = self.lower_ty(hir, ty.1, ty_insts);
                 let member = hir.classes
                     .lookup_member(hir, self, self_ty, class.expect("Uninferred class during concretization"))
                     .expect("Could not select member candidate");
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
-                fn derive_links(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId, link_gen: &mut impl FnMut(usize, ConTyId)) {
-                    match (hir.tys.get(member), ctx.get_ty(ty)) {
-                        (Ty::Prim(x), ConTy::Prim(y)) => assert_eq!(x, *y),
-                        (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
-                        (Ty::List(x), ConTy::List(y)) => derive_links(hir, ctx, x, *y, link_gen),
-                        (Ty::Tuple(xs), ConTy::Tuple(ys)) => xs
-                            .into_iter()
-                            .zip(ys.into_iter())
-                            .for_each(|(x, y)| derive_links(hir, ctx, x, *y, link_gen)),
-                        (Ty::Record(xs), ConTy::Record(ys)) => xs
-                            .into_iter()
-                            .zip(ys.into_iter())
-                            .for_each(|((_, x), (_, y))| derive_links(hir, ctx, x, *y, link_gen)),
-                        (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
-                            derive_links(hir, ctx, x_i, *y_i, link_gen);
-                            derive_links(hir, ctx, x_o, *y_o, link_gen);
-                        },
-                        (Ty::Data(_, xs), ConTy::Data(y)) => xs
-                            .into_iter()
-                            .zip(y.1.iter())
-                            .for_each(|(x, y)| derive_links(hir, ctx, x, *y, link_gen)),
-                        (x, y) => todo!("{:?}", (x, y)),
-                    }
-                }
                 let mut links = HashMap::new();
-                derive_links(hir, self, member.member, self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                self.derive_links(hir, member.member, self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
                 let gen = (0..member_gen_scope.len())
                     .map(|idx| *links.get(&idx).expect("Generic type not mentioned in member"))
                     .collect::<Vec<_>>();
@@ -346,7 +365,7 @@ impl ConContext {
                 .collect()),
         };
 
-        ConNode::new(expr, self.concretize_ty(hir, ty_expr.meta().1, ty_insts))
+        ConNode::new(expr, self.lower_ty(hir, ty_expr.meta().1, ty_insts))
     }
 
     pub fn display<'a>(&'a self, hir: &'a Context, ty: ConTyId) -> ConTyDisplay<'a> {

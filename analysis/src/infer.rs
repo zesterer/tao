@@ -678,7 +678,10 @@ impl<'a> Infer<'a> {
         let Some(possible_classes) = self.find_class_candidates_from_item(ty, assoc.clone(), assoc_ty, true)
             else { return Some(Ok(())) }; // Resolving an error type always succeeds;
         match possible_classes.len() {
-            0 => Some(Err(InferError::NoSuchItem(ty, span, assoc))),
+            0 => {
+                self.set_error(assoc_ty);
+                Some(Err(InferError::NoSuchItem(ty, span, assoc)))
+            },
             1 => {
                 let class_id = *possible_classes.first().unwrap();
                 self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
@@ -691,8 +694,8 @@ impl<'a> Infer<'a> {
                 Some(Ok(()))
             },
             _ => {
-                // TODO: Return `None` here instead, wait for more inference info
                 self.set_error(assoc_ty);
+                // TODO: Return `None` here instead, wait for more inference info
                 Some(Err(InferError::AmbiguousClassItem(assoc, possible_classes)))
             },
         }
@@ -702,7 +705,10 @@ impl<'a> Infer<'a> {
         let Some(possible_classes) = self.find_class_candidates_from_item(ty, field.clone(), field_ty, false)
             else { return Some(Ok(())) }; // Resolving an error type always succeeds;
         match possible_classes.len() {
-            0 => Some(Err(InferError::NoSuchItem(ty, span, field))),
+            0 => {
+                self.set_error(field_ty);
+                Some(Err(InferError::NoSuchItem(ty, span, field)))
+            },
             1 => {
                 let class_id = *possible_classes.first().unwrap();
                 self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
@@ -720,8 +726,8 @@ impl<'a> Infer<'a> {
                 Some(Ok(()))
             },
             _ => {
-                // TODO: Return `None` here instead, wait for more inference info
                 self.set_error(field_ty);
+                // TODO: Return `None` here instead, wait for more inference info
                 Some(Err(InferError::AmbiguousClassItem(field, possible_classes)))
             },
         }

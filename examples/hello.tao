@@ -1,15 +1,36 @@
 import "lib/std.tao"
 
-class Foo =
-    => Bar
-    => bar : Self.Bar
+class Mappable =
+    => Item
+    => Output
+    => map : (Self.Item -> Self.Item) -> Self -> Self.Output
 
-member Nat of Foo =
-    => Bar = Nat
-    => bar = 4
+for A member [A] of Mappable =
+    => Item = A
+    => Output = [A]
+    => map = fn f, self => self:map(f)
+
+def do_map A < Mappable =
+    \ f, m => A.map(f, m)
 
 $[main]
-def main = Nat.bar
+def main = [1, 2, 3, 4]:do_map(fn x => x * x)
+
+# class Foo =
+#     => Bar
+#     => foo : Self.Bar
+
+# member Nat of Foo =
+#     => Bar = Bool
+#     => foo = True
+
+# def foo_nat : Nat.Bar = Nat.foo
+
+class Neg =
+    => Output
+    => neg : Self -> Self.Output
+
+def neg A < Neg : A -> A.Output = A.neg
 
 # $[main]
 # def main = [

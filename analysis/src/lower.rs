@@ -142,7 +142,7 @@ impl ToHir for ast::Type {
             ast::Type::Assoc(inner, assoc) => {
                 let inner = inner.to_hir(infer, scope);
                 let assoc_ty = infer.unknown(self.span());
-                infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, self.span());
+                infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, inner.meta().0);
                 TyInfo::Ref(assoc_ty)
             },
         };
@@ -613,7 +613,7 @@ impl ToHir for ast::Expr {
             ast::Expr::ClassAccess(ty, field) => {
                 let ty = ty.to_hir(infer, scope);
                 let field_ty = infer.unknown(field.span());
-                let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, self.span());
+                let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, ty.meta().0);
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },
             ast::Expr::Debug(inner) => {
