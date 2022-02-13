@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types, option_zip, bool_to_option, never_type)]
+#![feature(arbitrary_self_types, option_zip, bool_to_option, never_type, let_else)]
 
 pub mod class;
 pub mod concrete;
@@ -14,7 +14,7 @@ pub mod reify;
 pub mod ty;
 
 pub use crate::{
-    class::{ClassId, Class, Classes, ClassItem, Member, MemberItem},
+    class::{ClassId, Class, Classes, ClassItem, Member, MemberId, MemberItem},
     concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConDefId, ConDataId},
     context::Context,
     data::{Datas, Data, DataId, Alias, AliasId},

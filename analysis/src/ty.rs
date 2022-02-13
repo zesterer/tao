@@ -43,6 +43,7 @@ pub enum Ty {
     Data(DataId, Vec<TyId>),
     Gen(usize, GenScopeId),
     SelfType,
+    Assoc(TyId, ClassId, SrcNode<Ident>),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -159,6 +160,8 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
             Ty::Gen(index, scope) => write!(f, "{}", **self.types.get_gen_scope(scope).get(index).name),
+            // TODO: Include class_id?
+            Ty::Assoc(inner, _class_id, assoc) => write!(f, "{}.{}", self.with_ty(inner, true), *assoc),
             Ty::SelfType => write!(f, "Self"),
         }
     }

@@ -145,6 +145,9 @@ impl ConContext {
             },
             Ty::Gen(idx, _) => return ty_insts.gen[idx],
             Ty::SelfType => return ty_insts.self_ty.expect("Self type required during concretization but none was provided"),
+            Ty::Assoc(inner, class_id, assoc) => {
+                todo!()
+            },
         };
 
         self.insert_ty(cty)

@@ -139,6 +139,12 @@ impl ToHir for ast::Type {
                     }
                 },
             },
+            ast::Type::Assoc(inner, assoc) => {
+                let inner = inner.to_hir(infer, scope);
+                let assoc_ty = infer.unknown(self.span());
+                infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, self.span());
+                TyInfo::Ref(assoc_ty)
+            },
         };
 
         InferNode::new((), (self.span(), infer.insert(self.span(), info)))
@@ -327,7 +333,7 @@ impl ToHir for ast::Expr {
                         .into_iter()
                     {
                         match obl {
-                            Obligation::MemberOf(class) => infer.make_impl(*ty, class, self.span()),
+                            Obligation::MemberOf(class) => infer.make_impl(*ty, class, self.span(), Vec::new()),
                         }
                     }
                 }

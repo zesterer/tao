@@ -1,15 +1,15 @@
 import "lib/std.tao"
 
 class Foo =
-    => nothing : Self
-    => one1 : Self
+    => Bar
+    => bar : Self.Bar
 
 member Nat of Foo =
-    => nothing = 2
-    => one1 = Self.nothing + 1
+    => Bar = Nat
+    => bar = 4
 
 $[main]
-def main = Nat.one1
+def main = Nat.bar
 
 # $[main]
 # def main = [

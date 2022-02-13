@@ -49,6 +49,8 @@ pub enum TyInfo {
     Data(DataId, Vec<TyVar>),
     Gen(usize, GenScopeId, Span),
     SelfType,
+    // An opaque associated type that *cannot* be determined due to lack of information
+    Assoc(TyVar, ClassId, SrcNode<Ident>),
 }
 
 #[derive(Default, Debug)]
@@ -75,7 +77,7 @@ pub enum InferError {
     CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
     // Type, recursive element
     Recursive(TyVar, TyVar),
-    NoSuchField(TyVar, Span, SrcNode<Ident>),
+    NoSuchItem(TyVar, Span, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
     TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>),
@@ -91,8 +93,9 @@ enum Constraint {
     Access(TyVar, SrcNode<Ident>, TyVar),
     Unary(SrcNode<ast::UnaryOp>, TyVar, TyVar),
     Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
-    Impl(TyVar, ClassId, Span),
+    Impl(TyVar, ClassId, Span, Vec<(SrcNode<Ident>, TyVar)>),
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
+    ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
 }
 
 struct LazyLiteral {
@@ -116,6 +119,7 @@ pub struct Infer<'a> {
     lazy_literals: VecDeque<LazyLiteral>,
     errors: Vec<InferError>,
     self_type: Option<TyVar>,
+    self_class: Option<ClassId>,
 }
 
 impl<'a> Infer<'a> {
@@ -129,6 +133,7 @@ impl<'a> Infer<'a> {
             lazy_literals: VecDeque::new(),
             errors: Vec::new(),
             self_type: None,
+            self_class: None,
         }
     }
 
@@ -137,8 +142,9 @@ impl<'a> Infer<'a> {
         self
     }
 
-    pub fn with_unknown_self(mut self, span: Span) -> Self {
+    pub fn with_unknown_self(mut self, span: Span, class_id: Option<ClassId>) -> Self {
         self.self_type = Some(self.insert(span, TyInfo::SelfType));
+        self.self_class = class_id;
         self
     }
 
@@ -204,6 +210,9 @@ impl<'a> Infer<'a> {
                 TyInfo::Data(_, args) => args
                     .into_iter()
                     .for_each(|arg| self.set_error(arg)),
+                // Type is projected, so error does not propagate backwards
+                // TODO: Should it?
+                TyInfo::Assoc(_, _, _) => {},
             }
         }
     }
@@ -270,6 +279,12 @@ impl<'a> Infer<'a> {
                 .collect()),
             Ty::Gen(index, scope) => TyInfo::Ref(f(index, scope, self.ctx)), // TODO: Check scope is valid for recursive scopes
             Ty::SelfType => TyInfo::Ref(self_ty.expect("Found self type during instantiation but no self type is available to substitute")),
+            Ty::Assoc(inner, class_id, assoc) => {
+                let inner = self.instantiate(inner, span, f, self_ty);
+                let assoc_ty = self.unknown(span);
+                self.make_impl(inner, class_id, span, vec![(assoc, assoc_ty)]);
+                TyInfo::Ref(assoc_ty)
+            },
         };
         self.insert(self.ctx.tys.get_span(ty) /*span*/, info)
     }
@@ -294,14 +309,22 @@ impl<'a> Infer<'a> {
         self.constraints.push_back(Constraint::Binary(op, a, b, output));
     }
 
-    pub fn make_impl(&mut self, ty: TyVar, class: ClassId, span: Span) {
-        self.constraints.push_back(Constraint::Impl(ty, class, span));
+    // `unchecked_assoc` allows unification of type variables with an instance's associated type
+    pub fn make_impl(&mut self, ty: TyVar, class: ClassId, span: Span, unchecked_assoc: Vec<(SrcNode<Ident>, TyVar)>) {
+        self.constraints.push_back(Constraint::Impl(ty, class, span, unchecked_assoc));
     }
 
     pub fn make_class_field(&mut self, ty: TyVar, field_name: SrcNode<Ident>, field_ty: TyVar, span: Span) -> ClassVar {
         let class = ClassVar(self.class_vars.len());
         self.class_vars.push((span, None));
         self.constraints.push_back(Constraint::ClassField(ty, class, field_name, field_ty, span));
+        class
+    }
+
+    pub fn make_class_assoc(&mut self, ty: TyVar, assoc_name: SrcNode<Ident>, assoc_ty: TyVar, span: Span) -> ClassVar {
+        let class = ClassVar(self.class_vars.len());
+        self.class_vars.push((span, None));
+        self.constraints.push_back(Constraint::ClassAssoc(ty, class, assoc_name, assoc_ty, span));
         class
     }
 
@@ -338,6 +361,7 @@ impl<'a> Infer<'a> {
             TyInfo::Data(_, ys) => ys
                 .into_iter()
                 .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+            TyInfo::Assoc(inner, _, _) => x == inner || self.occurs_in_inner(x, inner, seen)
         };
 
         seen.pop();
@@ -411,6 +435,9 @@ impl<'a> Infer<'a> {
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
                 xs.len() == ys.len() => make_eq_many(self, xs, ys),
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
+            (TyInfo::SelfType, TyInfo::SelfType) => Ok(()),
+            (TyInfo::Assoc(a, class_a, a_assoc), TyInfo::Assoc(b, class_b, b_assoc))
+                if class_a == class_b && a_assoc == b_assoc => self.make_eq_inner(x, y),
             (_, _) => Err((x, y)),//self.errors.push(InferError::Mismatch(x, y)),
         }
     }
@@ -457,6 +484,10 @@ impl<'a> Infer<'a> {
                 self.insert(self.span(ty), TyInfo::Data(data, args))
             },
             TyInfo::SelfType => todo!(), // ???
+            TyInfo::Assoc(inner, class_id, assoc) => {
+                let inner = self.try_reinstantiate(span, inner);
+                self.insert(self.span(ty), TyInfo::Assoc(inner, class_id, assoc))
+            },
         }
     }
 
@@ -505,7 +536,7 @@ impl<'a> Infer<'a> {
                     Ok(())
                 } else {
                     self.set_error(field);
-                    Err(InferError::NoSuchField(record, self.span(record), field_name.clone()))
+                    Err(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
                 }),
             Constraint::Unary(op, a, output) => match (&*op, self.follow_info(a)) {
                 (_, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
@@ -596,8 +627,33 @@ impl<'a> Infer<'a> {
                     let result_ty = self.insert(self.span(output), info);
                     self.make_eq(output, result_ty, self.span(output));
                 })),
-            Constraint::Impl(ty, obligation, span) => self.resolve_obligation(ty, obligation, span),
+            Constraint::Impl(ty, obligation, span, unchecked_assoc) => self.resolve_obligation(ty, obligation, span).map(|res| res.map(|member| {
+                    for (assoc, assoc_ty) in unchecked_assoc {
+                        match member {
+                            Ok(member) => {
+                                let member = self.ctx.classes.get_member(member);
+
+                                let mut links = HashMap::new();
+                                self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+
+                                if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
+                                    let assoc_ty_inst = self.instantiate(member_assoc_ty, span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
+                                    self.make_eq(assoc_ty, assoc_ty_inst, span);
+                                }
+                            },
+                            Err(true) => {
+                                // Errors propagate through projected associated types
+                                self.set_error(assoc_ty);
+                            },
+                            Err(false) => {
+                                let assoc_info = self.insert(span, TyInfo::Assoc(ty, obligation, assoc.clone()));
+                                self.make_eq(assoc_ty, assoc_info, span);
+                            },
+                        }
+                    }
+                })),
             Constraint::ClassField(ty, class, field, field_ty, span) => self.try_resolve_class_from_field(ty, class, field.clone(), field_ty, span),
+            Constraint::ClassAssoc(ty, class, assoc, assoc_ty, span) => self.try_resolve_class_from_assoc(ty, class, assoc.clone(), assoc_ty, span),
         }
     }
 
@@ -618,42 +674,39 @@ impl<'a> Infer<'a> {
         }
     }
 
-    fn try_resolve_class_from_field(&mut self, ty: TyVar, class_var: ClassVar, field: SrcNode<Ident>, field_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
-        let possible_classes: Vec<_> = match self.follow_info(ty) {
-            TyInfo::Error(_) => {
-                self.set_error(ty);
-                self.set_error(field_ty);
-                return Some(Ok(())); // Resolving an error type always succeeds
-            }
-            TyInfo::Unknown(_) => return None, // We don't know what the type is yet, so how can we possibly determine what classes it is a member of?
-            TyInfo::Gen(gen_idx, gen_scope, _) => {
-                let gen_scope = self.ctx.tys.get_gen_scope(gen_scope);
-                gen_scope
-                    .find_obligations_for(self.ctx, gen_idx)
-                    .into_iter()
-                    // Filter by class obligations that contain the given field
-                    .filter(|class_id| self.ctx.classes.get(*class_id).field(*field).is_some())
-                    .collect()
-            },
-            _ => self.ctx.classes
-                .iter()
-                // Filter by classes that contain the given field
-                .filter(|(_, class)| class.field(*field).is_some())
-                // Filter further by classes that have members that cover our type
-                .filter(|(class_id, _)| self.ctx.classes
-                    .members_of(*class_id)
-                    .find(|member| Self::covers_var(self, ty, member.member))
-                    .is_some())
-                .map(|(class_id, _)| class_id)
-                .collect(),
-        };
-
+    fn try_resolve_class_from_assoc(&mut self, ty: TyVar, class_var: ClassVar, assoc: SrcNode<Ident>, assoc_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
+        let Some(possible_classes) = self.find_class_candidates_from_item(ty, assoc.clone(), assoc_ty, true)
+            else { return Some(Ok(())) }; // Resolving an error type always succeeds;
         match possible_classes.len() {
-            0 => Some(Err(InferError::NoSuchField(ty, span, field))),
+            0 => Some(Err(InferError::NoSuchItem(ty, span, assoc))),
             1 => {
                 let class_id = *possible_classes.first().unwrap();
                 self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
-                self.make_impl(ty, class_id, span);
+
+                // Require an implementation to exist
+                self.make_impl(ty, class_id, span, vec![
+                    (assoc, assoc_ty),
+                ]);
+
+                Some(Ok(()))
+            },
+            _ => {
+                // TODO: Return `None` here instead, wait for more inference info
+                self.set_error(assoc_ty);
+                Some(Err(InferError::AmbiguousClassItem(assoc, possible_classes)))
+            },
+        }
+    }
+
+    fn try_resolve_class_from_field(&mut self, ty: TyVar, class_var: ClassVar, field: SrcNode<Ident>, field_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
+        let Some(possible_classes) = self.find_class_candidates_from_item(ty, field.clone(), field_ty, false)
+            else { return Some(Ok(())) }; // Resolving an error type always succeeds;
+        match possible_classes.len() {
+            0 => Some(Err(InferError::NoSuchItem(ty, span, field))),
+            1 => {
+                let class_id = *possible_classes.first().unwrap();
+                self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
+                self.make_impl(ty, class_id, span, Vec::new());
                 let field_ty_id = **self.ctx.classes
                     .get(class_id)
                     .field(*field)
@@ -671,6 +724,55 @@ impl<'a> Infer<'a> {
                 self.set_error(field_ty);
                 Some(Err(InferError::AmbiguousClassItem(field, possible_classes)))
             },
+        }
+    }
+
+    fn find_class_candidates_from_item(&mut self, ty: TyVar, item: SrcNode<Ident>, item_ty: TyVar, assoc_ty: bool) -> Option<Vec<ClassId>> {
+        match self.follow_info(ty) {
+            TyInfo::Error(_) => {
+                self.set_error(ty);
+                self.set_error(item_ty);
+                None
+            }
+            TyInfo::Unknown(_) => return None, // We don't know what the type is yet, so how can we possibly determine what classes it is a member of?
+            TyInfo::Gen(gen_idx, gen_scope, _) => {
+                let gen_scope = self.ctx.tys.get_gen_scope(gen_scope);
+                Some(gen_scope
+                    .find_obligations_for(self.ctx, gen_idx)
+                    .into_iter()
+                    // Filter by class obligations that contain the given field
+                    .filter(|class_id| if assoc_ty {
+                        self.ctx.classes.get(*class_id).assoc_ty(*item).is_some()
+                    } else {
+                        self.ctx.classes.get(*class_id).field(*item).is_some()
+                    })
+                    .collect())
+            },
+            TyInfo::SelfType if self.self_class.filter(|class_id| {
+                let class = self.ctx.classes.get(*class_id);
+                if assoc_ty {
+                    class.assoc_ty(*item).is_some()
+                } else {
+                    class.field(*item).is_some()
+                }
+            }).is_some() => {
+                    Some(vec![self.self_class.unwrap()])
+            },
+            _ => Some(self.ctx.classes
+                .iter()
+                // Filter by classes that contain the given field
+                .filter(|(_, class)| if assoc_ty {
+                    class.assoc_ty(*item).is_some()
+                } else {
+                    class.field(*item).is_some()
+                })
+                // Filter further by classes that have members that cover our type
+                .filter(|(class_id, _)| self.ctx.classes
+                    .members_of(*class_id)
+                    .find(|(_, member)| Self::covers_var(self, ty, member.member))
+                    .is_some())
+                .map(|(class_id, _)| class_id)
+                .collect()),
         }
     }
 
@@ -695,15 +797,49 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .zip(ys.into_iter())
                 .all(|(x, y)| self.covers_var(x, y)),
+            (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, class_y, assoc_y))
+                if class_x == class_y && assoc_x == assoc_y => self.covers_var(x, y),
             _ => false,
         }
     }
 
-    fn resolve_obligation(&mut self, ty: TyVar, obligation: ClassId, span: Span) -> Option<Result<(), InferError>> {
+    // Link the generic types of a class member with type variables in the current scope so obligations
+    // can be generated
+    fn derive_links(&self, member: TyId, ty: TyVar, link_gen: &mut impl FnMut(usize, TyVar)) {
+        match (self.ctx.tys.get(member), self.follow_info(ty)) {
+            (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
+            (Ty::List(x), TyInfo::List(y)) => self.derive_links(x, y, link_gen),
+            (Ty::Tuple(xs), TyInfo::Tuple(ys)) => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .for_each(|(x, y)| self.derive_links(x, y, link_gen)),
+            (Ty::Record(xs), TyInfo::Record(ys)) => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .for_each(|((_, x), (_, y))| self.derive_links(x, y, link_gen)),
+            (Ty::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
+                self.derive_links(x_i, y_i, link_gen);
+                self.derive_links(x_o, y_o, link_gen);
+            },
+            (Ty::Data(_, xs), TyInfo::Data(_, ys)) => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .for_each(|(x, y)| self.derive_links(x, y, link_gen)),
+            (Ty::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
+                if class_x == class_y && assoc_x == assoc_y => self.derive_links(x, y, link_gen),
+            (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
+            _ => {}, // Only type constructors and generic types generate obligations
+        }
+    }
+
+    /// Resolve a class obligation for a type, returning the ID of the type's membership. If no member can be provided
+    /// (because, for example, the membership is implied by a generic bound) then `Err(false)` is returned instead. If
+    /// resolution failed due to an existing error, `Err(true)` is returned.
+    fn resolve_obligation(&mut self, ty: TyVar, obligation: ClassId, span: Span) -> Option<Result<Result<MemberId, bool>, InferError>> {
         match self.follow_info(ty) {
             TyInfo::Error(_) => {
                 self.set_error(ty);
-                return Some(Ok(())); // Resolving an error type always succeeds
+                return Some(Ok(Err(true))); // Resolving an error type always succeeds
             },
             TyInfo::Unknown(_) => None, // No idea if it implements the trait yet
             TyInfo::Gen(gen_idx, gen_scope, _) => {
@@ -714,7 +850,7 @@ impl<'a> Infer<'a> {
                     // .any(|c| self.ctx.classes.implies(c, obligation))
                     .any(|c| c == obligation)
                 {
-                    Some(Ok(()))
+                    Some(Ok(Err(false)))
                 } else {
                     Some(Err(InferError::TypeDoesNotFulfil(
                         obligation,
@@ -724,56 +860,32 @@ impl<'a> Infer<'a> {
                     )))
                 }
             },
+            TyInfo::SelfType if self.self_class == Some(obligation) => {
+                Some(Ok(Err(false)))
+            },
             _ => {
                 // Find a class member declaration that covers our type
                 let covering_member = self.ctx.classes
                     .members_of(obligation)
-                    .find(|member| Self::covers_var(self, ty, member.member));
+                    .find(|(_, member)| Self::covers_var(self, ty, member.member));
 
-                if let Some(covering_member) = covering_member {
-                    // Link the generic types of a class member with type variables in the current scope so obligations
-                    // can be generated
-                    fn derive_links(infer: &Infer, member: TyId, ty: TyVar, link_gen: &mut impl FnMut(usize, TyVar)) {
-                        match (infer.ctx.tys.get(member), infer.follow_info(ty)) {
-                            (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
-                            (Ty::List(x), TyInfo::List(y)) => derive_links(infer, x, y, link_gen),
-                            (Ty::Tuple(xs), TyInfo::Tuple(ys)) => xs
-                                .into_iter()
-                                .zip(ys.into_iter())
-                                .for_each(|(x, y)| derive_links(infer, x, y, link_gen)),
-                            (Ty::Record(xs), TyInfo::Record(ys)) => xs
-                                .into_iter()
-                                .zip(ys.into_iter())
-                                .for_each(|((_, x), (_, y))| derive_links(infer, x, y, link_gen)),
-                            (Ty::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                                derive_links(infer, x_i, y_i, link_gen);
-                                derive_links(infer, x_o, y_o, link_gen);
-                            },
-                            (Ty::Data(_, xs), TyInfo::Data(_, ys)) => xs
-                                .into_iter()
-                                .zip(ys.into_iter())
-                                .for_each(|(x, y)| derive_links(infer, x, y, link_gen)),
-                            (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
-                            _ => {}, // Only type constructors and generic types generate obligations
-                        }
-                    }
-
+                if let Some((covering_member_id, covering_member)) = covering_member {
                     let scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
 
                     let mut links = HashSet::new();
-                    derive_links(self, covering_member.member, ty, &mut |gen_idx, var| { links.insert((gen_idx, var)); });
+                    self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert((gen_idx, var)); });
 
                     for (gen_idx, ty) in links {
                         for obl in scope.get(gen_idx).obligations.as_ref().unwrap() {
                             match obl {
                                 Obligation::MemberOf(class) => {
-                                    self.constraints.push_back(Constraint::Impl(ty, *class, span));
+                                    self.constraints.push_back(Constraint::Impl(ty, *class, span, Vec::new()));
                                 },
                             }
                         }
                     }
 
-                    Some(Ok(()))
+                    Some(Ok(Ok(covering_member_id)))
                 } else {
                     Some(Err(InferError::TypeDoesNotFulfil(
                         obligation,
@@ -819,20 +931,23 @@ impl<'a> Infer<'a> {
         // Generate errors for all remaining constraints
         for c in std::mem::take(&mut self.constraints) {
             self.errors.push(match c {
-                Constraint::Access(record, field_name, field) => {
-                    InferError::NoSuchField(record, self.span(record), field_name.clone())
+                Constraint::Access(record, field_name, _field) => {
+                    InferError::NoSuchItem(record, self.span(record), field_name.clone())
                 },
-                Constraint::Unary(op, a, output) => {
+                Constraint::Unary(op, a, _output) => {
                     InferError::InvalidUnaryOp(op.clone(), a)
                 },
-                Constraint::Binary(op, a, b, output) => {
+                Constraint::Binary(op, a, b, _output) => {
                     InferError::InvalidBinaryOp(op.clone(), a, b)
                 },
-                Constraint::Impl(ty, obligation, span) => {
+                Constraint::Impl(ty, obligation, span, _) => {
                     InferError::TypeDoesNotFulfil(obligation, ty, span, None)
                 },
-                Constraint::ClassField(ty, class, field, field_ty, span) => {
+                Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
                     InferError::AmbiguousClassItem(field, Vec::new())
+                },
+                Constraint::ClassAssoc(_ty, _class, assoc, _assoc_ty, _span) => {
+                    InferError::AmbiguousClassItem(assoc, Vec::new())
                 },
             });
         }
@@ -865,7 +980,7 @@ impl<'a> Infer<'a> {
                 InferError::Mismatch(a, b, info) => Error::Mismatch(checked.reify(a), checked.reify(b), info),
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
                 InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
-                InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
+                InferError::NoSuchItem(a, record_span, field) => Error::NoSuchItem(checked.reify(a), record_span, field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
                 InferError::TypeDoesNotFulfil(class, ty, span, gen_span) => Error::TypeDoesNotFulfil(class, checked.reify(ty), span, gen_span),
@@ -917,6 +1032,7 @@ impl<'a> Checked<'a> {
                 .collect()),
             TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
             TyInfo::SelfType => Ty::SelfType,
+            TyInfo::Assoc(inner, class_id, assoc) => Ty::Assoc(self.reify_inner(inner), class_id, assoc),
         };
         self.infer.ctx.tys.insert(self.infer.span(var), ty)
     }

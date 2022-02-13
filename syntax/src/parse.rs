@@ -118,7 +118,16 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(atom)
             .boxed();
 
-        data.clone()
+        let assoc = data
+            .then(just(Token::Op(Op::Dot))
+                .ignore_then(type_ident_parser().map_with_span(SrcNode::new))
+                .repeated())
+            .foldl(|inner, assoc| {
+                let span = inner.span().union(assoc.span());
+                SrcNode::new(ast::Type::Assoc(inner, assoc), span)
+            });
+
+        assoc.clone()
             .then(just(Token::Op(Op::RArrow))
                 .ignore_then(ty.clone().map_with_span(SrcNode::new))
                 .repeated())
@@ -126,7 +135,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
                 let span = i.span().union(o.span());
                 SrcNode::new(ast::Type::Func(i, o), span)
             })
-            .or(data)
+            .or(assoc)
             .map(|ty| ty.into_inner())
     })
 }
@@ -773,9 +782,11 @@ pub fn class_parser() -> impl Parser<ast::Class> {
 
     let assoc_type = type_ident_parser()
         .map_with_span(SrcNode::new)
-        .then(obligation_parser().or_not())
+        .then(obligation_parser()
+            .or_not()
+            .map_with_span(|o, span| SrcNode::new(o.unwrap_or_default(), span)))
         .map(|(name, obligations)| ast::ClassItem::Type {
-            obligations: obligations.unwrap_or_default(),
+            obligations,
             name,
         });
 

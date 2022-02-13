@@ -38,7 +38,8 @@ impl Context {
                 obligations: None,
                 attr: attr.to_vec(),
                 gen_scope,
-                items: None,
+                fields: None,
+                assoc: None,
             }) {
                 Err(err) => errors.push(err),
                 // Only mark for further processing if no errors occurred during declaration
@@ -135,48 +136,57 @@ impl Context {
                     .collect(),
             );
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope))
-                .with_unknown_self(class.name.span());
-
-            let values = class.items
+            let mut existing_tys = HashMap::new();
+            let assoc = class.items
                 .iter()
                 .filter_map(|item| match item {
-                    ast::ClassItem::Value { name, ty } => Some((
-                        name.clone(),
-                        ty.to_hir(&mut infer, &Scope::Empty),
-                    )),
                     ast::ClassItem::Type { name, obligations } => {
-                        errors.push(Error::Unsupported(name.span(), "associated types"));
-                        None
+                        if !obligations.is_empty() {
+                            errors.push(Error::Unsupported(obligations.span(), "obligations on associated types"));
+                        }
+
+                        if let Some(old) = existing_tys.get(&**name) {
+                            errors.push(Error::DuplicateClassItem(**name, *old, name.span()));
+                            None
+                        } else {
+                            existing_tys.insert(**name, name.span());
+                            Some(ClassItem::Type { name: name.clone() })
+                        }
                     },
+                    _ => None,
                 })
                 .collect::<Vec<_>>();
+            this.classes.define_assoc(class_id, assoc);
 
-            let (mut checked, mut errs) = infer.into_checked();
-            errors.append(&mut errs);
+            let mut existing_fields = HashMap::new();
+            let fields = class.items
+                .iter()
+                .filter_map(|item| match item {
+                    ast::ClassItem::Value { name, ty } => {
+                        let mut infer = Infer::new(&mut this, Some(gen_scope))
+                            .with_unknown_self(class.name.span(), Some(class_id));
 
-            let mut existing = HashMap::new();
-            let items = values
-                .into_iter()
-                .filter_map(|(name, ty)| {
-                    let item = ClassItem::Value {
-                        name: name.clone(),
-                        ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
-                    };
+                        let ty = ty.to_hir(&mut infer, &Scope::Empty);
 
-                    if let Some(old) = existing.get(&*name) {
-                        errors.push(Error::DuplicateClassItem(*name, *old, name.span()));
-                        None
-                    } else {
-                        existing.insert(*name, name.span());
-                        Some(item)
-                    }
+                        let (mut checked, mut errs) = infer.into_checked();
+                        errors.append(&mut errs);
+                        checked.reify(ty.meta().1);
+
+                        if let Some(old) = existing_fields.get(&**name) {
+                            errors.push(Error::DuplicateClassItem(**name, *old, name.span()));
+                            None
+                        } else {
+                            existing_fields.insert(**name, name.span());
+                            Some(ClassItem::Value {
+                                name: name.clone(),
+                                ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
+                            })
+                        }
+                    },
+                    _ => None,
                 })
-                // TODO:
-                //.zip(types.into_iter())
                 .collect::<Vec<_>>();
-
-            this.classes.define_items(class_id, items);
+            this.classes.define_fields(class_id, fields);
         }
 
         let mut members = Vec::new();
@@ -191,11 +201,11 @@ impl Context {
             let mut infer = Infer::new(&mut this, Some(gen_scope));
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
-            for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
-                match obl.inner() {
-                    Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span()),
-                }
-            }
+            // for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
+            //     match obl.inner() {
+            //         Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span(), Vec::new()),
+            //     }
+            // }
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
@@ -206,7 +216,8 @@ impl Context {
                 gen_scope,
                 attr: attr.to_vec(),
                 member: member_ty,
-                items: None,
+                fields: None,
+                assoc: None,
             });
             members.push((member, class_id, member_id, gen_scope));
         }
@@ -275,37 +286,99 @@ impl Context {
                 errors.append(&mut errs);
             }
         }
-        for (member, class_id, member_id, gen_scope) in members {
-            let mut infer = Infer::new(&mut this, Some(gen_scope));
+        // Member obligations
+        for (member, class_id, member_id, gen_scope) in &members {
+            let mut infer = Infer::new(&mut this, Some(*gen_scope));
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
-            for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
+            for obl in infer.ctx().classes.get(*class_id).obligations.clone().expect("Obligations must be known") {
                 match obl.inner() {
-                    Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span()),
+                    Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span(), Vec::new()),
                 }
             }
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
-
-            let mut existing = HashMap::new();
-            let items = member.items
+        }
+        // Member associated types
+        for (member, class_id, member_id, gen_scope) in &members {
+            let assoc = member.items
                 .iter()
                 .filter_map(|item| {
-                    let class = this.classes.get(class_id);
+                    let member_ty = this.classes.get_member(*member_id).member;
+                    let mut infer = Infer::new(&mut this, Some(*gen_scope))
+                        .with_self_type(member_ty, member.member.span());
+
+                    let class = infer.ctx().classes.get(*class_id);
+
+                    match item {
+                        ast::MemberItem::Type { name, ty } => if class.assoc_ty(**name).is_none() {
+                            errors.push(Error::NoSuchClassItem(name.clone(), class.name.clone()));
+                            None
+                        } else {
+                            let ty = ty.to_hir(&mut infer, &Scope::Empty);
+
+                            let (mut checked, mut errs) = infer.into_checked();
+                            errors.append(&mut errs);
+
+                            let ty = checked.reify(ty.meta().1);
+
+                            Some((name.clone(), MemberItem::Type { name: name.clone(), ty }))
+                        },
+                        _ => None,
+                    }
+                })
+                .collect::<Vec<_>>();
+            let mut existing_tys = HashMap::new();
+            let assoc = assoc
+                .into_iter()
+                .filter_map(|(name, item)| {
+                    if let Some(old) = existing_tys.get(&*name) {
+                        errors.push(Error::DuplicateMemberItem(*name, *old, name.span()));
+                        None
+                    } else {
+                        existing_tys.insert(*name, name.span());
+                        Some((*name, item))
+                    }
+                })
+                .collect::<HashMap<_, _>>();
+
+            let class = this.classes.get(*class_id);
+
+            for ty in class.assoc.as_ref().expect("Class associated types must be known here") {
+                if let ClassItem::Type { name, .. } = ty {
+                    if !assoc
+                        .iter()
+                        .any(|(_, item)| match item {
+                            MemberItem::Type { name: member_item_name, .. } => member_item_name == name,
+                            _ => false,
+                        })
+                    {
+                        errors.push(Error::MissingClassItem(member.member.span(), class.name.clone(), name.clone()));
+                    }
+                }
+            }
+
+            this.classes.define_member_assoc(*member_id, *class_id, assoc);
+        }
+        // Member fields
+        for (member, class_id, member_id, gen_scope) in &members {
+            let fields = member.items
+                .iter()
+                .filter_map(|item| {
+                    let member_ty = this.classes.get_member(*member_id).member;
+                    let mut infer = Infer::new(&mut this, Some(*gen_scope))
+                        .with_self_type(member_ty, member.member.span());
+
+                    let class = infer.ctx().classes.get(*class_id);
+
                     match item {
                         ast::MemberItem::Value { name, val } => if class.field(**name).is_none() {
                             errors.push(Error::NoSuchClassItem(name.clone(), class.name.clone()));
                             None
                         } else {
-                            // TODO: check that value is a member of the class
-
-                            let member_ty = this.classes.get_member(member_id).member;
-                            let mut infer = Infer::new(&mut this, Some(gen_scope))
-                                .with_self_type(member_ty, member.member.span());
-
                             let val = val.to_hir(&mut infer, &Scope::Empty);
-                            let class = infer.ctx().classes.get(class_id);
+                            let class = infer.ctx().classes.get(*class_id);
                             if let Some(field_ty) = class.field(**name).cloned() {
                                 let self_ty = member.member.to_hir(&mut infer, &Scope::Empty).meta().1;
                                 let val_ty = infer.instantiate(
@@ -324,41 +397,41 @@ impl Context {
 
                             Some((name.clone(), MemberItem::Value { name: name.clone(), val }))
                         },
-                        ast::MemberItem::Type { name, ty } => {
-                            errors.push(Error::Unsupported(name.span(), "associated types"));
-                            None
-                        },
+                        _ => None,
                     }
                 })
                 .collect::<Vec<_>>();
-            let items = items
+            let mut existing_fields = HashMap::new();
+            let fields = fields
                 .into_iter()
                 .filter_map(|(name, item)| {
-                    if let Some(old) = existing.get(&*name) {
+                    if let Some(old) = existing_fields.get(&*name) {
                         errors.push(Error::DuplicateMemberItem(*name, *old, name.span()));
                         None
                     } else {
-                        existing.insert(*name, name.span());
+                        existing_fields.insert(*name, name.span());
                         Some((*name, item))
                     }
                 })
                 .collect::<HashMap<_, _>>();
 
-            let class = this.classes.get(class_id);
-            for item in class.items.as_ref().expect("Class items must be known here") {
-                match item {
-                    ClassItem::Value { name, .. } => if !items
+            let class = this.classes.get(*class_id);
+
+            for field in class.fields.as_ref().expect("Class fields must be known here") {
+                if let ClassItem::Value { name, .. } = field {
+                    if !fields
                         .iter()
                         .any(|(_, item)| match item {
                             MemberItem::Value { name: member_item_name, .. } => member_item_name == name,
+                            _ => false,
                         })
                     {
                         errors.push(Error::MissingClassItem(member.member.span(), class.name.clone(), name.clone()));
-                    },
+                    }
                 }
             }
 
-            this.classes.define_member_items(member_id, class_id, items);
+            this.classes.define_member_fields(*member_id, *class_id, fields);
         }
         for (attr, def) in defs {
             let id = this.defs

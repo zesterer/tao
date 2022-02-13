@@ -5,6 +5,9 @@ pub enum ClassItem {
         name: SrcNode<Ident>,
         ty: SrcNode<TyId>,
     },
+    Type {
+        name: SrcNode<Ident>,
+    },
 }
 
 pub struct Class {
@@ -12,17 +15,29 @@ pub struct Class {
     pub obligations: Option<Vec<SrcNode<Obligation>>>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
-    pub items: Option<Vec<ClassItem>>,
+    pub fields: Option<Vec<ClassItem>>,
+    pub assoc: Option<Vec<ClassItem>>,
 }
 
 impl Class {
     pub fn field(&self, field: Ident) -> Option<&SrcNode<TyId>> {
-        self.items
+        self.fields
             .as_ref()
             .expect("Class fields must be known here")
             .iter()
             .find_map(|item| match item {
                 ClassItem::Value { name, ty } if **name == field => Some(ty),
+                _ => None,
+            })
+    }
+
+    pub fn assoc_ty(&self, assoc: Ident) -> Option<()> {
+        self.assoc
+            .as_ref()
+            .expect("Class associated types must be known here")
+            .iter()
+            .find_map(|item| match item {
+                ClassItem::Type { name } if **name == assoc => Some(()),
                 _ => None,
             })
     }
@@ -70,8 +85,12 @@ impl Classes {
         self.classes[id.0].obligations = Some(obligations);
     }
 
-    pub fn define_items(&mut self, id: ClassId, items: Vec<ClassItem>) {
-        self.classes[id.0].items = Some(items);
+    pub fn define_assoc(&mut self, id: ClassId, assoc: Vec<ClassItem>) {
+        self.classes[id.0].assoc = Some(assoc);
+    }
+
+    pub fn define_fields(&mut self, id: ClassId, fields: Vec<ClassItem>) {
+        self.classes[id.0].fields = Some(fields);
     }
 
     pub fn get_member(&self, id: MemberId) -> &Member {
@@ -87,8 +106,12 @@ impl Classes {
         id
     }
 
-    pub fn define_member_items(&mut self, id: MemberId, class: ClassId, items: HashMap<Ident, MemberItem>) {
-        self.members[id.0].items = Some(items);
+    pub fn define_member_fields(&mut self, id: MemberId, class: ClassId, fields: HashMap<Ident, MemberItem>) {
+        self.members[id.0].fields = Some(fields);
+    }
+
+    pub fn define_member_assoc(&mut self, id: MemberId, class: ClassId, assoc: HashMap<Ident, MemberItem>) {
+        self.members[id.0].assoc = Some(assoc);
     }
 
     pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
@@ -132,13 +155,13 @@ impl Classes {
             })
     }
 
-    pub fn members_of(&self, class: ClassId) -> impl Iterator<Item = &Member> {
+    pub fn members_of(&self, class: ClassId) -> impl Iterator<Item = (MemberId, &Member)> {
         self.member_lut
             .get(&class)
             .map(|m| m.as_slice())
             .unwrap_or(&[])
             .iter()
-            .map(|m| self.get_member(*m))
+            .map(|m| (*m, self.get_member(*m)))
     }
 }
 
@@ -147,23 +170,39 @@ pub enum MemberItem {
         name: SrcNode<Ident>,
         val: TyExpr,
     },
+    Type {
+        name: SrcNode<Ident>,
+        ty: TyId,
+    },
 }
 
 pub struct Member {
     pub gen_scope: GenScopeId,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub member: TyId,
-    pub items: Option<HashMap<Ident, MemberItem>>,
+    pub fields: Option<HashMap<Ident, MemberItem>>,
+    pub assoc: Option<HashMap<Ident, MemberItem>>,
 }
 
 impl Member {
     pub fn field(&self, field: Ident) -> Option<&TyExpr> {
-        self.items
+        self.fields
             .as_ref()
-            .expect("Member items not initialised")
+            .expect("Member fields not initialised")
             .get(&field)
             .and_then(|item| match item {
                 MemberItem::Value { name, val } if **name == field => Some(val),
+                _ => None,
+            })
+    }
+
+    pub fn assoc_ty(&self, assoc: Ident) -> Option<TyId> {
+        self.assoc
+            .as_ref()
+            .expect("Member associated types not initialised")
+            .get(&assoc)
+            .and_then(|item| match item {
+                MemberItem::Type { name, ty } if **name == assoc => Some(*ty),
                 _ => None,
             })
     }

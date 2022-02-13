@@ -6,7 +6,7 @@ pub enum Error {
     Mismatch(TyId, TyId, EqInfo),
     CannotInfer(TyId, Option<Span>),
     Recursive(TyId, Span, Span),
-    NoSuchField(TyId, Span, SrcNode<Ident>),
+    NoSuchItem(TyId, Span, SrcNode<Ident>),
     NoSuchLocal(SrcNode<Ident>),
     WrongNumberOfParams(Span, usize, Span, usize),
     NoBranches(Span),
@@ -89,11 +89,11 @@ impl Error {
                     format!("If this was intentional, consider using {} instead", "data".fg(Color::Cyan)),
                 ],
             ),
-            Error::NoSuchField(a, record_span, field) => (
-                format!("Type {} has no field named {}", display(a).fg(Color::Red), (*field).fg(Color::Red)),
+            Error::NoSuchItem(a, record_span, field) => (
+                format!("Type {} has no item named {}", display(a).fg(Color::Red), (*field).fg(Color::Red)),
                 vec![
                     (record_span, format!("Has type {}", display(a).fg(Color::Yellow)), Color::Yellow),
-                    (field.span(), format!("Field does not exist"), Color::Red),
+                    (field.span(), format!("Item does not exist"), Color::Red),
                 ],
                 vec![],
             ),

@@ -125,6 +125,7 @@ pub enum Type {
     Func(SrcNode<Self>, SrcNode<Self>),
     // TODO: Replace name with `Item` when ready
     Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
+    Assoc(SrcNode<Self>, SrcNode<Ident>),
 }
 
 impl Type {
@@ -143,6 +144,7 @@ impl Type {
             Self::Data(_, args) => args
                 .iter()
                 .all(|arg| arg.is_fully_specified()),
+            Self::Assoc(inner, _) => inner.is_fully_specified(),
         }
     }
 }
@@ -245,7 +247,7 @@ pub enum ClassItem {
     },
     Type {
         name: SrcNode<Ident>,
-        obligations: Vec<SrcNode<Ident>>,
+        obligations: SrcNode<Vec<SrcNode<Ident>>>,
     },
 }
 
