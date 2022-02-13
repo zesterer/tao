@@ -1,34 +1,10 @@
 import "lib/std.tao"
 
-class Stream =
-    => Item
-    => next : Self -> (Maybe Self.Item, Self)
-
-for A member [A] of Stream =
-    => Item = A
-    => next = fn
-        | [x .. xs] => (Just x, xs)
-        \ [] => (None, [])
-
-data Take S < Stream = {
-    s: S,
-    n: Nat,
-}
-
-for S < Stream member Take S of Stream =
-    => Item = S.Item
-    => next = fn
-        | self ~ Take { s, n ~ 0 } => (None, self)
-        \ Take { s, n ~ n + 1 } =>
-            let (x, s) = S.next(s) in
-            (x, Take { s, n })
-
-def take S < Stream =
-    \ n, s : S => Take { s, n }
-
-def collect S < Stream = fn s => match S.next(s) in
-    | (Just x, s) => [x .. s:collect]
-    \ (None, _) => []
+$[main]
+def main = [1, 2, 3, 4, 5, 6]
+    :take(5)
+    :mapped(fn x => x * x)
+    :collect
 
 class Mappable =
     => Item
@@ -42,9 +18,6 @@ for A member [A] of Mappable =
 
 def do_map A < Mappable =
     \ f, m => A.map(f, m)
-
-$[main]
-def main = [1, 2, 3, 4]:take(3):collect
 
 class Foo =
     => Bar

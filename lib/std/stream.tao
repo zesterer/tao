@@ -1,0 +1,45 @@
+import "lib/std/util.tao"
+
+class Stream =
+    => Item
+    => next : Self -> (Maybe Self.Item, Self)
+
+for A member [A] of Stream =
+    => Item = A
+    => next = fn
+        | [x .. xs] => (Just x, xs)
+        \ [] => (None, [])
+
+data Take S < Stream = {
+    s: S,
+    n: Nat,
+}
+
+for S < Stream member Take S of Stream =
+    => Item = S.Item
+    => next = fn
+        | self ~ Take { s, n ~ 0 } => (None, self)
+        \ Take { s, n ~ n + 1 } =>
+            let (x, s) = S.next(s) in
+            (x, Take { s, n })
+
+def take S < Stream =
+    \ n, s : S => Take { s, n }
+
+data Mapped S < Stream = {
+    s: S,
+    f: S.Item -> S.Item,
+}
+
+for S < Stream member Mapped S of Stream =
+    => Item = S.Item
+    => next = fn Mapped { s, f } => match S.next(s) in
+        | (Just x, s) => (Just x:f, Mapped { s, f })
+        \ (None, s) => (None, Mapped { s, f })
+
+def mapped S < Stream =
+    \ f, s : S => Mapped { s, f }
+
+def collect S < Stream = fn s => match S.next(s) in
+    | (Just x, s) => [x .. s:collect]
+    \ (None, _) => []
