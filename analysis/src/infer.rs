@@ -119,8 +119,8 @@ pub struct Infer<'a> {
 }
 
 impl<'a> Infer<'a> {
-    pub fn new(ctx: &'a mut Context, gen_scope: Option<GenScopeId>, self_type: Option<Span>) -> Self {
-        let mut this = Self {
+    pub fn new(ctx: &'a mut Context, gen_scope: Option<GenScopeId>) -> Self {
+        Self {
             ctx,
             gen_scope,
             vars: Vec::new(),
@@ -129,13 +129,17 @@ impl<'a> Infer<'a> {
             lazy_literals: VecDeque::new(),
             errors: Vec::new(),
             self_type: None,
-        };
-
-        if let Some(span) = self_type {
-            this.self_type = Some(this.insert(span, TyInfo::SelfType));
         }
+    }
 
-        this
+    pub fn with_self_type(mut self, ty: TyId, span: Span) -> Self {
+        self.self_type = Some(self.instantiate_local(ty, span));
+        self
+    }
+
+    pub fn with_unknown_self(mut self, span: Span) -> Self {
+        self.self_type = Some(self.insert(span, TyInfo::SelfType));
+        self
     }
 
     pub fn self_type(&self) -> Option<TyVar> { self.self_type }
@@ -231,6 +235,19 @@ impl<'a> Infer<'a> {
         let err = if matches!(&info, TyInfo::Error(_)) { Err(()) } else { Ok(()) };
         self.vars.push((span, info, err));
         id
+    }
+
+    pub fn instantiate_local(&mut self, ty: TyId, span: Span) -> TyVar {
+        let mut gens = self.gen_scope
+            .map(|gen_scope| {
+                (0..self.ctx.tys.get_gen_scope(gen_scope).len())
+                    .map(|idx| {
+                        let span = self.ctx.tys.get_gen_scope(gen_scope).get(idx).name.span();
+                        self.insert(span, TyInfo::Gen(idx, gen_scope, span))
+                    })
+                    .collect::<Vec<_>>()
+            });
+        self.instantiate(ty, span, &|idx, gen_scope, ctx| gens.as_ref().expect("No gen scope")[idx], None)
     }
 
     pub fn instantiate(&mut self, ty: TyId, span: Span, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar, self_ty: Option<TyVar>) -> TyVar {

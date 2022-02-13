@@ -1,33 +1,33 @@
 import "lib/std.tao"
 
-def minux_seven: Int = (-2) - 5
+class Foo =
+    => nothing : Self
+    => one1 : Self
 
-def foo =
-    let f = fn f => () in
-    f(f)
-
-type Foo = (Nat, Foo)
-
-# $[main]
-# def main = [1, 2, 3, 4, 5]:sort
+member Nat of Foo =
+    => nothing = 2
+    => one1 = Self.nothing + 1
 
 $[main]
-def main = [
-        (4, "e"),
-        (2, "c"),
-        (0, "a"),
-        (3, "d"),
-        (1, "b"),
-    ]
-        :from_list
-        :contains(4)
-        :debug
+def main = Nat.one1
 
-# def foo = do
+# $[main]
+# def main = [
+#         (4, "e"),
+#         (2, "c"),
+#         (0, "a"),
+#         (3, "d"),
+#         (1, "b"),
+#     ]
+#         :from_list
+#         :contains(4)
+#         :debug
+
+# def main2 = do
 #     let msg = input;
 #     if msg = "exit" then do
 #         print("Now exiting...");
 #         print("Goodbye!");
 #     else do
 #         print("Hello, world!");
-#         main; # Loop
+#         main2; # Loop

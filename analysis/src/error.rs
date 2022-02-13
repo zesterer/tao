@@ -26,6 +26,8 @@ pub enum Error {
     DuplicateConsName(Ident, Span, Span),
     DuplicateGenName(Ident, Span, Span),
     DuplicateClassName(Ident, Span, Span),
+    DuplicateClassItem(Ident, Span, Span),
+    DuplicateMemberItem(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
     // Span, uncovered example, hidden_outer
     NotExhaustive(Span, ExamplePat, bool),
@@ -245,6 +247,22 @@ impl Error {
                 vec![
                     (old, format!("Previous type class"), Color::Yellow),
                     (new, format!("Conflicting type class"), Color::Red),
+                ],
+                vec![],
+            ),
+            Error::DuplicateClassItem(name, old, new) => (
+                format!("Item {} declared multiple times in class", name.fg(Color::Red)),
+                vec![
+                    (old, format!("Previous item"), Color::Yellow),
+                    (new, format!("Conflicting item"), Color::Red),
+                ],
+                vec![],
+            ),
+            Error::DuplicateMemberItem(name, old, new) => (
+                format!("Item {} declared multiple times in class member", name.fg(Color::Red)),
+                vec![
+                    (old, format!("Previous item"), Color::Yellow),
+                    (new, format!("Conflicting item"), Color::Red),
                 ],
                 vec![],
             ),

@@ -92,7 +92,7 @@ impl Context {
         for (attr, alias) in aliases {
             let gen_scope = this.datas.name_gen_scope(*alias.name);
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
 
             let ty = alias.ty.to_hir(&mut infer, &Scope::Empty);
 
@@ -135,7 +135,8 @@ impl Context {
                     .collect(),
             );
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope), Some(class.name.span()));
+            let mut infer = Infer::new(&mut this, Some(gen_scope))
+                .with_unknown_self(class.name.span());
 
             let values = class.items
                 .iter()
@@ -154,11 +155,22 @@ impl Context {
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
 
+            let mut existing = HashMap::new();
             let items = values
                 .into_iter()
-                .map(|(name, ty)| ClassItem::Value {
-                    name,
-                    ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
+                .filter_map(|(name, ty)| {
+                    let item = ClassItem::Value {
+                        name: name.clone(),
+                        ty: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
+                    };
+
+                    if let Some(old) = existing.get(&*name) {
+                        errors.push(Error::DuplicateClassItem(*name, *old, name.span()));
+                        None
+                    } else {
+                        existing.insert(*name, name.span());
+                        Some(item)
+                    }
                 })
                 // TODO:
                 //.zip(types.into_iter())
@@ -176,7 +188,7 @@ impl Context {
                 continue;
             };
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
             for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
@@ -202,7 +214,7 @@ impl Context {
         for (attr, def, gen_scope) in defs_init {
             // If the type hint is fully specified, check it
             let ty_hint = if def.ty_hint.is_fully_specified() {
-                let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+                let mut infer = Infer::new(&mut this, Some(gen_scope));
                 let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
 
                 let (mut checked, mut errs) = infer.into_checked();
@@ -231,7 +243,7 @@ impl Context {
         for (attr, data) in datas {
             let gen_scope = this.datas.name_gen_scope(*data.name);
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
             let variants = data.variants
                 .iter()
                 .map(|(name, ty)| {
@@ -264,7 +276,7 @@ impl Context {
             }
         }
         for (member, class_id, member_id, gen_scope) in members {
-            let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
             for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
@@ -276,6 +288,7 @@ impl Context {
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
 
+            let mut existing = HashMap::new();
             let items = member.items
                 .iter()
                 .filter_map(|item| {
@@ -287,7 +300,9 @@ impl Context {
                         } else {
                             // TODO: check that value is a member of the class
 
-                            let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+                            let member_ty = this.classes.get_member(member_id).member;
+                            let mut infer = Infer::new(&mut this, Some(gen_scope))
+                                .with_self_type(member_ty, member.member.span());
 
                             let val = val.to_hir(&mut infer, &Scope::Empty);
                             let class = infer.ctx().classes.get(class_id);
@@ -307,13 +322,24 @@ impl Context {
 
                             let val = val.reify(&mut checked);
 
-                            // TODO: Detect duplicates!
-                            Some((**name, MemberItem::Value { name: name.clone(), val }))
+                            Some((name.clone(), MemberItem::Value { name: name.clone(), val }))
                         },
                         ast::MemberItem::Type { name, ty } => {
                             errors.push(Error::Unsupported(name.span(), "associated types"));
                             None
                         },
+                    }
+                })
+                .collect::<Vec<_>>();
+            let items = items
+                .into_iter()
+                .filter_map(|(name, item)| {
+                    if let Some(old) = existing.get(&*name) {
+                        errors.push(Error::DuplicateMemberItem(*name, *old, name.span()));
+                        None
+                    } else {
+                        existing.insert(*name, name.span());
+                        Some((*name, item))
                     }
                 })
                 .collect::<HashMap<_, _>>();
@@ -340,7 +366,7 @@ impl Context {
                 .expect("Def must be pre-declared before definition");
             let gen_scope = this.defs.get(id).gen_scope;
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope), None);
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
 
             let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
 
