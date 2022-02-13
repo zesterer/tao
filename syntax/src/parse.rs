@@ -140,6 +140,18 @@ pub fn type_parser() -> impl Parser<ast::Type> {
     })
 }
 
+pub fn class_inst_parser() -> impl Parser<ast::ClassInst> {
+    type_ident_parser()
+        .map_with_span(SrcNode::new)
+        .then(type_parser()
+            .map_with_span(SrcNode::new)
+            .repeated())
+        .map(|(name, params)| ast::ClassInst {
+            name,
+            params,
+        })
+}
+
 pub fn ty_hint_parser() -> impl Parser<Option<SrcNode<ast::Type>>> {
     just(Token::Colon)
         .ignore_then(type_parser()
@@ -667,9 +679,9 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         .labelled("expression")
 }
 
-pub fn obligation_parser() -> impl Parser<Vec<SrcNode<ast::Ident>>> {
+pub fn obligation_parser() -> impl Parser<Vec<SrcNode<ast::ClassInst>>> {
     just(Token::Op(Op::Less))
-        .ignore_then(type_ident_parser()
+        .ignore_then(class_inst_parser()
             .map_with_span(SrcNode::new)
             .separated_by(just(Token::Op(Op::Add)))
             .allow_leading())
@@ -837,7 +849,7 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             .ignore_then(type_parser()
                 .map_with_span(SrcNode::new))
             .then_ignore(just(Token::Of))
-            .then(type_ident_parser()
+            .then(class_inst_parser()
                 .map_with_span(SrcNode::new))
             .then(just(Token::Op(Op::Eq))
                 .ignore_then(item.repeated())

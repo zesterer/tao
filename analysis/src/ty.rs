@@ -175,7 +175,7 @@ pub enum Obligation {
 pub struct GenTy {
     pub name: SrcNode<Ident>,
     // TODO: Don't store this here, it's silly
-    pub ast_obligations: Vec<SrcNode<Ident>>,
+    pub ast_obligations: Vec<SrcNode<ast::ClassInst>>,
     pub obligations: Option<Vec<Obligation>>,
 }
 
@@ -226,10 +226,10 @@ impl GenScope {
             let obligations = ty
                 .ast_obligations
                 .iter()
-                .filter_map(|class| if let Some(class) = classes.lookup(**class) {
-                    Some(Obligation::MemberOf(class))
+                .filter_map(|obl| if let Some(obl) = classes.lookup(*obl.name) {
+                    Some(Obligation::MemberOf(obl))
                 } else {
-                    errors.push(Error::NoSuchClass(class.clone()));
+                    errors.push(Error::NoSuchClass(obl.name.clone()));
                     None
                 })
                 .collect();

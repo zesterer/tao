@@ -30,7 +30,10 @@ impl Context {
         // Declare items before declaration
         for (attr, class) in module.classes() {
             let (gen_scope, mut errs) = GenScope::from_ast(&class.generics);
-            assert_eq!(gen_scope.len(), 0, "Type parameters on classes not permitted yet");
+            if gen_scope.len() != 0 {
+                errors.push(Error::Unsupported(class.generics.span(), "type parameters on classes"));
+                continue;
+            }
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             match this.classes.declare(class.name.clone(), Class {
@@ -69,17 +72,17 @@ impl Context {
             }
         }
         for (attr, member) in module.members() {
-            let class_id = if let Some(class_id) = this.classes.lookup(*member.class) {
+            let class_id = if let Some(class_id) = this.classes.lookup(*member.class.name) {
                 class_id
             } else {
-                errors.push(Error::NoSuchClass(member.class.clone()));
+                errors.push(Error::NoSuchClass(member.class.name.clone()));
                 continue;
             };
 
             let (gen_scope, mut errs) = GenScope::from_ast(&member.generics);
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            members_init.push((attr, member, gen_scope));
+            members_init.push((attr, member, class_id, gen_scope));
         }
         for (attr, def) in module.defs() {
             let (gen_scope, mut errs) = GenScope::from_ast(&def.generics);
@@ -126,12 +129,17 @@ impl Context {
                 class
                     .obligation
                     .iter()
-                    .filter_map(|obl| match this.classes.lookup(**obl) {
-                        Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
-                        None => {
-                            errors.push(Error::NoSuchClass(obl.clone()));
-                            None
-                        },
+                    .filter_map(|obl| {
+                        if !obl.params.is_empty() {
+                            errors.push(Error::Unsupported(obl.span(), "type parameters on classes"));
+                        }
+                        match this.classes.lookup(*obl.name) {
+                            Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
+                            None => {
+                                errors.push(Error::NoSuchClass(obl.name.clone()));
+                                None
+                            },
+                        }
                     })
                     .collect(),
             );
@@ -190,14 +198,7 @@ impl Context {
         }
 
         let mut members = Vec::new();
-        for (attr, member, gen_scope) in members_init {
-            let class_id = if let Some(class_id) = this.classes.lookup(*member.class) {
-                class_id
-            } else {
-                errors.push(Error::NoSuchClass(member.class.clone()));
-                continue;
-            };
-
+        for (attr, member, class_id, gen_scope) in members_init {
             let mut infer = Infer::new(&mut this, Some(gen_scope));
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);

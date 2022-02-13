@@ -149,6 +149,12 @@ impl Type {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClassInst {
+    pub name: SrcNode<Ident>,
+    pub params: Vec<SrcNode<Type>>,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Pat {
     // Generated only by parser errors.
@@ -209,7 +215,7 @@ pub enum Expr {
 #[derive(Debug, PartialEq)]
 pub struct GenericTy {
     pub name: SrcNode<Ident>,
-    pub obligations: Vec<SrcNode<Ident>>,
+    pub obligations: Vec<SrcNode<ClassInst>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -247,14 +253,14 @@ pub enum ClassItem {
     },
     Type {
         name: SrcNode<Ident>,
-        obligations: SrcNode<Vec<SrcNode<Ident>>>,
+        obligations: SrcNode<Vec<SrcNode<ClassInst>>>,
     },
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Class {
     pub name: SrcNode<Ident>,
-    pub obligation: Vec<SrcNode<Ident>>,
+    pub obligation: Vec<SrcNode<ClassInst>>,
     pub generics: SrcNode<Generics>,
     pub items: Vec<ClassItem>,
 }
@@ -275,7 +281,7 @@ pub enum MemberItem {
 pub struct Member {
     pub generics: SrcNode<Generics>,
     pub member: SrcNode<Type>,
-    pub class: SrcNode<Ident>,
+    pub class: SrcNode<ClassInst>,
     pub items: Vec<MemberItem>,
 }
 
