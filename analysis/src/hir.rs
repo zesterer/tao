@@ -14,7 +14,7 @@ impl Meta for InferMeta {
 
 impl Meta for TyMeta {
     type Ty = TyId;
-    type Class = Option<ClassId>;
+    type Class = Option<ClassId>; // Required because we don't have proper error classes yet
 }
 
 impl Meta for ConMeta {

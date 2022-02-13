@@ -1,10 +1,10 @@
 import "lib/std.tao"
 
-class Bar =
-    => B
+class A =
+    => A
 
-class Foo2 < Bar =
-    => b : Self.B
+class B < A =
+    => b : Self.A
 
 class Mappable =
     => Item

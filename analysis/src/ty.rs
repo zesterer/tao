@@ -236,31 +236,4 @@ impl GenScope {
             ty.obligations = Some(obligations);
         }
     }
-
-    pub fn find_obligations_for(&self, ctx: &Context, idx: usize) -> HashSet<ClassId> {
-        let mut classes = HashSet::new();
-
-        // Extract a list of all classes that the type is a member of
-        fn walk_classes(ctx: &Context, classes: &mut HashSet<ClassId>, class: ClassId) {
-            if classes.insert(class) {
-                for obl in ctx.classes.get(class).obligations.as_ref().expect("Obligations must be known here") {
-                    match obl.inner() {
-                        Obligation::MemberOf(class) => walk_classes(ctx, classes, *class),
-                    }
-                }
-            }
-        }
-
-        // Determine primary obligations
-        self.get(idx)
-            .obligations
-            .as_ref()
-            .expect("Lookup on unchecked gen scope")
-            .iter()
-            .for_each(|c| match c {
-                Obligation::MemberOf(class) => walk_classes(ctx, &mut classes, *class),
-            });
-
-        classes
-    }
 }

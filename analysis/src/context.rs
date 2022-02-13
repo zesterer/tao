@@ -128,9 +128,9 @@ impl Context {
         this.errors.append(&mut gen_scope_errors);
 
         // Derive class obligations
-        for (attr, class, class_id, gen_scope) in classes {
+        for (attr, class, class_id, gen_scope) in &classes {
             this.classes.define_obligations(
-                class_id,
+                *class_id,
                 class
                     .obligation
                     .iter()
@@ -148,7 +148,9 @@ impl Context {
                     })
                     .collect(),
             );
-
+        }
+        // Class associated types
+        for (attr, class, class_id, gen_scope) in &classes {
             let mut existing_tys = HashMap::new();
             let assoc = class.items
                 .iter()
@@ -169,15 +171,17 @@ impl Context {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            this.classes.define_assoc(class_id, assoc);
-
+            this.classes.define_assoc(*class_id, assoc);
+        }
+        // Class fields
+        for (attr, class, class_id, gen_scope) in &classes {
             let mut existing_fields = HashMap::new();
             let fields = class.items
                 .iter()
                 .filter_map(|item| match item {
                     ast::ClassItem::Value { name, ty } => {
-                        let mut infer = Infer::new(&mut this, Some(gen_scope))
-                            .with_unknown_self(class.name.span(), Some(class_id));
+                        let mut infer = Infer::new(&mut this, Some(*gen_scope))
+                            .with_unknown_self(class.name.span(), vec![*class_id]);
 
                         let ty = ty.to_hir(&mut infer, &Scope::Empty);
 
@@ -199,7 +203,7 @@ impl Context {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            this.classes.define_fields(class_id, fields);
+            this.classes.define_fields(*class_id, fields);
         }
 
         let mut members = Vec::new();
