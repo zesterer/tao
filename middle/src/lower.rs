@@ -125,6 +125,14 @@ impl Context {
                     .0;
                 mir::Pat::Variant(variant, self.lower_binding(hir, con, inner))
             },
+            hir::Pat::Record(fields) => {
+                let mut fields = fields
+                    .iter()
+                    .map(|(name, field)| (*name, self.lower_binding(hir, con, field)))
+                    .collect::<Vec<_>>();
+                fields.sort_by_key(|(name, _)| name.as_ref());
+                mir::Pat::Tuple(fields.into_iter().map(|(_, field)| field).collect())
+            },
             pat => todo!("{:?}", pat),
         };
 

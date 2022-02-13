@@ -1,10 +1,34 @@
 import "lib/std.tao"
 
-class A =
-    => A
+class Stream =
+    => Item
+    => next : Self -> (Maybe Self.Item, Self)
 
-class B < A =
-    => b : Self.A
+for A member [A] of Stream =
+    => Item = A
+    => next = fn
+        | [x .. xs] => (Just x, xs)
+        \ [] => (None, [])
+
+data Take S < Stream = {
+    s: S,
+    n: Nat,
+}
+
+for S < Stream member Take S of Stream =
+    => Item = S.Item
+    => next = fn
+        | self ~ Take { s, n ~ 0 } => (None, self)
+        \ Take { s, n ~ n + 1 } =>
+            let (x, s) = S.next(s) in
+            (x, Take { s, n })
+
+def take S < Stream =
+    \ n, s : S => Take { s, n }
+
+def collect S < Stream = fn s => match S.next(s) in
+    | (Just x, s) => [x .. s:collect]
+    \ (None, _) => []
 
 class Mappable =
     => Item
@@ -20,7 +44,7 @@ def do_map A < Mappable =
     \ f, m => A.map(f, m)
 
 $[main]
-def main = [1, 2, 3, 4]:do_map(fn x => x * x)
+def main = [1, 2, 3, 4]:take(3):collect
 
 class Foo =
     => Bar
@@ -32,11 +56,11 @@ member Nat of Foo =
 
 def foo_nat : Nat.Bar = Nat.foo
 
-# class Neg =
-#     => Output
-#     => neg : Self -> Self.Output
+class Neg =
+    => Output
+    => neg : Self -> Self.Output
 
-# def neg A < Neg : A -> A.Output = A.neg
+def neg A < Neg : A -> A.Output = A.neg
 
 # $[main]
 # def main = [

@@ -176,7 +176,15 @@ pub struct GenTy {
     pub name: SrcNode<Ident>,
     // TODO: Don't store this here, it's silly
     pub ast_obligations: Vec<SrcNode<ast::ClassInst>>,
-    pub obligations: Option<Vec<Obligation>>,
+    pub obligations: Option<Vec<SrcNode<Obligation>>>,
+}
+
+impl GenTy {
+    pub fn obligations(&self) -> &[SrcNode<Obligation>] {
+        self.obligations
+            .as_ref()
+            .expect("Lookup on unchecked gen scope")
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -226,8 +234,8 @@ impl GenScope {
             let obligations = ty
                 .ast_obligations
                 .iter()
-                .filter_map(|obl| if let Some(obl) = classes.lookup(*obl.name) {
-                    Some(Obligation::MemberOf(obl))
+                .filter_map(|obl| if let Some(class) = classes.lookup(*obl.name) {
+                    Some(SrcNode::new(Obligation::MemberOf(class), obl.name.span()))
                 } else {
                     errors.push(Error::NoSuchClass(obl.name.clone()));
                     None

@@ -121,6 +121,7 @@ impl ToHir for ast::Type {
                         }
                     } else if let Some(data) = infer.ctx().datas.lookup_data(**name) {
                         let data_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.name_gen_scope(**name));
+
                         if data_gen_scope.len() != params.len() {
                             let err = Error::WrongNumberOfGenerics(
                                 self.span(),
@@ -131,6 +132,22 @@ impl ToHir for ast::Type {
                             infer.ctx_mut().emit(err);
                             TyInfo::Error(ErrorReason::Unknown)
                         } else {
+                            // Enforce obligations from data type
+                            let mut obls = Vec::new();
+                            for idx in 0..data_gen_scope.len() {
+                                for obl in data_gen_scope
+                                    .get(idx)
+                                    .obligations()
+                                {
+                                    match &**obl {
+                                        Obligation::MemberOf(class) => obls.push((idx, *class, obl.span())),
+                                    }
+                                }
+                            }
+                            for (idx, class, span) in obls {
+                                infer.make_impl(params[idx], class, span, Vec::new());
+                            }
+
                             TyInfo::Data(data, params)
                         }
                     } else {
@@ -326,14 +343,11 @@ impl ToHir for ast::Expr {
                     let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
                     for obl in scope
                         .get(idx)
-                        .obligations
-                        .as_ref()
-                        .expect("Obligations must be resolved during inference")
-                        .clone()
-                        .into_iter()
+                        .obligations()
+                        .to_vec()
                     {
-                        match obl {
-                            Obligation::MemberOf(class) => infer.make_impl(*ty, class, self.span(), Vec::new()),
+                        match &*obl {
+                            Obligation::MemberOf(class) => infer.make_impl(*ty, *class, self.span(), Vec::new()),
                         }
                     }
                 }
@@ -582,6 +596,24 @@ impl ToHir for ast::Expr {
                     .into_iter()
                     .map(|origin| infer.insert(self.span(), TyInfo::Unknown(Some(origin))))
                     .collect::<Vec<_>>();
+
+                let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
+
+                // Enforce obligations from data type
+                let mut obls = Vec::new();
+                for idx in 0..gen_scope.len() {
+                    for obl in gen_scope
+                        .get(idx)
+                        .obligations()
+                    {
+                        match &**obl {
+                            Obligation::MemberOf(class) => obls.push((idx, *class, obl.span())),
+                        }
+                    }
+                }
+                for (idx, class, span) in obls {
+                    infer.make_impl(generic_tys[idx], class, span, Vec::new());
+                }
 
                 let inner_ty = infer
                     .ctx()

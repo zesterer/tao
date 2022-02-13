@@ -338,35 +338,35 @@ impl<'a> Infer<'a> {
 
     fn occurs_in_inner(&self, x: TyVar, y: TyVar, seen: &mut Vec<TyVar>) -> bool {
         if seen.contains(&y) {
-            return true;
+            true
         } else {
             seen.push(y);
+
+            let occurs = match self.info(y) {
+                TyInfo::Unknown(_)
+                | TyInfo::Error(_)
+                | TyInfo::Prim(_)
+                | TyInfo::SelfType
+                | TyInfo::Gen(_, _, _) => false,
+                TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
+                TyInfo::List(item) => x == item || self.occurs_in_inner(x, item, seen),
+                TyInfo::Func(i, o) => x == i || x == o || self.occurs_in_inner(x, i, seen) || self.occurs_in_inner(x, o, seen),
+                TyInfo::Tuple(ys) => ys
+                    .into_iter()
+                    .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+                TyInfo::Record(ys) => ys
+                    .into_iter()
+                    .any(|(_, y)| x == y || self.occurs_in_inner(x, y, seen)),
+                TyInfo::Data(_, ys) => ys
+                    .into_iter()
+                    .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+                TyInfo::Assoc(inner, _, _) => x == inner || self.occurs_in_inner(x, inner, seen),
+            };
+
+            seen.pop();
+
+            occurs
         }
-
-        let occurs = match self.info(y) {
-            TyInfo::Unknown(_)
-            | TyInfo::Error(_)
-            | TyInfo::Prim(_)
-            | TyInfo::SelfType
-            | TyInfo::Gen(_, _, _) => false,
-            TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
-            TyInfo::List(item) => x == item || self.occurs_in_inner(x, item, seen),
-            TyInfo::Func(i, o) => x == i || x == o || self.occurs_in_inner(x, i, seen) || self.occurs_in_inner(x, o, seen),
-            TyInfo::Tuple(ys) => ys
-                .into_iter()
-                .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
-            TyInfo::Record(ys) => ys
-                .into_iter()
-                .any(|(_, y)| x == y || self.occurs_in_inner(x, y, seen)),
-            TyInfo::Data(_, ys) => ys
-                .into_iter()
-                .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
-            TyInfo::Assoc(inner, _, _) => x == inner || self.occurs_in_inner(x, inner, seen)
-        };
-
-        seen.pop();
-
-        occurs
     }
 
     // Returns true if `x` occurs in `y`.
@@ -436,8 +436,8 @@ impl<'a> Infer<'a> {
                 xs.len() == ys.len() => make_eq_many(self, xs, ys),
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
             (TyInfo::SelfType, TyInfo::SelfType) => Ok(()),
-            (TyInfo::Assoc(a, class_a, a_assoc), TyInfo::Assoc(b, class_b, b_assoc))
-                if class_a == class_b && a_assoc == b_assoc => self.make_eq_inner(x, y),
+            (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
+                if class_x == class_y && assoc_x == assoc_y => self.make_eq_inner(x, y),
             (_, _) => Err((x, y)),//self.errors.push(InferError::Mismatch(x, y)),
         }
     }
@@ -627,31 +627,41 @@ impl<'a> Infer<'a> {
                     let result_ty = self.insert(self.span(output), info);
                     self.make_eq(output, result_ty, self.span(output));
                 })),
-            Constraint::Impl(ty, obligation, span, unchecked_assoc) => self.resolve_obligation(ty, obligation, span).map(|res| res.map(|member| {
-                    for (assoc, assoc_ty) in unchecked_assoc {
-                        match member {
-                            Ok(member) => {
-                                let member = self.ctx.classes.get_member(member);
+            Constraint::Impl(ty, obligation, span, unchecked_assoc) => self.resolve_obligation(ty, obligation, span).map(|res| match res {
+                    Ok(member) => {
+                        for (assoc, assoc_ty) in unchecked_assoc {
+                            match member {
+                                Ok(member) => {
+                                    let member = self.ctx.classes.get_member(member);
 
-                                let mut links = HashMap::new();
-                                self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                                    let mut links = HashMap::new();
+                                    self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
 
-                                if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
-                                    let assoc_ty_inst = self.instantiate(member_assoc_ty, span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
-                                    self.make_eq(assoc_ty, assoc_ty_inst, span);
-                                }
-                            },
-                            Err(true) => {
-                                // Errors propagate through projected associated types
-                                self.set_error(assoc_ty);
-                            },
-                            Err(false) => {
-                                let assoc_info = self.insert(span, TyInfo::Assoc(ty, obligation, assoc.clone()));
-                                self.make_eq(assoc_ty, assoc_info, span);
-                            },
+                                    if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
+                                        let assoc_ty_inst = self.instantiate(member_assoc_ty, span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
+                                        self.make_eq(assoc_ty, assoc_ty_inst, span);
+                                    }
+                                },
+                                Err(true) => {
+                                    // Errors propagate through projected associated types
+                                    self.set_error(assoc_ty);
+                                },
+                                Err(false) => {
+                                    let assoc_info = self.insert(span, TyInfo::Assoc(ty, obligation, assoc.clone()));
+                                    self.make_eq(assoc_ty, assoc_info, span);
+                                },
+                            }
                         }
-                    }
-                })),
+                        Ok(())
+                    },
+                    Err(err) => {
+                        // The obligation produced an error, so propagate the error to associated type variables
+                        for (_, assoc_ty) in unchecked_assoc {
+                            self.set_error(assoc_ty);
+                        }
+                        Err(err)
+                    },
+                }),
             Constraint::ClassField(ty, class, field, field_ty, span) => self.try_resolve_class_from_field(ty, class, field.clone(), field_ty, span),
             Constraint::ClassAssoc(ty, class, assoc, assoc_ty, span) => self.try_resolve_class_from_assoc(ty, class, assoc.clone(), assoc_ty, span),
         }
@@ -737,12 +747,9 @@ impl<'a> Infer<'a> {
         for obl in self.ctx.tys
             .get_gen_scope(gen_scope)
             .get(idx)
-            .obligations
-            .as_ref()
-            .expect("Lookup on unchecked gen scope")
-            .iter()
+            .obligations()
         {
-            match obl {
+            match &**obl {
                 Obligation::MemberOf(class) => self.walk_implied_obligations(&mut implied, *class),
             }
         }
@@ -892,6 +899,7 @@ impl<'a> Infer<'a> {
                 {
                     Some(Ok(Err(false)))
                 } else {
+                    self.set_error(ty);
                     Some(Err(InferError::TypeDoesNotFulfil(
                         obligation,
                         ty,
@@ -925,7 +933,7 @@ impl<'a> Infer<'a> {
 
                     for (gen_idx, ty) in links {
                         for obl in scope.get(gen_idx).obligations.as_ref().unwrap() {
-                            match obl {
+                            match &**obl {
                                 Obligation::MemberOf(class) => {
                                     self.constraints.push_back(Constraint::Impl(ty, *class, span, Vec::new()));
                                 },
@@ -1054,35 +1062,35 @@ impl<'a> Checked<'a> {
 
     fn reify_inner(&mut self, var: TyVar) -> TyId {
         if let Some(ty) = self.cache.get(&var) {
-            return *ty;
+            *ty
+        } else {
+            let ty = match self.infer.info(var) {
+                // Follow references
+                TyInfo::Ref(x) => return self.reify_inner(x),
+                // Unknown types are treated as errors from here on out
+                TyInfo::Unknown(_) => Ty::Error(ErrorReason::Unknown),
+                TyInfo::Error(reason) => Ty::Error(reason),
+                TyInfo::Prim(prim) => Ty::Prim(prim),
+                TyInfo::List(item) => Ty::List(self.reify_inner(item)),
+                TyInfo::Tuple(items) => Ty::Tuple(items
+                    .into_iter()
+                    .map(|item| self.reify_inner(item))
+                    .collect()),
+                TyInfo::Record(fields) => Ty::Record(fields
+                    .into_iter()
+                    .map(|(name, field)| (name, self.reify_inner(field)))
+                    .collect()),
+                TyInfo::Func(i, o) => Ty::Func(self.reify_inner(i), self.reify_inner(o)),
+                TyInfo::Data(data, args) => Ty::Data(data, args
+                    .into_iter()
+                    .map(|arg| self.reify_inner(arg))
+                    .collect()),
+                TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
+                TyInfo::SelfType => Ty::SelfType,
+                TyInfo::Assoc(inner, class_id, assoc) => Ty::Assoc(self.reify_inner(inner), class_id, assoc),
+            };
+            self.infer.ctx.tys.insert(self.infer.span(var), ty)
         }
-
-        let ty = match self.infer.info(var) {
-            // Follow references
-            TyInfo::Ref(x) => return self.reify_inner(x),
-            // Unknown types are treated as errors from here on out
-            TyInfo::Unknown(_) => Ty::Error(ErrorReason::Unknown),
-            TyInfo::Error(reason) => Ty::Error(reason),
-            TyInfo::Prim(prim) => Ty::Prim(prim),
-            TyInfo::List(item) => Ty::List(self.reify_inner(item)),
-            TyInfo::Tuple(items) => Ty::Tuple(items
-                .into_iter()
-                .map(|item| self.reify_inner(item))
-                .collect()),
-            TyInfo::Record(fields) => Ty::Record(fields
-                .into_iter()
-                .map(|(name, field)| (name, self.reify_inner(field)))
-                .collect()),
-            TyInfo::Func(i, o) => Ty::Func(self.reify_inner(i), self.reify_inner(o)),
-            TyInfo::Data(data, args) => Ty::Data(data, args
-                .into_iter()
-                .map(|arg| self.reify_inner(arg))
-                .collect()),
-            TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
-            TyInfo::SelfType => Ty::SelfType,
-            TyInfo::Assoc(inner, class_id, assoc) => Ty::Assoc(self.reify_inner(inner), class_id, assoc),
-        };
-        self.infer.ctx.tys.insert(self.infer.span(var), ty)
     }
 
     pub fn reify(&mut self, var: TyVar) -> TyId {

@@ -110,15 +110,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .map_with_span(SrcNode::new)
             .boxed();
 
-        let data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready
-            .map_with_span(SrcNode::new)
-            .then(atom.clone().repeated())
-            .map(|(data, params)| ast::Type::Data(data, params))
-            .map_with_span(SrcNode::new)
-            .or(atom)
-            .boxed();
-
-        let assoc = data
+        let assoc = atom
             .then(just(Token::Op(Op::Dot))
                 .ignore_then(type_ident_parser().map_with_span(SrcNode::new))
                 .repeated())
@@ -127,7 +119,15 @@ pub fn type_parser() -> impl Parser<ast::Type> {
                 SrcNode::new(ast::Type::Assoc(inner, assoc), span)
             });
 
-        assoc.clone()
+        let data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready
+            .map_with_span(SrcNode::new)
+            .then(assoc.clone().repeated().at_least(1))
+            .map(|(data, params)| ast::Type::Data(data, params))
+            .map_with_span(SrcNode::new)
+            .or(assoc)
+            .boxed();
+
+        data.clone()
             .then(just(Token::Op(Op::RArrow))
                 .ignore_then(ty.clone().map_with_span(SrcNode::new))
                 .repeated())
@@ -135,7 +135,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
                 let span = i.span().union(o.span());
                 SrcNode::new(ast::Type::Func(i, o), span)
             })
-            .or(assoc)
+            .or(data)
             .map(|ty| ty.into_inner())
     })
 }
