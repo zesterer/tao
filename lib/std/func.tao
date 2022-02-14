@@ -1,0 +1,13 @@
+#! Utilities for programming with functions.
+
+## Create an recursive function inline using the fix combinator.
+##
+## ```
+## let factorial = fix(fn rec => fn
+##     | 0 => 1
+##     \ m ~ n + 1 => m * rec(n))
+## in
+## factorial(10)
+## ```
+def fix A : ((A -> A) -> A -> A) -> A -> A =
+    \ f, n => f(f:fix, n)

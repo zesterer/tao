@@ -1,4 +1,8 @@
-import "lib/std/util.tao"
+#! Streams and stream combinators.
+#!
+#! In other languages, streams are often called 'iterators'.
+
+import "lib/std/value.tao"
 
 class Stream =
     => Item

@@ -1,3 +1,5 @@
+#! A binary tree.
+
 data BTree A =
     | Branch (BTree A, BTree A)
     \ Leaf A

@@ -1,3 +1,5 @@
+#! Utilities for formatting and displaying data.
+
 import "lib/std/str.tao"
 
 # Debug

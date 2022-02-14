@@ -1,5 +1,7 @@
+#! Utilities for programming with lists.
+
 import "lib/std/ops.tao"
-import "lib/std/util.tao"
+import "lib/std/value.tao"
 
 def map A, B : (A -> B) -> [A] -> [B] =
     | _, [] => []

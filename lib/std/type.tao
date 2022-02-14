@@ -1,3 +1,5 @@
+#! Utilities for type-level programming.
+
 import "lib/std/str.tao"
 
 class Any =

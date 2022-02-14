@@ -1,3 +1,5 @@
+#! Arithmetic operations.
+
 import "lib/std/ops.tao"
 
 class Zero =
