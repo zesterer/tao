@@ -8,6 +8,7 @@ pub enum ConTy {
     Prim(Prim),
     List(ConTyId),
     Tuple(Vec<ConTyId>),
+    Union(Vec<ConTyId>),
     Record(BTreeMap<Ident, ConTyId>),
     Func(ConTyId, ConTyId),
     Data(ConDataId),
@@ -112,6 +113,10 @@ impl ConContext {
                 .into_iter()
                 .zip(ys.into_iter())
                 .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
+            (Ty::Union(xs), ConTy::Union(ys)) => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
             (Ty::Record(xs), ConTy::Record(ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
@@ -136,6 +141,10 @@ impl ConContext {
             Ty::Tuple(fields) => ConTy::Tuple(fields
                 .into_iter()
                 .map(|field| self.lower_ty(hir, field, ty_insts))
+                .collect()),
+            Ty::Union(variants) => ConTy::Union(variants
+                .into_iter()
+                .map(|variant| self.lower_ty(hir, variant, ty_insts))
                 .collect()),
             Ty::Record(fields) => ConTy::Record(fields
                 .into_iter()
@@ -298,6 +307,7 @@ impl ConContext {
                 .iter()
                 .map(|field| self.lower_expr(hir, field, ty_insts))
                 .collect()),
+            hir::Expr::Union(inner) => hir::Expr::Union(self.lower_expr(hir, inner, ty_insts)),
             hir::Expr::List(items) => hir::Expr::List(items
                 .iter()
                 .map(|item| self.lower_expr(hir, item, ty_insts))
@@ -402,6 +412,11 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .map(|field| format!("{}", self.with_ty(*field, false)))
                 .collect::<Vec<_>>()
                 .join(", "), if fields.len() == 1 { "," } else { "" }),
+            ConTy::Union(variants) => write!(f, "({}{})", variants
+                .iter()
+                .map(|variant| format!("{}", self.with_ty(*variant, false)))
+                .collect::<Vec<_>>()
+                .join(" | "), if variants.len() <= 1 { "|" } else { "" }),
             ConTy::Record(fields) => write!(f, "{{ {} }}", fields
                 .into_iter()
                 .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))

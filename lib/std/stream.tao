@@ -4,15 +4,36 @@
 
 import "lib/std/value.tao"
 
+# type Sum = (Nat | Num)
+# def foo : Sum = &5
+
 class Stream =
     => Item
     => next : Self -> (Maybe Self.Item, Self)
 
-for A member [A] of Stream =
+class IntoStream =
+    => Stream
+    => into : Self -> Self.Stream
+
+# TODO: Make blanket impls work
+# for S < Stream member S of IntoStream =
+#     => Stream = S
+#     => into = identity
+
+for A member [A] of IntoStream =
+    => Stream = List A
+    => into = fn xs => List xs
+
+def stream A < IntoStream =
+    \ s => A.into(s)
+
+data List A = [A]
+
+for A member List A of Stream =
     => Item = A
     => next = fn
-        | [x .. xs] => (Just x, xs)
-        \ [] => (None, [])
+        | List [x .. xs] => (Just x, List xs)
+        \ List [] => (None, List [])
 
 data Take S < Stream = {
     s: S,
@@ -44,6 +65,13 @@ for S < Stream member Mapped S of Stream =
 def mapped S < Stream =
     \ f, s : S => Mapped { s, f }
 
+## Collect the elements of a stream into a list
 def collect S < Stream = fn s => match S.next(s) in
     | (Just x, s) => [x .. s:collect]
     \ (None, _) => []
+
+def nth S < Stream : Nat -> S -> Maybe S.Item =
+    | 0, s =>
+        let (x, _) = S.next(s) in x
+    \ n + 1, s =>
+        let (_, s) = S.next(s) in s:nth(n)

@@ -13,6 +13,8 @@ functions, currying, good diagnostics, and much more!
 - [x] Useful error messages
 - [x] Sum types
 - [x] Records
+- [x] Nominal data types
+- [x] Union types (anonymous sum types)
 - [x] First-class functions
 - [x] Currying
 - [x] Type polymorphism (for both types and values)
@@ -20,7 +22,6 @@ functions, currying, good diagnostics, and much more!
 - [x] Associated types
 - [x] Pattern matching
 - [x] Built-in lists
-- [x] Static dispatch
 - [x] Monomorphisation
 - [x] MIR optimiser
 - [x] Bytecode compiler
@@ -32,6 +33,7 @@ functions, currying, good diagnostics, and much more!
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
 - [ ] Typeclasses (simple implementation done, no compile-time coherence checker, compiler panics on detection of
       incoherence during monomorphisation)
+- [ ] Union types (type solving completed, work needed on MIR)
 
 ## Planned features
 

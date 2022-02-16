@@ -126,6 +126,7 @@ pub enum Expr<M: Meta> {
     Local(Ident),
     Global(DefId, Vec<M>),
     Tuple(Vec<Node<Self, M>>),
+    Union(Node<Self, M>),
     List(Vec<Node<Self, M>>),
     ListFront(Vec<Node<Self, M>>, Node<Self, M>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),

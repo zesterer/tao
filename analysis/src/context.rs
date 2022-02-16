@@ -392,7 +392,7 @@ impl Context {
                                     &|_, _, _| panic!("Generics not yet supported on classes"),
                                     Some(self_ty),
                                 );
-                                infer.make_eq(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
+                                infer.check_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
                             }
 
                             let (mut checked, mut errs) = infer.into_checked();
@@ -450,7 +450,7 @@ impl Context {
                 .collect();
 
             let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
-            infer.make_eq(ty_hint.meta().1, body.meta().1, EqInfo::default());
+            infer.check_flow(body.meta().1, ty_hint.meta().1, EqInfo::default());
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);

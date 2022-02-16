@@ -67,6 +67,10 @@ impl ToHir for ast::Type {
                 .iter()
                 .map(|item| item.to_hir(infer, scope).meta().1)
                 .collect()),
+            ast::Type::Union(items) => TyInfo::Union(items
+                .iter()
+                .map(|item| item.to_hir(infer, scope).meta().1)
+                .collect()),
             ast::Type::Record(fields) => TyInfo::Record(fields
                 .iter()
                 .map(|(name, field)| (**name, field.to_hir(infer, scope).meta().1))
@@ -193,7 +197,7 @@ impl ToHir for ast::Binding {
                 match (&**rhs, &**op) {
                     (ast::Literal::Nat(rhs_nat), ast::BinaryOp::Add) => {
                         let nat = infer.insert(rhs.span(), TyInfo::Prim(Prim::Nat));
-                        infer.make_eq(lhs.meta().1, nat, EqInfo::new(self.span(), format!("Only natural numbers support arithmetic patterns")));
+                        infer.make_flow(nat, lhs.meta().1, EqInfo::new(self.span(), format!("Only natural numbers support arithmetic patterns")));
                         (TyInfo::Ref(nat), hir::Pat::Add(lhs, SrcNode::new(*rhs_nat, rhs.span())))
                     },
                     (_, _) => {
@@ -230,7 +234,7 @@ impl ToHir for ast::Binding {
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
+                        infer.make_flow(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
@@ -242,14 +246,14 @@ impl ToHir for ast::Binding {
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
+                        infer.make_flow(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
                 let tail = tail.as_ref().map(|tail| {
                     let tail = tail.to_hir(infer, scope);
                     let ty = infer.insert(tail.meta().0, TyInfo::List(item_ty));
-                    infer.make_eq(tail.meta().1, ty, tail.meta().0);
+                    infer.make_flow(tail.meta().1, ty, tail.meta().0);
                     tail
                 });
                 (TyInfo::List(item_ty), hir::Pat::ListFront(items, tail))
@@ -283,7 +287,7 @@ impl ToHir for ast::Binding {
                 };
 
                 let inner = inner.to_hir(infer, scope);
-                infer.make_eq(inner.meta().1, inner_ty, self.span());
+                infer.make_flow(inner_ty, inner.meta().1, self.span());
 
                 (TyInfo::Data(data, generic_tys), hir::Pat::Decons(SrcNode::new(data, self.span()), **name, inner))
             } else {
@@ -297,7 +301,7 @@ impl ToHir for ast::Binding {
 
         if let Some(ty_hint) = &self.ty {
             let hint = ty_hint.to_hir(infer, scope);
-            infer.make_eq(ty, hint.meta().1, self.span());
+            infer.check_flow(ty, hint.meta().1, self.span());
         }
 
         InferNode::new(hir::Binding {
@@ -347,7 +351,7 @@ impl ToHir for ast::Expr {
                         .to_vec()
                     {
                         match &*obl {
-                            Obligation::MemberOf(class) => infer.make_impl(*ty, *class, self.span(), Vec::new()),
+                            Obligation::MemberOf(class) => infer.make_impl(*ty, *class, obl.span(), Vec::new()),
                         }
                     }
                 }
@@ -357,10 +361,10 @@ impl ToHir for ast::Expr {
                 let def_gen_scope = def.gen_scope;
                 let def_name = def.name.clone();
                 let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
-                let ty = if let Some(body_ty) = def.body
-                    .as_ref()
-                    .map(|body| body.meta().1)
-                    .or(def.ty_hint)
+                let ty = if let Some(body_ty) = def.ty_hint
+                    .or_else(|| def.body
+                        .as_ref()
+                        .map(|body| body.meta().1))
                 {
                     Some(infer.instantiate(body_ty, self.span(), &get_gen, None))
                 } else {
@@ -388,13 +392,17 @@ impl ToHir for ast::Expr {
                     .collect();
                 (TyInfo::Tuple(tys), hir::Expr::Tuple(items))
             },
+            ast::Expr::Union(inner) => {
+                let inner = inner.to_hir(infer, scope);
+                (TyInfo::Union(vec![inner.meta().1]), hir::Expr::Union(inner))
+            },
             ast::Expr::List(items) => {
                 let item_ty = infer.unknown(self.span());
                 let items = items
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
+                        infer.make_flow(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
@@ -405,13 +413,13 @@ impl ToHir for ast::Expr {
                 let list_ty = infer.insert(self.span(), TyInfo::List(item_ty));
 
                 let tail = tail.to_hir(infer, scope);
-                infer.make_eq(tail.meta().1, list_ty, tail.meta().0);
+                infer.make_flow(tail.meta().1, list_ty, tail.meta().0);
 
                 let items = items
                     .iter()
                     .map(|item| {
                         let item = item.to_hir(infer, scope);
-                        infer.make_eq(item.meta().1, item_ty, item.meta().0);
+                        infer.make_flow(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
@@ -454,7 +462,7 @@ impl ToHir for ast::Expr {
                         Some((binding, val)) => {
                             let binding = binding.to_hir(infer, scope);
                             let val = val.to_hir(infer, scope);
-                            infer.make_eq(binding.meta().1, val.meta().1, binding.meta().0);
+                            infer.make_flow(val.meta().1, binding.meta().1, binding.meta().0);
                             let then = fold(then, bindings, infer, &scope.with_many(binding.get_bindings()));
                             let span = binding.meta().0;
                             let ty = then.meta().1; // TODO: Make a TyInfo::Ref?
@@ -492,9 +500,9 @@ impl ToHir for ast::Expr {
                         .iter()
                         .map(|(bindings, body)| {
                             let binding = tupleify_binding(bindings, infer, scope);
-                            infer.make_eq(pred.meta().1, binding.meta().1, binding.meta().0);
+                            infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
                             let body = body.to_hir(infer, &scope.with_many(binding.get_bindings()));
-                            infer.make_eq(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
+                            infer.make_flow(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                             (binding, body)
                         })
                         .collect();
@@ -506,11 +514,11 @@ impl ToHir for ast::Expr {
                 let pred_ty = infer.insert(pred.span(), TyInfo::Prim(Prim::Bool));
                 let output_ty = infer.unknown(self.span());
                 let pred = pred.to_hir(infer, scope);
-                infer.make_eq(pred.meta().1, pred_ty, EqInfo::new(self.span(), format!("Conditions must be booleans")));
+                infer.make_flow(pred.meta().1, pred_ty, EqInfo::new(self.span(), format!("Conditions must be booleans")));
                 let a = a.to_hir(infer, scope);
                 let b = b.to_hir(infer, scope);
-                infer.make_eq(a.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
-                infer.make_eq(b.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
+                infer.make_flow(a.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
+                infer.make_flow(b.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                 let arms = vec![
                     (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Literal(ast::Literal::Bool(true)), pred.meta().0)), *pred.meta()), a),
                     (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Literal(ast::Literal::Bool(false)), pred.meta().0)), *pred.meta()), b),
@@ -550,9 +558,9 @@ impl ToHir for ast::Expr {
                             .iter()
                             .map(|(bindings, body)| {
                                 let binding = tupleify_binding(bindings, infer, scope);
-                                infer.make_eq(pred.meta().1, binding.meta().1, binding.meta().0);
+                                infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
                                 let body = body.to_hir(infer, &scope.with_many(binding.get_bindings()));
-                                infer.make_eq(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
+                                infer.make_flow(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                                 (binding, body)
                             })
                             .collect();
@@ -582,8 +590,8 @@ impl ToHir for ast::Expr {
                 let input_ty = infer.unknown(self.span());
                 let output_ty = infer.unknown(self.span());
                 let func = infer.insert(f.meta().0, TyInfo::Func(input_ty, output_ty));
-                infer.make_eq(f.meta().1, func, EqInfo::new(self.span(), format!("Only functions are callable")));
-                infer.make_eq(input_ty, param.meta().1, EqInfo::new(param.meta().0, format!("Functions may only be called with compatible arguments")));
+                infer.make_flow(f.meta().1, func, EqInfo::new(self.span(), format!("Only functions are callable")));
+                infer.make_flow(param.meta().1, input_ty, EqInfo::new(param.meta().0, format!("Functions may only be called with compatible arguments")));
 
                 (TyInfo::Ref(output_ty), hir::Expr::Apply(f, param))
             },
@@ -634,7 +642,7 @@ impl ToHir for ast::Expr {
                 };
 
                 let inner = inner.to_hir(infer, scope);
-                infer.make_eq(inner.meta().1, inner_ty, self.span());
+                infer.make_flow(inner.meta().1, inner_ty, self.span());
 
                 (TyInfo::Data(data, generic_tys), hir::Expr::Cons(SrcNode::new(data, name.span()), **name, inner))
             } else {

@@ -75,6 +75,18 @@ pub fn type_parser() -> impl Parser<ast::Type> {
         )
             .map(|tys| tys.map(ast::Type::Tuple).unwrap_or(ast::Type::Error));
 
+        let union = nested_parser(
+            ty.clone()
+                .map_with_span(SrcNode::new)
+                .separated_by(just(Token::Pipe))
+                .allow_trailing()
+                .then_ignore(just(Token::Pipe).or_not())
+                .map(Some),
+            Delimiter::Paren,
+            |_| None,
+        )
+            .map(|tys| tys.map(ast::Type::Union).unwrap_or(ast::Type::Error));
+
         let record = nested_parser(
             term_ident_parser()
                 .map_with_span(SrcNode::new)
@@ -104,6 +116,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(data)
             .or(list)
             .or(tuple)
+            .or(union)
             .or(record)
             .or(unknown)
             .or(select! { Token::Error(_) => () }.map(|_| ast::Type::Error))
@@ -596,12 +609,21 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             })
             .boxed();
 
+        let unioned = chained
+            .then(just(Token::Question)
+                .map_with_span(SrcNode::new)
+                .repeated())
+            .foldl(|expr, op| {
+                let span = expr.span().union(op.span());
+                SrcNode::new(ast::Expr::Union(expr), span)
+            });
+
         // Unary
         let op = just(Token::Op(Op::Sub)).to(ast::UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(ast::UnaryOp::Not))
             .map_with_span(SrcNode::new);
         let unary = op.repeated()
-            .then(chained.labelled("unary operand"))
+            .then(unioned.labelled("unary operand"))
             .foldr(|op, expr| {
                 let span = op.span().union(expr.span());
                 SrcNode::new(ast::Expr::Unary(op, expr), span)

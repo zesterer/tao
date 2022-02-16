@@ -44,6 +44,7 @@ pub enum TyInfo {
     Prim(ty::Prim),
     List(TyVar),
     Tuple(Vec<TyVar>),
+    Union(Vec<TyVar>),
     Record(BTreeMap<Ident, TyVar>),
     Func(TyVar, TyVar),
     Data(DataId, Vec<TyVar>),
@@ -53,7 +54,7 @@ pub enum TyInfo {
     Assoc(TyVar, ClassId, SrcNode<Ident>),
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct EqInfo {
     pub at: Option<Span>,
     pub reason: Option<String>,
@@ -73,7 +74,7 @@ impl EqInfo {
 
 #[derive(Debug)]
 pub enum InferError {
-    Mismatch(TyVar, TyVar, EqInfo),
+    CannotCoerce(TyVar, TyVar, EqInfo),
     CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
     // Type, recursive element
     Recursive(TyVar, TyVar),
@@ -89,6 +90,7 @@ pub enum InferError {
 
 #[derive(Clone, Debug)]
 enum Constraint {
+    CheckFlow(TyVar, TyVar, EqInfo),
     // (record, field_name, field)
     Access(TyVar, SrcNode<Ident>, TyVar),
     Unary(SrcNode<ast::UnaryOp>, TyVar, TyVar),
@@ -104,7 +106,7 @@ struct LazyLiteral {
     num: NumLitr,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TyVar(usize);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -200,6 +202,9 @@ impl<'a> Infer<'a> {
                 TyInfo::Tuple(fields) => fields
                     .into_iter()
                     .for_each(|field| self.set_error(field)),
+                TyInfo::Union(variants) => variants
+                    .into_iter()
+                    .for_each(|variants| self.set_error(variants)),
                 TyInfo::Record(fields) => fields
                     .into_iter()
                     .for_each(|(_, field)| self.set_error(field)),
@@ -264,9 +269,13 @@ impl<'a> Infer<'a> {
             Ty::Error(reason) => TyInfo::Error(reason),
             Ty::Prim(prim) => TyInfo::Prim(prim),
             Ty::List(item) => TyInfo::List(self.instantiate(item, span, f, self_ty)),
-            Ty::Tuple(items) => TyInfo::Tuple(items
+            Ty::Tuple(fields) => TyInfo::Tuple(fields
                 .into_iter()
-                .map(|item| self.instantiate(item, span, f, self_ty))
+                .map(|field| self.instantiate(field, span, f, self_ty))
+                .collect()),
+            Ty::Union(variants) => TyInfo::Union(variants
+                .into_iter()
+                .map(|variant| self.instantiate(variant, span, f, self_ty))
                 .collect()),
             Ty::Record(fields) => TyInfo::Record(fields
                 .into_iter()
@@ -354,6 +363,9 @@ impl<'a> Infer<'a> {
                 TyInfo::Tuple(ys) => ys
                     .into_iter()
                     .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+                TyInfo::Union(ys) => ys
+                    .into_iter()
+                    .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
                 TyInfo::Record(ys) => ys
                     .into_iter()
                     .any(|(_, y)| x == y || self.occurs_in_inner(x, y, seen)),
@@ -374,18 +386,52 @@ impl<'a> Infer<'a> {
         self.occurs_in_inner(x, y, &mut Vec::new())
     }
 
-    pub fn make_eq(&mut self, x: TyVar, y: TyVar, info: impl Into<EqInfo>) {
-        if let Err((a, b)) = self.make_eq_inner(x, y) {
+    fn occurs_in_union_inner(&self, x: TyVar, y: TyVar, seen: &mut Vec<TyVar>) -> bool {
+        if seen.contains(&y) {
+            true
+        } else {
+            seen.push(y);
+
+            let occurs = match self.info(y) {
+                TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
+                TyInfo::Union(ys) => ys
+                    .into_iter()
+                    .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+                _ => false,
+            };
+
+            seen.pop();
+
+            occurs
+        }
+    }
+
+    // Returns true if `x` occurs in `y` through direct union reference.
+    fn occurs_in_union(&self, x: TyVar, y: TyVar) -> bool {
+        self.occurs_in_union_inner(x, y, &mut Vec::new())
+    }
+
+    // Ensure that `x` can flow into `y`, without generalising `y` to accomodate `x`.
+    pub fn check_flow(&mut self, x: TyVar, y: TyVar, info: impl Into<EqInfo>) {
+        let info = info.into();
+        // Equality is just a flow relationship + an exact equality constraint
+        self.constraints.push_back(Constraint::CheckFlow(x, y, info.clone()));
+        // self.make_flow(x, y, info);
+    }
+
+    // Flow the type `x` into the type `y`, potentially generalising `y` if required in the case of union types.
+    pub fn make_flow(&mut self, x: TyVar, y: TyVar, info: impl Into<EqInfo>) {
+        if let Err((a, b)) = self.make_flow_inner(x, y) {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
-                self.errors.push(InferError::Mismatch(x, y, info.into()));
+                self.errors.push(InferError::CannotCoerce(x, y, info.into()));
             }
         }
     }
 
-    pub fn make_eq_inner(&mut self, x: TyVar, y: TyVar) -> Result<(), (TyVar, TyVar)> {
-        fn make_eq_many(
+    fn make_flow_inner(&mut self, x: TyVar, y: TyVar) -> Result<(), (TyVar, TyVar)> {
+        fn make_flow_many(
             infer: &mut Infer,
             xs: impl IntoIterator<Item = TyVar>,
             ys: impl IntoIterator<Item = TyVar>,
@@ -393,52 +439,81 @@ impl<'a> Infer<'a> {
             xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(None, |err, (x, y)| err.or(infer.make_eq_inner(x, y).err()))
+                .fold(None, |err, (x, y)| err.or(infer.make_flow_inner(x, y).err()))
                 .map(Err).unwrap_or(Ok(()))
         }
 
-        if x == y { return Ok(()) } // If the vars are equal, we have no need to check equivalence
+        if x == y { return Ok(()) } // If the vars are equal, we have no need to check flow
         match (self.info(x), self.info(y)) {
             // Follow references
-            (TyInfo::Ref(x), _) => self.make_eq_inner(x, y),
-            (_, TyInfo::Ref(y)) => self.make_eq_inner(x, y),
+            (TyInfo::Ref(x), _) => self.make_flow_inner(x, y),
+            (_, TyInfo::Ref(y)) => self.make_flow_inner(x, y),
 
             // Unify unknown or erronoeus types
-            (TyInfo::Unknown(_), _) => if self.occurs_in(x, y) {
+            // (TyInfo::Unknown(_), y_info) if matches!(y_info, TyInfo::Union(_)) => Ok(()),
+            (TyInfo::Unknown(_), y_info) => if self.occurs_in(x, y) {
                 self.errors.push(InferError::Recursive(y, self.follow(x)));
                 self.set_info(x, TyInfo::Error(ErrorReason::Recursive));
                 Ok(self.set_error(x)) // TODO: Not actually ok
             } else {
                 Ok(self.set_info(x, TyInfo::Ref(y)))
             },
-            (_, TyInfo::Unknown(_)) => self.make_eq_inner(y, x),
+            // (x_info, TyInfo::Unknown(_)) if matches!(x_info, TyInfo::Union(_)) => Ok(()),
+            (_, TyInfo::Unknown(_)) => if self.occurs_in(y, x) {
+                self.errors.push(InferError::Recursive(x, self.follow(y)));
+                self.set_info(y, TyInfo::Error(ErrorReason::Recursive));
+                Ok(self.set_error(y)) // TODO: Not actually ok
+            } else {
+                Ok(self.set_info(y, TyInfo::Ref(x)))
+            },
 
+            // Unify errors
             (_, TyInfo::Error(_)) => {
                 self.set_error(x);
                 Ok(self.set_info(x, TyInfo::Ref(y)))
             },
-            (TyInfo::Error(_), _) => self.make_eq_inner(y, x),
+            (TyInfo::Error(_), _) => {
+                self.set_error(y);
+                Ok(self.set_info(y, TyInfo::Ref(x)))
+            },
 
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
-            (TyInfo::List(x), TyInfo::List(y)) => self.make_eq_inner(x, y),
-            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => make_eq_many(self, xs, ys),
+            (TyInfo::List(x), TyInfo::List(y)) => self.make_flow_inner(x, y),
+            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => make_flow_many(self, xs, ys),
+            (TyInfo::Union(mut xs), TyInfo::Union(mut ys)) => {
+                // For now, we apply an equality constraint
+                // TODO: Should we do something more interesting than this later?
+                // if !self.occurs_in_union(y, x) {
+                //     ys.push(x);
+                // }
+                // Ok(self.set_info(y, TyInfo::Union(ys)))
+                xs.sort();
+                ys.sort();
+                if !self.occurs_in_union(x, y) {
+                    self.collect_union_members(x, &mut |var| ys.push(var));
+                }
+                ys.dedup();
+                self.set_info(y, TyInfo::Union(ys));
+                // self.set_info(y, TyInfo::Ref(x));
+                Ok(())
+            },
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
                 .keys()
                 .all(|x| ys.contains_key(x)) => xs
                     .into_iter()
-                    .try_for_each(|(x, x_ty)| self.make_eq_inner(x_ty, ys[&x])),
+                    .try_for_each(|(x, x_ty)| self.make_flow_inner(x_ty, ys[&x])),
             (TyInfo::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                let i_err = self.make_eq_inner(x_i, y_i).err();
-                let o_err = self.make_eq_inner(x_o, y_o).err();
+                let i_err = self.make_flow_inner(y_i, x_i).err(); // Input is contravariant
+                let o_err = self.make_flow_inner(x_o, y_o).err();
                 i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
-                xs.len() == ys.len() => make_eq_many(self, xs, ys),
+                xs.len() == ys.len() => make_flow_many(self, xs, ys),
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
             (TyInfo::SelfType, TyInfo::SelfType) => Ok(()),
             (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
-                if class_x == class_y && assoc_x == assoc_y => self.make_eq_inner(x, y),
-            (_, _) => Err((x, y)),//self.errors.push(InferError::Mismatch(x, y)),
+                if class_x == class_y && assoc_x == assoc_y => self.make_flow_inner(x, y),
+            (_, _) => Err((x, y)),
         }
     }
 
@@ -469,6 +544,13 @@ impl<'a> Infer<'a> {
                     .collect();
                 self.insert(self.span(ty), TyInfo::Tuple(fields))
             },
+            TyInfo::Union(variants) => {
+                let variants = variants
+                    .into_iter()
+                    .map(|variant| self.try_reinstantiate(span, variant))
+                    .collect();
+                self.insert(self.span(ty), TyInfo::Union(variants))
+            },
             TyInfo::Record(fields) => {
                 let fields = fields
                     .into_iter()
@@ -491,9 +573,115 @@ impl<'a> Infer<'a> {
         }
     }
 
+    fn collect_union_members(&self, var: TyVar, add: &mut impl FnMut(TyVar)) {
+        match self.info(var) {
+            TyInfo::Ref(var) => self.collect_union_members(var, add),
+            TyInfo::Union(variants) => variants
+                .into_iter()
+                .for_each(|variant| self.collect_union_members(variant, add)),
+            _ => add(var),
+        }
+    }
+
+    fn check_flow_impl(&mut self, x: TyVar, y: TyVar, info: EqInfo) -> Option<Result<(), InferError>> {
+        match self.check_flow_inner(x, y) {
+            None => None,
+            Some(Err((a, b))) => {
+                if !self.is_error(a) && !self.is_error(b) {
+                    self.set_error(a);
+                    self.set_error(b);
+                }
+                Some(Err(InferError::CannotCoerce(x, y, info)))
+            },
+            Some(Ok(())) => Some(Ok(())),
+        }
+    }
+
+    fn check_flow_inner(&mut self, x: TyVar, y: TyVar) -> Option<Result<(), (TyVar, TyVar)>> {
+        fn check_flow_many(
+            infer: &mut Infer,
+            xs: impl IntoIterator<Item = TyVar>,
+            ys: impl IntoIterator<Item = TyVar>,
+        ) -> Option<Result<(), (TyVar, TyVar)>> {
+            let mut known = true;
+            for (x, y) in xs.into_iter().zip(ys) {
+                match infer.check_flow_inner(x, y) {
+                    Some(Ok(())) => {},
+                    Some(Err(err)) => return Some(Err(err)),
+                    None => known = false,
+                }
+            }
+            known.then_some(Ok(()))
+        }
+
+        if x == y { return Some(Ok(())) } // If the vars are equal, we have no need to check equivalence
+        match (self.info(x), self.info(y)) {
+            // Follow references
+            (TyInfo::Ref(x), _) => self.check_flow_inner(x, y),
+            (_, TyInfo::Ref(y)) => self.check_flow_inner(x, y),
+
+            // We don't know if unknown types are equal yet
+            // (TyInfo::Unknown(_), y_info) if matches!(y_info, TyInfo::Union(_)) => None,
+            (TyInfo::Unknown(_), y_info) => Some(self.make_flow_inner(x, y)),
+            // (x_info, TyInfo::Unknown(_)) if matches!(x_info, TyInfo::Union(_)) => None,
+            (x_info, TyInfo::Unknown(_)) => Some(self.make_flow_inner(x, y)),
+
+            // Errors are always considered equal to anything else to avoid error propagation
+            (_, TyInfo::Error(_)) => Some(Ok(())),
+            (TyInfo::Error(_), _) => Some(Ok(())),
+
+            (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Some(Ok(())),
+            (TyInfo::List(x), TyInfo::List(y)) => self.check_flow_inner(x, y),
+            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => check_flow_many(self, xs, ys),
+            (TyInfo::Union(mut xs), TyInfo::Union(mut ys)) => {
+                let mut xs = Vec::new();
+                self.collect_union_members(x, &mut |var| xs.push(var));
+                let mut ys = Vec::new();
+                self.collect_union_members(y, &mut |var| ys.push(var));
+
+                for x_var in &xs {
+                    let mut eq = false;
+                    for y_var in &ys {
+                        match self.check_flow_inner(*x_var, *y_var) {
+                            None => return None,
+                            Some(Ok(())) => eq = true,
+                            Some(Err(_)) => {},
+                        }
+                    }
+                    if !eq { return Some(Err((x, y))) }
+                }
+
+                Some(Ok(()))
+            },
+            (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
+                .keys()
+                .all(|x| ys.contains_key(x)) => xs
+                    .into_iter()
+                    .map(|(x, x_ty)| self.check_flow_inner(x_ty, ys[&x]))
+                    .collect::<Option<Result<_, _>>>(),
+            (TyInfo::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
+                let i_err = self.check_flow_inner(y_i, x_i)?.err(); // Input is contravariant
+                let o_err = self.check_flow_inner(x_o, y_o)?.err();
+                Some(i_err.or(o_err).map(Err).unwrap_or(Ok(())))
+            },
+            (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
+                xs.len() == ys.len() => check_flow_many(self, xs, ys),
+            (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Some(Ok(())),
+            (TyInfo::SelfType, TyInfo::SelfType) => Some(Ok(())),
+            (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
+                if class_x == class_y && assoc_x == assoc_y => self.check_flow_inner(x, y),
+            (_, _) => Some(Err((x, y))),
+        }
+    }
+
     fn resolve(&mut self, c: Constraint) -> Option<Result<(), InferError>> {
         use ast::{UnaryOp::*, BinaryOp::*};
         match c {
+            Constraint::CheckFlow(x, y, info) => match self.check_flow_impl(x, y, info) {
+                Some(Ok(())) => Some(Ok(())),
+                Some(Err(err)) => Some(Err(err)),
+                None => None,
+            },
             Constraint::Access(record, field_name, field) => match self.follow_info(record) {
                 _ if self.is_error(record) => {
                     self.set_error(field);
@@ -503,7 +691,7 @@ impl<'a> Infer<'a> {
                 },
                 TyInfo::Unknown(_) => None,
                 TyInfo::Record(fields) => if let Some(field_ty) = fields.get(&field_name) {
-                    self.make_eq(*field_ty, field, field_name.span());
+                    self.make_flow(*field_ty, field, field_name.span());
                     Some(true)
                 } else {
                     Some(false)
@@ -518,7 +706,7 @@ impl<'a> Infer<'a> {
                         if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
                             if let Some(field_ty) = fields.get(&field_name) {
                                 let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index], None);
-                                self.make_eq(field_ty, field, field_name.span());
+                                self.make_flow(field_ty, field, field_name.span());
                                 Some(true)
                             } else {
                                 Some(false)
@@ -553,7 +741,7 @@ impl<'a> Infer<'a> {
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
                     let result_ty = self.insert(op.span(), info);
-                    self.make_eq(output, result_ty, self.span(output));
+                    self.make_flow(result_ty, output, self.span(output));
                 })),
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
                 (_, _, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
@@ -561,8 +749,10 @@ impl<'a> Infer<'a> {
                 (_, _, TyInfo::Unknown(_)) => None,
                 (_, TyInfo::Unknown(_), _) => None,
                 (Join, TyInfo::List(a), TyInfo::List(b)) => {
-                    self.make_eq(a, b, EqInfo::new(op.span(), "The types of joined lists must be equal".to_string()));
-                    Some(Ok(TyInfo::List(a)))
+                    let output_item = self.unknown(self.span(output));
+                    self.make_flow(a, output_item, EqInfo::new(op.span(), "The types of joined lists must be equal".to_string()));
+                    self.make_flow(b, output_item, EqInfo::new(op.span(), "The types of joined lists must be equal".to_string()));
+                    Some(Ok(TyInfo::List(output_item)))
                 },
                 (_, TyInfo::Prim(prim_a), TyInfo::Prim(prim_b)) => {
                     use ty::Prim::*;
@@ -625,7 +815,7 @@ impl<'a> Infer<'a> {
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
                     let result_ty = self.insert(self.span(output), info);
-                    self.make_eq(output, result_ty, self.span(output));
+                    self.make_flow(result_ty, output, self.span(output));
                 })),
             Constraint::Impl(ty, obligation, span, unchecked_assoc) => self.resolve_obligation(ty, obligation, span).map(|res| match res {
                     Ok(member) => {
@@ -639,7 +829,8 @@ impl<'a> Infer<'a> {
 
                                     if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
                                         let assoc_ty_inst = self.instantiate(member_assoc_ty, span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
-                                        self.make_eq(assoc_ty, assoc_ty_inst, span);
+                                        // TODO: Check ordering for soundness
+                                        self.make_flow(assoc_ty_inst, assoc_ty, span);
                                     }
                                 },
                                 Err(true) => {
@@ -648,7 +839,8 @@ impl<'a> Infer<'a> {
                                 },
                                 Err(false) => {
                                     let assoc_info = self.insert(span, TyInfo::Assoc(ty, obligation, assoc.clone()));
-                                    self.make_eq(assoc_ty, assoc_info, span);
+                                    // TODO: Check ordering for soundness
+                                    self.make_flow(assoc_info, assoc_ty, span);
                                 },
                             }
                         }
@@ -671,7 +863,7 @@ impl<'a> Infer<'a> {
         if match self.follow_info(lazy.ty) {
             TyInfo::Unknown(_) => {
                 let num_ty = self.insert(lazy.span, TyInfo::Prim(lazy.num.to_prim()));
-                self.make_eq(lazy.ty, num_ty, self.span(self.follow(lazy.ty)));
+                self.make_flow(num_ty, lazy.ty, self.span(self.follow(lazy.ty)));
                 true
             },
             TyInfo::Prim(prim) => lazy.num.subtype_of(prim),
@@ -728,11 +920,8 @@ impl<'a> Infer<'a> {
                     .field(*field)
                     .unwrap();
                 let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|_, _, _| panic!("Tried to substitute generic type for non-generic class"), Some(ty));
-                self.make_eq(
-                    field_ty,
-                    inst_field_ty,
-                    field.span(),
-                );
+                // TODO: Check soundness of flow relationship
+                self.make_flow(inst_field_ty, field_ty, field.span());
                 Some(Ok(()))
             },
             _ => {
@@ -823,6 +1012,10 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .zip(ys.into_iter())
                 .all(|(x, y)| self.covers_var(x, y)),
+            (TyInfo::Union(xs), Ty::Union(ys)) => ys
+                .into_iter()
+                // Check that *all* variants in ys are covered by *any* variants in xs
+                .all(|y| xs.iter().any(|&x| self.covers_var(x, y))),
             (TyInfo::Record(xs), Ty::Record(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
@@ -850,6 +1043,8 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .zip(ys.into_iter())
                 .for_each(|(x, y)| self.derive_links(x, y, link_gen)),
+            // TODO: Implement by somehow coming up with a canonical ordering of these things?
+            (Ty::Union(xs), TyInfo::Union(ys)) => todo!("Uh... how do I even do this?"),
             (Ty::Record(xs), TyInfo::Record(ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
@@ -884,6 +1079,7 @@ impl<'a> Infer<'a> {
     /// (because, for example, the membership is implied by a generic bound) then `Err(false)` is returned instead. If
     /// resolution failed due to an existing error, `Err(true)` is returned.
     fn resolve_obligation(&mut self, ty: TyVar, obligation: ClassId, span: Span) -> Option<Result<Result<MemberId, bool>, InferError>> {
+        // TODO: Resolve possible infinite loop when resolving by having an obligation cache
         match self.follow_info(ty) {
             TyInfo::Error(_) => {
                 self.set_error(ty);
@@ -987,6 +1183,9 @@ impl<'a> Infer<'a> {
         // Generate errors for all remaining constraints
         for c in std::mem::take(&mut self.constraints) {
             self.errors.push(match c {
+                Constraint::CheckFlow(x, y, eq_info) => {
+                    InferError::CannotCoerce(x, y, eq_info)
+                },
                 Constraint::Access(record, field_name, _field) => {
                     InferError::NoSuchItem(record, self.span(record), field_name.clone())
                 },
@@ -1033,7 +1232,7 @@ impl<'a> Infer<'a> {
         let errors = errors
             .into_iter()
             .map(|error| match error {
-                InferError::Mismatch(a, b, info) => Error::Mismatch(checked.reify(a), checked.reify(b), info),
+                InferError::CannotCoerce(a, b, info) => Error::CannotCoerce(checked.reify(a), checked.reify(b), info),
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
                 InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
                 InferError::NoSuchItem(a, record_span, field) => Error::NoSuchItem(checked.reify(a), record_span, field),
@@ -1076,6 +1275,23 @@ impl<'a> Checked<'a> {
                     .into_iter()
                     .map(|item| self.reify_inner(item))
                     .collect()),
+                TyInfo::Union(direct_variants) => {
+                    let mut variants = Vec::new();
+                    // Collect indirect variants
+                    direct_variants
+                        .into_iter()
+                        .for_each(|var| self.infer.collect_union_members(var, &mut |var| variants.push(var)));
+                    // Deduplicate variants
+                    // TODO: canonically order them too
+                    let mut dedup_variants = Vec::new();
+                    for variant in variants {
+                        let ty = self.reify_inner(variant);
+                        if !dedup_variants.iter().any(|v| self.infer.ctx.tys.is_eq(*v, ty)) {
+                            dedup_variants.push(ty);
+                        }
+                    }
+                    Ty::Union(dedup_variants)
+                },
                 TyInfo::Record(fields) => Ty::Record(fields
                     .into_iter()
                     .map(|(name, field)| (name, self.reify_inner(field)))

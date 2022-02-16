@@ -121,6 +121,7 @@ pub enum Type {
     Unknown,
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
+    Union(Vec<SrcNode<Self>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Func(SrcNode<Self>, SrcNode<Self>),
     // TODO: Replace name with `Item` when ready
@@ -135,6 +136,9 @@ impl Type {
             Self::Unknown => false,
             Self::List(item) => item.is_fully_specified(),
             Self::Tuple(fields) => fields
+                .iter()
+                .all(|field| field.is_fully_specified()),
+            Self::Union(fields) => fields
                 .iter()
                 .all(|field| field.is_fully_specified()),
             Self::Record(fields) => fields
@@ -192,6 +196,7 @@ pub enum Expr {
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
     Tuple(Vec<SrcNode<Self>>),
+    Union(SrcNode<Self>),
     List(Vec<SrcNode<Self>>),
     ListFront(Vec<SrcNode<Self>>, SrcNode<Self>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),

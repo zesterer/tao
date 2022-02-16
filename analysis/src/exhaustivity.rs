@@ -36,6 +36,7 @@ impl AbstractPat {
                 range.insert(*x..*x + 1);
                 range
             }),
+            hir::Pat::Literal(hir::Literal::Str(x)) => Self::ListExact(x.chars().map(Self::Char).collect()),
             hir::Pat::Single(inner) => Self::from_binding(ctx, inner),
             hir::Pat::Add(lhs, rhs) if matches!(&*lhs.pat, hir::Pat::Wildcard) => Self::Nat({
                 let mut range = Ranges::new();
@@ -68,6 +69,8 @@ impl AbstractPat {
             AbstractPat::Wildcard => false,
             AbstractPat::Bool([t, f]) => !(*t && *f),
             AbstractPat::Nat(set) => !set.clone().invert().is_empty(),
+            AbstractPat::Int(set) => !set.clone().invert().is_empty(),
+            AbstractPat::Char(_) => true,
             AbstractPat::Tuple(fields) => !fields
                 .iter()
                 .all(|field| !field.is_refutable(ctx)),
@@ -159,6 +162,16 @@ impl AbstractPat {
                 Some(ExamplePat::Wildcard)
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
+            Ty::Union(_) => {
+                for pat in filter {
+                    match pat {
+                        AbstractPat::Wildcard => return None,
+                        // AbstractPat::UnionVariant(_) => {},
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
+                    }
+                }
+                Some(ExamplePat::Wildcard)
+            },
             Ty::Tuple(fields) if fields.len() == 1 => {
                 let mut inners = Vec::new();
                 for pat in filter {
@@ -351,7 +364,7 @@ pub enum ExamplePrim {
 impl fmt::Display for ExamplePrim {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Bool(x) => write!(f, "{}", x),
+            Self::Bool(x) => write!(f, "{}", if *x { "True" } else { "False" }),
             Self::Nat(x) => write!(f, "{}", x),
             Self::Int(x) => write!(f, "{}", x),
         }

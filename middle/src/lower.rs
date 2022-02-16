@@ -60,6 +60,10 @@ impl Context {
                 .iter()
                 .map(|field| self.lower_ty(hir, con, *field))
                 .collect()),
+            ConTy::Union(variants) => Repr::Sum(variants
+                .iter()
+                .map(|variant| self.lower_ty(hir, con, *variant))
+                .collect()),
             ConTy::Func(i, o) => Repr::Func(
                 Box::new(self.lower_ty(hir, con, *i)),
                 Box::new(self.lower_ty(hir, con, *o)),
@@ -205,6 +209,23 @@ impl Context {
                 .iter()
                 .map(|field| self.lower_expr(hir, con, field))
                 .collect()),
+            hir::Expr::Union(inner) => {
+                let inner = self.lower_expr(hir, con, inner);
+                // TODO: Avoid computing this twice
+                let repr = self.lower_ty(hir, con, *con_expr.meta());
+                let variant = if let Repr::Sum(reprs) = &repr {
+                    // TODO: Correctly handle unions of unions
+                    reprs
+                        .iter()
+                        .rposition(|x| x == inner.meta())
+                        .unwrap_or_else(|| {
+                            panic!("Union type did not contain inner expression: {:?} in {:?}", inner.meta(), repr);
+                        })
+                } else {
+                    unreachable!("union expressions always generate union types")
+                };
+                mir::Expr::Variant(variant, inner)
+            },
             hir::Expr::List(items) => mir::Expr::List(items
                 .iter()
                 .map(|item| self.lower_expr(hir, con, item))

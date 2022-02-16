@@ -61,6 +61,7 @@ impl Reify for hir::Expr<InferMeta> {
                 .into_iter()
                 .map(|item| item.reify(infer))
                 .collect()),
+            hir::Expr::Union(inner) => hir::Expr::Union(inner.reify(infer)),
             hir::Expr::List(items) => hir::Expr::List(items
                 .into_iter()
                 .map(|item| item.reify(infer))

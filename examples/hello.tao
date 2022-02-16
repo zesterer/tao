@@ -1,16 +1,60 @@
 import "lib/std.tao"
 
+data Value =
+    | String Str
+    | Integer Int
+    \ Pair (Value, Value)
+
+def give_me_a : Str -> Value =
+    | "string" => String "Hello"
+    | "integer" => Integer 42
+    | "pair" => Pair (String "left", String "right")
+    \ _ => Pair (Integer 0, Integer 0)
+
+type NatOrBool = (Nat | Bool)
+
+def nat_or_bool : Bool -> (Nat | Bool) =
+    | True => 5?
+    \ False => True?
+
+# def nat : (Nat|) = nat_or_bool(True)
+
+def takes_union_or_nat : (Nat | Bool) -> (Nat | Bool) =
+    \ x => True?
+
+def f : (Nat | Bool) -> (Nat | Bool) = takes_union_or_nat
+
+def nat_or_bool2 : Bool -> (Bool | Nat) =
+    | True => (let x : Nat = 5 in x)?
+    | True => False?
+    | True => True?
+    \ False => let x = nat_or_bool(False)? in
+        x
+
+def foo : () =
+    let x = nat_or_bool(True) in
+    let y = match True in
+        | True => x?
+        \ False => ()?
+    in
+    y
+
+# def nat_or_bool = 5?
+
+# def foo = match True in
+#     | True => nat_or_bool
+#     | False => nat_or_bool
+
 $[main]
-def main = 10
-    :fix(fn rec => fn
-        | 0 => 1
-        \ m ~ n + 1 => m * rec(n))
+def main : () = match nat_or_bool2(False) in
+    \ x => x
 
 # $[main]
 # def main = [1, 2, 3, 4, 5, 6]
+#     :stream
 #     :take(5)
 #     :mapped(fn x => x * x)
-    # :collect
+#     :nth(3)
 
 class Mappable =
     => Item

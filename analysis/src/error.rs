@@ -3,7 +3,7 @@ use std::io::Write;
 
 #[derive(Debug)]
 pub enum Error {
-    Mismatch(TyId, TyId, EqInfo),
+    CannotCoerce(TyId, TyId, EqInfo),
     CannotInfer(TyId, Option<Span>),
     Recursive(TyId, Span, Span),
     NoSuchItem(TyId, Span, SrcNode<Ident>),
@@ -49,15 +49,15 @@ impl Error {
         let display = |id| ctx.tys.display(&ctx.datas, id);
 
         let (msg, spans, notes) = match self {
-            Error::Mismatch(a, b, info) => (
-                format!("Type mismatch between {} and {}", display(a).fg(Color::Red), display(b).fg(Color::Red)),
+            Error::CannotCoerce(a, b, info) => (
+                format!("Type {} does not coerce to {}", display(a).fg(Color::Red), display(b).fg(Color::Yellow)),
                 {
                     let mut labels = vec![
-                        (ctx.tys.get_span(a), format!("{}", display(a)), Color::Red),
-                        (ctx.tys.get_span(b), format!("{}", display(b)), Color::Red),
+                        (ctx.tys.get_span(a), format!("Type {} was found here", display(a).fg(Color::Red)), Color::Red),
+                        (ctx.tys.get_span(b), format!("Type {} is required here", display(b).fg(Color::Yellow)), Color::Yellow),
                     ];
                     if let Some(at) = info.at {
-                        labels.push((at, format!("Types must be equal here"), Color::Yellow));
+                        labels.push((at, format!("Coercion is required here"), Color::Yellow));
                     }
                     labels
                 },
