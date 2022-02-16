@@ -96,6 +96,10 @@ impl Context {
             defs_init.push((attr, def, gen_scope));
         }
 
+        // Now that we have declarations for all classes and data types, we can check generic scope constraints
+        let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
+        this.errors.append(&mut gen_scope_errors);
+
         // Alias definition must go before members and defs because they might have type hints that make use of type
         // aliases
         for (attr, alias) in aliases {
@@ -122,10 +126,6 @@ impl Context {
                 },
             );
         }
-
-        // Now that we have declarations for all classes and data types, we can check generic scope constraints
-        let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
-        this.errors.append(&mut gen_scope_errors);
 
         // Derive class obligations
         for (attr, class, class_id, gen_scope) in &classes {

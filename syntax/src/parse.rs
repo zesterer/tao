@@ -752,13 +752,14 @@ pub fn data_parser() -> impl Parser<ast::Data> {
         .then(just(Token::Op(Op::Eq))
             // TODO: Don't use `Result`
             .ignore_then(type_parser().map_with_span(SrcNode::new).map(Err)
-                .or(branches(variant).map(Ok)))
+                .or(branches(variant).map(Some).or(just(Token::Pipe).to(None)).map(Ok)))
             .or_not())
         .map(|((name, generics), variants)| ast::Data {
             generics,
             variants: variants
-                .unwrap_or_else(|| Ok(Vec::new()))
-                .unwrap_or_else(|ty| vec![(name.clone(), ty)]),
+                .unwrap_or_else(|| Ok(Some(vec![(name.clone(), SrcNode::new(ast::Type::Tuple(Vec::new()), name.span()))])))
+                .unwrap_or_else(|ty| Some(vec![(name.clone(), ty)]))
+                .unwrap_or_else(|| Vec::new()),
             name,
         })
         .boxed()

@@ -24,9 +24,3 @@ data Maybe A =
 
 for A member Maybe A of Default =
     => default = None
-
-# Result
-
-data Result A, E =
-    | Ok A
-    \ Err E

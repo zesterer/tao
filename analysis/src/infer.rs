@@ -480,21 +480,15 @@ impl<'a> Infer<'a> {
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
             (TyInfo::List(x), TyInfo::List(y)) => self.make_flow_inner(x, y),
             (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => make_flow_many(self, xs, ys),
-            (TyInfo::Union(mut xs), TyInfo::Union(mut ys)) => {
-                // For now, we apply an equality constraint
-                // TODO: Should we do something more interesting than this later?
-                // if !self.occurs_in_union(y, x) {
-                //     ys.push(x);
-                // }
-                // Ok(self.set_info(y, TyInfo::Union(ys)))
-                xs.sort();
-                ys.sort();
+            (TyInfo::Union(xs), TyInfo::Union(mut ys)) => {
                 if !self.occurs_in_union(x, y) {
                     self.collect_union_members(x, &mut |var| ys.push(var));
                 }
+                // Small optimisation to reduce complexity
+                // TODO: Is this necessary?
+                ys.sort();
                 ys.dedup();
                 self.set_info(y, TyInfo::Union(ys));
-                // self.set_info(y, TyInfo::Ref(x));
                 Ok(())
             },
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
@@ -579,7 +573,7 @@ impl<'a> Infer<'a> {
             TyInfo::Union(variants) => variants
                 .into_iter()
                 .for_each(|variant| self.collect_union_members(variant, add)),
-            _ => add(var),
+            _ => add(self.follow(var)),
         }
     }
 

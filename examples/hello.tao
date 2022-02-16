@@ -31,7 +31,7 @@ def nat_or_bool2 : Bool -> (Bool | Nat) =
     \ False => let x = nat_or_bool(False)? in
         x
 
-def foo : () =
+def foo =
     let x = nat_or_bool(True) in
     let y = match True in
         | True => x?
@@ -46,8 +46,33 @@ def foo : () =
 #     | False => nat_or_bool
 
 $[main]
-def main : () = match nat_or_bool2(False) in
+def main = match nat_or_bool2(False) in
     \ x => x
+
+def and_then A, B, E, D : (A -> Result B D) -> Result A E -> Result B (E | D) =
+    | _, Err e => err(e)
+    \ f, Ok ok => match ok:f in
+        | Err e => err(e)
+        \ Ok ok => Ok ok
+
+data TooSmall
+data TooBig
+
+def more_than_5 : Nat -> Result Nat TooSmall =
+    \ x => if x > 5
+        then Ok x
+        else err(TooSmall)
+
+def less_than_10 : Nat -> Result Nat TooBig =
+    \ x => if x < 10
+        then Ok x
+        else err(TooBig)
+
+def between_5_and_10 : Nat -> Result Nat (TooSmall | TooBig) =
+    \ x => x:more_than_5
+        :and_then(less_than_10)
+
+def bar : Nat -> Result Nat (TooSmall | TooBig) = less_than_10
 
 # $[main]
 # def main = [1, 2, 3, 4, 5, 6]
