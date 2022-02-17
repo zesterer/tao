@@ -723,6 +723,7 @@ impl<'a> Infer<'a> {
             Constraint::Unary(op, a, output) => match (&*op, self.follow_info(a)) {
                 (_, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
                 (_, TyInfo::Unknown(_)) => None,
+                (Union, _) => Some(Ok(TyInfo::Union(vec![self.follow(a)]))),
                 (Neg, TyInfo::Prim(Prim::Real)) => Some(Ok(TyInfo::Prim(Prim::Real))),
                 (Neg, TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Int))),
                 (Neg, TyInfo::Prim(Prim::Int)) => Some(Ok(TyInfo::Prim(Prim::Int))),

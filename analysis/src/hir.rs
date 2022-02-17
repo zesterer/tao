@@ -28,6 +28,7 @@ pub enum Pat<M: Meta> {
     Wildcard,
     Literal(Literal),
     Single(Node<Binding<M>, M>),
+    Union(Node<Binding<M>, M>),
     Add(Node<Binding<M>, M>, SrcNode<u64>),
     Tuple(Vec<Node<Binding<M>, M>>),
     Record(BTreeMap<Ident, Node<Binding<M>, M>>),
@@ -50,27 +51,6 @@ impl<M: Meta> Binding<M> {
     pub fn wildcard(name: SrcNode<Ident>) -> Self {
         Self { pat: SrcNode::new(hir::Pat::Wildcard, name.span()), name: Some(name) }
     }
-
-    pub fn is_refutable(&self) -> bool {
-        match &*self.pat {
-            Pat::Error => true,
-            Pat::Wildcard => false,
-            Pat::Literal(_) => true,
-            Pat::Single(inner) => inner.is_refutable(),
-            Pat::Add(lhs, rhs) => **rhs > 0 || lhs.is_refutable(),
-            Pat::Tuple(fields) => fields
-                .iter()
-                .any(|field| field.is_refutable()),
-            Pat::Record(fields) => fields
-                .iter()
-                .any(|(_, field)| field.is_refutable()),
-            Pat::ListExact(_) => true,
-            Pat::ListFront(items, tail) => !items.is_empty() || tail
-                .as_ref()
-                .map_or(false, |tail| tail.is_refutable()),
-            Pat::Decons(_, _, _) => true,
-        }
-    }
 }
 
 impl Binding<InferMeta> {
@@ -88,6 +68,7 @@ impl Binding<InferMeta> {
             Pat::Wildcard => {},
             Pat::Literal(_) => {},
             Pat::Single(inner) => inner.get_bindings_inner(bindings),
+            Pat::Union(inner) => inner.get_bindings_inner(bindings),
             Pat::Add(lhs, _) => lhs.get_bindings_inner(bindings),
             Pat::Tuple(items) => items
                 .iter()
@@ -126,7 +107,6 @@ pub enum Expr<M: Meta> {
     Local(Ident),
     Global(DefId, Vec<M>),
     Tuple(Vec<Node<Self, M>>),
-    Union(Node<Self, M>),
     List(Vec<Node<Self, M>>),
     ListFront(Vec<Node<Self, M>>, Node<Self, M>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),

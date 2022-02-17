@@ -192,6 +192,10 @@ impl ToHir for ast::Binding {
                 // TODO: don't use `Ref` to link types
                 (TyInfo::Ref(binding.meta().1), hir::Pat::Single(binding))
             },
+            ast::Pat::Union(inner) => {
+                let binding = inner.to_hir(infer, scope);
+                (TyInfo::Union(vec![binding.meta().1]), hir::Pat::Union(binding))
+            },
             ast::Pat::Binary(op, lhs, rhs) => {
                 let lhs = lhs.to_hir(infer, scope);
                 match (&**rhs, &**op) {
@@ -391,10 +395,6 @@ impl ToHir for ast::Expr {
                     .map(|item| item.meta().1)
                     .collect();
                 (TyInfo::Tuple(tys), hir::Expr::Tuple(items))
-            },
-            ast::Expr::Union(inner) => {
-                let inner = inner.to_hir(infer, scope);
-                (TyInfo::Union(vec![inner.meta().1]), hir::Expr::Union(inner))
             },
             ast::Expr::List(items) => {
                 let item_ty = infer.unknown(self.span());

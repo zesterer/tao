@@ -276,11 +276,11 @@ impl Error {
             ),
             Error::NotExhaustive(span, example, is_match) => (
                 format!("{} is not exhaustive", if is_match { "Pattern match"} else { "Let" }),
-                vec![(span, format!("Pattern {} not covered", example.display(is_match).fg(Color::Red)), Color::Red)],
+                vec![(span, format!("Pattern {} not covered", example.display(ctx, is_match).fg(Color::Red)), Color::Red)],
                 if is_match {
                     vec![format!(
                         "Add another arm like {} to ensure that this case is covered",
-                        format!("| {} => ...", example.display(is_match)).fg(Color::Blue),
+                        format!("| {} => ...", example.display(ctx, is_match)).fg(Color::Blue),
                     )]
                 } else {
                     vec![format!("Let patterns must be exhaustive")]

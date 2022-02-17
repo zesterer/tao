@@ -39,10 +39,9 @@ impl Deref for Ident {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum UnaryOp {
-    // Sum
     Neg,
-    // Logical
     Not,
+    Union,
 }
 
 impl fmt::Display for UnaryOp {
@@ -50,6 +49,7 @@ impl fmt::Display for UnaryOp {
         match self {
             Self::Neg => write!(f, "-"),
             Self::Not => write!(f, "!"),
+            Self::Union => write!(f, "?"),
         }
     }
 }
@@ -166,6 +166,7 @@ pub enum Pat {
     Wildcard,
     Literal(Literal),
     Single(SrcNode<Binding>),
+    Union(SrcNode<Binding>),
     Binary(SrcNode<BinaryOp>, SrcNode<Binding>, SrcNode<Literal>), // x + N, only for nats
     Tuple(Vec<SrcNode<Binding>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Binding>)>),
@@ -196,7 +197,6 @@ pub enum Expr {
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
     Tuple(Vec<SrcNode<Self>>),
-    Union(SrcNode<Self>),
     List(Vec<SrcNode<Self>>),
     ListFront(Vec<SrcNode<Self>>, SrcNode<Self>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),

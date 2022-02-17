@@ -261,6 +261,7 @@ impl ConContext {
             hir::Pat::Wildcard => hir::Pat::Wildcard,
             hir::Pat::Literal(litr) => hir::Pat::Literal(*litr),
             hir::Pat::Single(inner) => hir::Pat::Single(self.lower_binding(hir, inner, ty_insts)),
+            hir::Pat::Union(inner) => hir::Pat::Union(self.lower_binding(hir, inner, ty_insts)),
             hir::Pat::Add(lhs, rhs) => hir::Pat::Add(self.lower_binding(hir, lhs, ty_insts), rhs.clone()),
             hir::Pat::Tuple(fields) => hir::Pat::Tuple(fields
                 .iter()
@@ -307,7 +308,6 @@ impl ConContext {
                 .iter()
                 .map(|field| self.lower_expr(hir, field, ty_insts))
                 .collect()),
-            hir::Expr::Union(inner) => hir::Expr::Union(self.lower_expr(hir, inner, ty_insts)),
             hir::Expr::List(items) => hir::Expr::List(items
                 .iter()
                 .map(|item| self.lower_expr(hir, item, ty_insts))

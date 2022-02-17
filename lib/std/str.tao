@@ -1,3 +1,6 @@
 #! Utilities for programming with strings.
 
 type Str = [Char]
+
+class Display =
+    => display : Self -> Str

@@ -156,7 +156,25 @@ impl Context {
             hir::Expr::Global(def_id, args) => {
                 mir::Expr::Global(self.lower_def(hir, con, Intern::new((*def_id, args.clone()))), Default::default())
             },
-            hir::Expr::Unary(op, x) => {
+            // Special case union op
+            // TODO: Make this good
+            hir::Expr::Unary(op, x) => if let ast::UnaryOp::Union = **op {
+                let x = self.lower_expr(hir, con, x);
+                // TODO: Avoid computing this twice
+                let repr = self.lower_ty(hir, con, *con_expr.meta());
+                let variant = if let Repr::Sum(reprs) = &repr {
+                    // TODO: Correctly handle unions of unions
+                    reprs
+                        .iter()
+                        .rposition(|r| r == x.meta())
+                        .unwrap_or_else(|| {
+                            panic!("Union type did not contain inner expression: {:?} in {:?}", x.meta(), repr);
+                        })
+                } else {
+                    unreachable!("union expressions always generate union types")
+                };
+                mir::Expr::Variant(variant, x)
+            } else {
                 use ast::UnaryOp::*;
                 use ty::Prim::*;
                 use ConTy::{Prim, List};
@@ -209,23 +227,6 @@ impl Context {
                 .iter()
                 .map(|field| self.lower_expr(hir, con, field))
                 .collect()),
-            hir::Expr::Union(inner) => {
-                let inner = self.lower_expr(hir, con, inner);
-                // TODO: Avoid computing this twice
-                let repr = self.lower_ty(hir, con, *con_expr.meta());
-                let variant = if let Repr::Sum(reprs) = &repr {
-                    // TODO: Correctly handle unions of unions
-                    reprs
-                        .iter()
-                        .rposition(|x| x == inner.meta())
-                        .unwrap_or_else(|| {
-                            panic!("Union type did not contain inner expression: {:?} in {:?}", inner.meta(), repr);
-                        })
-                } else {
-                    unreachable!("union expressions always generate union types")
-                };
-                mir::Expr::Variant(variant, inner)
-            },
             hir::Expr::List(items) => mir::Expr::List(items
                 .iter()
                 .map(|item| self.lower_expr(hir, con, item))

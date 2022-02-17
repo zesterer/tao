@@ -1,8 +1,3 @@
-type Result A, E = Result__ A (E|)
-
-def err A, E : E -> Result A E =
-    \ e => Err e?
-
-data Result__ A, E =
+data Result A, E =
     | Ok A
     \ Err E

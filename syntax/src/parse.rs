@@ -193,7 +193,7 @@ pub fn branches<T>(branch: impl Parser<T> + Clone) -> impl Parser<Vec<T>> {
 }
 
 pub fn binding_parser() -> impl Parser<ast::Binding> {
-    recursive(move |binding| {
+    let binding = recursive(move |binding| {
         let wildcard = just(Token::Wildcard)
             .map_with_span(|_, span| SrcNode::new(ast::Pat::Wildcard, span));
 
@@ -349,13 +349,30 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
                 ty: None,
             }, span))
             .boxed()
-    })
+    });
+
+    // Type hint
+    let binding = binding
         .map(|expr| expr.into_inner())
         .labelled("pattern")
         .then(ty_hint_parser())
         .map(|(binding, ty)| ast::Binding {
             ty,
             ..binding
+        });
+
+    // Union pattern
+    just(Token::Question).or_not()
+        .then(binding.map_with_span(SrcNode::new))
+        .map(|(union, binding)| if union.is_some() {
+            let binding_span = binding.span();
+            ast::Binding {
+                pat: SrcNode::new(ast::Pat::Union(binding), binding_span),
+                name: None,
+                ty: None,
+            }
+        } else {
+            binding.into_inner()
         })
 }
 
@@ -609,21 +626,13 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             })
             .boxed();
 
-        let unioned = chained
-            .then(just(Token::Question)
-                .map_with_span(SrcNode::new)
-                .repeated())
-            .foldl(|expr, op| {
-                let span = expr.span().union(op.span());
-                SrcNode::new(ast::Expr::Union(expr), span)
-            });
-
         // Unary
         let op = just(Token::Op(Op::Sub)).to(ast::UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(ast::UnaryOp::Not))
+            .or(just(Token::Question).to(ast::UnaryOp::Union))
             .map_with_span(SrcNode::new);
         let unary = op.repeated()
-            .then(unioned.labelled("unary operand"))
+            .then(chained.labelled("unary operand"))
             .foldr(|op, expr| {
                 let span = op.span().union(expr.span());
                 SrcNode::new(ast::Expr::Unary(op, expr), span)

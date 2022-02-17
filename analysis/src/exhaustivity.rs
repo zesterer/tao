@@ -20,6 +20,7 @@ pub enum AbstractPat {
     ListExact(Vec<Self>), // Exactly N in size
     ListFront(Vec<Self>, Box<Self>), // At least N in size
     Gen(Ident),
+    Union(TyId, Box<Self>),
 }
 
 impl AbstractPat {
@@ -38,6 +39,7 @@ impl AbstractPat {
             }),
             hir::Pat::Literal(hir::Literal::Str(x)) => Self::ListExact(x.chars().map(Self::Char).collect()),
             hir::Pat::Single(inner) => Self::from_binding(ctx, inner),
+            hir::Pat::Union(inner) => Self::Union(inner.meta().1, Box::new(Self::from_binding(ctx, inner))),
             hir::Pat::Add(lhs, rhs) if matches!(&*lhs.pat, hir::Pat::Wildcard) => Self::Nat({
                 let mut range = Ranges::new();
                 range.insert(**rhs..);
@@ -162,15 +164,26 @@ impl AbstractPat {
                 Some(ExamplePat::Wildcard)
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
-            Ty::Union(_) => {
+            Ty::Union(mut required) => {
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
-                        // AbstractPat::UnionVariant(_) => {},
+                        AbstractPat::Union(ty, inner) if !inner.is_refutable(ctx) => {
+                            let idx = required
+                                .iter()
+                                .rposition(|req| ctx.tys.is_eq(*req, *ty))
+                                .expect("Union type must contain union pattern");
+                            required.remove(idx);
+                        },
+                        AbstractPat::Union(_, _) => {},
                         _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
-                Some(ExamplePat::Wildcard)
+                if let Some(ty) = required.first() {
+                    Some(ExamplePat::Union(*ty, Box::new(ExamplePat::Wildcard)))
+                } else {
+                    None
+                }
             },
             Ty::Tuple(fields) if fields.len() == 1 => {
                 let mut inners = Vec::new();
@@ -379,35 +392,38 @@ pub enum ExamplePat {
     Record(Vec<(Ident, Self)>),
     List(Vec<Self>),
     Variant(Ident, Box<Self>),
+    Union(TyId, Box<Self>),
 }
 
 impl ExamplePat {
-    pub fn display(&self, hidden_outer: bool) -> impl fmt::Display + '_ {
-        struct DisplayExamplePat<'a>(&'a ExamplePat, bool);
+    pub fn display<'a>(&'a self, ctx: &'a Context, hidden_outer: bool) -> impl fmt::Display + 'a {
+        struct DisplayExamplePat<'a>(&'a ExamplePat, bool, &'a Context);
 
         impl<'a> fmt::Display for DisplayExamplePat<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let ctx = self.2;
                 match &self.0 {
                     ExamplePat::Wildcard => write!(f, "_"),
                     ExamplePat::Prim(prim) => write!(f, "{}", prim),
                     ExamplePat::Tuple(fields) if self.1 => write!(f, "{}", fields
                         .iter()
-                        .map(|f| format!("{}", DisplayExamplePat(f, false)))
+                        .map(|f| format!("{}", DisplayExamplePat(f, false, ctx)))
                         .collect::<Vec<_>>()
                         .join(", ")),
                     ExamplePat::Tuple(fields) => write!(f, "({}{})", fields
                         .iter()
-                        .map(|f| format!("{}", DisplayExamplePat(f, false)))
+                        .map(|f| format!("{}", DisplayExamplePat(f, false, ctx)))
                         .collect::<Vec<_>>()
                         .join(", "), if fields.len() == 1 { "," } else { "" }),
-                    ExamplePat::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, DisplayExamplePat(f, false))).collect::<Vec<_>>().join(" ")),
-                    ExamplePat::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExamplePat(i, false))).collect::<Vec<_>>().join(", ")),
-                    ExamplePat::Variant(name, inner) => write!(f, "{} {}", name, DisplayExamplePat(inner, false)),
+                    ExamplePat::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(" ")),
+                    ExamplePat::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExamplePat(i, false, ctx))).collect::<Vec<_>>().join(", ")),
+                    ExamplePat::Variant(name, inner) => write!(f, "{} {}", name, DisplayExamplePat(inner, false, ctx)),
+                    ExamplePat::Union(ty, inner) => write!(f, "? {} : {}", DisplayExamplePat(inner, false, ctx), ctx.tys.display(&ctx.datas, *ty)),
                 }
             }
         }
 
-        DisplayExamplePat(self, hidden_outer)
+        DisplayExamplePat(self, hidden_outer, ctx)
     }
 }
 
