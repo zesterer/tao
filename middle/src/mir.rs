@@ -22,6 +22,7 @@ pub enum Const {
     Tuple(Vec<Self>),
     List(Vec<Self>),
     Sum(usize, Box<Self>),
+    Union(u64, Box<Self>),
 }
 
 impl Const {
@@ -70,6 +71,7 @@ pub enum Pat {
     ListExact(Vec<MirNode<Binding>>),
     ListFront(Vec<MirNode<Binding>>, Option<MirNode<Binding>>),
     Variant(usize, MirNode<Binding>),
+    UnionVariant(u64, MirNode<Binding>),
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +96,7 @@ impl Binding {
             Pat::ListExact(_) => true,
             Pat::ListFront(items, tail) => items.len() > 0 || tail.as_ref().map_or(false, |tail| tail.is_refutable()),
             Pat::Variant(_, _) => true, // TODO: Check number of variants
+            Pat::UnionVariant(_, _) => true, // TODO: Check number of variants
         }
     }
 
@@ -117,6 +120,7 @@ impl Binding {
                 tail.as_ref().map(|tail| tail.visit_bindings(bind));
             },
             Pat::Variant(_, inner) => inner.visit_bindings(bind),
+            Pat::UnionVariant(_, inner) => inner.visit_bindings(bind),
         }
     }
 
@@ -167,6 +171,8 @@ pub enum Expr {
 
     Variant(usize, MirNode<Self>),
     AccessVariant(MirNode<Self>, usize), // Unsafely assume the value is a specific variant
+
+    UnionVariant(u64, MirNode<Self>),
 
     Debug(MirNode<Self>),
 }
@@ -223,6 +229,7 @@ impl Expr {
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Variant(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessVariant(inner, _) => inner.required_locals_inner(stack, required),
+            Expr::UnionVariant(_, inner) => inner.required_locals_inner(stack, required),
             Expr::Debug(inner) => inner.required_locals_inner(stack, required),
         }
     }
@@ -251,6 +258,7 @@ impl Expr {
                     Pat::Const(c) => write!(f, "const {:?}", c),
                     Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
                     Pat::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayBinding(inner, self.1)),
+                    Pat::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayBinding(inner, self.1)),
                     Pat::ListExact(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayBinding(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Pat::ListFront(items, tail) => write!(
                         f,
@@ -277,6 +285,7 @@ impl Expr {
                     Expr::Func(_, arg, body) => write!(f, "fn {}{} => {}", if arg.starts_with(|c: char| c.is_alphabetic()) { "" } else { "$" }, arg, DisplayExpr(body, self.1)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1), DisplayExpr(arg, self.1)),
                     Expr::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayExpr(inner, self.1)),
+                    Expr::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayExpr(inner, self.1)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Expr::Intrinsic(NotBool, args) => write!(f, "!{}", DisplayExpr(&args[0], self.1)),

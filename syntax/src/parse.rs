@@ -5,6 +5,7 @@ pub trait Parser<T> = chumsky::Parser<Token, T, Error = Error> + Clone;
 pub fn literal_parser() -> impl Parser<ast::Literal> {
     select! {
         Token::Nat(x) => ast::Literal::Nat(x),
+        Token::Int(x) => ast::Literal::Int(x),
         Token::Real(x) => ast::Literal::Real(x.parse().expect("Real could not be parsed as f64")),
         Token::Bool(x) => ast::Literal::Bool(x),
         Token::Char(x) => ast::Literal::Char(x),
@@ -21,11 +22,6 @@ pub fn term_ident_parser() -> impl Parser<ast::Ident> {
 pub fn type_ident_parser() -> impl Parser<ast::Ident> {
     select! { Token::TypeIdent(x) => x }
         .map_err(|e: Error| e.expected(Pattern::TypeIdent))
-}
-
-pub fn nat_parser() -> impl Parser<u64> {
-    select! { Token::Nat(x) => x }
-        .map_err(|e: Error| e.expected(Pattern::Literal))
 }
 
 pub fn bool_parser() -> impl Parser<bool> {
@@ -552,13 +548,6 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(select! { Token::Error(_) => () }.map(|_| ast::Expr::Error))
             .map_with_span(SrcNode::new)
             .boxed();
-
-        // TODO: Remove
-        let atom = just(Token::Question)
-            .ignore_then(atom.clone())
-            .map(ast::Expr::Debug)
-            .map_with_span(SrcNode::new)
-            .or(atom);
 
         // Apply direct (a pattern like `f(arg)` more eagerly binds than a simple application chain
         let direct = atom

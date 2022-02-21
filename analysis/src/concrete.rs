@@ -17,6 +17,10 @@ pub enum ConTy {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConTyId(usize);
 
+impl ConTyId {
+    pub fn id(&self) -> u64 { self.0 as u64 }
+}
+
 pub type ConDefId = Intern<(DefId, Vec<ConTyId>)>;
 
 pub type ConDataId = Intern<(DataId, Vec<ConTyId>)>;

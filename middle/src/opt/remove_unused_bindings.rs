@@ -71,6 +71,7 @@ impl Pass for RemoveUnusedBindings {
                                             .map(|tail| remove_unused(tail, stack));
                                     },
                                     Pat::Variant(_, inner) => remove_unused(inner, stack),
+                                    Pat::UnionVariant(_, inner) => remove_unused(inner, stack),
                                 }
                             }
 
@@ -136,6 +137,7 @@ impl Pass for RemoveUnusedBindings {
                 },
                 Expr::Variant(_, inner) => visit(mir, inner, stack, proc_stack),
                 Expr::AccessVariant(inner, _) => visit(mir, inner, stack, proc_stack),
+                Expr::UnionVariant(_, inner) => visit(mir, inner, stack, proc_stack),
                 Expr::Debug(inner) => visit(mir, inner, stack, proc_stack),
             }
         }

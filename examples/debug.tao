@@ -1,0 +1,13 @@
+class X
+class Y
+
+for A < Y member A of X
+for A < X member A of Y
+
+def takes A < X =
+    \ _ : A => ()
+
+# def foo = takes(5)
+
+$[main]
+def real : (Nat|) = ?5.3

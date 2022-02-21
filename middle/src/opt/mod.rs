@@ -97,6 +97,9 @@ impl Repr {
                 i.visit_inner(order, repr, binding, expr);
                 o.visit_inner(order, repr, binding, expr);
             },
+            Repr::Union(inhabitants) => inhabitants
+                .iter_mut()
+                .for_each(|inhabitant| inhabitant.visit_inner(order, repr, binding, expr)),
         }
 
         if order == VisitOrder::Last {
@@ -124,6 +127,7 @@ impl Binding {
                 tail.as_ref().map(|tail| f(tail));
             },
             mir::Pat::Variant(_, inner) => f(inner),
+            mir::Pat::UnionVariant(_, inner) => f(inner),
         }
     }
 
@@ -157,6 +161,7 @@ impl Binding {
                 tail.as_mut().map(|tail| tail.visit_inner(order, repr, binding, expr));
             },
             mir::Pat::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
+            mir::Pat::UnionVariant(_, inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
@@ -194,6 +199,7 @@ impl Expr {
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
+            Expr::UnionVariant(_, inner) => f(inner),
             Expr::Debug(inner) => f(inner),
         }
     }
@@ -226,6 +232,7 @@ impl Expr {
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
+            Expr::UnionVariant(_, inner) => f(inner),
             Expr::Debug(inner) => f(inner),
         }
     }
@@ -291,6 +298,7 @@ impl Expr {
             Expr::Access(record, _) => record.visit_inner(order, repr, binding, expr),
             Expr::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             Expr::AccessVariant(inner, _) => inner.visit_inner(order, repr, binding, expr),
+            Expr::UnionVariant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             Expr::Debug(inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
@@ -331,6 +339,7 @@ pub fn check(ctx: &Context) {
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
             (Pat::Variant(_, _), Repr::Data(_)) => {},
+            (Pat::UnionVariant(_, _), Repr::Union(_)) => {},
             (Pat::ListExact(_), Repr::List(_)) => {},
             (Pat::ListFront(_, _), Repr::List(_)) => {},
             (_, repr) => panic!("Inconsistency between binding\n\n {:?}\n\nand repr {:?}", binding, repr),

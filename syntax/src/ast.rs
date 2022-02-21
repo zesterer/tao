@@ -96,6 +96,7 @@ impl fmt::Display for BinaryOp {
 #[derive(Copy, Clone, PartialEq)]
 pub enum Literal {
     Nat(u64),
+    Int(i64),
     Real(f64),
     Bool(bool),
     Char(char),
@@ -106,6 +107,7 @@ impl fmt::Debug for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Nat(x) => write!(f, "`{}`", x),
+            Self::Int(x) => write!(f, "`{}`", x),
             Self::Real(x) => write!(f, "`{}`", x),
             Self::Bool(x) => write!(f, "`{}`", x),
             Self::Char(c) => write!(f, "`{}`", c),

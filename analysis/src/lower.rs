@@ -2,9 +2,11 @@ use super::*;
 
 // TODO: use `ToHir`?
 fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> (TyInfo, Option<NumLitr>) {
+    // TODO: Numeric literal subtyping
     match litr {
-        ast::Literal::Nat(_) => (TyInfo::Unknown(None), Some(NumLitr::Nat)), // TODO: Numeric subtyping
-        ast::Literal::Real(_) => (TyInfo::Unknown(None), Some(NumLitr::Real)),
+        ast::Literal::Nat(_) => (TyInfo::Prim(ty::Prim::Nat), None),//(TyInfo::Unknown(None), Some(NumLitr::Nat)),
+        ast::Literal::Int(_) => (TyInfo::Prim(ty::Prim::Int), None),//(TyInfo::Unknown(None), Some(NumLitr::Int)),
+        ast::Literal::Real(x) => (TyInfo::Prim(ty::Prim::Real), None),//(TyInfo::Unknown(None), Some(NumLitr::Real)),
         ast::Literal::Bool(_) => (TyInfo::Prim(ty::Prim::Bool), None),
         ast::Literal::Char(_) => (TyInfo::Prim(ty::Prim::Char), None),
         ast::Literal::Str(_) => (TyInfo::List(infer.insert(span, TyInfo::Prim(ty::Prim::Char))), None),

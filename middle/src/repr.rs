@@ -18,6 +18,7 @@ pub enum Repr {
     Sum(Vec<Repr>),
     Data(ConDataId),
     Func(Box<Repr>, Box<Repr>),
+    Union(Vec<Repr>),
 }
 
 #[derive(Default)]

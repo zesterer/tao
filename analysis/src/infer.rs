@@ -481,14 +481,17 @@ impl<'a> Infer<'a> {
             (TyInfo::List(x), TyInfo::List(y)) => self.make_flow_inner(x, y),
             (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => make_flow_many(self, xs, ys),
             (TyInfo::Union(xs), TyInfo::Union(mut ys)) => {
-                if !self.occurs_in_union(x, y) {
-                    self.collect_union_members(x, &mut |var| ys.push(var));
-                }
+                self.collect_union_members(x, &mut |var| {
+                    if !self.occurs_in_union(var, y) {
+                        ys.push(var)
+                    }
+                });
                 // Small optimisation to reduce complexity
                 // TODO: Is this necessary?
                 ys.sort();
                 ys.dedup();
                 self.set_info(y, TyInfo::Union(ys));
+                self.set_info(x, TyInfo::Ref(y));
                 Ok(())
             },
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
@@ -615,9 +618,19 @@ impl<'a> Infer<'a> {
             (_, TyInfo::Ref(y)) => self.check_flow_inner(x, y),
 
             // We don't know if unknown types are equal yet
-            // (TyInfo::Unknown(_), y_info) if matches!(y_info, TyInfo::Union(_)) => None,
+            // (TyInfo::Unknown(_), TyInfo::Union(mut ys)) => {
+            //     None
+            //     // ys.push(x);
+            //     // self.set_info(y, TyInfo::Union(ys));
+            //     // Some(Ok(()))
+            // },
             (TyInfo::Unknown(_), y_info) => Some(self.make_flow_inner(x, y)),
-            // (x_info, TyInfo::Unknown(_)) if matches!(x_info, TyInfo::Union(_)) => None,
+            // (TyInfo::Union(mut xs), TyInfo::Unknown(_)) => {
+            //     None
+            //     // xs.push(x);
+            //     // self.set_info(x, TyInfo::Union(xs));
+            //     // Some(Ok(()))
+            // },
             (x_info, TyInfo::Unknown(_)) => Some(self.make_flow_inner(x, y)),
 
             // Errors are always considered equal to anything else to avoid error propagation
@@ -627,7 +640,7 @@ impl<'a> Infer<'a> {
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Some(Ok(())),
             (TyInfo::List(x), TyInfo::List(y)) => self.check_flow_inner(x, y),
             (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => check_flow_many(self, xs, ys),
-            (TyInfo::Union(mut xs), TyInfo::Union(mut ys)) => {
+            (TyInfo::Union(_), TyInfo::Union(_)) => {
                 let mut xs = Vec::new();
                 self.collect_union_members(x, &mut |var| xs.push(var));
                 let mut ys = Vec::new();
@@ -637,7 +650,7 @@ impl<'a> Infer<'a> {
                     let mut eq = false;
                     for y_var in &ys {
                         match self.check_flow_inner(*x_var, *y_var) {
-                            None => return None,
+                            None => {},//return None,
                             Some(Ok(())) => eq = true,
                             Some(Err(_)) => {},
                         }
@@ -735,8 +748,8 @@ impl<'a> Infer<'a> {
             }
                 .map(|info| info.map(|info| {
                     // TODO: Use correct span
-                    let result_ty = self.insert(op.span(), info);
-                    self.make_flow(result_ty, output, self.span(output));
+                    let result_ty = self.insert(self.span(output), info);
+                    self.make_flow(result_ty, output, op.span()/*self.span(output)*/);
                 })),
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
                 (_, _, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
@@ -855,14 +868,15 @@ impl<'a> Infer<'a> {
     }
 
     fn resolve_lazy_literal(&mut self, lazy: LazyLiteral) {
+        panic!("Currently unsound with union types");
         if match self.follow_info(lazy.ty) {
             TyInfo::Unknown(_) => {
                 let num_ty = self.insert(lazy.span, TyInfo::Prim(lazy.num.to_prim()));
-                self.make_flow(num_ty, lazy.ty, self.span(self.follow(lazy.ty)));
+                self.check_flow(num_ty, lazy.ty, self.span(self.follow(lazy.ty)));
                 true
             },
             TyInfo::Prim(prim) => lazy.num.subtype_of(prim),
-            _ => false,
+            ty => false,
         } {
             // TODO?
         } else {
@@ -1170,6 +1184,7 @@ impl<'a> Infer<'a> {
 
             if let Some(lazy) = self.lazy_literals.pop_front() {
                 self.resolve_lazy_literal(lazy);
+                continue;
             } else {
                 break;
             }

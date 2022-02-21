@@ -63,6 +63,7 @@ impl fmt::Display for Op {
 pub enum Token {
     Error(char),
     Nat(u64),
+    Int(i64),
     Real(Intern<String>),
     Char(char),
     Bool(bool),
@@ -106,6 +107,7 @@ impl fmt::Display for Token {
         match self {
             Token::Error(c) => write!(f, "{:?}", c),
             Token::Nat(x) => write!(f, "{}", x),
+            Token::Int(x) => write!(f, "{}i", x),
             Token::Real(x) => write!(f, "{}", x),
             Token::Char(c) => write!(f, "{}", c),
             Token::Bool(x) => write!(f, "{}", x),
@@ -151,15 +153,20 @@ impl fmt::Display for Token {
 }
 
 pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
-    let nat = text::int(10)
-        .map(|s: String| Token::Nat(s.parse().unwrap()));
-
     let real = text::int(10)
-        .then_ignore(just('.'))
+        .chain(just('.'))
         .chain::<char, _, _>(text::digits(10))
         .collect::<String>()
         .map(Intern::new)
         .map(Token::Real);
+
+    let int = text::int(10)
+        .then_ignore(just('i'))
+        .map(|s: String| Token::Int(s.parse().unwrap()));
+
+    let nat = text::int(10)
+        .then_ignore(just('u').or_not())
+        .map(|s: String| Token::Nat(s.parse().unwrap()));
 
     let ctrl = choice((
         just(',').to(Token::Comma),
@@ -278,6 +285,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         ctrl,
         word,
         real,
+        int,
         nat,
         op,
         delim,

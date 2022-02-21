@@ -35,6 +35,7 @@ impl Context {
     pub fn lower_litr(&mut self, hir: &HirContext, con: &ConContext, litr: &hir::Literal) -> Const {
         match litr {
             hir::Literal::Nat(x) => mir::Const::Nat(*x),
+            hir::Literal::Int(x) => mir::Const::Int(*x),
             hir::Literal::Str(s) => mir::Const::Str(*s),
             hir::Literal::Bool(x) => mir::Const::Bool(*x),
             hir::Literal::Real(x) => mir::Const::Real(*x),
@@ -137,6 +138,10 @@ impl Context {
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 mir::Pat::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             },
+            hir::Pat::Union(inner) => {
+                let id = inner.meta().id();
+                mir::Pat::UnionVariant(id, self.lower_binding(hir, con, inner))
+            },
             pat => todo!("{:?}", pat),
         };
 
@@ -159,21 +164,13 @@ impl Context {
             // Special case union op
             // TODO: Make this good
             hir::Expr::Unary(op, x) => if let ast::UnaryOp::Union = **op {
-                let x = self.lower_expr(hir, con, x);
-                // TODO: Avoid computing this twice
-                let repr = self.lower_ty(hir, con, *con_expr.meta());
-                let variant = if let Repr::Sum(reprs) = &repr {
-                    // TODO: Correctly handle unions of unions
-                    reprs
-                        .iter()
-                        .rposition(|r| r == x.meta())
-                        .unwrap_or_else(|| {
-                            panic!("Union type did not contain inner expression: {:?} in {:?}", x.meta(), repr);
-                        })
-                } else {
-                    unreachable!("union expressions always generate union types")
-                };
-                mir::Expr::Variant(variant, x)
+                let inner = self.lower_expr(hir, con, x);
+                // If the inner value is already a union, we 'flatten' the union without wrapping it in another union.
+                // This happens because unions types/values are, by default, flattened.
+                match con.get_ty(*x.meta()) {
+                    ConTy::Union(_) => inner.into_inner(),
+                    _ => mir::Expr::UnionVariant(x.meta().id(), inner),
+                }
             } else {
                 use ast::UnaryOp::*;
                 use ty::Prim::*;

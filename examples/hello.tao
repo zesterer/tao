@@ -7,18 +7,18 @@ data Value =
 
 def give_me_a : Str -> Value =
     | "string" => String "Hello"
-    | "integer" => Integer 42
+    | "integer" => Integer 42i
     | "pair" => Pair (String "left", String "right")
-    \ _ => Pair (Integer 0, Integer 0)
+    \ _ => Pair (Integer 0i, Integer 0i)
 
 type NatOrBool = (Nat | Bool)
 
-def nat_or_bool : Bool -> (Nat | Bool) =
+def nat_or_bool1 : Bool -> (Nat | Bool) =
     | True => ?5
     \ False => ?True
 
 def match_nat_or_bool =
-    match nat_or_bool(True) in
+    match nat_or_bool1(True) in
     | ?x : Nat => ()
     \ ?y : Bool => ()
 
@@ -33,26 +33,31 @@ def nat_or_bool2 : Bool -> (Bool | Nat) =
     | True => ?(let x : Nat = 5 in x)
     | True => ?False
     | True => ?True
-    \ False => let x = ?nat_or_bool(False) in
+    \ False => let x = ?nat_or_bool1(False) in
         x
 
 def foo =
-    let x = nat_or_bool(True) in
+    let x = nat_or_bool1(True) in
     let y = match True in
         | True => ?x
         \ False => ?()
     in
     y
 
-# def nat_or_bool = 5?
+def nat_or_bool : (Bool | Nat) = if True
+    then ?True
+    else ?3
 
-# def foo = match True in
-#     | True => nat_or_bool
-#     | False => nat_or_bool
+def nat_or_bool_or_real : (Bool | Nat) =
+    # let () = nat_or_bool in
+    match nat_or_bool in
+    | ? _ : Nat => nat_or_bool
+    \ ? _ : Bool => ?7
 
 $[main]
-def main = match nat_or_bool2(False) in
-    \ x => x
+def main = match nat_or_bool2(True) in
+    | ? x : Nat => "nat"
+    \ ? x : Bool => "bool"
 
 def and_then A, B, E, D : (A -> Result B D) -> Result A E -> Result B (E | D) =
     | _, Err e => Err ?e

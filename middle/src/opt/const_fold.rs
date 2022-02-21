@@ -120,6 +120,11 @@ impl Pass for ConstFold {
                             } else {
                                 unreachable!();
                             },
+                            Pat::UnionVariant(a_id, a) => if let Const::Union(b_id, b) = constant {
+                                a_id == b_id && matches(a, b)
+                            } else {
+                                unreachable!();
+                            },
                         }
                     }
 
@@ -209,6 +214,13 @@ impl Pass for ConstFold {
                     //     *expr = Expr::Const((**inner).clone());
                     // }
                 },
+                Expr::UnionVariant(id, inner) => {
+                    visit(mir, inner, stack, proc_stack);
+
+                    // if let Expr::Const(inner) = &mut **inner {
+                    //     *expr = Expr::Const(Const::Sum(*variant, Box::new(inner.clone())));
+                    // }
+                },
                 Expr::Debug(inner) => {
                     visit(mir, inner, stack, proc_stack);
                 },
@@ -261,6 +273,7 @@ impl Binding {
                     .map(|tail| tail.try_extract_inner(None, bindings));
             },
             Pat::Variant(_, inner) => inner.try_extract_inner(None, bindings),
+            Pat::UnionVariant(_, inner) => inner.try_extract_inner(None, bindings),
         }
     }
 

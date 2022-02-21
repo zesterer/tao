@@ -20,6 +20,10 @@ fn const_to_value(constant: &mir::Const) -> Value {
             .map(const_to_value)
             .collect()),
         mir::Const::Sum(variant, inner) => Value::Sum(*variant, Box::new(const_to_value(inner))),
+        mir::Const::Union(id, inner) => {
+            assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
+            Value::Sum(*id as usize, Box::new(const_to_value(inner)))
+        },
     }
 }
 
@@ -76,6 +80,12 @@ impl Program {
             mir::Pat::Variant(variant, inner) => {
                 self.push(Instr::Dup);
                 self.push(Instr::IndexSum(*variant));
+                self.compile_extractor(mir, inner);
+            },
+            mir::Pat::UnionVariant(id, inner) => {
+                self.push(Instr::Dup);
+                assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
+                self.push(Instr::IndexSum(*id as usize));
                 self.compile_extractor(mir, inner);
             },
         }
@@ -186,6 +196,17 @@ impl Program {
                 self.push(Instr::IfNot);
                 let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
                 self.push(Instr::IndexSum(*variant));
+                self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
+            },
+            mir::Pat::UnionVariant(id, inner) => {
+                self.push(Instr::Dup);
+                self.push(Instr::VariantSum);
+                self.push(Instr::Imm(Value::Int(*id as i64)));
+                self.push(Instr::EqInt);
+                self.push(Instr::IfNot);
+                let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
+                assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
+                self.push(Instr::IndexSum(*id as usize));
                 self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
             },
         }
@@ -349,6 +370,11 @@ impl Program {
             mir::Expr::AccessVariant(inner, variant) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
                 self.push(Instr::IndexSum(*variant));
+            },
+            mir::Expr::UnionVariant(id, inner) => {
+                self.compile_expr(mir, inner, stack, proc_fixups);
+                assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
+                self.push(Instr::MakeSum(*id as usize));
             },
             mir::Expr::Debug(inner) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);

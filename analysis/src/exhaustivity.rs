@@ -164,22 +164,27 @@ impl AbstractPat {
                 Some(ExamplePat::Wildcard)
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
-            Ty::Union(mut required) => {
+            Ty::Union(required) => {
+                let mut required = required
+                    .into_iter()
+                    .map(|r| (r, true))
+                    .collect::<Vec<_>>();
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
-                        AbstractPat::Union(ty, inner) if !inner.is_refutable(ctx) => {
-                            let idx = required
+                        AbstractPat::Union(variant, inner) if !inner.is_refutable(ctx) => {
+                            if let Some(idx) = required
                                 .iter()
-                                .rposition(|req| ctx.tys.is_eq(*req, *ty))
-                                .expect("Union type must contain union pattern");
-                            required.remove(idx);
+                                .rposition(|(req, _)| ctx.tys.is_eq(*req, *variant))
+                            {
+                                required[idx].1 = false;
+                            }
                         },
                         AbstractPat::Union(_, _) => {},
                         _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
-                if let Some(ty) = required.first() {
+                if let Some((ty, _)) = required.iter().find(|(_, r)| *r) {
                     Some(ExamplePat::Union(*ty, Box::new(ExamplePat::Wildcard)))
                 } else {
                     None

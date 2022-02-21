@@ -25,8 +25,8 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Value::Int(x) => write!(f, "{}", x),
-            Value::Real(x) => write!(f, "{}", x),
+            Value::Int(x) => write!(f, "{}i", x),
+            Value::Real(x) => write!(f, "{}f", x),
             Value::Char(c) => write!(f, "{}", c),
             Value::Bool(x) => write!(f, "{}", x),
             Value::List(items) => match items.iter().next() {
