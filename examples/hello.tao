@@ -54,10 +54,15 @@ def nat_or_bool_or_real : (Bool | Nat) =
     | ? _ : Nat => nat_or_bool
     \ ? _ : Bool => ?7
 
-$[main]
-def main = match nat_or_bool2(True) in
+def main2 = match nat_or_bool2(True) in
     | ? x : Nat => "nat"
     \ ? x : Bool => "bool"
+
+$[main]
+def main =
+    let x = 5 in
+    let f = fn y => x + y in
+    f(4)
 
 def and_then A, B, E, D : (A -> Result B D) -> Result A E -> Result B (E | D) =
     | _, Err e => Err ?e
@@ -111,12 +116,6 @@ member Nat of Foo =
     => foo = True
 
 def foo_nat : Nat.Bar = Nat.foo
-
-class Neg =
-    => Output
-    => neg : Self -> Self.Output
-
-def neg A < Neg : A -> A.Output = A.neg
 
 # $[main]
 # def main = [

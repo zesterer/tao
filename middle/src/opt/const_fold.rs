@@ -10,7 +10,7 @@ impl Pass for ConstFold {
         fn visit(
             mir: &Context,
             expr: &mut Expr,
-            stack: &mut Vec<(Ident, Option<Const>)>,
+            stack: &mut Vec<(Local, Option<Const>)>,
             proc_stack: &mut Vec<ProcId>,
         ) {
             match expr {
@@ -198,6 +198,8 @@ impl Pass for ConstFold {
                 Expr::Apply(f, arg) => {
                     visit(mir, f, stack, proc_stack);
                     visit(mir, arg, stack, proc_stack);
+
+                    // TODO: Inlining
                 },
                 Expr::Variant(variant, inner) => {
                     visit(mir, inner, stack, proc_stack);
@@ -241,7 +243,7 @@ impl Pass for ConstFold {
 }
 
 impl Binding {
-    fn try_extract_inner(&self, expr: Option<&Expr>, bindings: &mut Vec<(Ident, Option<Const>)>) {
+    fn try_extract_inner(&self, expr: Option<&Expr>, bindings: &mut Vec<(Local, Option<Const>)>) {
         if let Some(name) = self.name {
             bindings.push((name, if let Some(Expr::Const(constant)) = expr {
                 Some(constant.clone())
@@ -277,7 +279,7 @@ impl Binding {
         }
     }
 
-    fn try_extract(&self, expr: &Expr) -> Vec<(Ident, Option<Const>)> {
+    fn try_extract(&self, expr: &Expr) -> Vec<(Local, Option<Const>)> {
         let mut bindings = Vec::new();
         self.try_extract_inner(Some(expr), &mut bindings);
         bindings

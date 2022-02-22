@@ -38,6 +38,7 @@ pub enum Intrinsic {
     NotBool,
     NegNat,
     NegInt,
+    NegReal,
     AddNat,
     AddInt,
     SubNat,
@@ -74,10 +75,22 @@ pub enum Pat {
     UnionVariant(u64, MirNode<Binding>),
 }
 
+// Uniquely refer to locals *without* shadowing
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Local(pub usize);
+
+impl Local {
+    pub fn new() -> Self {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+        static ID: AtomicUsize = AtomicUsize::new(0);
+        Self(ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Binding {
     pub pat: Pat,
-    pub name: Option<Ident>,
+    pub name: Option<Local>,
 }
 
 impl Binding {
@@ -100,7 +113,7 @@ impl Binding {
         }
     }
 
-    fn visit_bindings(&self, mut bind: &mut impl FnMut(Ident)) {
+    fn visit_bindings(&self, mut bind: &mut impl FnMut(Local)) {
         self.name.map(&mut bind);
         match &self.pat {
             Pat::Wildcard => {},
@@ -124,7 +137,7 @@ impl Binding {
         }
     }
 
-    pub fn binding_names(&self) -> Vec<Ident> {
+    pub fn binding_names(&self) -> Vec<Local> {
         let mut names = Vec::new();
         self.visit_bindings(&mut |name| names.push(name));
         names
@@ -155,14 +168,14 @@ impl Default for GlobalFlags {
 #[derive(Clone, Debug)]
 pub enum Expr {
     Const(Const),
-    Local(Ident),
+    Local(Local),
     Global(ProcId, Cell<GlobalFlags>),
 
     Intrinsic(Intrinsic, Vec<MirNode<Self>>),
     Match(MirNode<Self>, Vec<(MirNode<Binding>, MirNode<Self>)>),
 
     // (captures, arg, body)
-    Func(Vec<Ident>, Ident, MirNode<Self>),
+    Func(Vec<Local>, Local, MirNode<Self>),
     Apply(MirNode<Self>, MirNode<Self>),
 
     Tuple(Vec<MirNode<Self>>),
@@ -178,7 +191,7 @@ pub enum Expr {
 }
 
 impl Expr {
-    fn required_locals_inner(&self, stack: &mut Vec<Ident>, required: &mut Vec<Ident>) {
+    fn required_locals_inner(&self, stack: &mut Vec<Local>, required: &mut Vec<Local>) {
         match self {
             Expr::Const(_) => {},
             Expr::Local(local) => {
@@ -234,7 +247,7 @@ impl Expr {
         }
     }
 
-    pub fn required_locals(&self, already_has: impl IntoIterator<Item = Ident>) -> Vec<Ident> {
+    pub fn required_locals(&self, already_has: impl IntoIterator<Item = Local>) -> Vec<Local> {
         let mut required = Vec::new();
         self.required_locals_inner(&mut already_has.into_iter().collect(), &mut required);
         required
@@ -246,7 +259,7 @@ impl Expr {
         impl<'a> fmt::Display for DisplayBinding<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 if let Some(name) = self.0.name {
-                    write!(f, "{}{}", if name.starts_with(|c: char| c.is_alphabetic()) { "" } else { "$" }, name)?;
+                    write!(f, "${}", name.0)?;
                     if let Pat::Wildcard = &self.0.pat {
                         return Ok(());
                     } else {
@@ -273,46 +286,53 @@ impl Expr {
             }
         }
 
-        struct DisplayExpr<'a>(&'a Expr, usize);
+        struct DisplayExpr<'a>(&'a Expr, usize, bool);
 
         impl<'a> fmt::Display for DisplayExpr<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 use Intrinsic::*;
+                if self.2 {
+                    write!(f, "{}", "    ".repeat(self.1))?;
+                }
                 match self.0 {
-                    Expr::Local(local) => write!(f, "{}{}", if local.starts_with(|c: char| c.is_alphabetic()) { "" } else { "$" }, local),
+                    Expr::Local(local) => write!(f, "${}", local.0),
                     Expr::Global(global, _) => write!(f, "global {:?}", global),
                     Expr::Const(c) => write!(f, "const {:?}", c),
-                    Expr::Func(_, arg, body) => write!(f, "fn {}{} => {}", if arg.starts_with(|c: char| c.is_alphabetic()) { "" } else { "$" }, arg, DisplayExpr(body, self.1)),
-                    Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1), DisplayExpr(arg, self.1)),
-                    Expr::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayExpr(inner, self.1)),
-                    Expr::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayExpr(inner, self.1)),
-                    Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
-                    Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
-                    Expr::Intrinsic(NotBool, args) => write!(f, "!{}", DisplayExpr(&args[0], self.1)),
-                    Expr::Intrinsic(NegNat | NegInt, args) => write!(f, "-{}", DisplayExpr(&args[0], self.1)),
-                    Expr::Intrinsic(EqChar | EqNat | EqInt, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(AddNat | AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(SubNat | SubInt, args) => write!(f, "{} - {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(MulNat | MulInt, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(LessNat, args) => write!(f, "{} < {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
-                    Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1), DisplayExpr(&args[1], self.1)),
+                    Expr::Func(captures, arg, body) => write!(f, "fn {:?} ${} =>\n{}", captures.iter().map(|c| c.0).collect::<Vec<_>>(), arg.0, DisplayExpr(body, self.1 + 1, true)),
+                    Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
+                    Expr::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayExpr(inner, self.1, false)),
+                    Expr::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayExpr(inner, self.1, false)),
+                    Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
+                    Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
+                    Expr::Intrinsic(NotBool, args) => write!(f, "!{}", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(NegNat | NegInt | NegReal, args) => write!(f, "-{}", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(EqChar | EqNat | EqInt, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(AddNat | AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(SubNat | SubInt, args) => write!(f, "{} - {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(MulNat | MulInt, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(LessNat, args) => write!(f, "{} < {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Match(pred, arms) if arms.len() == 1 => {
+                        let (arm, body) = &arms[0];
+                        write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))
+                    },
                     Expr::Match(pred, arms) => {
-                        write!(f, "match {} in", DisplayExpr(pred, self.1))?;
+                        write!(f, "match {} in", DisplayExpr(pred, self.1, false))?;
                         for (arm, body) in arms {
-                            write!(f, "\n{}| {} => {}", "    ".repeat(self.1 + 1), DisplayBinding(arm, self.1 + 1), DisplayExpr(body, self.1 + 1))?;
+                            write!(f, "\n{}| {} => {}", "    ".repeat(self.1 + 1), DisplayBinding(arm, self.1 + 1), DisplayExpr(body, self.1 + 1, false))?;
                         }
                         Ok(())
                     },
-                    Expr::Debug(inner) => write!(f, "?{}", DisplayExpr(inner, self.1)),
+                    Expr::Debug(inner) => write!(f, "?{}", DisplayExpr(inner, self.1, false)),
                     // _ => write!(f, "<TODO>"),
                     expr => todo!("{:?}", expr),
                 }
             }
         }
 
-        DisplayExpr(self, 0)
+        DisplayExpr(self, 0, true)
     }
 }

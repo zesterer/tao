@@ -51,11 +51,19 @@ pub struct ClassId(usize);
 pub struct MemberId(usize);
 
 #[derive(Default)]
+pub struct Lang {
+    pub not: Option<ClassId>,
+    pub neg: Option<ClassId>,
+    pub union: Option<ClassId>,
+}
+
+#[derive(Default)]
 pub struct Classes {
     lut: HashMap<Ident, (Span, ClassId)>,
     classes: Vec<Class>,
     members: Vec<Member>,
     member_lut: HashMap<ClassId, Vec<MemberId>>,
+    pub lang: Lang,
 }
 
 impl Classes {
@@ -77,9 +85,33 @@ impl Classes {
         if let Err(old) = self.lut.try_insert(*name, (span, id)) {
             Err(Error::DuplicateClassName(*name, old.entry.get().0, span))
         } else {
+            if let Some(lang) = class.attr
+                .iter()
+                .find(|a| &**a.name == "lang")
+                .and_then(|a| a.args.as_ref())
+            {
+                if lang.iter().find(|a| &**a.name == "not").is_some() {
+                    self.lang.not = Some(id);
+                } else if lang.iter().find(|a| &**a.name == "neg").is_some() {
+                    self.lang.neg = Some(id);
+                } else if lang.iter().find(|a| &**a.name == "union").is_some() {
+                    self.lang.union = Some(id);
+                }
+            }
+
             self.classes.push(class);
             Ok(id)
         }
+    }
+
+    pub fn check_lang_items(&self) -> Vec<Error> {
+        let mut errors = Vec::new();
+
+        if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
+        if self.lang.neg.is_none() { errors.push(Error::MissingLangItem("neg")); }
+        if self.lang.union.is_none() { errors.push(Error::MissingLangItem("union")); }
+
+        errors
     }
 
     pub fn define_obligations(&mut self, id: ClassId, obligations: Vec<SrcNode<Obligation>>) {

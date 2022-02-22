@@ -40,10 +40,11 @@ pub enum Error {
     InvalidIntrinsic(SrcNode<Ident>),
     Unsupported(Span, &'static str),
     NonNumeric(TyId, Span, NumLitr),
+    MissingLangItem(&'static str),
 }
 
 impl Error {
-    pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, writer: impl Write) {
+    pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, main_src: SrcId, writer: impl Write) {
         use ariadne::{Report, ReportKind, Label, Color, Fmt, Span};
 
         let display = |id| ctx.tys.display(&ctx.datas, id);
@@ -345,11 +346,11 @@ impl Error {
                     .join(", "))],
             ),
             Error::InvalidIntrinsic(intrinsic) => (
-                format!("Intrinsic {} does not exist", (*intrinsic).fg(Color::Red)),
+                format!("Intrinsic {} is not valid", (*intrinsic).fg(Color::Red)),
                 vec![
                     (intrinsic.span(), format!("No such intrinsic"), Color::Red),
                 ],
-                vec![],
+                vec![format!("Maybe the wrong number of arguments were used?")],
             ),
             Error::Unsupported(span, feature) => (
                 format!("Feature {} is not yet supported", feature.fg(Color::Yellow)),
@@ -366,9 +367,18 @@ impl Error {
                 ],
                 vec![format!("Numeric literals must be valid in the context of their use")],
             ),
+            Error::MissingLangItem(name) => (
+                format!("Lang item {} is missing", name.fg(Color::Yellow)),
+                Vec::new(),
+                vec![format!("All lang items must be defined")],
+            ),
         };
 
-        let mut report = Report::build(ReportKind::Error, spans.first().unwrap().0.src(), spans.first().unwrap().0.start())
+        let mut report = Report::build(
+            ReportKind::Error,
+            spans.first().map(|s| s.0.src()).unwrap_or(main_src),
+            spans.first().map(|s| s.0.start()).unwrap_or(0),
+        )
             .with_code(3)
             .with_message(msg);
 

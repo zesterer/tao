@@ -10,7 +10,7 @@ impl Pass for RemoveUnusedBindings {
         fn visit(
             mir: &Context,
             expr: &mut Expr,
-            stack: &mut Vec<(Ident, u64)>,
+            stack: &mut Vec<(Local, u64)>,
             proc_stack: &mut Vec<ProcId>,
         ) {
             match expr {
@@ -20,7 +20,7 @@ impl Pass for RemoveUnusedBindings {
                     // Increment uses
                     *n += 1;
                 } else {
-                    unreachable!()
+                    panic!("Could not find local ${} in {:?}", local.0, stack);
                 },
                 Expr::Intrinsic(op, args) => {
                     for arg in args.iter_mut() {
@@ -44,7 +44,7 @@ impl Pass for RemoveUnusedBindings {
                             stack.extend(arm.binding_names().into_iter().map(|name| (name, 0)));
                             visit(mir, body, stack, proc_stack);
 
-                            fn remove_unused(binding: &mut Binding, stack: &mut Vec<(Ident, u64)>) {
+                            fn remove_unused(binding: &mut Binding, stack: &mut Vec<(Local, u64)>) {
                                 if let Some(name) = binding.name {
                                     if stack.iter_mut().rev().find(|(n, _)| *n == name).unwrap().1 == 0 {
                                         binding.name = None;

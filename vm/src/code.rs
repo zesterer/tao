@@ -35,6 +35,7 @@ pub enum Instr {
 
     NotBool, // Bool -> Bool
     NegInt, // Int -> Int
+    NegReal, // Real -> Real
 
     AddInt, // Int -> Int -> Int
     SubInt, // Int -> Int -> Int
@@ -130,7 +131,8 @@ impl Program {
                 Instr::PopLocal(_) => 0,
                 Instr::GetLocal(_) => 1,
                 Instr::NotBool
-                | Instr::NegInt => 0,
+                | Instr::NegInt
+                | Instr::NegReal => 0,
                 Instr::AddInt
                 | Instr::SubInt
                 | Instr::MulInt
@@ -171,6 +173,7 @@ impl Program {
                 Instr::GetLocal(x) => format!("local.get +{}", x),
                 Instr::NotBool => format!("bool.not"),
                 Instr::NegInt => format!("int.neg"),
+                Instr::NegReal => format!("real.neg"),
                 Instr::AddInt => format!("int.add"),
                 Instr::SubInt => format!("int.sub"),
                 Instr::MulInt => format!("int.mul"),

@@ -93,7 +93,6 @@ enum Constraint {
     CheckFlow(TyVar, TyVar, EqInfo),
     // (record, field_name, field)
     Access(TyVar, SrcNode<Ident>, TyVar),
-    Unary(SrcNode<ast::UnaryOp>, TyVar, TyVar),
     Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
     Impl(TyVar, ClassId, Span, Vec<(SrcNode<Ident>, TyVar)>),
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
@@ -310,10 +309,6 @@ impl<'a> Infer<'a> {
         self.constraints.push_back(Constraint::Access(record, field_name, field));
     }
 
-    pub fn make_unary(&mut self, op: SrcNode<ast::UnaryOp>, a: TyVar, output: TyVar) {
-        self.constraints.push_back(Constraint::Unary(op, a, output));
-    }
-
     pub fn make_binary(&mut self, op: SrcNode<ast::BinaryOp>, a: TyVar, b: TyVar, output: TyVar) {
         self.constraints.push_back(Constraint::Binary(op, a, b, output));
     }
@@ -321,6 +316,13 @@ impl<'a> Infer<'a> {
     // `unchecked_assoc` allows unification of type variables with an instance's associated type
     pub fn make_impl(&mut self, ty: TyVar, class: ClassId, span: Span, unchecked_assoc: Vec<(SrcNode<Ident>, TyVar)>) {
         self.constraints.push_back(Constraint::Impl(ty, class, span, unchecked_assoc));
+    }
+
+    pub fn make_class_field_known(&mut self, ty: TyVar, field_name: SrcNode<Ident>, class_id: Option<ClassId>, field_ty: TyVar, span: Span) -> ClassVar {
+        let class = ClassVar(self.class_vars.len());
+        self.class_vars.push((span, class_id));
+        self.constraints.push_back(Constraint::ClassField(ty, class, field_name, field_ty, span));
+        class
     }
 
     pub fn make_class_field(&mut self, ty: TyVar, field_name: SrcNode<Ident>, field_ty: TyVar, span: Span) -> ClassVar {
@@ -682,7 +684,7 @@ impl<'a> Infer<'a> {
     }
 
     fn resolve(&mut self, c: Constraint) -> Option<Result<(), InferError>> {
-        use ast::{UnaryOp::*, BinaryOp::*};
+        use ast::BinaryOp::*;
         match c {
             Constraint::CheckFlow(x, y, info) => match self.check_flow_impl(x, y, info) {
                 Some(Ok(())) => Some(Ok(())),
@@ -733,24 +735,6 @@ impl<'a> Infer<'a> {
                     self.set_error(field);
                     Err(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
                 }),
-            Constraint::Unary(op, a, output) => match (&*op, self.follow_info(a)) {
-                (_, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
-                (_, TyInfo::Unknown(_)) => None,
-                (Union, _) => Some(Ok(TyInfo::Union(vec![self.follow(a)]))),
-                (Neg, TyInfo::Prim(Prim::Real)) => Some(Ok(TyInfo::Prim(Prim::Real))),
-                (Neg, TyInfo::Prim(Prim::Nat)) => Some(Ok(TyInfo::Prim(Prim::Int))),
-                (Neg, TyInfo::Prim(Prim::Int)) => Some(Ok(TyInfo::Prim(Prim::Int))),
-                (Not, TyInfo::Prim(Prim::Bool)) => Some(Ok(TyInfo::Prim(Prim::Bool))),
-                _ => {
-                    self.set_error(output);
-                    Some(Err(InferError::InvalidUnaryOp(op.clone(), a)))
-                },
-            }
-                .map(|info| info.map(|info| {
-                    // TODO: Use correct span
-                    let result_ty = self.insert(self.span(output), info);
-                    self.make_flow(result_ty, output, op.span()/*self.span(output)*/);
-                })),
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
                 (_, _, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
                 (_, TyInfo::Error(reason), _) => Some(Ok(TyInfo::Error(reason))),
@@ -886,8 +870,13 @@ impl<'a> Infer<'a> {
     }
 
     fn try_resolve_class_from_assoc(&mut self, ty: TyVar, class_var: ClassVar, assoc: SrcNode<Ident>, assoc_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
-        let Some(possible_classes) = self.find_class_candidates_from_item(ty, assoc.clone(), assoc_ty, true)
-            else { return Some(Ok(())) }; // Resolving an error type always succeeds;
+        let possible_classes = if let Some(class) = self.class_vars[class_var.0].1 {
+            std::iter::once(class).collect()
+        } else {
+            let Some(candidates) = self.find_class_candidates_from_item(ty, assoc.clone(), assoc_ty, true)
+                else { return Some(Ok(())) }; // Resolving an error type always succeeds;
+            candidates
+        };
         match possible_classes.len() {
             0 => {
                 self.set_error(assoc_ty);
@@ -913,8 +902,13 @@ impl<'a> Infer<'a> {
     }
 
     fn try_resolve_class_from_field(&mut self, ty: TyVar, class_var: ClassVar, field: SrcNode<Ident>, field_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
-        let Some(possible_classes) = self.find_class_candidates_from_item(ty, field.clone(), field_ty, false)
-            else { return Some(Ok(())) }; // Resolving an error type always succeeds;
+        let possible_classes = if let Some(class) = self.class_vars[class_var.0].1 {
+            std::iter::once(class).collect()
+        } else {
+            let Some(candidates) = self.find_class_candidates_from_item(ty, field.clone(), field_ty, false)
+                else { return Some(Ok(())) }; // Resolving an error type always succeeds;
+            candidates
+        };
         match possible_classes.len() {
             0 => {
                 self.set_error(field_ty);
@@ -1095,25 +1089,12 @@ impl<'a> Infer<'a> {
                 return Some(Ok(Err(true))); // Resolving an error type always succeeds
             },
             TyInfo::Unknown(_) => None, // No idea if it implements the trait yet
-            TyInfo::Gen(gen_idx, gen_scope, _) => {
-                if self
-                    .implied_obligations_for_gen(gen_scope, gen_idx)
-                    .into_iter()
-                    // .any(|c| self.ctx.classes.implies(c, obligation))
-                    .any(|c| c == obligation)
-                {
+            TyInfo::Gen(gen_idx, gen_scope, _) if self
+                .implied_obligations_for_gen(gen_scope, gen_idx)
+                .into_iter()
+                // .any(|c| self.ctx.classes.implies(c, obligation))
+                .any(|c| c == obligation) => {
                     Some(Ok(Err(false)))
-                } else {
-                    self.set_error(ty);
-                    Some(Err(InferError::TypeDoesNotFulfil(
-                        obligation,
-                        ty,
-                        span,
-                        Some(self.ctx.tys
-                            .get_gen_scope(gen_scope)
-                            .get(gen_idx).name.span()),
-                    )))
-                }
             },
             TyInfo::SelfType if {
                 let mut implied = HashSet::default();
@@ -1198,9 +1179,6 @@ impl<'a> Infer<'a> {
                 },
                 Constraint::Access(record, field_name, _field) => {
                     InferError::NoSuchItem(record, self.span(record), field_name.clone())
-                },
-                Constraint::Unary(op, a, _output) => {
-                    InferError::InvalidUnaryOp(op.clone(), a)
                 },
                 Constraint::Binary(op, a, b, _output) => {
                     InferError::InvalidBinaryOp(op.clone(), a, b)

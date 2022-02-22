@@ -217,7 +217,7 @@ impl Program {
         &mut self,
         mir: &MirContext,
         expr: &mir::Expr,
-        stack: &mut Vec<Ident>,
+        stack: &mut Vec<mir::Local>,
         proc_fixups: &mut Vec<(ProcId, Addr)>,
     ) {
         match &*expr {
@@ -228,7 +228,7 @@ impl Program {
                     .rev()
                     .enumerate()
                     .find(|(_, name)| *name == local)
-                    .unwrap()
+                    .unwrap_or_else(|| panic!("Tried to find local ${}, but it was not found. Stack: {:?}", local.0, stack))
                     .0;
                 self.push(Instr::GetLocal(idx));
             },
@@ -242,6 +242,7 @@ impl Program {
                     MakeList(_) => { self.push(Instr::MakeList(args.len())); },
                     NotBool => { self.push(Instr::NotBool); },
                     NegNat | NegInt => { self.push(Instr::NegInt); },
+                    NegReal => { self.push(Instr::NegReal); },
                     AddNat | AddInt => { self.push(Instr::AddInt); },
                     SubNat | SubInt => { self.push(Instr::SubInt); },
                     MulNat | MulInt => { self.push(Instr::MulInt); },
@@ -344,7 +345,7 @@ impl Program {
                         .rev()
                         .enumerate()
                         .find(|(_, name)| **name == capture)
-                        .unwrap_or_else(|| unreachable!("{}", capture))
+                        .unwrap_or_else(|| unreachable!("${}", capture.0))
                         .0;
                     self.push(Instr::GetLocal(idx));
                 }

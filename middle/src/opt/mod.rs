@@ -237,7 +237,7 @@ impl Expr {
         }
     }
 
-    pub fn inline_local(&mut self, name: Ident, local_expr: &Self) {
+    pub fn inline_local(&mut self, name: Local, local_expr: &Self) {
         match self {
             Expr::Local(local) if *local == name => *self = local_expr.clone(),
             Expr::Match(pred, arms) => {
@@ -334,7 +334,7 @@ pub fn prepare(ctx: &mut Context) {
 
 /// Check the self-consistency of the MIR
 pub fn check(ctx: &Context) {
-    fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Ident, Repr)>) {
+    fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (&binding.pat, repr) {
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
@@ -348,14 +348,14 @@ pub fn check(ctx: &Context) {
         binding.for_children(|binding| check_binding(ctx, binding, binding.meta(), stack));
     }
 
-    fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Ident, Repr)>) {
+    fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (expr, repr) {
             (Expr::Const(Const::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Expr::Local(local), repr) if &stack
                 .iter()
                 .rev()
                 .find(|(name, _)| name == local)
-                .unwrap_or_else(|| panic!("Failed to find local {} in scope", local)).1 == repr => {},
+                .unwrap_or_else(|| panic!("Failed to find local ${} in scope", local.0)).1 == repr => {},
             (Expr::Func(_, i, body), Repr::Func(i_repr, _)) => {
                 stack.push((*i, (**i_repr).clone()));
                 visit_expr(ctx, body, stack);
@@ -374,12 +374,16 @@ pub fn check(ctx: &Context) {
                 }
                 expr.for_children(|expr| visit_expr(ctx, expr, stack));
             },
+            (Expr::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => {
+                check_expr(ctx, inner, &variants[*idx], stack);
+                expr.for_children(|expr| visit_expr(ctx, expr, stack));
+            },
             // (Expr::Data(_, _, _), Repr::Func(_, _)) => {},
             (expr, repr) => panic!("Inconsistency between expression\n\n {:?}\n\nand repr {:?}", expr, repr),
         }
     }
 
-    fn visit_expr(ctx: &Context, expr: &MirNode<Expr>, stack: &mut Vec<(Ident, Repr)>) {
+    fn visit_expr(ctx: &Context, expr: &MirNode<Expr>, stack: &mut Vec<(Local, Repr)>) {
         check_expr(ctx, expr.inner(), expr.meta(), stack);
     }
 

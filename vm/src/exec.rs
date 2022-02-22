@@ -28,7 +28,8 @@ impl fmt::Display for Value {
             Value::Int(x) => write!(f, "{}i", x),
             Value::Real(x) => write!(f, "{}f", x),
             Value::Char(c) => write!(f, "{}", c),
-            Value::Bool(x) => write!(f, "{}", x),
+            Value::Bool(true) => write!(f, "True"),
+            Value::Bool(false) => write!(f, "False"),
             Value::List(items) => match items.iter().next() {
                 Some(Value::Char(_)) => items
                     .iter()
@@ -161,6 +162,10 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::NegInt => {
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::Int(-x))
+            },
+            Instr::NegReal => {
+                let x = stack.pop().unwrap().real();
+                stack.push(Value::Real(-x))
             },
             Instr::AddInt => {
                 let y = stack.pop().unwrap().int();

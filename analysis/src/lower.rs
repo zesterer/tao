@@ -448,9 +448,24 @@ impl ToHir for ast::Expr {
             ast::Expr::Unary(op, a) => {
                 let a = a.to_hir(infer, scope);
                 let output_ty = infer.unknown(self.span());
-                infer.make_unary(op.clone(), a.meta().1, output_ty);
-                (TyInfo::Ref(output_ty), hir::Expr::Unary(op.clone(), a))
+
+                let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, output_ty));
+
+                let (class, field) = match &**op {
+                    ast::UnaryOp::Not => (infer.ctx().classes.lang.not, SrcNode::new(Ident::new("not"), op.span())),
+                    ast::UnaryOp::Neg => (infer.ctx().classes.lang.neg, SrcNode::new(Ident::new("neg"), op.span())),
+                    ast::UnaryOp::Union => (infer.ctx().classes.lang.union, SrcNode::new(Ident::new("union"), op.span())),
+                };
+                let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, op.span());
+
+                (TyInfo::Ref(output_ty), hir::Expr::Apply(Node::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)), a))
             },
+                // _ => {
+                //     let a = a.to_hir(infer, scope);
+                //     let output_ty = infer.unknown(self.span());
+                //     infer.make_unary(op.clone(), a.meta().1, output_ty);
+                //     (TyInfo::Ref(output_ty), hir::Expr::Unary(op.clone(), a))
+                // },
             ast::Expr::Binary(op, a, b) => {
                 let a = a.to_hir(infer, scope);
                 let b = b.to_hir(infer, scope);
@@ -465,7 +480,7 @@ impl ToHir for ast::Expr {
                             let binding = binding.to_hir(infer, scope);
                             let val = val.to_hir(infer, scope);
                             infer.make_flow(val.meta().1, binding.meta().1, binding.meta().0);
-                            let then = fold(then, bindings, infer, &scope.with_many(binding.get_bindings()));
+                            let then = fold(then, bindings, infer, &scope.with_many(binding.get_binding_tys()));
                             let span = binding.meta().0;
                             let ty = then.meta().1; // TODO: Make a TyInfo::Ref?
                             InferNode::new(hir::Expr::Match(
@@ -503,7 +518,7 @@ impl ToHir for ast::Expr {
                         .map(|(bindings, body)| {
                             let binding = tupleify_binding(bindings, infer, scope);
                             infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
-                            let body = body.to_hir(infer, &scope.with_many(binding.get_bindings()));
+                            let body = body.to_hir(infer, &scope.with_many(binding.get_binding_tys()));
                             infer.make_flow(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                             (binding, body)
                         })
@@ -561,7 +576,7 @@ impl ToHir for ast::Expr {
                             .map(|(bindings, body)| {
                                 let binding = tupleify_binding(bindings, infer, scope);
                                 infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
-                                let body = body.to_hir(infer, &scope.with_many(binding.get_bindings()));
+                                let body = body.to_hir(infer, &scope.with_many(binding.get_binding_tys()));
                                 infer.make_flow(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                                 (binding, body)
                             })
@@ -668,9 +683,30 @@ impl ToHir for ast::Expr {
                     .map(|arg| arg.to_hir(infer, scope))
                     .collect::<Vec<_>>();
                 match name.as_str() {
-                    "type_name" => {
+                    "type_name" if args.len() == 1 => {
                         let c = infer.insert(name.span(), TyInfo::Prim(Prim::Char));
                         (TyInfo::List(c), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TypeName, name.span()), args))
+                    },
+                    "union" if args.len() == 1 => {
+                        (TyInfo::Union(vec![args[0].meta().1]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Union, name.span()), args))
+                    },
+                    "neg_nat" if args.len() == 1 => {
+                        let a = &args[0];
+                        let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Nat));
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::default());
+                        (TyInfo::Prim(Prim::Int), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegNat, name.span()), args))
+                    },
+                    "neg_int" if args.len() == 1 => {
+                        let a = &args[0];
+                        let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Int));
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::default());
+                        (TyInfo::Prim(Prim::Int), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegInt, name.span()), args))
+                    },
+                    "neg_real" if args.len() == 1 => {
+                        let a = &args[0];
+                        let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Real));
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::default());
+                        (TyInfo::Prim(Prim::Real), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegReal, name.span()), args))
                     },
                     _ => {
                         infer.ctx_mut().emit(Error::InvalidIntrinsic(name.clone()));

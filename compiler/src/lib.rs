@@ -128,14 +128,14 @@ pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, option
 
         if !analysis_errors.is_empty() || syntax_error {
             for e in analysis_errors {
-                e.write(&ctx, &mut srcs, &mut writer);
+                e.write(&ctx, &mut srcs, src_id, &mut writer);
             }
         } else {
             let (concrete, mut con_errors) = ctx.concretize();
 
             if !con_errors.is_empty() {
                 for e in con_errors {
-                    e.write(&ctx, &mut srcs, &mut writer);
+                    e.write(&ctx, &mut srcs, src_id, &mut writer);
                 }
             } else {
                 let mut ctx = Context::from_concrete(&ctx, &concrete);

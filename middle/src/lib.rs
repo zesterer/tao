@@ -12,7 +12,7 @@ pub use crate::{
     error::Error,
     opt::Pass,
     proc::{ProcId, Proc, Procs},
-    mir::{MirNode, Pat, Binding, Expr, Const, Intrinsic},
+    mir::{MirNode, Pat, Binding, Expr, Const, Intrinsic, Local},
     repr::{Repr, Reprs, Prim},
     context::Context,
 };

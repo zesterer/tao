@@ -4,10 +4,42 @@
 
 $[lang(not)]
 class Not =
-    => not : Self -> Self
+    => Output
+    => not : Self -> Self.Output
 
 member Bool of Not =
-    => not = fn x => !x
+    => Output = Self
+    => not = fn
+        | True => False
+        \ False => True
+
+# Not
+
+$[lang(neg)]
+class Neg =
+    => Output
+    => neg : Self -> Self.Output
+
+member Nat of Neg =
+    => Output = Int
+    => neg = fn x => @neg_nat(x)
+
+member Int of Neg =
+    => Output = Int
+    => neg = fn x => @neg_int(x)
+
+member Real of Neg =
+    => Output = Real
+    => neg = fn x => @neg_real(x)
+
+# Union
+
+$[lang(union)]
+class Union =
+    => union : Self -> (Self|)
+
+for A member A of Union =
+    => union = fn x => @union(x)
 
 # Add
 

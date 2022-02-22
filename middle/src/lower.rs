@@ -24,7 +24,7 @@ impl Context {
         if !self.procs.is_declared(id) {
             self.procs.declare(id);
             let proc = Proc {
-                body: self.lower_expr(hir, con, con.get_def(def)),
+                body: self.lower_expr(hir, con, con.get_def(def), &mut Vec::new()),
             };
             self.procs.define(id, proc);
         }
@@ -97,27 +97,27 @@ impl Context {
         }
     }
 
-    pub fn lower_binding(&mut self, hir: &HirContext, con: &ConContext, con_binding: &ConBinding) -> mir::MirNode<mir::Binding> {
+    pub fn lower_binding(&mut self, hir: &HirContext, con: &ConContext, con_binding: &ConBinding, bindings: &mut Vec<(Ident, Local)>) -> mir::MirNode<mir::Binding> {
         let pat = match &*con_binding.pat {
             hir::Pat::Error => unreachable!(),
             hir::Pat::Wildcard => mir::Pat::Wildcard,
             hir::Pat::Literal(litr) => mir::Pat::Const(self.lower_litr(hir, con, litr)),
-            hir::Pat::Single(inner) => mir::Pat::Single(self.lower_binding(hir, con, inner)),
-            hir::Pat::Add(lhs, rhs) => mir::Pat::Add(self.lower_binding(hir, con, lhs), **rhs),
+            hir::Pat::Single(inner) => mir::Pat::Single(self.lower_binding(hir, con, inner, bindings)),
+            hir::Pat::Add(lhs, rhs) => mir::Pat::Add(self.lower_binding(hir, con, lhs, bindings), **rhs),
             hir::Pat::Tuple(fields) => mir::Pat::Tuple(fields
                 .iter()
-                .map(|field| self.lower_binding(hir, con, field))
+                .map(|field| self.lower_binding(hir, con, field, bindings))
                 .collect()),
             hir::Pat::ListExact(items) => mir::Pat::ListExact(items
                 .iter()
-                .map(|item| self.lower_binding(hir, con, item))
+                .map(|item| self.lower_binding(hir, con, item, bindings))
                 .collect()),
             hir::Pat::ListFront(items, tail) => mir::Pat::ListFront(
                 items
                     .iter()
-                    .map(|item| self.lower_binding(hir, con, item))
+                    .map(|item| self.lower_binding(hir, con, item, bindings))
                     .collect(),
-                tail.as_ref().map(|tail| self.lower_binding(hir, con, tail)),
+                tail.as_ref().map(|tail| self.lower_binding(hir, con, tail, bindings)),
             ),
             hir::Pat::Decons(data, variant, inner) => {
                 let variant = hir.datas
@@ -128,60 +128,49 @@ impl Context {
                     .find(|(_, (name, _))| **name == *variant)
                     .unwrap()
                     .0;
-                mir::Pat::Variant(variant, self.lower_binding(hir, con, inner))
+                mir::Pat::Variant(variant, self.lower_binding(hir, con, inner, bindings))
             },
             hir::Pat::Record(fields) => {
                 let mut fields = fields
                     .iter()
-                    .map(|(name, field)| (*name, self.lower_binding(hir, con, field)))
+                    .map(|(name, field)| (*name, self.lower_binding(hir, con, field, bindings)))
                     .collect::<Vec<_>>();
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 mir::Pat::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             },
             hir::Pat::Union(inner) => {
                 let id = inner.meta().id();
-                mir::Pat::UnionVariant(id, self.lower_binding(hir, con, inner))
+                mir::Pat::UnionVariant(id, self.lower_binding(hir, con, inner, bindings))
             },
             pat => todo!("{:?}", pat),
         };
 
         let binding = mir::Binding {
             pat,
-            name: con_binding.name.as_ref().map(|n| **n),
+            name: if let Some(name) = &con_binding.name {
+                let local = Local::new();
+                bindings.push((**name, local));
+                Some(local)
+            } else {
+                None
+            },
         };
 
         MirNode::new(binding, self.lower_ty(hir, con, *con_binding.meta()))
     }
 
-    pub fn lower_expr(&mut self, hir: &HirContext, con: &ConContext, con_expr: &ConExpr) -> mir::MirNode<mir::Expr> {
+    pub fn lower_expr(&mut self, hir: &HirContext, con: &ConContext, con_expr: &ConExpr, stack: &mut Vec<(Ident, Local)>) -> mir::MirNode<mir::Expr> {
         let expr = match &**con_expr {
             hir::Expr::Error => unreachable!(),
             hir::Expr::Literal(litr) => mir::Expr::Const(self.lower_litr(hir, con, litr)),
-            hir::Expr::Local(local) => mir::Expr::Local(*local),
+            hir::Expr::Local(local) => mir::Expr::Local(stack
+                .iter()
+                .rev()
+                .find(|(name, _)| name == local)
+                .expect("No such local")
+                .1),
             hir::Expr::Global(def_id, args) => {
                 mir::Expr::Global(self.lower_def(hir, con, Intern::new((*def_id, args.clone()))), Default::default())
-            },
-            // Special case union op
-            // TODO: Make this good
-            hir::Expr::Unary(op, x) => if let ast::UnaryOp::Union = **op {
-                let inner = self.lower_expr(hir, con, x);
-                // If the inner value is already a union, we 'flatten' the union without wrapping it in another union.
-                // This happens because unions types/values are, by default, flattened.
-                match con.get_ty(*x.meta()) {
-                    ConTy::Union(_) => inner.into_inner(),
-                    _ => mir::Expr::UnionVariant(x.meta().id(), inner),
-                }
-            } else {
-                use ast::UnaryOp::*;
-                use ty::Prim::*;
-                use ConTy::{Prim, List};
-                let intrinsic = match (**op, con.get_ty(*x.meta())) {
-                    (Not, Prim(Bool)) => mir::Intrinsic::NotBool,
-                    (Neg, Prim(Nat)) => mir::Intrinsic::NegNat,
-                    (Neg, Prim(Int)) => mir::Intrinsic::NegInt,
-                    op => panic!("Invalid unary op in HIR: {:?}", op),
-                };
-                mir::Expr::Intrinsic(intrinsic, vec![self.lower_expr(hir, con, x)])
             },
             hir::Expr::Binary(op, x, y) => {
                 use ast::BinaryOp::*;
@@ -211,25 +200,31 @@ impl Context {
                     (Join, List(x), List(y)) => mir::Intrinsic::Join(self.lower_ty(hir, con, *x)), // Assume x = y
                     op => panic!("Invalid binary op in HIR: {:?}", op),
                 };
-                mir::Expr::Intrinsic(intrinsic, vec![self.lower_expr(hir, con, x), self.lower_expr(hir, con, y)])
+                mir::Expr::Intrinsic(intrinsic, vec![self.lower_expr(hir, con, x, stack), self.lower_expr(hir, con, y, stack)])
             },
             hir::Expr::Match(_, pred, arms) => {
                 let arms = arms
                     .iter()
-                    .map(|(binding, body)| (self.lower_binding(hir, con, binding), self.lower_expr(hir, con, body)))
+                    .map(|(binding, arm)| {
+                        let old_stack = stack.len();
+                        let binding = self.lower_binding(hir, con, binding, stack);
+                        let arm = self.lower_expr(hir, con, arm, stack);
+                        stack.truncate(old_stack);
+                        (binding, arm)
+                    })
                     .collect();
-                mir::Expr::Match(self.lower_expr(hir, con, pred), arms)
+                mir::Expr::Match(self.lower_expr(hir, con, pred, stack), arms)
             },
             hir::Expr::Tuple(fields) => mir::Expr::Tuple(fields
                 .iter()
-                .map(|field| self.lower_expr(hir, con, field))
+                .map(|field| self.lower_expr(hir, con, field, stack))
                 .collect()),
             hir::Expr::List(items) => mir::Expr::List(items
                 .iter()
-                .map(|item| self.lower_expr(hir, con, item))
+                .map(|item| self.lower_expr(hir, con, item, stack))
                 .collect()),
             hir::Expr::ListFront(items, tail) => {
-                let tail = self.lower_expr(hir, con, tail);
+                let tail = self.lower_expr(hir, con, tail, stack);
                 mir::Expr::Intrinsic(
                     mir::Intrinsic::Join(match tail.meta() {
                         Repr::List(item) => (**item).clone(),
@@ -238,17 +233,38 @@ impl Context {
                     vec![
                         MirNode::new(mir::Expr::List(items
                             .iter()
-                            .map(|item| self.lower_expr(hir, con, item))
+                            .map(|item| self.lower_expr(hir, con, item, stack))
                             .collect()), tail.meta().clone()),
                         tail,
                     ],
                 )
             },
             hir::Expr::Func(arg, body) => {
-                let body = self.lower_expr(hir, con, body);
-                mir::Expr::Func(body.required_locals(Some(**arg)), **arg, body)
+                let old_stack = stack.len();
+                let captures = body
+                    .required_locals(Some(**arg))
+                    .into_iter()
+                    .map(|local| {
+                        let local = stack
+                            .iter()
+                            .rev()
+                            .find(|(name, _)| *name == local)
+                            .expect("No such local")
+                            .1;
+                        local
+                    })
+                    .collect();
+
+                let arg_local = Local::new();
+                stack.push((**arg, arg_local));
+
+                let body = self.lower_expr(hir, con, body, stack);
+
+                stack.truncate(old_stack);
+
+                mir::Expr::Func(captures, arg_local, body)
             },
-            hir::Expr::Apply(f, arg) => mir::Expr::Apply(self.lower_expr(hir, con, f), self.lower_expr(hir, con, arg)),
+            hir::Expr::Apply(f, arg) => mir::Expr::Apply(self.lower_expr(hir, con, f, stack), self.lower_expr(hir, con, arg, stack)),
             hir::Expr::Cons(data, variant, inner) => {
                 let variant = hir.datas
                     .get_data(**data)
@@ -258,7 +274,7 @@ impl Context {
                     .find(|(_, (name, _))| **name == *variant)
                     .unwrap()
                     .0;
-                mir::Expr::Variant(variant, self.lower_expr(hir, con, inner))
+                mir::Expr::Variant(variant, self.lower_expr(hir, con, inner, stack))
             },
             hir::Expr::Access(record, field) => {
                 let (record_ty, _, indirections) = con.follow_field_access(hir, *record.meta(), **field).unwrap();
@@ -269,7 +285,7 @@ impl Context {
                 } else {
                     unreachable!();
                 };
-                let mut record = self.lower_expr(hir, con, record);
+                let mut record = self.lower_expr(hir, con, record, stack);
                 // Perform indirections for field accesses
                 for _ in 0..indirections {
                     let variant_repr = if let Repr::Data(data) = record.meta() {
@@ -289,13 +305,13 @@ impl Context {
             hir::Expr::Record(fields) => {
                 let mut fields = fields
                     .iter()
-                    .map(|(name, field)| (**name, self.lower_expr(hir, con, field)))
+                    .map(|(name, field)| (**name, self.lower_expr(hir, con, field, stack)))
                     .collect::<Vec<_>>();
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 mir::Expr::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             },
             hir::Expr::ClassAccess(ty, class, field) => panic!("Class access should not still exist during MIR lowering"),
-            hir::Expr::Debug(inner) => mir::Expr::Debug(self.lower_expr(hir, con, inner)),
+            hir::Expr::Debug(inner) => mir::Expr::Debug(self.lower_expr(hir, con, inner, stack)),
             hir::Expr::Intrinsic(name, args) => {
                 match name.inner() {
                     hir::Intrinsic::TypeName => {
@@ -305,6 +321,19 @@ impl Context {
                         };
                         mir::Expr::Const(Const::Str(Intern::new(name)))
                     },
+                    hir::Intrinsic::Union => {
+                        let a = &args[0];
+                        let inner = self.lower_expr(hir, con, a, stack);
+                        // If the inner value is already a union, we 'flatten' the union without wrapping it in another union.
+                        // This happens because unions types/values are, by default, flattened.
+                        match con.get_ty(*a.meta()) {
+                            ConTy::Union(_) => inner.into_inner(),
+                            _ => mir::Expr::UnionVariant(a.meta().id(), inner),
+                        }
+                    },
+                    hir::Intrinsic::NegNat => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
+                    hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
+                    hir::Intrinsic::NegReal => mir::Expr::Intrinsic(mir::Intrinsic::NegReal, vec![self.lower_expr(hir, con, &args[0], stack)]),
                 }
             },
         };

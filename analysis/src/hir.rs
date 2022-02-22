@@ -43,6 +43,10 @@ pub struct Binding<M: Meta> {
     pub name: Option<SrcNode<Ident>>,
 }
 
+pub type InferBinding = InferNode<Binding<InferMeta>>;
+pub type TyBinding = TyNode<Binding<TyMeta>>;
+pub type ConBinding = ConNode<Binding<ConMeta>>;
+
 impl<M: Meta> Binding<M> {
     pub fn from_pat(pat: SrcNode<Pat<M>>) -> Self {
         Self { pat, name: None }
@@ -54,49 +58,51 @@ impl<M: Meta> Binding<M> {
 }
 
 impl Binding<InferMeta> {
-    pub fn get_bindings(self: &InferNode<Self>) -> Vec<(SrcNode<Ident>, TyVar)> {
+    pub fn get_binding_tys(self: &InferNode<Self>) -> Vec<(SrcNode<Ident>, TyVar)> {
         let mut bindings = Vec::new();
-        self.get_bindings_inner(&mut bindings);
+        self.visit_bindings_inner(&mut |name, (_, ty)| bindings.push((name.clone(), *ty)));
         bindings
     }
+}
 
-    fn get_bindings_inner(self: &InferNode<Self>, bindings: &mut Vec<(SrcNode<Ident>, TyVar)>) {
+impl<M: Meta> Binding<M> {
+    fn visit_bindings_inner(self: &Node<Self, M>, visit: &mut impl FnMut(&SrcNode<Ident>, &M)) {
         // TODO: Check for duplicates!
-        if let Some(name) = &self.name { bindings.push((name.clone(), self.meta().1)) };
+        if let Some(name) = &self.name { visit(name, self.meta()); };
         match &*self.pat {
             Pat::Error => {},
             Pat::Wildcard => {},
             Pat::Literal(_) => {},
-            Pat::Single(inner) => inner.get_bindings_inner(bindings),
-            Pat::Union(inner) => inner.get_bindings_inner(bindings),
-            Pat::Add(lhs, _) => lhs.get_bindings_inner(bindings),
+            Pat::Single(inner) => inner.visit_bindings_inner(visit),
+            Pat::Union(inner) => inner.visit_bindings_inner(visit),
+            Pat::Add(lhs, _) => lhs.visit_bindings_inner(visit),
             Pat::Tuple(items) => items
                 .iter()
-                .for_each(|item| item.get_bindings_inner(bindings)),
+                .for_each(|item| item.visit_bindings_inner(visit)),
             Pat::Record(fields) => fields
                 .values()
-                .for_each(|field| field.get_bindings_inner(bindings)),
+                .for_each(|field| field.visit_bindings_inner(visit)),
             Pat::ListExact(items) => items
                 .iter()
-                .for_each(|item| item.get_bindings_inner(bindings)),
+                .for_each(|item| item.visit_bindings_inner(visit)),
             Pat::ListFront(items, tail) => {
                 items
                     .iter()
-                    .for_each(|item| item.get_bindings_inner(bindings));
-                if let Some(tail) = tail { tail.get_bindings_inner(bindings); }
+                    .for_each(|item| item.visit_bindings_inner(visit));
+                if let Some(tail) = tail { tail.visit_bindings_inner(visit); }
             },
-            Pat::Decons(_, _, inner) => inner.get_bindings_inner(bindings),
+            Pat::Decons(_, _, inner) => inner.visit_bindings_inner(visit),
         }
     }
 }
 
-pub type InferBinding = InferNode<Binding<InferMeta>>;
-pub type TyBinding = TyNode<Binding<TyMeta>>;
-pub type ConBinding = ConNode<Binding<ConMeta>>;
-
 #[derive(Clone, Debug)]
 pub enum Intrinsic {
     TypeName,
+    Union,
+    NegNat,
+    NegInt,
+    NegReal,
 }
 
 #[derive(Debug)]
@@ -111,7 +117,6 @@ pub enum Expr<M: Meta> {
     ListFront(Vec<Node<Self, M>>, Node<Self, M>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
     Access(Node<Self, M>, SrcNode<Ident>),
-    Unary(SrcNode<ast::UnaryOp>, Node<Self, M>),
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
     // hidden_outer
     Match(bool, Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
@@ -129,3 +134,68 @@ pub enum Expr<M: Meta> {
 pub type InferExpr = InferNode<Expr<InferMeta>>;
 pub type TyExpr = TyNode<Expr<TyMeta>>;
 pub type ConExpr = ConNode<Expr<ConMeta>>;
+
+impl Expr<ConMeta> {
+    fn required_locals_inner(&self, stack: &mut Vec<Ident>, required: &mut Vec<Ident>) {
+        match self {
+            Expr::Literal(_) | Expr::Error => {},
+            Expr::Local(local) => {
+                if !stack.contains(local) {
+                    required.push(*local);
+                }
+            },
+            Expr::Global(_, _) => {},
+            Expr::Intrinsic(_, args) => args
+                .iter()
+                .for_each(|arg| arg.required_locals_inner(stack, required)),
+            Expr::Match(_, pred, arms) => {
+                pred.required_locals_inner(stack, required);
+                for (arm, body) in arms {
+                    let old_stack = stack.len();
+                    arm.visit_bindings_inner(&mut |name, _| stack.push(**name));
+                    body.required_locals_inner(stack, required);
+                    stack.truncate(old_stack);
+                }
+            },
+            Expr::Func(arg, body) => {
+                stack.push(**arg);
+                body.required_locals_inner(stack, required);
+                stack.pop();
+            },
+            Expr::Apply(f, arg) => {
+                f.required_locals_inner(stack, required);
+                arg.required_locals_inner(stack, required);
+            },
+            Expr::Binary(_, x, y) => {
+                x.required_locals_inner(stack, required);
+                y.required_locals_inner(stack, required);
+            },
+            Expr::Tuple(fields) => fields
+                .iter()
+                .for_each(|field| field.required_locals_inner(stack, required)),
+            Expr::Record(fields) => fields
+                .iter()
+                .for_each(|(_, field)| field.required_locals_inner(stack, required)),
+            Expr::List(items) => items
+                .iter()
+                .for_each(|item| item.required_locals_inner(stack, required)),
+            Expr::ListFront(items, tail) => {
+                items
+                    .iter()
+                    .for_each(|item| item.required_locals_inner(stack, required));
+                tail.required_locals_inner(stack, required);
+            },
+            Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
+            Expr::Cons(_, _, inner) => inner.required_locals_inner(stack, required),
+            Expr::Access(inner, _) => inner.required_locals_inner(stack, required),
+            Expr::ClassAccess(_, _, _) => {},
+            Expr::Debug(inner) => inner.required_locals_inner(stack, required),
+        }
+    }
+
+    pub fn required_locals(&self, already_has: impl IntoIterator<Item = Ident>) -> Vec<Ident> {
+        let mut required = Vec::new();
+        self.required_locals_inner(&mut already_has.into_iter().collect(), &mut required);
+        required
+    }
+}
