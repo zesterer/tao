@@ -262,6 +262,10 @@ impl Program {
                     LessEqNat | LessEqInt => { self.push(Instr::LessEqInt); },
                     MoreEqNat | MoreEqInt => { self.push(Instr::MoreEqInt); },
                     Join(_) => { self.push(Instr::JoinList); },
+                    Union(ty) => {
+                        assert_eq!(*ty as usize as u64, *ty, "usize too small for this union variant");
+                        self.push(Instr::MakeSum(*ty as usize));
+                    },
                 };
             },
             mir::Expr::Tuple(fields) => {
@@ -374,11 +378,6 @@ impl Program {
             mir::Expr::AccessVariant(inner, variant) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
                 self.push(Instr::IndexSum(*variant));
-            },
-            mir::Expr::UnionVariant(id, inner) => {
-                self.compile_expr(mir, inner, stack, proc_fixups);
-                assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-                self.push(Instr::MakeSum(*id as usize));
             },
             mir::Expr::Debug(inner) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);

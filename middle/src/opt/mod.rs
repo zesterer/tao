@@ -221,7 +221,6 @@ impl Expr {
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
-            Expr::UnionVariant(_, inner) => f(inner),
             Expr::Debug(inner) => f(inner),
         }
     }
@@ -254,7 +253,6 @@ impl Expr {
             Expr::Access(record, _) => f(record),
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
-            Expr::UnionVariant(_, inner) => f(inner),
             Expr::Debug(inner) => f(inner),
         }
     }
@@ -320,7 +318,6 @@ impl Expr {
             Expr::Access(record, _) => record.visit_inner(order, repr, binding, expr),
             Expr::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             Expr::AccessVariant(inner, _) => inner.visit_inner(order, repr, binding, expr),
-            Expr::UnionVariant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             Expr::Debug(inner) => inner.visit_inner(order, repr, binding, expr),
         }
 

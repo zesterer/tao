@@ -311,7 +311,7 @@ impl Context {
                         // This happens because unions types/values are, by default, flattened.
                         match con.get_ty(*a.meta()) {
                             ConTy::Union(_) => inner.into_inner(),
-                            _ => mir::Expr::UnionVariant(a.meta().id(), inner),
+                            _ => mir::Expr::Intrinsic(Intrinsic::Union(a.meta().id()), vec![inner]),
                         }
                     },
                     hir::Intrinsic::NegNat => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),

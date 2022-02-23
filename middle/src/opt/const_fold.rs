@@ -219,9 +219,6 @@ impl Pass for ConstFold {
                         *expr = Expr::Literal((**inner).clone());
                     }
                 },
-                Expr::UnionVariant(id, inner) => {
-                    visit(mir, inner, stack, proc_stack);
-                },
                 Expr::Debug(inner) => {
                     visit(mir, inner, stack, proc_stack);
                 },

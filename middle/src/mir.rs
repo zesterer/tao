@@ -112,6 +112,7 @@ pub enum Intrinsic {
     MoreEqNat,
     MoreEqInt,
     Join(Repr),
+    Union(u64), // Type ID
 }
 
 #[derive(Clone, Debug)]
@@ -251,8 +252,6 @@ pub enum Expr {
     Variant(usize, MirNode<Self>),
     AccessVariant(MirNode<Self>, usize), // Unsafely assume the value is a specific variant
 
-    UnionVariant(u64, MirNode<Self>),
-
     Debug(MirNode<Self>),
 }
 
@@ -347,7 +346,6 @@ impl Expr {
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Variant(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessVariant(inner, _) => inner.required_locals_inner(stack, required),
-            Expr::UnionVariant(_, inner) => inner.required_locals_inner(stack, required),
             Expr::Debug(inner) => inner.required_locals_inner(stack, required),
         }
     }
@@ -406,7 +404,6 @@ impl Expr {
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),
-                    Expr::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayExpr(inner, self.1, false)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
                     Expr::Intrinsic(NotBool, args) => write!(f, "!{}", DisplayExpr(&args[0], self.1, false)),
@@ -420,6 +417,7 @@ impl Expr {
                     Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(Union(_), args) => write!(f, "?{}", DisplayExpr(&args[0], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
                         write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))
