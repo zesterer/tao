@@ -1,6 +1,6 @@
 #! Arithmetic operations.
 
-import "lib/std/ops.tao"
+import "lib/core/ops.tao"
 
 class Zero =
     => zero : Self

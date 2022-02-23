@@ -111,7 +111,7 @@ impl Repr {
 impl Binding {
     pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
         match &self.pat {
-            mir::Pat::Wildcard | mir::Pat::Const(_) => {},
+            mir::Pat::Wildcard | mir::Pat::Literal(_) => {},
             mir::Pat::Single(inner) => f(inner),
             mir::Pat::Add(lhs, _) => f(lhs),
             mir::Pat::Tuple(fields) => fields
@@ -133,7 +133,7 @@ impl Binding {
 
     pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut MirNode<Self>)) {
         match &mut self.pat {
-            mir::Pat::Wildcard | mir::Pat::Const(_) => {},
+            mir::Pat::Wildcard | mir::Pat::Literal(_) => {},
             mir::Pat::Single(inner) => f(inner),
             mir::Pat::Add(lhs, _) => f(lhs),
             mir::Pat::Tuple(fields) => fields
@@ -167,7 +167,7 @@ impl Binding {
         self.meta_mut().visit_inner(order, repr, binding, expr);
 
         match &mut self.pat {
-            mir::Pat::Wildcard | mir::Pat::Const(_) => {},
+            mir::Pat::Wildcard | mir::Pat::Literal(_) => {},
             mir::Pat::Single(inner) => inner.visit_inner(order, repr, binding, expr),
             mir::Pat::Add(lhs, _) => lhs.visit_inner(order, repr, binding, expr),
             mir::Pat::Tuple(fields) => fields
@@ -195,7 +195,7 @@ impl Binding {
 impl Expr {
     pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
         match self {
-            Expr::Const(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| f(arg)),
@@ -228,7 +228,7 @@ impl Expr {
 
     pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut MirNode<Self>)) {
         match self {
-            Expr::Const(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
                 .iter_mut()
                 .for_each(|arg| f(arg)),
@@ -293,7 +293,7 @@ impl Expr {
         self.meta_mut().visit_inner(order, repr, binding, expr);
 
         match &mut **self {
-            Expr::Const(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
                 .iter_mut()
                 .for_each(|arg| arg.visit_inner(order, repr, binding, expr)),
@@ -358,7 +358,7 @@ pub fn prepare(ctx: &mut Context) {
 pub fn check(ctx: &Context) {
     fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (&binding.pat, repr) {
-            (Pat::Const(Const::Bool(_)), Repr::Prim(Prim::Bool)) => {},
+            (Pat::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
             (Pat::Variant(_, _), Repr::Data(_)) => {},
@@ -374,8 +374,8 @@ pub fn check(ctx: &Context) {
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (expr, repr) {
-            (Expr::Const(Const::Bool(_)), Repr::Prim(Prim::Bool)) => {},
-            (Expr::Const(Const::Nat(_)), Repr::Prim(Prim::Nat)) => {},
+            (Expr::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
+            (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {},
             (Expr::Global(_, _), _) => {}, // TODO
             (Expr::Local(local), repr) if &stack
                 .iter()

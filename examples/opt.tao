@@ -1,0 +1,12 @@
+import "lib/core.tao"
+
+data Result A, E =
+    | Ok A
+    \ Err E
+
+$[main]
+def main =
+    let x = Ok 5 in
+    match x in
+    | Ok x => x
+    \ Err x => x

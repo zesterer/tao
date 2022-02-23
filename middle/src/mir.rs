@@ -12,7 +12,8 @@ pub type MirNode<T> = Node<T, MirMeta>;
 pub struct LocalId(usize);
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Const {
+pub enum Const<U> {
+    Unknown(U), // Value not currently known
     Nat(u64),
     Int(i64),
     Real(f64),
@@ -25,11 +26,62 @@ pub enum Const {
     Union(u64, Box<Self>),
 }
 
-impl Const {
+pub type Literal = Const<!>;
+pub type Partial = Const<()>;
+
+impl<U: fmt::Debug + Clone> Const<U> {
     pub fn nat(&self) -> u64 { if let Const::Nat(x) = self { *x } else { panic!("{:?}", self) } }
     pub fn int(&self) -> i64 { if let Const::Int(x) = self { *x } else { panic!("{:?}", self) } }
     pub fn bool(&self) -> bool { if let Const::Bool(x) = self { *x } else { panic!("{:?}", self) } }
     pub fn list(&self) -> Vec<Self> { if let Const::List(x) = self { x.clone() } else { panic!("{:?}", self) } }
+}
+
+impl Partial {
+    pub fn to_literal(&self) -> Option<Literal> {
+        match self {
+            Self::Unknown(()) => None,
+            Self::Nat(x) => Some(Literal::Nat(*x)),
+            Self::Int(x) => Some(Literal::Int(*x)),
+            Self::Real(x) => Some(Literal::Real(*x)),
+            Self::Char(c) => Some(Literal::Char(*c)),
+            Self::Bool(x) => Some(Literal::Bool(*x)),
+            Self::Str(s) => Some(Literal::Str(s.clone())),
+            Self::Tuple(fields) => Some(Literal::Tuple(fields
+                .iter()
+                .map(|field| field.to_literal())
+                .collect::<Option<_>>()?)),
+            Self::List(items) => Some(Literal::List(items
+                .iter()
+                .map(|item| item.to_literal())
+                .collect::<Option<_>>()?)),
+            Self::Sum(v, inner) => Some(Literal::Sum(*v, Box::new(inner.to_literal()?))),
+            Self::Union(ty, inner) => Some(Literal::Union(*ty, Box::new(inner.to_literal()?))),
+        }
+    }
+}
+
+impl Literal {
+    pub fn to_partial(&self) -> Partial {
+        match self {
+            Self::Unknown(x) => Partial::Unknown(*x),
+            Self::Nat(x) => Partial::Nat(*x),
+            Self::Int(x) => Partial::Int(*x),
+            Self::Real(x) => Partial::Real(*x),
+            Self::Char(c) => Partial::Char(*c),
+            Self::Bool(x) => Partial::Bool(*x),
+            Self::Str(s) => Partial::Str(s.clone()),
+            Self::Tuple(fields) => Partial::Tuple(fields
+                .iter()
+                .map(|field| field.to_partial())
+                .collect()),
+            Self::List(items) => Partial::List(items
+                .iter()
+                .map(|item| item.to_partial())
+                .collect()),
+            Self::Sum(v, inner) => Partial::Sum(*v, Box::new(inner.to_partial())),
+            Self::Union(ty, inner) => Partial::Union(*ty, Box::new(inner.to_partial())),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -65,7 +117,7 @@ pub enum Intrinsic {
 #[derive(Clone, Debug)]
 pub enum Pat {
     Wildcard,
-    Const(Const), // Expression is evaluated and then compared
+    Literal(Literal), // Expression is evaluated and then compared
     Single(MirNode<Binding>),
     Add(MirNode<Binding>, u64),
     Tuple(Vec<MirNode<Binding>>),
@@ -97,7 +149,7 @@ impl Binding {
     pub fn is_refutable(&self) -> bool {
         match &self.pat {
             Pat::Wildcard => false,
-            Pat::Const(c) => match c {
+            Pat::Literal(c) => match c {
                 Const::Tuple(fields) if fields.is_empty() => false,
                 _ => true,
             },
@@ -117,7 +169,7 @@ impl Binding {
         self.name.map(|name| bind(name, self.meta()));
         match &self.pat {
             Pat::Wildcard => {},
-            Pat::Const(_) => {},
+            Pat::Literal(_) => {},
             Pat::Single(inner) => inner.visit_bindings(bind),
             Pat::Add(lhs, _) => lhs.visit_bindings(bind),
             Pat::Tuple(fields) => fields
@@ -181,7 +233,7 @@ impl Default for GlobalFlags {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Const(Const),
+    Literal(Literal),
     Local(Local),
     Global(ProcId, Cell<GlobalFlags>),
 
@@ -256,7 +308,7 @@ impl Expr {
 
     fn required_locals_inner(&self, stack: &mut Vec<Local>, required: &mut Vec<Local>) {
         match self {
-            Expr::Const(_) => {},
+            Expr::Literal(_) => {},
             Expr::Local(local) => {
                 if !stack.contains(local) {
                     required.push(*local);
@@ -321,7 +373,7 @@ impl Expr {
                 }
                 match &self.0.pat {
                     Pat::Wildcard => write!(f, "_"),
-                    Pat::Const(c) => write!(f, "const {:?}", c),
+                    Pat::Literal(c) => write!(f, "const {:?}", c),
                     Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
                     Pat::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayBinding(inner, self.1)),
                     Pat::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayBinding(inner, self.1)),
@@ -350,7 +402,7 @@ impl Expr {
                 match self.0 {
                     Expr::Local(local) => write!(f, "${}", local.0),
                     Expr::Global(global, _) => write!(f, "global {:?}", global),
-                    Expr::Const(c) => write!(f, "const {:?}", c),
+                    Expr::Literal(c) => write!(f, "const {:?}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),

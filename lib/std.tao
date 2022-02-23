@@ -1,3 +1,5 @@
+import "lib/core.tao"
+
 import "lib/std/btree.tao"
 import "lib/std/error.tao"
 import "lib/std/fmt.tao"
@@ -5,7 +7,6 @@ import "lib/std/func.tao"
 import "lib/std/list.tao"
 import "lib/std/map.tao"
 import "lib/std/math.tao"
-import "lib/std/ops.tao"
 import "lib/std/stream.tao"
 import "lib/std/type.tao"
 import "lib/std/value.tao"

@@ -1,28 +1,29 @@
 use super::*;
 
-fn const_to_value(constant: &mir::Const) -> Value {
-    match constant {
-        mir::Const::Nat(x) => Value::Int(*x as i64),
-        mir::Const::Int(x) => Value::Int(*x),
-        mir::Const::Real(x) => Value::Real(*x),
-        mir::Const::Char(c) => Value::Char(*c),
-        mir::Const::Bool(x) => Value::Bool(*x),
-        mir::Const::Str(s) => Value::List(s
+fn litr_to_value(literal: &mir::Literal) -> Value {
+    match literal {
+        mir::Literal::Unknown(x) => *x,
+        mir::Literal::Nat(x) => Value::Int(*x as i64),
+        mir::Literal::Int(x) => Value::Int(*x),
+        mir::Literal::Real(x) => Value::Real(*x),
+        mir::Literal::Char(c) => Value::Char(*c),
+        mir::Literal::Bool(x) => Value::Bool(*x),
+        mir::Literal::Str(s) => Value::List(s
             .chars()
             .map(Value::Char)
             .collect()),
-        mir::Const::Tuple(fields) => Value::List(fields
+        mir::Literal::Tuple(fields) => Value::List(fields
             .iter()
-            .map(const_to_value)
+            .map(litr_to_value)
             .collect()),
-        mir::Const::List(items) => Value::List(items
+        mir::Literal::List(items) => Value::List(items
             .iter()
-            .map(const_to_value)
+            .map(litr_to_value)
             .collect()),
-        mir::Const::Sum(variant, inner) => Value::Sum(*variant, Box::new(const_to_value(inner))),
-        mir::Const::Union(id, inner) => {
+        mir::Literal::Sum(variant, inner) => Value::Sum(*variant, Box::new(litr_to_value(inner))),
+        mir::Literal::Union(id, inner) => {
             assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-            Value::Sum(*id as usize, Box::new(const_to_value(inner)))
+            Value::Sum(*id as usize, Box::new(litr_to_value(inner)))
         },
     }
 }
@@ -37,7 +38,7 @@ impl Program {
 
         match &binding.pat {
             mir::Pat::Wildcard => {},
-            mir::Pat::Const(_) => {},
+            mir::Pat::Literal(_) => {},
             mir::Pat::Single(inner) => {
                 self.push(Instr::Dup);
                 self.compile_extractor(mir, inner);
@@ -129,13 +130,13 @@ impl Program {
                 self.push(Instr::Pop(1));
                 self.push(Instr::bool(true));
             },
-            mir::Pat::Const(constant) => match constant {
-                mir::Const::Bool(true) => {},
-                mir::Const::Bool(false) => {
+            mir::Pat::Literal(constant) => match constant {
+                mir::Literal::Bool(true) => {},
+                mir::Literal::Bool(false) => {
                     self.push(Instr::NotBool);
                 },
-                constant => {
-                    self.push(Instr::Imm(const_to_value(constant)));
+                literal => {
+                    self.push(Instr::Imm(litr_to_value(literal)));
                     self.push(match binding.meta() {
                         repr::Repr::Prim(repr::Prim::Bool) => Instr::EqBool,
                         repr::Repr::Prim(repr::Prim::Nat) => Instr::EqInt,
@@ -221,7 +222,7 @@ impl Program {
         proc_fixups: &mut Vec<(ProcId, Addr)>,
     ) {
         match &*expr {
-            mir::Expr::Const(constant) => { self.push(Instr::Imm(const_to_value(constant))); },
+            mir::Expr::Literal(literal) => { self.push(Instr::Imm(litr_to_value(literal))); },
             mir::Expr::Local(local) => {
                 let idx = stack
                     .iter()

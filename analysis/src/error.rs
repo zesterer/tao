@@ -72,7 +72,7 @@ impl Error {
                 format!("Cannot infer type {}", display(a).fg(Color::Red)),
                 match origin {
                     Some(origin) => vec![
-                        (ctx.tys.get_span(a), format!("Use of generic definition"), Color::Red),
+                        (ctx.tys.get_span(a), format!("Use of generic item"), Color::Red),
                         (origin, format!("Instantiation of this generic type"), Color::Red)
                     ],
                     None => vec![(ctx.tys.get_span(a), format!("{}", display(a)), Color::Red)],

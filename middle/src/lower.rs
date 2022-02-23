@@ -32,14 +32,14 @@ impl Context {
         id
     }
 
-    pub fn lower_litr(&mut self, hir: &HirContext, con: &ConContext, litr: &hir::Literal) -> Const {
+    pub fn lower_litr(&mut self, hir: &HirContext, con: &ConContext, litr: &hir::Literal) -> mir::Literal {
         match litr {
-            hir::Literal::Nat(x) => mir::Const::Nat(*x),
-            hir::Literal::Int(x) => mir::Const::Int(*x),
-            hir::Literal::Str(s) => mir::Const::Str(*s),
-            hir::Literal::Bool(x) => mir::Const::Bool(*x),
-            hir::Literal::Real(x) => mir::Const::Real(*x),
-            hir::Literal::Char(c) => mir::Const::Char(*c),
+            hir::Literal::Nat(x) => mir::Literal::Nat(*x),
+            hir::Literal::Int(x) => mir::Literal::Int(*x),
+            hir::Literal::Str(s) => mir::Literal::Str(*s),
+            hir::Literal::Bool(x) => mir::Literal::Bool(*x),
+            hir::Literal::Real(x) => mir::Literal::Real(*x),
+            hir::Literal::Char(c) => mir::Literal::Char(*c),
         }
     }
 
@@ -101,7 +101,7 @@ impl Context {
         let pat = match &*con_binding.pat {
             hir::Pat::Error => unreachable!(),
             hir::Pat::Wildcard => mir::Pat::Wildcard,
-            hir::Pat::Literal(litr) => mir::Pat::Const(self.lower_litr(hir, con, litr)),
+            hir::Pat::Literal(litr) => mir::Pat::Literal(self.lower_litr(hir, con, litr)),
             hir::Pat::Single(inner) => mir::Pat::Single(self.lower_binding(hir, con, inner, bindings)),
             hir::Pat::Add(lhs, rhs) => mir::Pat::Add(self.lower_binding(hir, con, lhs, bindings), **rhs),
             hir::Pat::Tuple(fields) => mir::Pat::Tuple(fields
@@ -162,7 +162,7 @@ impl Context {
     pub fn lower_expr(&mut self, hir: &HirContext, con: &ConContext, con_expr: &ConExpr, stack: &mut Vec<(Ident, Local)>) -> mir::MirNode<mir::Expr> {
         let expr = match &**con_expr {
             hir::Expr::Error => unreachable!(),
-            hir::Expr::Literal(litr) => mir::Expr::Const(self.lower_litr(hir, con, litr)),
+            hir::Expr::Literal(litr) => mir::Expr::Literal(self.lower_litr(hir, con, litr)),
             hir::Expr::Local(local) => mir::Expr::Local(stack
                 .iter()
                 .rev()
@@ -302,7 +302,7 @@ impl Context {
                             ConTy::List(inner) => con.display(hir, *inner).to_string(),
                             _ => panic!("type_name argument must be list of type"),
                         };
-                        mir::Expr::Const(Const::Str(Intern::new(name)))
+                        mir::Expr::Literal(mir::Literal::Str(Intern::new(name)))
                     },
                     hir::Intrinsic::Union => {
                         let a = &args[0];

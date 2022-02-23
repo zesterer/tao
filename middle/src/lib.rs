@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types, cell_update)]
+#![feature(arbitrary_self_types, cell_update, never_type)]
 
 pub mod error;
 pub mod proc;
@@ -12,7 +12,7 @@ pub use crate::{
     error::Error,
     opt::Pass,
     proc::{ProcId, Proc, Procs},
-    mir::{MirNode, Pat, Binding, Expr, Const, Intrinsic, Local},
+    mir::{MirNode, Pat, Binding, Expr, Literal, Partial, Intrinsic, Local},
     repr::{Repr, Reprs, Prim},
     context::Context,
 };

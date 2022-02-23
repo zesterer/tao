@@ -10,11 +10,11 @@ impl Pass for ConstFold {
         fn visit(
             mir: &Context,
             expr: &mut Expr,
-            stack: &mut Vec<(Local, Option<Const>)>,
+            stack: &mut Vec<(Local, Partial)>,
             proc_stack: &mut Vec<ProcId>,
         ) {
             match expr {
-                Expr::Const(_) => {}, // Already constant!
+                Expr::Literal(_) => {}, // Already constant!
                 Expr::Global(proc_id, flags) => if flags.get().can_inline {
                     proc_stack.push(*proc_id);
                     *expr = mir.procs.get(*proc_id).unwrap().body.inner().clone();
@@ -22,9 +22,9 @@ impl Pass for ConstFold {
                     visit(mir, expr, &mut Vec::new(), proc_stack);
                     proc_stack.pop();
                 },
-                Expr::Local(local) => if let Some((_, constant)) = stack.iter().rev().find(|(name, _)| *name == *local) {
-                    if let Some(constant) = constant {
-                        *expr = Expr::Const(constant.clone());
+                Expr::Local(local) => if let Some((_, partial)) = stack.iter().rev().find(|(name, _)| *name == *local) {
+                    if let Some(literal) = partial.to_literal() {
+                        *expr = Expr::Literal(literal.clone());
                     }
                 },
                 Expr::Intrinsic(op, args) => {
@@ -37,8 +37,8 @@ impl Pass for ConstFold {
                     let y;
                     {
                         let mut args = args.iter().map(|e| &**e);
-                        x = if let Some(Expr::Const(c)) = args.next() { Some(c.clone()) } else { None };
-                        y = if let Some(Expr::Const(c)) = args.next() { Some(c.clone()) } else { None };
+                        x = if let Some(Expr::Literal(c)) = args.next() { Some(c.clone()) } else { None };
+                        y = if let Some(Expr::Literal(c)) = args.next() { Some(c.clone()) } else { None };
                     }
 
                     // Unary intrinsics
@@ -46,10 +46,10 @@ impl Pass for ConstFold {
                         let x = if let Some(c) = &x { c } else { return };
 
                         let res = match op {
-                            Intrinsic::NotBool => Const::Bool(!x.bool()),
+                            Intrinsic::NotBool => Literal::Bool(!x.bool()),
                             _ => return,
                         };
-                        *expr = Expr::Const(res);
+                        *expr = Expr::Literal(res);
                     })();
 
                     // Binary intrinsics
@@ -58,10 +58,10 @@ impl Pass for ConstFold {
                         let y = if let Some(c) = &y { c } else { return };
 
                         let res = match op {
-                            Intrinsic::AddNat => Const::Nat(x.nat() + y.nat()),
-                            Intrinsic::AddInt => Const::Int(x.int() + y.int()),
-                            Intrinsic::SubNat => Const::Int(x.nat() as i64 - y.nat() as i64),
-                            Intrinsic::Join(_) => Const::List({
+                            Intrinsic::AddNat => Literal::Nat(x.nat() + y.nat()),
+                            Intrinsic::AddInt => Literal::Int(x.int() + y.int()),
+                            Intrinsic::SubNat => Literal::Int(x.nat() as i64 - y.nat() as i64),
+                            Intrinsic::Join(_) => Literal::List({
                                 let mut xs = x.list();
                                 xs.append(&mut y.list());
                                 xs
@@ -69,7 +69,7 @@ impl Pass for ConstFold {
                             // _ => return,
                             op => todo!("{:?}", op),
                         };
-                        *expr = Expr::Const(res);
+                        *expr = Expr::Literal(res);
                     })();
                 },
                 Expr::Match(pred, arms) => {
@@ -77,21 +77,21 @@ impl Pass for ConstFold {
 
                     // TODO: Should this allow space for something to 'maybe match'? Currently, all patterns must be
                     // constant but this might not always be the case.
-                    fn matches(binding: &Binding, constant: &Const) -> bool {
+                    fn matches(binding: &Binding, constant: &Literal) -> bool {
                         match &binding.pat {
                             Pat::Wildcard => true,
-                            Pat::Const(x) => x == constant,
+                            Pat::Literal(x) => x == constant,
                             Pat::Single(inner) => matches(inner, constant),
-                            Pat::Add(lhs, rhs) => if let Const::Nat(x) = constant {
+                            Pat::Add(lhs, rhs) => if let Literal::Nat(x) = constant {
                                 if *x >= *rhs {
-                                    matches(lhs, &Const::Nat(*x - *rhs))
+                                    matches(lhs, &Literal::Nat(*x - *rhs))
                                 } else {
                                     false
                                 }
                             } else {
                                 unreachable!("Pat::Add must be matching a Nat")
                             },
-                            Pat::Tuple(fields) => if let Const::Tuple(const_fields) = constant {
+                            Pat::Tuple(fields) => if let Literal::Tuple(const_fields) = constant {
                                 fields
                                     .iter()
                                     .zip(const_fields.iter())
@@ -99,7 +99,7 @@ impl Pass for ConstFold {
                             } else {
                                 unreachable!();
                             },
-                            Pat::ListExact(items) => if let Const::List(const_items) = constant {
+                            Pat::ListExact(items) => if let Literal::List(const_items) = constant {
                                 const_items.len() == items.len() && items
                                     .iter()
                                     .zip(const_items.iter())
@@ -107,21 +107,21 @@ impl Pass for ConstFold {
                             } else {
                                 unreachable!();
                             },
-                            Pat::ListFront(items, tail) => if let Const::List(const_items) = constant {
+                            Pat::ListFront(items, tail) => if let Literal::List(const_items) = constant {
                                 const_items.len() >= items.len() && items
                                     .iter()
                                     .zip(const_items.iter())
                                     .all(|(a, b)| matches(a, b))
-                                && tail.as_ref().map_or(true, |tail| matches(tail, &Const::List(const_items[items.len()..].to_vec())))
+                                && tail.as_ref().map_or(true, |tail| matches(tail, &Literal::List(const_items[items.len()..].to_vec())))
                             } else {
                                 unreachable!();
                             },
-                            Pat::Variant(a_variant, a) => if let Const::Sum(b_variant, b) = constant {
+                            Pat::Variant(a_variant, a) => if let Literal::Sum(b_variant, b) = constant {
                                 a_variant == b_variant && matches(a, b)
                             } else {
                                 unreachable!();
                             },
-                            Pat::UnionVariant(a_id, a) => if let Const::Union(b_id, b) = constant {
+                            Pat::UnionVariant(a_id, a) => if let Literal::Union(b_id, b) = constant {
                                 a_id == b_id && matches(a, b)
                             } else {
                                 unreachable!();
@@ -129,12 +129,11 @@ impl Pass for ConstFold {
                         }
                     }
 
-                    // If the input expression is constant, remove all but the matching arm
-                    if let Expr::Const(pred) = &**pred {
-                        for i in 0..arms.len() {
-                            if matches(&arms[i].0, pred) {
-                                *arms = vec![arms.remove(i)];
-                                break;
+                    // If the input expression is constant, remove all but the first arm because it must match
+                    if let Expr::Literal(pred) = &**pred {
+                        if let Some(arm) = arms.get(0) {
+                            if matches(&arm.0, pred) {
+                                *arms = vec![arms.remove(0)];
                             }
                         }
                     }
@@ -158,11 +157,11 @@ impl Pass for ConstFold {
                         .for_each(|field| visit(mir, field, stack, proc_stack));
 
                     // If all fields of a tuple construction are constant, turn the tuple into a constant
-                    if fields.iter().all(|field| matches!(&**field, Expr::Const(_))) {
-                        *expr = Expr::Const(Const::Tuple(std::mem::take(fields)
+                    if fields.iter().all(|field| matches!(&**field, Expr::Literal(_))) {
+                        *expr = Expr::Literal(Literal::Tuple(std::mem::take(fields)
                             .into_iter()
                             .map(|field| match field.into_inner() {
-                                Expr::Const(c) => c,
+                                Expr::Literal(c) => c,
                                 _ => unreachable!(),
                             })
                             .collect()))
@@ -174,11 +173,11 @@ impl Pass for ConstFold {
                         .for_each(|item| visit(mir, item, stack, proc_stack));
 
                     // If all fields of a list construction are constant, turn the tuple into a constant
-                    if items.iter().all(|item| matches!(&**item, Expr::Const(_))) {
-                        *expr = Expr::Const(Const::List(std::mem::take(items)
+                    if items.iter().all(|item| matches!(&**item, Expr::Literal(_))) {
+                        *expr = Expr::Literal(Literal::List(std::mem::take(items)
                             .into_iter()
                             .map(|item| match item.into_inner() {
-                                Expr::Const(c) => c,
+                                Expr::Literal(c) => c,
                                 _ => unreachable!(),
                             })
                             .collect()))
@@ -187,12 +186,12 @@ impl Pass for ConstFold {
                 Expr::Access(tuple, field) => {
                     visit(mir, tuple, stack, proc_stack);
 
-                    if let Expr::Const(Const::Tuple(fields)) = &mut **tuple {
-                        *expr = Expr::Const(fields.remove(*field));
+                    if let Expr::Literal(Literal::Tuple(fields)) = &mut **tuple {
+                        *expr = Expr::Literal(fields.remove(*field));
                     }
                 },
                 Expr::Func(arg, body) => {
-                    stack.push((*arg, None));
+                    stack.push((*arg, Partial::Unknown(())));
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
                 },
@@ -208,24 +207,20 @@ impl Pass for ConstFold {
                 Expr::Variant(variant, inner) => {
                     visit(mir, inner, stack, proc_stack);
 
-                    // if let Expr::Const(inner) = &mut **inner {
-                    //     *expr = Expr::Const(Const::Sum(*variant, Box::new(inner.clone())));
-                    // }
+                    if let Expr::Literal(inner) = &mut **inner {
+                        *expr = Expr::Literal(Literal::Sum(*variant, Box::new(inner.clone())));
+                    }
                 },
                 Expr::AccessVariant(inner, variant) => {
                     visit(mir, inner, stack, proc_stack);
 
-                    // if let Expr::Const(Const::Sum(const_variant, inner)) = &mut **inner {
-                    //     debug_assert!(const_variant == variant);
-                    //     *expr = Expr::Const((**inner).clone());
-                    // }
+                    if let Expr::Literal(Literal::Sum(const_variant, inner)) = &mut **inner {
+                        debug_assert!(const_variant == variant);
+                        *expr = Expr::Literal((**inner).clone());
+                    }
                 },
                 Expr::UnionVariant(id, inner) => {
                     visit(mir, inner, stack, proc_stack);
-
-                    // if let Expr::Const(inner) = &mut **inner {
-                    //     *expr = Expr::Const(Const::Sum(*variant, Box::new(inner.clone())));
-                    // }
                 },
                 Expr::Debug(inner) => {
                     visit(mir, inner, stack, proc_stack);
@@ -249,21 +244,21 @@ impl Pass for ConstFold {
 }
 
 impl Binding {
-    fn try_extract_inner(&self, expr: Option<&Expr>, bindings: &mut Vec<(Local, Option<Const>)>) {
+    fn try_extract_inner(&self, expr: Option<&Expr>, bindings: &mut Vec<(Local, Partial)>) {
         if let Some(name) = self.name {
-            bindings.push((name, if let Some(Expr::Const(constant)) = expr {
-                Some(constant.clone())
-            } else if let Pat::Const(constant) = &self.pat {
-                Some(constant.clone())
+            bindings.push((name, if let Some(Expr::Literal(literal)) = expr {
+                literal.to_partial()
+            } else if let Pat::Literal(literal) = &self.pat {
+                literal.to_partial()
             } else {
-                None
+                Partial::Unknown(())
             }));
         }
 
         // TODO: add extraction for complex patterns
         match &self.pat {
             Pat::Wildcard => {},
-            Pat::Const(_) => {},
+            Pat::Literal(_) => {},
             Pat::Single(inner) => inner.try_extract_inner(None, bindings),
             Pat::Add(lhs, _) => lhs.try_extract_inner(None, bindings),
             Pat::Tuple(fields) => fields
@@ -285,7 +280,7 @@ impl Binding {
         }
     }
 
-    fn try_extract(&self, expr: &Expr) -> Vec<(Local, Option<Const>)> {
+    fn try_extract(&self, expr: &Expr) -> Vec<(Local, Partial)> {
         let mut bindings = Vec::new();
         self.try_extract_inner(Some(expr), &mut bindings);
         bindings
