@@ -58,6 +58,10 @@ def main2 = match nat_or_bool2(True) in
     | ? x : Nat => "nat"
     \ ? x : Bool => "bool"
 
+def factorial =
+    | 0 => 1
+    \ m ~ n + 1 => m * factorial(n)
+
 $[main]
 def main =
     let x = 5 in

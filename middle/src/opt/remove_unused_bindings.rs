@@ -83,15 +83,13 @@ impl Pass for RemoveUnusedBindings {
                     // Flatten matches with a single arm where the arm does not bind
                     if arms.len() == 1 && !arms.first().unwrap().0.binds() {
                         *expr = arms.remove(0).1.into_inner();
-                    }
-                    // TODO: Inlining is currently unsound because it does not correctly handle shadowing
-                    /*else if arms.get(0).map_or(false, |(b, _)| matches!(&b.pat, Pat::Wildcard)) {
+                    } else if arms.get(0).map_or(false, |(b, _)| matches!(&b.pat, Pat::Wildcard)) {
                         let (arm, mut body) = arms.remove(0);
                         if let Some(name) = arm.name {
                             body.inline_local(name, pred);
                         }
                         *expr = body.into_inner();
-                    }*/ else {
+                    } else {
                         // Visit predicate last to avoid visiting it again if the match was removed
                         visit(mir, pred, stack, proc_stack);
                     }
@@ -103,33 +101,10 @@ impl Pass for RemoveUnusedBindings {
                     .iter_mut()
                     .for_each(|item| visit(mir, item, stack, proc_stack)),
                 Expr::Access(expr, _) => visit(mir, expr, stack, proc_stack),
-                Expr::Func(captures, arg, body) => {
-                    let old_stack = stack.len();
-                    for capture in captures.iter() {
-                        stack.push((*capture, 0));
-                    }
-
+                Expr::Func(arg, body) => {
                     stack.push((*arg, 0));
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
-
-                    let mut new_captures = Vec::new();
-                    for i in 0..captures.len() {
-                        let (capture, uses) = stack[old_stack..][i];
-                        if uses > 0 {
-                            new_captures.push(capture);
-
-                            if let Some((_, n)) = stack[..old_stack].iter_mut().rev().find(|(name, _)| *name == capture) {
-                                // Increment uses
-                                *n += 1;
-                            } else {
-                                unreachable!()
-                            }
-                        }
-                    }
-                    *captures = new_captures;
-
-                    stack.truncate(old_stack);
                 },
                 Expr::Apply(f, arg) => {
                     visit(mir, f, stack, proc_stack);
@@ -150,6 +125,8 @@ impl Pass for RemoveUnusedBindings {
         for (id, mut body) in proc_bodies {
             let mut proc_stack = vec![id];
             visit(&ctx, &mut body, &mut Vec::new(), &mut proc_stack);
+            let requires = body.required_locals(None);
+            debug_assert_eq!(requires.len(), 0, "Procedure requires locals {:?}\n\nOld = {}\n\n\nNew = {}\n", requires, ctx.procs.get_mut(id).unwrap().body.print(), body.print());
             ctx.procs.get_mut(id).unwrap().body = body;
         }
     }

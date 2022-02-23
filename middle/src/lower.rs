@@ -240,29 +240,12 @@ impl Context {
                 )
             },
             hir::Expr::Func(arg, body) => {
-                let old_stack = stack.len();
-                let captures = body
-                    .required_locals(Some(**arg))
-                    .into_iter()
-                    .map(|local| {
-                        let local = stack
-                            .iter()
-                            .rev()
-                            .find(|(name, _)| *name == local)
-                            .expect("No such local")
-                            .1;
-                        local
-                    })
-                    .collect();
-
                 let arg_local = Local::new();
                 stack.push((**arg, arg_local));
-
                 let body = self.lower_expr(hir, con, body, stack);
+                stack.pop();
 
-                stack.truncate(old_stack);
-
-                mir::Expr::Func(captures, arg_local, body)
+                mir::Expr::Func(arg_local, body)
             },
             hir::Expr::Apply(f, arg) => mir::Expr::Apply(self.lower_expr(hir, con, f, stack), self.lower_expr(hir, con, arg, stack)),
             hir::Expr::Cons(data, variant, inner) => {

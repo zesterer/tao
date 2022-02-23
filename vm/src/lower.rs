@@ -322,7 +322,9 @@ impl Program {
                     self.fixup(end_arm, end_match, Instr::Jump); // Fixes #1
                 }
             },
-            mir::Expr::Func(captures, arg, body) => {
+            mir::Expr::Func(arg, body) => {
+                let captures = body.required_locals(Some(*arg));
+
                 let old_stack = stack.len();
 
                 let jump_over = self.push(Instr::Jump(0)); // Fixed by #5
@@ -398,7 +400,7 @@ impl Program {
         let mut procs = HashMap::new();
         let mut proc_fixups = Vec::new();
 
-        for (proc_id, _) in mir.procs.iter() {
+        for proc_id in mir.reachable_procs() {
             procs.insert(proc_id, this.compile_proc(mir, proc_id, &mut proc_fixups));
         }
 

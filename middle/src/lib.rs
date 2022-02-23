@@ -40,5 +40,5 @@ use tao_analysis::{
     ConTyId,
     ConDataId,
 };
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use internment::Intern;

@@ -18,6 +18,7 @@ impl Pass for ConstFold {
                 Expr::Global(proc_id, flags) => if flags.get().can_inline {
                     proc_stack.push(*proc_id);
                     *expr = mir.procs.get(*proc_id).unwrap().body.inner().clone();
+                    expr.refresh_locals();
                     visit(mir, expr, &mut Vec::new(), proc_stack);
                     proc_stack.pop();
                 },
@@ -172,7 +173,7 @@ impl Pass for ConstFold {
                         .iter_mut()
                         .for_each(|item| visit(mir, item, stack, proc_stack));
 
-                    // If all fields of a tuple construction are constant, turn the tuple into a constant
+                    // If all fields of a list construction are constant, turn the tuple into a constant
                     if items.iter().all(|item| matches!(&**item, Expr::Const(_))) {
                         *expr = Expr::Const(Const::List(std::mem::take(items)
                             .into_iter()
@@ -190,7 +191,7 @@ impl Pass for ConstFold {
                         *expr = Expr::Const(fields.remove(*field));
                     }
                 },
-                Expr::Func(captures, arg, body) => {
+                Expr::Func(arg, body) => {
                     stack.push((*arg, None));
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
@@ -237,6 +238,8 @@ impl Pass for ConstFold {
         for (id, mut body) in proc_bodies {
             let mut proc_stack = vec![id];
             visit(&ctx, &mut body, &mut Vec::new(), &mut proc_stack);
+            let requires = body.required_locals(None);
+            debug_assert_eq!(requires.len(), 0, "Procedure requires locals {:?}\n\nOld = {}\n\n\nNew = {}\n", requires, ctx.procs.get_mut(id).unwrap().body.print(), body.print());
             ctx.procs.get_mut(id).unwrap().body = body;
         }
     }

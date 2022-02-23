@@ -131,6 +131,28 @@ impl Binding {
         }
     }
 
+    pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut MirNode<Self>)) {
+        match &mut self.pat {
+            mir::Pat::Wildcard | mir::Pat::Const(_) => {},
+            mir::Pat::Single(inner) => f(inner),
+            mir::Pat::Add(lhs, _) => f(lhs),
+            mir::Pat::Tuple(fields) => fields
+                .iter_mut()
+                .for_each(|field| f(field)),
+            mir::Pat::ListExact(items) => items
+                .iter_mut()
+                .for_each(|item| f(item)),
+            mir::Pat::ListFront(items, tail) => {
+                items
+                    .iter_mut()
+                    .for_each(|item| f(item));
+                tail.as_mut().map(|tail| f(tail));
+            },
+            mir::Pat::Variant(_, inner) => f(inner),
+            mir::Pat::UnionVariant(_, inner) => f(inner),
+        }
+    }
+
     fn visit_inner(
         self: &mut MirNode<Self>,
         order: VisitOrder,
@@ -189,7 +211,7 @@ impl Expr {
                     f(body);
                 }
             },
-            Expr::Func(_, _, body) => {
+            Expr::Func(_, body) => {
                 f(body);
             },
             Expr::Apply(func, arg) => {
@@ -222,7 +244,7 @@ impl Expr {
                     f(body);
                 }
             },
-            Expr::Func(_, _, body) => {
+            Expr::Func(_, body) => {
                 f(body);
             },
             Expr::Apply(func, arg) => {
@@ -248,7 +270,7 @@ impl Expr {
                     }
                 }
             },
-            Expr::Func(captures, arg, body) => {
+            Expr::Func(arg, body) => {
                 if *arg != name {
                     body.inline_local(name, local_expr);
                 }
@@ -288,7 +310,7 @@ impl Expr {
                     body.visit_inner(order, repr, binding, expr);
                 }
             },
-            Expr::Func(_, _, body) => {
+            Expr::Func(_, body) => {
                 body.visit_inner(order, repr, binding, expr);
             },
             Expr::Apply(f, arg) => {
@@ -336,9 +358,11 @@ pub fn prepare(ctx: &mut Context) {
 pub fn check(ctx: &Context) {
     fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (&binding.pat, repr) {
+            (Pat::Const(Const::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
             (Pat::Variant(_, _), Repr::Data(_)) => {},
+            (Pat::Single(inner), _) => check_binding(ctx, inner, repr, stack),
             (Pat::UnionVariant(_, _), Repr::Union(_)) => {},
             (Pat::ListExact(_), Repr::List(_)) => {},
             (Pat::ListFront(_, _), Repr::List(_)) => {},
@@ -351,12 +375,14 @@ pub fn check(ctx: &Context) {
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (expr, repr) {
             (Expr::Const(Const::Bool(_)), Repr::Prim(Prim::Bool)) => {},
+            (Expr::Const(Const::Nat(_)), Repr::Prim(Prim::Nat)) => {},
+            (Expr::Global(_, _), _) => {}, // TODO
             (Expr::Local(local), repr) if &stack
                 .iter()
                 .rev()
                 .find(|(name, _)| name == local)
                 .unwrap_or_else(|| panic!("Failed to find local ${} in scope", local.0)).1 == repr => {},
-            (Expr::Func(_, i, body), Repr::Func(i_repr, _)) => {
+            (Expr::Func(i, body), Repr::Func(i_repr, _)) => {
                 stack.push((*i, (**i_repr).clone()));
                 visit_expr(ctx, body, stack);
                 stack.pop();
@@ -371,13 +397,18 @@ pub fn check(ctx: &Context) {
                 for (arm, body) in arms {
                     // TODO: visit binding
                     check_binding(ctx, arm.inner(), pred.meta(), stack);
+                    let old_stack = stack.len();
+                    stack.append(&mut arm.bindings());
+                    check_expr(ctx, body, body.meta(), stack);
+                    stack.truncate(old_stack);
                 }
-                expr.for_children(|expr| visit_expr(ctx, expr, stack));
             },
             (Expr::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => {
                 check_expr(ctx, inner, &variants[*idx], stack);
                 expr.for_children(|expr| visit_expr(ctx, expr, stack));
             },
+            (Expr::Variant(idx, inner), Repr::Data(_)) => {}, // TODO
+            (Expr::Intrinsic(_, _), _) => {}, // TODO
             // (Expr::Data(_, _, _), Repr::Func(_, _)) => {},
             (expr, repr) => panic!("Inconsistency between expression\n\n {:?}\n\nand repr {:?}", expr, repr),
         }
@@ -388,7 +419,9 @@ pub fn check(ctx: &Context) {
     }
 
     for (id, proc) in ctx.procs.iter() {
-        println!("Checking {:?}...", id);
+        println!("Checking {:?}", id);
+        println!("{}", proc.body.print());
+        assert_eq!(proc.body.required_locals(None).len(), 0, "Procedure requires locals");
         visit_expr(ctx, &proc.body, &mut Vec::new());
     }
 }

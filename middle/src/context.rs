@@ -37,4 +37,25 @@ impl Context {
             opt::RemoveUnusedBindings::default().run(self, debug);
         }
     }
+
+    fn reachable_procs_from(&self, proc: ProcId, globals: &mut HashSet<ProcId>) {
+        globals.insert(proc);
+
+        let required = self.procs.get(proc).unwrap().body.required_globals();
+        for req in required {
+            if globals.insert(req) {
+                self.reachable_procs_from(req, globals);
+            }
+        }
+    }
+
+    pub fn reachable_procs(&self) -> HashSet<ProcId> {
+        let mut globals = HashSet::new();
+
+        if let Some(entry) = self.entry {
+            self.reachable_procs_from(entry, &mut globals);
+        }
+
+        globals
+    }
 }

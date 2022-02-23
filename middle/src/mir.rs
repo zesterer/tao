@@ -113,8 +113,8 @@ impl Binding {
         }
     }
 
-    fn visit_bindings(&self, mut bind: &mut impl FnMut(Local)) {
-        self.name.map(&mut bind);
+    fn visit_bindings(self: &MirNode<Self>, mut bind: &mut impl FnMut(Local, &Repr)) {
+        self.name.map(|name| bind(name, self.meta()));
         match &self.pat {
             Pat::Wildcard => {},
             Pat::Const(_) => {},
@@ -137,16 +137,30 @@ impl Binding {
         }
     }
 
-    pub fn binding_names(&self) -> Vec<Local> {
+    pub fn binding_names(self: &MirNode<Self>) -> Vec<Local> {
         let mut names = Vec::new();
-        self.visit_bindings(&mut |name| names.push(name));
+        self.visit_bindings(&mut |name, _| names.push(name));
         names
     }
 
-    pub fn binds(&self) -> bool {
+    pub fn bindings(self: &MirNode<Self>) -> Vec<(Local, Repr)> {
+        let mut names = Vec::new();
+        self.visit_bindings(&mut |name, repr| names.push((name, repr.clone())));
+        names
+    }
+
+    pub fn binds(self: &MirNode<Self>) -> bool {
         let mut binds = false;
-        self.visit_bindings(&mut |_| binds = true);
+        self.visit_bindings(&mut |_, _| binds = true);
         binds
+    }
+
+    fn refresh_locals_inner(&mut self, stack: &mut Vec<(Local, Local)>) {
+        if let Some(name) = self.name {
+            let new_name = stack.iter().rev().find(|(old, _)| *old == name).expect("No such local").1;
+            self.name = Some(new_name);
+        }
+        self.for_children_mut(|expr| expr.refresh_locals_inner(stack));
     }
 }
 
@@ -175,7 +189,7 @@ pub enum Expr {
     Match(MirNode<Self>, Vec<(MirNode<Binding>, MirNode<Self>)>),
 
     // (captures, arg, body)
-    Func(Vec<Local>, Local, MirNode<Self>),
+    Func(Local, MirNode<Self>),
     Apply(MirNode<Self>, MirNode<Self>),
 
     Tuple(Vec<MirNode<Self>>),
@@ -191,6 +205,55 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn required_globals(&self) -> HashSet<ProcId> {
+        let mut globals = HashSet::new();
+        self.required_globals_inner(&mut globals);
+        globals
+    }
+
+    fn required_globals_inner(&self, globals: &mut HashSet<ProcId>) {
+        if let Expr::Global(proc, _) = self {
+            globals.insert(*proc);
+        }
+
+        self.for_children(|expr| expr.required_globals_inner(globals));
+    }
+
+    pub fn refresh_locals(&mut self) {
+        let required = self.required_locals(None);
+        debug_assert_eq!(required.len(), 0, "Cannot refresh locals for an expression\n\n{}\n\nthat captures (required = {:?})", self.print(), required);
+        self.refresh_locals_inner(&mut Vec::new());
+    }
+
+    fn refresh_locals_inner(&mut self, stack: &mut Vec<(Local, Local)>) {
+        match self {
+            Expr::Local(local) => {
+                let new_local = stack.iter().rev().find(|(old, _)| old == local)
+                    .unwrap_or_else(|| panic!("No such local ${} in {:?}", local.0, stack)).1;
+                *local = new_local;
+            },
+            Expr::Match(pred, arms) => {
+                pred.refresh_locals_inner(stack);
+                for (binding, arm) in arms {
+                    let old_stack = stack.len();
+                    binding.visit_bindings(&mut |name, _| stack.push((name, Local::new())));
+
+                    binding.refresh_locals_inner(stack);
+                    arm.refresh_locals_inner(stack);
+                    stack.truncate(old_stack);
+                }
+            },
+            Expr::Func(arg, body) => {
+                let new_arg = Local::new();
+                stack.push((*arg, new_arg));
+                body.refresh_locals_inner(stack);
+                stack.pop();
+                *arg = new_arg;
+            },
+            _ => self.for_children_mut(|expr| expr.refresh_locals_inner(stack)),
+        }
+    }
+
     fn required_locals_inner(&self, stack: &mut Vec<Local>, required: &mut Vec<Local>) {
         match self {
             Expr::Const(_) => {},
@@ -214,20 +277,10 @@ impl Expr {
                     stack.truncate(old_stack);
                 }
             },
-            Expr::Func(captures, arg, body) => {
-                for capture in captures {
-                    if !stack.contains(capture) {
-                        required.push(*capture);
-                    }
-                }
-
-                let old_stack = stack.len();
-                stack.extend(captures.iter().copied());
+            Expr::Func(arg, body) => {
                 stack.push(*arg);
-
                 body.required_locals_inner(stack, required);
-
-                stack.truncate(old_stack);
+                stack.pop();
             },
             Expr::Apply(f, arg) => {
                 f.required_locals_inner(stack, required);
@@ -270,7 +323,7 @@ impl Expr {
                     Pat::Wildcard => write!(f, "_"),
                     Pat::Const(c) => write!(f, "const {:?}", c),
                     Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
-                    Pat::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayBinding(inner, self.1)),
+                    Pat::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayBinding(inner, self.1)),
                     Pat::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayBinding(inner, self.1)),
                     Pat::ListExact(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayBinding(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Pat::ListFront(items, tail) => write!(
@@ -298,9 +351,9 @@ impl Expr {
                     Expr::Local(local) => write!(f, "${}", local.0),
                     Expr::Global(global, _) => write!(f, "global {:?}", global),
                     Expr::Const(c) => write!(f, "const {:?}", c),
-                    Expr::Func(captures, arg, body) => write!(f, "fn {:?} ${} =>\n{}", captures.iter().map(|c| c.0).collect::<Vec<_>>(), arg.0, DisplayExpr(body, self.1 + 1, true)),
+                    Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
-                    Expr::Variant(variant, inner) => write!(f, "${} {}", variant, DisplayExpr(inner, self.1, false)),
+                    Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),
                     Expr::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayExpr(inner, self.1, false)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayExpr(i, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
