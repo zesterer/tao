@@ -200,7 +200,10 @@ impl Pass for ConstFold {
                     visit(mir, f, stack, proc_stack);
                     visit(mir, arg, stack, proc_stack);
 
-                    // TODO: Inlining
+                    if let Expr::Func(param, body) = &mut **f {
+                        body.inline_local(*param, arg);
+                        *expr = (**body).clone();
+                    }
                 },
                 Expr::Variant(variant, inner) => {
                     visit(mir, inner, stack, proc_stack);

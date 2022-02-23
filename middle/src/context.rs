@@ -31,7 +31,7 @@ impl Context {
             }
         }
 
-        for _ in 0..2 {
+        for _ in 0..10 {
             opt::FlattenSingleField::default().run(self, debug);
             opt::ConstFold::default().run(self, debug);
             opt::RemoveUnusedBindings::default().run(self, debug);

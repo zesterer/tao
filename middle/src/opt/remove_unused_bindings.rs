@@ -14,27 +14,22 @@ impl Pass for RemoveUnusedBindings {
             proc_stack: &mut Vec<ProcId>,
         ) {
             match expr {
-                Expr::Const(_) => {},
-                Expr::Global(_, _) => {},
                 Expr::Local(local) => if let Some((_, n)) = stack.iter_mut().rev().find(|(name, _)| *name == *local) {
                     // Increment uses
                     *n += 1;
                 } else {
                     panic!("Could not find local ${} in {:?}", local.0, stack);
                 },
-                Expr::Intrinsic(op, args) => {
-                    for arg in args.iter_mut() {
-                        visit(mir, arg, stack, proc_stack);
-                    }
-                },
                 Expr::Match(pred, arms) => {
+                    visit(mir, pred, stack, proc_stack);
+
                     // Remove any arms that follow an irrefutable arm
-                    // for i in 0..arms.len() {
-                    //     if !arms[i].0.is_refutable() {
-                    //         arms.truncate(i + 1);
-                    //         break;
-                    //     }
-                    // }
+                    for i in 0..arms.len() {
+                        if !arms[i].0.is_refutable() {
+                            arms.truncate(i + 1);
+                            break;
+                        }
+                    }
 
                     arms
                         .iter_mut()
@@ -94,26 +89,12 @@ impl Pass for RemoveUnusedBindings {
                         visit(mir, pred, stack, proc_stack);
                     }
                 },
-                Expr::Tuple(fields) => fields
-                    .iter_mut()
-                    .for_each(|field| visit(mir, field, stack, proc_stack)),
-                Expr::List(items) => items
-                    .iter_mut()
-                    .for_each(|item| visit(mir, item, stack, proc_stack)),
-                Expr::Access(expr, _) => visit(mir, expr, stack, proc_stack),
                 Expr::Func(arg, body) => {
                     stack.push((*arg, 0));
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
                 },
-                Expr::Apply(f, arg) => {
-                    visit(mir, f, stack, proc_stack);
-                    visit(mir, arg, stack, proc_stack);
-                },
-                Expr::Variant(_, inner) => visit(mir, inner, stack, proc_stack),
-                Expr::AccessVariant(inner, _) => visit(mir, inner, stack, proc_stack),
-                Expr::UnionVariant(_, inner) => visit(mir, inner, stack, proc_stack),
-                Expr::Debug(inner) => visit(mir, inner, stack, proc_stack),
+                _ => expr.for_children_mut(|expr| visit(mir, expr, stack, proc_stack)),
             }
         }
 
