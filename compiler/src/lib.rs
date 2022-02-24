@@ -4,7 +4,7 @@ pub use tao_syntax::SrcId;
 
 use tao_syntax::{parse_module, ast, SrcNode, Error as SyntaxError};
 use tao_analysis::Context as HirContext;
-use tao_middle::Context;
+use tao_middle::{Context, OptMode};
 use tao_vm::{Program, exec};
 use ariadne::sources;
 use structopt::StructOpt;
@@ -17,36 +17,6 @@ use std::{
 };
 use error::Error;
 
-#[derive(Copy, Clone, Debug)]
-pub enum Opt {
-    None,
-    Fast,
-    Size,
-}
-
-impl FromStr for Opt {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, &'static str> {
-        match s {
-            "none" => Ok(Opt::None),
-            "fast" => Ok(Opt::Fast),
-            "size" => Ok(Opt::Size),
-            _ => Err("Optimisation mode does not exist"),
-        }
-    }
-}
-
-impl fmt::Display for Opt {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Opt::None => write!(f, "none"),
-            Opt::Fast => write!(f, "fast"),
-            Opt::Size => write!(f, "size"),
-        }
-    }
-}
-
 #[derive(Clone, Debug, StructOpt)]
 pub struct Options {
     /// Add a debugging layer to stdout (tokens, ast, hir, mir, bytecode)
@@ -54,7 +24,7 @@ pub struct Options {
     pub debug: Vec<String>,
     /// Specify an optimisation mode (none, fast, size)
     #[structopt(short, long, default_value = "none")]
-    pub opt: Opt,
+    pub opt: OptMode,
 }
 
 pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, options: Options, mut writer: impl Write, mut get_file: F) {
@@ -140,11 +110,7 @@ pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, option
             } else {
                 let mut ctx = Context::from_concrete(&ctx, &concrete);
 
-                match options.opt {
-                    Opt::None => {},
-                    Opt::Fast => ctx.optimize(),
-                    Opt::Size => todo!("Implement size optimization"),
-                }
+                ctx.optimize(options.opt);
 
                 if options.debug.contains(&"mir".to_string()) {
                     for (id, proc) in ctx.procs.iter() {

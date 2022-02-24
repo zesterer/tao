@@ -14,7 +14,7 @@ pub use crate::{
     proc::{ProcId, Proc, Procs},
     mir::{MirNode, Pat, Binding, Expr, Literal, Partial, Intrinsic, Local},
     repr::{Repr, Reprs, Prim},
-    context::Context,
+    context::{Context, OptMode},
 };
 pub use tao_analysis::Ident;
 

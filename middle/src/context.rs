@@ -1,5 +1,7 @@
 use super::*;
 
+use std::{fmt, str::FromStr};
+
 pub struct Context {
     pub reprs: Reprs,
     pub procs: Procs,
@@ -19,7 +21,11 @@ impl Context {
         this
     }
 
-    pub fn optimize(&mut self) {
+    pub fn optimize(&mut self, opt_mode: OptMode) {
+        if matches!(opt_mode, OptMode::None) {
+            return;
+        }
+
         opt::prepare(self);
 
         let debug = false;
@@ -33,7 +39,9 @@ impl Context {
 
         for _ in 0..2 {
             opt::FlattenSingleField::default().run(self, debug);
-            opt::ConstFold::default().run(self, debug);
+            opt::ConstFold {
+                inline: !matches!(opt_mode, OptMode::Size),
+            }.run(self, debug);
             opt::RemoveUnusedBindings::default().run(self, debug);
         }
     }
@@ -57,5 +65,35 @@ impl Context {
         }
 
         globals
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum OptMode {
+    None,
+    Size,
+    Fast,
+}
+
+impl FromStr for OptMode {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, &'static str> {
+        match s {
+            "none" => Ok(OptMode::None),
+            "fast" => Ok(OptMode::Fast),
+            "size" => Ok(OptMode::Size),
+            _ => Err("Optimisation mode does not exist"),
+        }
+    }
+}
+
+impl fmt::Display for OptMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            OptMode::None => write!(f, "none"),
+            OptMode::Fast => write!(f, "fast"),
+            OptMode::Size => write!(f, "size"),
+        }
     }
 }

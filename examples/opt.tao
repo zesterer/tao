@@ -10,9 +10,18 @@ def f A : A -> A =
         | Ok x => x
         \ Err x => x
 
+data Option A =
+    | Just A
+    \ None
+
+
+def map A, B =
+    | _ : A -> B, None => None
+    \ f, Just a => Just a:f
+
+def do_map A, B =
+    \ f : A -> B, x => x:map(fn x => x:f)
+
 $[main]
-def main =
-    let x = Ok 5 in
-    match x in
-    | Ok x => x
-    \ Err x => x
+def main = (Just 4)
+    :do_map(fn x => x + 7)
