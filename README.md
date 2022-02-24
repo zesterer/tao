@@ -24,12 +24,16 @@ functions, currying, good diagnostics, and much more!
 - [x] Built-in lists
 - [x] Monomorphisation
 - [x] MIR optimiser
+    - [x] Inlining
+    - [x] Const folding
+    - [x] Symbolic execution
+    - [x] Unreachable elision
+    - [x] Dead code removal
 - [x] Bytecode compiler
 
 ## Current working on
 
 - [ ] Pattern exhaustivity checking (sound, but unnecessarily conservative)
-- [ ] MIR optimiser (const folding, dead code removal, and unused binding removal implemented, waiting on inlining)
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
 - [ ] Typeclasses (simple implementation done, no compile-time coherence checker, compiler panics on detection of
       incoherence during monomorphisation)
