@@ -62,8 +62,8 @@ def factorial =
     | 0 => 1
     \ m ~ n + 1 => m * factorial(n)
 
-$[main]
-def main =
+# $[main]
+def main3 =
     let x = 5 in
     let f = fn y => x + y in
     f(4)
@@ -121,17 +121,17 @@ member Nat of Foo =
 
 def foo_nat : Nat.Bar = Nat.foo
 
-# $[main]
-# def main = [
-#         (4, "e"),
-#         (2, "c"),
-#         (0, "a"),
-#         (3, "d"),
-#         (1, "b"),
-#     ]
-#         :from_list
-#         :contains(4)
-#         :debug
+$[main]
+def main = [
+        (4, "e"),
+        (2, "c"),
+        (0, "a"),
+        (3, "d"),
+        (1, "b"),
+    ]
+        :from_list
+        :contains(4)
+        :debug
 
 # def main2 = do
 #     let msg = input;

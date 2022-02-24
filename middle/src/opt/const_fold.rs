@@ -7,221 +7,199 @@ pub struct ConstFold;
 
 impl Pass for ConstFold {
     fn apply(&mut self, ctx: &mut Context) {
-        fn visit(
-            mir: &Context,
-            expr: &mut Expr,
-            stack: &mut Vec<(Local, Partial)>,
-            proc_stack: &mut Vec<ProcId>,
-        ) {
-            match expr {
-                Expr::Literal(_) => {}, // Already constant!
+        // Returns `true` if the branch *could* still match the partial value. If `false` is returned, there's no
+        // saying what was or wasn't added to the stack.
+        fn extract(ctx: &Context, binding: &mut Binding, partial: &Partial, locals: &mut Vec<(Local, Partial)>) -> bool {
+            if let Some(name) = binding.name {
+                locals.push((name, partial.clone()));
+            }
+
+            if let Partial::Unknown(_) = partial {
+                // Extract child bindings
+                binding.for_children_mut(|binding| { extract(ctx, binding, &Partial::Unknown(None), locals); });
+                true // TODO: Can we be smarter?
+            } else {
+                match (&mut binding.pat, partial) {
+                    (Pat::Wildcard, _) => true,
+                    (Pat::Variant(variant, x), Partial::Sum(tag, y)) => if variant == tag {
+                        extract(ctx, x, y, locals)
+                    } else {
+                        false
+                    },
+                    (Pat::Tuple(xs), Partial::Tuple(ys)) => {
+                        assert_eq!(xs.len(), ys.len());
+                        xs
+                            .iter_mut()
+                            .zip(ys.iter())
+                            .all(|(x, y)| extract(ctx, x, y, locals))
+                    },
+                    (Pat::ListExact(xs), Partial::List(ys)) => if xs.len() != ys.len() {
+                        false
+                    } else {
+                        xs
+                            .iter_mut()
+                            .zip(ys.iter())
+                            .all(|(x, y)| extract(ctx, x, y, locals))
+                    },
+                    (Pat::ListFront(xs, tail), Partial::List(ys)) => if ys.len() < xs.len() {
+                        false
+                    } else {
+                        let could_match_tail = if let Some(tail) = tail {
+                            extract(ctx, tail, &Partial::List(ys[xs.len()..].to_vec()), locals)
+                        } else {
+                            true
+                        };
+                        could_match_tail && xs
+                            .iter_mut()
+                            .zip(ys.iter())
+                            .all(|(x, y)| extract(ctx, x, y, locals))
+                    },
+                    p => todo!("{:?}", p),
+                }
+            }
+        }
+
+        fn eval(ctx: &Context, expr: &mut Expr, stack: &mut Vec<(Local, Partial)>) -> Partial {
+            let partial = match expr {
+                Expr::Literal(litr) => return litr.to_partial(), // Return directly, no need to set
+                Expr::Local(local) => match stack
+                    .iter()
+                    .rev()
+                    .find(|(name, _)| *name == *local)
+                    .expect("local was not found on stack")
+                    .1
+                    .clone()
+                {
+                    // If the local is still accessible, we can just inline it directly
+                    Partial::Unknown(Some(local)) if stack.iter().find(|(name, _)| *name == local).is_some() => {
+                        *expr = Expr::Local(local);
+                        return Partial::Unknown(Some(local))
+                    },
+                    partial => partial,
+                },
                 Expr::Global(proc_id, flags) => if flags.get().can_inline {
-                    proc_stack.push(*proc_id);
-                    *expr = mir.procs.get(*proc_id).unwrap().body.inner().clone();
+                    *expr = ctx.procs.get(*proc_id).unwrap().body.inner().clone();
                     expr.refresh_locals();
-                    visit(mir, expr, &mut Vec::new(), proc_stack);
-                    proc_stack.pop();
-                },
-                Expr::Local(local) => if let Some((_, partial)) = stack.iter().rev().find(|(name, _)| *name == *local) {
-                    if let Some(literal) = partial.to_literal() {
-                        *expr = Expr::Literal(literal.clone());
-                    }
-                },
-                Expr::Intrinsic(op, args) => {
-                    for arg in args.iter_mut() {
-                        visit(mir, arg, stack, proc_stack);
-                    }
-
-                    let op = op.clone();
-                    let x;
-                    let y;
-                    {
-                        let mut args = args.iter().map(|e| &**e);
-                        x = if let Some(Expr::Literal(c)) = args.next() { Some(c.clone()) } else { None };
-                        y = if let Some(Expr::Literal(c)) = args.next() { Some(c.clone()) } else { None };
-                    }
-
-                    // Unary intrinsics
-                    (|| {
-                        let x = if let Some(c) = &x { c } else { return };
-
-                        let res = match op {
-                            Intrinsic::NotBool => Literal::Bool(!x.bool()),
-                            _ => return,
-                        };
-                        *expr = Expr::Literal(res);
-                    })();
-
-                    // Binary intrinsics
-                    (|| {
-                        let x = if let Some(c) = &x { c } else { return };
-                        let y = if let Some(c) = &y { c } else { return };
-
-                        let res = match op {
-                            Intrinsic::AddNat => Literal::Nat(x.nat() + y.nat()),
-                            Intrinsic::AddInt => Literal::Int(x.int() + y.int()),
-                            Intrinsic::SubNat => Literal::Int(x.nat() as i64 - y.nat() as i64),
-                            Intrinsic::Join(_) => Literal::List({
-                                let mut xs = x.list();
-                                xs.append(&mut y.list());
-                                xs
-                            }),
-                            // _ => return,
-                            op => todo!("{:?}", op),
-                        };
-                        *expr = Expr::Literal(res);
-                    })();
+                    // Return directly, since we apply to itself
+                    return eval(ctx, expr, &mut Vec::new())
+                } else {
+                    Partial::Unknown(None)
                 },
                 Expr::Match(pred, arms) => {
-                    visit(mir, pred, stack, proc_stack);
-
-                    // TODO: Should this allow space for something to 'maybe match'? Currently, all patterns must be
-                    // constant but this might not always be the case.
-                    fn matches(binding: &Binding, constant: &Literal) -> bool {
-                        match &binding.pat {
-                            Pat::Wildcard => true,
-                            Pat::Literal(x) => x == constant,
-                            Pat::Single(inner) => matches(inner, constant),
-                            Pat::Add(lhs, rhs) => if let Literal::Nat(x) = constant {
-                                if *x >= *rhs {
-                                    matches(lhs, &Literal::Nat(*x - *rhs))
-                                } else {
-                                    false
-                                }
-                            } else {
-                                unreachable!("Pat::Add must be matching a Nat")
-                            },
-                            Pat::Tuple(fields) => if let Literal::Tuple(const_fields) = constant {
-                                fields
-                                    .iter()
-                                    .zip(const_fields.iter())
-                                    .all(|(a, b)| matches(a, b))
-                            } else {
-                                unreachable!();
-                            },
-                            Pat::ListExact(items) => if let Literal::List(const_items) = constant {
-                                const_items.len() == items.len() && items
-                                    .iter()
-                                    .zip(const_items.iter())
-                                    .all(|(a, b)| matches(a, b))
-                            } else {
-                                unreachable!();
-                            },
-                            Pat::ListFront(items, tail) => if let Literal::List(const_items) = constant {
-                                const_items.len() >= items.len() && items
-                                    .iter()
-                                    .zip(const_items.iter())
-                                    .all(|(a, b)| matches(a, b))
-                                && tail.as_ref().map_or(true, |tail| matches(tail, &Literal::List(const_items[items.len()..].to_vec())))
-                            } else {
-                                unreachable!();
-                            },
-                            Pat::Variant(a_variant, a) => if let Literal::Sum(b_variant, b) = constant {
-                                a_variant == b_variant && matches(a, b)
-                            } else {
-                                unreachable!();
-                            },
-                            Pat::UnionVariant(a_id, a) => if let Literal::Union(b_id, b) = constant {
-                                a_id == b_id && matches(a, b)
-                            } else {
-                                unreachable!();
-                            },
-                        }
-                    }
-
-                    // If the input expression is constant, remove all but the first arm because it must match
-                    if let Expr::Literal(pred) = &**pred {
-                        if let Some(arm) = arms.get(0) {
-                            if matches(&arm.0, pred) {
-                                *arms = vec![arms.remove(0)];
-                            }
-                        }
-                    }
-
+                    let pred = eval(ctx, pred, stack);
                     arms
-                        .iter_mut()
-                        .for_each(|(arm, body)| {
+                        .drain_filter(|(binding, arm)| {
                             let old_stack = stack.len();
-                            for (name, constant) in arm.try_extract(&pred) {
-                                stack.push((name, constant));
-                            }
-
-                            visit(mir, body, stack, proc_stack);
-
+                            let cull = if extract(ctx, binding, &pred, stack) {
+                                eval(ctx, arm, stack);
+                                false
+                            } else {
+                                true
+                            };
                             stack.truncate(old_stack);
-                        });
-                },
-                Expr::Tuple(fields) => {
-                    fields
-                        .iter_mut()
-                        .for_each(|field| visit(mir, field, stack, proc_stack));
 
-                    // If all fields of a tuple construction are constant, turn the tuple into a constant
-                    if fields.iter().all(|field| matches!(&**field, Expr::Literal(_))) {
-                        *expr = Expr::Literal(Literal::Tuple(std::mem::take(fields)
-                            .into_iter()
-                            .map(|field| match field.into_inner() {
-                                Expr::Literal(c) => c,
-                                _ => unreachable!(),
-                            })
-                            .collect()))
-                    }
-                },
-                Expr::List(items) => {
-                    items
-                        .iter_mut()
-                        .for_each(|item| visit(mir, item, stack, proc_stack));
-
-                    // If all fields of a list construction are constant, turn the tuple into a constant
-                    if items.iter().all(|item| matches!(&**item, Expr::Literal(_))) {
-                        *expr = Expr::Literal(Literal::List(std::mem::take(items)
-                            .into_iter()
-                            .map(|item| match item.into_inner() {
-                                Expr::Literal(c) => c,
-                                _ => unreachable!(),
-                            })
-                            .collect()))
-                    }
-                },
-                Expr::Access(tuple, field) => {
-                    visit(mir, tuple, stack, proc_stack);
-
-                    if let Expr::Literal(Literal::Tuple(fields)) = &mut **tuple {
-                        *expr = Expr::Literal(fields.remove(*field));
-                    }
+                            cull
+                        })
+                        .for_each(|_| {});
+                    Partial::Unknown(None) // TODO: unify arms
                 },
                 Expr::Func(arg, body) => {
-                    stack.push((*arg, Partial::Unknown(())));
-                    visit(mir, body, stack, proc_stack);
+                    stack.push((*arg, Partial::Unknown(Some(*arg))));
+                    eval(ctx, body, stack); // TODO: Turn into a `Partial::Func` if no captures
                     stack.pop();
-                },
-                Expr::Apply(f, arg) => {
-                    visit(mir, f, stack, proc_stack);
-                    visit(mir, arg, stack, proc_stack);
 
+                    Partial::Unknown(None)
+                },
+                Expr::Variant(variant, inner) => Partial::Sum(*variant, Box::new(eval(ctx, inner, stack))),
+                Expr::Tuple(fields) => Partial::Tuple(fields
+                    .iter_mut()
+                    .map(|field| eval(ctx, field, stack))
+                    .collect()),
+                Expr::List(items) => Partial::List(items
+                    .iter_mut()
+                    .map(|item| eval(ctx, item, stack))
+                    .collect()),
+                Expr::Apply(f, arg) => {
+                    eval(ctx, f, stack);
+                    eval(ctx, arg, stack);
+
+                    // Lower `(fn x => y)(z)` into `let x = z in y`
                     if let Expr::Func(param, body) = &mut **f {
-                        body.inline_local(*param, arg);
-                        *expr = (**body).clone();
+                        *expr = Expr::Match(
+                            arg.clone(),
+                            vec![(MirNode::new(Binding::wildcard(*param), arg.meta().clone()), body.clone())],
+                        );
+                        return eval(ctx, expr, stack)
+                    } else {
+                        Partial::Unknown(None)
                     }
                 },
-                Expr::Variant(variant, inner) => {
-                    visit(mir, inner, stack, proc_stack);
-
-                    if let Expr::Literal(inner) = &mut **inner {
-                        *expr = Expr::Literal(Literal::Sum(*variant, Box::new(inner.clone())));
+                Expr::Intrinsic(intrinsic, args) => {
+                    let args = args
+                        .iter_mut()
+                        .map(|arg| eval(ctx, arg, stack))
+                        .collect::<Vec<_>>();
+                    intrinsic.eval(ctx, &args)
+                },
+                Expr::Access(tuple, field) => {
+                    let tuple = eval(ctx, tuple, stack);
+                    if let Partial::Tuple(mut fields) = tuple {
+                        fields.remove(*field)
+                    } else {
+                        Partial::Unknown(None)
                     }
                 },
                 Expr::AccessVariant(inner, variant) => {
-                    visit(mir, inner, stack, proc_stack);
-
-                    if let Expr::Literal(Literal::Sum(const_variant, inner)) = &mut **inner {
-                        debug_assert!(const_variant == variant);
-                        *expr = Expr::Literal((**inner).clone());
+                    let inner = eval(ctx, inner, stack);
+                    if let Partial::Sum(tag, inner) = inner {
+                        assert_eq!(*variant, tag);
+                        *inner
+                    } else {
+                        Partial::Unknown(None)
                     }
                 },
-                Expr::Debug(inner) => {
-                    visit(mir, inner, stack, proc_stack);
-                },
+                e => todo!("{:?}", e),
+            };
+
+            if let Some(literal) = partial.to_literal() {
+                *expr = Expr::Literal(literal);
+            }
+
+            partial
+        }
+
+        impl Intrinsic {
+            pub fn eval(&self, ctx: &Context, args: &[Partial]) -> Partial {
+                use {Intrinsic::*, mir::Const::*};
+
+                macro_rules! op {
+                    ($($X:ident($x:ident)),* => $O:ident($out:expr)) => {
+                        {
+                            let mut args = args.iter();
+                            #[allow(unused_parens)]
+                            match ($({ let $x = args.next().unwrap(); $x }),*) {
+                                ($($X($x)),*) => $O($out),
+                                _ => Unknown(None),
+                            }
+                        }
+                    };
+                }
+
+                match self {
+                    NegNat => op!(Nat(x) => Int(-(*x as i64))),
+                    AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
+                    MulNat => op!(Nat(x), Nat(y) => Nat(x * y)),
+                    LessNat => op!(Nat(x), Nat(y) => Bool(x < y)),
+                    MoreNat => op!(Nat(x), Nat(y) => Bool(x > y)),
+                    MoreEqNat => op!(Nat(x), Nat(y) => Bool(x >= y)),
+                    AddInt => op!(Int(x), Int(y) => Int(x + y)),
+                    SubInt => op!(Int(x), Int(y) => Int(x - y)),
+                    MulInt => op!(Int(x), Int(y) => Int(x * y)),
+                    EqChar => op!(Char(x), Char(y) => Bool(x == y)),
+                    Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
+                    i => todo!("{:?}", i),
+                    _ => Partial::Unknown(None),
+                }
             }
         }
 
@@ -231,8 +209,8 @@ impl Pass for ConstFold {
             .collect::<Vec<_>>();
 
         for (id, mut body) in proc_bodies {
-            let mut proc_stack = vec![id];
-            visit(&ctx, &mut body, &mut Vec::new(), &mut proc_stack);
+            // visit(&ctx, &mut body, &mut Vec::new());
+            eval(&ctx, &mut body, &mut Vec::new());
             let requires = body.required_locals(None);
             debug_assert_eq!(requires.len(), 0, "Procedure requires locals {:?}\n\nOld = {}\n\n\nNew = {}\n", requires, ctx.procs.get_mut(id).unwrap().body.print(), body.print());
             ctx.procs.get_mut(id).unwrap().body = body;
@@ -248,7 +226,7 @@ impl Binding {
             } else if let Pat::Literal(literal) = &self.pat {
                 literal.to_partial()
             } else {
-                Partial::Unknown(())
+                Partial::Unknown(None)
             }));
         }
 

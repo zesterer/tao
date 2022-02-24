@@ -58,6 +58,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
     let mut stack = Vec::new();
     let mut locals = Vec::new();
 
+    let mut tick = 0;
     loop {
         let mut next_addr = addr.incr();
 
@@ -89,6 +90,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
             } else {
                 assert_eq!(locals.len(), 0, "Local stack still has values, this is probably a bug");
                 assert_eq!(stack.len(), 1, "Stack size must be 0 on program exit");
+                println!("Executed {} instructions.", tick);
                 break stack.pop();
             },
             Instr::MakeFunc(i, n) => {
@@ -223,6 +225,8 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 stack.push(Value::Bool(x && y))
             },
         }
+
+        tick += 1;
 
         // println!("Executing 0x{:03X}... Stack: {}", addr.0, stack.iter().rev().map(|x| format!("{}", x)).collect::<Vec<_>>().join(", "));
 

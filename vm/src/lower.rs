@@ -8,10 +8,6 @@ fn litr_to_value(literal: &mir::Literal) -> Value {
         mir::Literal::Real(x) => Value::Real(*x),
         mir::Literal::Char(c) => Value::Char(*c),
         mir::Literal::Bool(x) => Value::Bool(*x),
-        mir::Literal::Str(s) => Value::List(s
-            .chars()
-            .map(Value::Char)
-            .collect()),
         mir::Literal::Tuple(fields) => Value::List(fields
             .iter()
             .map(litr_to_value)

@@ -371,8 +371,11 @@ pub fn check(ctx: &Context) {
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (expr, repr) {
+            // TODO: Check literals elsewhere
             (Expr::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {},
+            (Expr::Literal(Literal::List(_)), Repr::List(_)) => {},
+            (Expr::Literal(Literal::Sum(_, _)), _) => {},
             (Expr::Global(_, _), _) => {}, // TODO
             (Expr::Local(local), repr) if &stack
                 .iter()
@@ -390,6 +393,11 @@ pub fn check(ctx: &Context) {
             (Expr::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {
                 expr.for_children(|expr| visit_expr(ctx, expr, stack));
             },
+            (Expr::List(items), Repr::List(b)) => {
+                for item in items {
+                    check_expr(ctx, item, b, stack);
+                }
+            },
             (Expr::Match(pred, arms), repr) => {
                 for (arm, body) in arms {
                     // TODO: visit binding
@@ -403,6 +411,9 @@ pub fn check(ctx: &Context) {
             (Expr::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => {
                 check_expr(ctx, inner, &variants[*idx], stack);
                 expr.for_children(|expr| visit_expr(ctx, expr, stack));
+            },
+            (expr, Repr::Data(data)) => {
+                check_expr(ctx, expr, ctx.reprs.get(*data), stack);
             },
             (Expr::Variant(idx, inner), Repr::Data(_)) => {}, // TODO
             (Expr::Intrinsic(_, _), _) => {}, // TODO

@@ -8,7 +8,7 @@ pub struct Def {
     pub body: Option<TyExpr>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DefId(usize);
 
 #[derive(Default)]

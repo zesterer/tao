@@ -36,7 +36,7 @@ impl Context {
         match litr {
             hir::Literal::Nat(x) => mir::Literal::Nat(*x),
             hir::Literal::Int(x) => mir::Literal::Int(*x),
-            hir::Literal::Str(s) => mir::Literal::Str(*s),
+            hir::Literal::Str(s) => mir::Literal::List(s.chars().map(mir::Literal::Char).collect()),
             hir::Literal::Bool(x) => mir::Literal::Bool(*x),
             hir::Literal::Real(x) => mir::Literal::Real(*x),
             hir::Literal::Char(c) => mir::Literal::Char(*c),
@@ -302,7 +302,7 @@ impl Context {
                             ConTy::List(inner) => con.display(hir, *inner).to_string(),
                             _ => panic!("type_name argument must be list of type"),
                         };
-                        mir::Expr::Literal(mir::Literal::Str(Intern::new(name)))
+                        mir::Expr::Literal(mir::Literal::List(name.chars().map(mir::Literal::Char).collect()))
                     },
                     hir::Intrinsic::Union => {
                         let a = &args[0];

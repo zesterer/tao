@@ -19,7 +19,6 @@ pub enum Const<U> {
     Real(f64),
     Char(char),
     Bool(bool),
-    Str(Intern<String>),
     Tuple(Vec<Self>),
     List(Vec<Self>),
     Sum(usize, Box<Self>),
@@ -27,7 +26,7 @@ pub enum Const<U> {
 }
 
 pub type Literal = Const<!>;
-pub type Partial = Const<()>;
+pub type Partial = Const<Option<Local>>;
 
 impl<U: fmt::Debug + Clone> Const<U> {
     pub fn nat(&self) -> u64 { if let Const::Nat(x) = self { *x } else { panic!("{:?}", self) } }
@@ -39,13 +38,12 @@ impl<U: fmt::Debug + Clone> Const<U> {
 impl Partial {
     pub fn to_literal(&self) -> Option<Literal> {
         match self {
-            Self::Unknown(()) => None,
+            Self::Unknown(_) => None,
             Self::Nat(x) => Some(Literal::Nat(*x)),
             Self::Int(x) => Some(Literal::Int(*x)),
             Self::Real(x) => Some(Literal::Real(*x)),
             Self::Char(c) => Some(Literal::Char(*c)),
             Self::Bool(x) => Some(Literal::Bool(*x)),
-            Self::Str(s) => Some(Literal::Str(s.clone())),
             Self::Tuple(fields) => Some(Literal::Tuple(fields
                 .iter()
                 .map(|field| field.to_literal())
@@ -69,7 +67,6 @@ impl Literal {
             Self::Real(x) => Partial::Real(*x),
             Self::Char(c) => Partial::Char(*c),
             Self::Bool(x) => Partial::Bool(*x),
-            Self::Str(s) => Partial::Str(s.clone()),
             Self::Tuple(fields) => Partial::Tuple(fields
                 .iter()
                 .map(|field| field.to_partial())
@@ -147,6 +144,13 @@ pub struct Binding {
 }
 
 impl Binding {
+    pub fn wildcard(name: impl Into<Option<Local>>) -> Self {
+        Self {
+            pat: Pat::Wildcard,
+            name: name.into(),
+        }
+    }
+
     pub fn is_refutable(&self) -> bool {
         match &self.pat {
             Pat::Wildcard => false,
@@ -426,6 +430,9 @@ impl Expr {
                         write!(f, "match {} in", DisplayExpr(pred, self.1, false))?;
                         for (arm, body) in arms {
                             write!(f, "\n{}| {} => {}", "    ".repeat(self.1 + 1), DisplayBinding(arm, self.1 + 1), DisplayExpr(body, self.1 + 1, false))?;
+                        }
+                        if arms.len() == 0 {
+                            write!(f, " (no arms)")?;
                         }
                         Ok(())
                     },

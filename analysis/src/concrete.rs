@@ -14,7 +14,7 @@ pub enum ConTy {
     Data(ConDataId),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ConTyId(usize);
 
 impl ConTyId {

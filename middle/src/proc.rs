@@ -8,7 +8,7 @@ pub struct Proc {
 
 #[derive(Default)]
 pub struct Procs {
-    procs: HashMap<ProcId, Option<Proc>>,
+    procs: BTreeMap<ProcId, Option<Proc>>,
 }
 
 impl Procs {

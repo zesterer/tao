@@ -4,6 +4,12 @@ data Result A, E =
     | Ok A
     \ Err E
 
+def f A : A -> A =
+    \ x => let x = Ok x in
+        match x in
+        | Ok x => x
+        \ Err x => x
+
 $[main]
 def main =
     let x = Ok 5 in
