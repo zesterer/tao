@@ -3,3 +3,5 @@ target/
 flamegraph.svg
 
 perf.*
+
+/.idea
