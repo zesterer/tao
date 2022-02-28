@@ -18,7 +18,7 @@ fn nat_or_bool1 : Bool -> (Nat | Bool) =
     \ False => ?True
 
 def match_nat_or_bool =
-    match nat_or_bool1(True) in
+    match ?nat_or_bool1(True) in
     | ?x : Nat => ()
     \ ?y : Bool => ()
 
@@ -50,11 +50,11 @@ def nat_or_bool : (Bool | Nat) = if True
 
 def nat_or_bool_or_real : (Bool | Nat | Real) =
     # let () = nat_or_bool in
-    match nat_or_bool in
+    match ?nat_or_bool in
     | ? _ : Nat => nat_or_bool
     \ ? _ : Bool => ?7
 
-def main2 = match nat_or_bool2(True) in
+def main2 = match ?nat_or_bool2(True) in
     | ? x : Nat => "nat"
     \ ? x : Bool => "bool"
 
@@ -132,6 +132,18 @@ def main = [
         :from_list
         :contains(4)
         :debug
+
+fn fallible : (Nat | Bool) -> () =
+    | ? x : Nat => ()
+    \ ? x : Bool => ()
+
+def fallible2 =
+    let x = match () in
+        | () => ?5
+        | () => ?()
+        \ () => ?True
+    in
+    fallible(x)
 
 # fn main2 = do
 #     let msg = input;

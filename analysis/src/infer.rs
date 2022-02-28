@@ -74,7 +74,7 @@ impl EqInfo {
 
 #[derive(Debug)]
 pub enum InferError {
-    CannotCoerce(TyVar, TyVar, EqInfo),
+    CannotCoerce(TyVar, TyVar, Option<(TyVar, TyVar)>, EqInfo),
     CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
     // Type, recursive element
     Recursive(TyVar, TyVar),
@@ -263,7 +263,8 @@ impl<'a> Infer<'a> {
         self.instantiate(ty, span, &|idx, gen_scope, ctx| gens.as_ref().expect("No gen scope")[idx], None)
     }
 
-    pub fn instantiate(&mut self, ty: TyId, span: Span, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar, self_ty: Option<TyVar>) -> TyVar {
+    pub fn instantiate(&mut self, ty: TyId, span: impl Into<Option<Span>>, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar, self_ty: Option<TyVar>) -> TyVar {
+        let span = span.into();
         let info = match self.ctx.tys.get(ty) {
             Ty::Error(reason) => TyInfo::Error(reason),
             Ty::Prim(prim) => TyInfo::Prim(prim),
@@ -288,13 +289,14 @@ impl<'a> Infer<'a> {
             Ty::Gen(index, scope) => TyInfo::Ref(f(index, scope, self.ctx)), // TODO: Check scope is valid for recursive scopes
             Ty::SelfType => TyInfo::Ref(self_ty.expect("Found self type during instantiation but no self type is available to substitute")),
             Ty::Assoc(inner, class_id, assoc) => {
+                let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
                 let inner = self.instantiate(inner, span, f, self_ty);
                 let assoc_ty = self.unknown(span);
                 self.make_impl(inner, class_id, span, vec![(assoc, assoc_ty)]);
                 TyInfo::Ref(assoc_ty)
             },
         };
-        self.insert(self.ctx.tys.get_span(ty) /*span*/, info)
+        self.insert(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), info)
     }
 
     pub fn unknown(&mut self, span: Span) -> TyVar {
@@ -427,7 +429,7 @@ impl<'a> Infer<'a> {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
-                self.errors.push(InferError::CannotCoerce(x, y, info.into()));
+                self.errors.push(InferError::CannotCoerce(x, y, Some((a, b)), info.into()));
             }
         }
     }
@@ -600,7 +602,7 @@ impl<'a> Infer<'a> {
                     self.set_error(a);
                     self.set_error(b);
                 }
-                Some(Err(InferError::CannotCoerce(x, y, info)))
+                Some(Err(InferError::CannotCoerce(x, y, Some((a, b)), info)))
             },
             Some(Ok(())) => Some(Ok(())),
         }
@@ -840,7 +842,7 @@ impl<'a> Infer<'a> {
                                     self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
 
                                     if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
-                                        let assoc_ty_inst = self.instantiate(member_assoc_ty, span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
+                                        let assoc_ty_inst = self.instantiate(member_assoc_ty, Some(span), &|idx, gen_scope, ctx| links[&idx], Some(ty));
                                         // TODO: Check ordering for soundness
                                         self.make_flow(assoc_ty_inst, assoc_ty, span);
                                     }
@@ -1195,7 +1197,7 @@ impl<'a> Infer<'a> {
         for c in std::mem::take(&mut self.constraints) {
             self.errors.push(match c {
                 Constraint::CheckFlow(x, y, eq_info) => {
-                    InferError::CannotCoerce(x, y, eq_info)
+                    InferError::CannotCoerce(x, y, None, eq_info)
                 },
                 Constraint::Access(record, field_name, _field) => {
                     InferError::NoSuchItem(record, self.span(record), field_name.clone())
@@ -1240,7 +1242,10 @@ impl<'a> Infer<'a> {
         let errors = errors
             .into_iter()
             .map(|error| match error {
-                InferError::CannotCoerce(a, b, info) => Error::CannotCoerce(checked.reify(a), checked.reify(b), info),
+                InferError::CannotCoerce(x, y, inner, info) => {
+                    let inner = inner.map(|(a, b)| (checked.reify(a), checked.reify(b)));
+                    Error::CannotCoerce(checked.reify(x), checked.reify(y), inner, info)
+                },
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
                 InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
                 InferError::NoSuchItem(a, record_span, field) => Error::NoSuchItem(checked.reify(a), record_span, field),

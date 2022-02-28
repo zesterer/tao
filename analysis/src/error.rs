@@ -3,7 +3,8 @@ use std::io::Write;
 
 #[derive(Debug)]
 pub enum Error {
-    CannotCoerce(TyId, TyId, EqInfo),
+    // Outer type, inner type
+    CannotCoerce(TyId, TyId, Option<(TyId, TyId)>, EqInfo),
     CannotInfer(TyId, Option<Span>),
     Recursive(TyId, Span, Span),
     NoSuchItem(TyId, Span, SrcNode<Ident>),
@@ -50,12 +51,16 @@ impl Error {
         let display = |id| ctx.tys.display(&ctx.datas, id);
 
         let (msg, spans, notes) = match self {
-            Error::CannotCoerce(a, b, info) => (
-                format!("Type {} does not coerce to {}", display(a).fg(Color::Red), display(b).fg(Color::Yellow)),
+            Error::CannotCoerce(x, y, inner, info) => (
+                format!(
+                    "Type {} does not coerce to {}",
+                    display(inner.map_or(x, |(a, _)| a)).fg(Color::Red),
+                    display(inner.map_or(y, |(_, b)| b)).fg(Color::Yellow),
+                ),
                 {
                     let mut labels = vec![
-                        (ctx.tys.get_span(a), format!("Type {} was found here", display(a).fg(Color::Red)), Color::Red),
-                        (ctx.tys.get_span(b), format!("Type {} is required here", display(b).fg(Color::Yellow)), Color::Yellow),
+                        (ctx.tys.get_span(inner.map_or(x, |(a, _)| a)), format!("Type {} was found here", display(x).fg(Color::Red)), Color::Red),
+                        (ctx.tys.get_span(inner.map_or(x, |(_, b)| b)), format!("Type {} is required here", display(y).fg(Color::Yellow)), Color::Yellow),
                     ];
                     if let Some(at) = info.at {
                         labels.push((at, format!("Coercion is required here"), Color::Yellow));

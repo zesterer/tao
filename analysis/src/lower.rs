@@ -372,7 +372,11 @@ impl ToHir for ast::Expr {
                         .as_ref()
                         .map(|body| body.meta().1))
                 {
-                    Some(infer.instantiate(body_ty, self.span(), &get_gen, None))
+                    // Bit messy, makes sure that we don't accidentally infer a bad type backwards
+                    let def_ty_actual = infer.instantiate(body_ty, self.span(), &get_gen, None);
+                    let def_ty = infer.unknown(self.span());
+                    infer.check_flow(def_ty_actual, def_ty, EqInfo::default());
+                    Some(def_ty)
                 } else {
                     None
                 };
@@ -604,7 +608,7 @@ impl ToHir for ast::Expr {
             ast::Expr::Apply(f, param) => {
                 let f = f.to_hir(infer, scope);
                 let param = param.to_hir(infer, scope);
-                let input_ty = infer.unknown(self.span());
+                let input_ty = infer.unknown(param.meta().0);
                 let output_ty = infer.unknown(self.span());
                 let func = infer.insert(f.meta().0, TyInfo::Func(input_ty, output_ty));
                 infer.make_flow(f.meta().1, func, EqInfo::new(self.span(), format!("Only functions are callable")));
