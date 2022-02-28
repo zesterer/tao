@@ -28,20 +28,23 @@ impl Context {
 
         opt::prepare(self);
 
+        let debug_before = false;
         let debug = false;
 
-        if debug {
+        if debug_before || debug {
             println!("\nMIR before optimisation:\n\n");
             for (id, proc) in self.procs.iter() {
                 println!("PROCEDURE {:?}\n\n{}\n", id, proc.body.print());
             }
+            println!("\n======\n");
         }
 
-        for _ in 0..2 {
+        for _ in 0..3 {
             opt::FlattenSingleField::default().run(self, debug);
             opt::ConstFold {
                 inline: !matches!(opt_mode, OptMode::Size),
-            }.run(self, debug);
+            }
+                .run(self, debug);
             opt::RemoveUnusedBindings::default().run(self, debug);
         }
     }

@@ -13,4 +13,5 @@ internment = "0.5"
 
 #ariadne = "0.1"
 ariadne = { git = "https://github.com/zesterer/ariadne.git" }
+#ariadne = { path = "../../ariadne" }
 structopt = "0.3"

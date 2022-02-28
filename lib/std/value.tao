@@ -1,6 +1,6 @@
 #! Utilities for working with values.
 
-def identity A : A -> A =
+fn identity A : A -> A =
     \ x => x
 
 # Default

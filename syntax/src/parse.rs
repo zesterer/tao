@@ -722,13 +722,14 @@ pub fn generics_parser() -> impl Parser<ast::Generics> {
         .map(|tys| ast::Generics { tys })
 }
 
-const ITEM_STARTS: [Token; 6] = [
+const ITEM_STARTS: [Token; 7] = [
     Token::Data,
     Token::Type,
     Token::Def,
     Token::Class,
     Token::Member,
     Token::For,
+    Token::Fn,
 ];
 
 pub fn data_parser() -> impl Parser<ast::Data> {
@@ -778,6 +779,33 @@ pub fn alias_parser() -> impl Parser<ast::Alias> {
         .boxed()
 }
 
+pub fn fn_parser() -> impl Parser<ast::Def> {
+    let branch = binding_parser()
+        .map_with_span(SrcNode::new)
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .map_with_span(SrcNode::new)
+        .then_ignore(just(Token::Op(Op::RFlow)))
+        .then(expr_parser()
+            .map_with_span(SrcNode::new))
+        .boxed();
+
+    just(Token::Fn)
+        .ignore_then(term_ident_parser()
+            .map_with_span(SrcNode::new))
+        .then(generics_parser().map_with_span(SrcNode::new))
+        .then(ty_hint_parser())
+        .then_ignore(just(Token::Op(Op::Eq)))
+        .then(branches(branch)
+            .map_with_span(|branches, span| SrcNode::new(ast::Expr::Func(branches), span)))
+        .map(|(((name, generics), ty_hint), body)| ast::Def {
+            generics,
+            ty_hint: ty_hint.unwrap_or_else(|| SrcNode::new(ast::Type::Unknown, name.span())),
+            name,
+            body,
+        })
+}
+
 pub fn def_parser() -> impl Parser<ast::Def> {
     let branches = always_branches(binding_parser()
         .map_with_span(SrcNode::new)
@@ -794,7 +822,7 @@ pub fn def_parser() -> impl Parser<ast::Def> {
         .then(generics_parser().map_with_span(SrcNode::new))
         .then(ty_hint_parser())
         .then_ignore(just(Token::Op(Op::Eq)))
-        .then(branches.or(expr_parser().map_with_span(SrcNode::new)))
+        .then(expr_parser().map_with_span(SrcNode::new))
         .map(|(((name, generics), ty_hint), body)| ast::Def {
             generics,
             ty_hint: ty_hint.unwrap_or_else(|| SrcNode::new(ast::Type::Unknown, name.span())),
@@ -910,6 +938,7 @@ pub fn item_parser() -> impl Parser<ast::Item> {
         .flatten();
 
     let item = def_parser().map(ast::ItemKind::Def)
+        .or(fn_parser().map(ast::ItemKind::Def))
         .or(data_parser().map(ast::ItemKind::Data))
         .or(alias_parser().map(ast::ItemKind::Alias))
         .or(class_parser().map(ast::ItemKind::Class))

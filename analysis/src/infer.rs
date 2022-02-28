@@ -507,11 +507,21 @@ impl<'a> Infer<'a> {
                 i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
-                xs.len() == ys.len() => make_flow_many(self, xs, ys),
+                xs.len() == ys.len() => {
+                // TODO: Unnecessarily conservative, variance of data type generics should be determined
+                let co_error = make_flow_many(self, xs.iter().copied(), ys.iter().copied()).err();
+                let contra_error = make_flow_many(self, ys, xs).err();
+                co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
+            },
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
             (TyInfo::SelfType, TyInfo::SelfType) => Ok(()),
             (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
-                if class_x == class_y && assoc_x == assoc_y => self.make_flow_inner(x, y),
+                if class_x == class_y && assoc_x == assoc_y => {
+                    // associated types are invariant
+                    let co_error = self.make_flow_inner(x, y).err();
+                    let contra_error = self.make_flow_inner(y, x).err();
+                    co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
+                },
             (_, _) => Err((x, y)),
         }
     }
@@ -674,11 +684,21 @@ impl<'a> Infer<'a> {
                 Some(i_err.or(o_err).map(Err).unwrap_or(Ok(())))
             },
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
-                xs.len() == ys.len() => check_flow_many(self, xs, ys),
+                xs.len() == ys.len() => {
+                // TODO: Unnecessarily conservative, variance of type parameters should be checked instead
+                let co_err = check_flow_many(self, xs.iter().copied(), ys.iter().copied())?.err();
+                let contra_err = check_flow_many(self, ys, xs)?.err();
+                Some(co_err.or(contra_err).map(Err).unwrap_or(Ok(())))
+            },
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Some(Ok(())),
             (TyInfo::SelfType, TyInfo::SelfType) => Some(Ok(())),
             (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
-                if class_x == class_y && assoc_x == assoc_y => self.check_flow_inner(x, y),
+                if class_x == class_y && assoc_x == assoc_y => {
+                // Associated types are invariant
+                let co_err = self.check_flow_inner(x, y)?.err();
+                let contra_err = self.check_flow_inner(y, x)?.err();
+                Some(co_err.or(contra_err).map(Err).unwrap_or(Ok(())))
+            },
             (_, _) => Some(Err((x, y))),
         }
     }

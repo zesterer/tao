@@ -7,6 +7,7 @@ edition = "2021"
 tao_syntax = { path = "../syntax" }
 #ariadne = "0.1"
 ariadne = { git = "https://github.com/zesterer/ariadne.git" }
+#ariadne = { path = "../../ariadne" }
 hashbrown = "0.11"
 lazy_static = "1.4"
 internment = "0.5"

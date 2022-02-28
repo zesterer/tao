@@ -16,7 +16,7 @@ for K < Debug, V < Debug member Map K V of Debug =
         | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
         \ MBranch (_, a, b) => a:debug ++ ", " ++ b:debug
 
-def insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
+fn insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
     | k, v, MEmpty => MLeaf (k, v)
     | k, v, MLeaf (k_old, v_old) => match K.cmp(k, k_old) in
         | Less => MBranch (k_old, MLeaf (k, v), MLeaf (k_old, v_old))
@@ -26,7 +26,7 @@ def insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
         then MBranch (k_ref, a:insert(k, v), b)
         else MBranch (k_ref, a, b:insert(k, v))
 
-def get K < OrdExt, V : K -> Map K V -> Maybe V =
+fn get K < OrdExt, V : K -> Map K V -> Maybe V =
     | _, MEmpty => None
     | k, MLeaf (k_old, v) => if K.eq(k, k_old)
         then Just v
@@ -35,8 +35,8 @@ def get K < OrdExt, V : K -> Map K V -> Maybe V =
         then a:get(k)
         else b:get(k)
 
-def contains K < OrdExt, V : K -> Map K V -> Bool =
-    \ k, m => match m:get(k) in
+fn contains K < OrdExt, V : K -> Map K V -> Bool =
+    k, m => match m:get(k) in
         | Just _ => True
         \ None => False
 

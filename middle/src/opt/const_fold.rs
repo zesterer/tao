@@ -125,6 +125,11 @@ impl ConstFold {
                 self.eval(ctx, f, stack);
                 self.eval(ctx, arg, stack);
 
+                // if let Expr::Func(param, body) = &mut **f {
+                //     body.inline_local(*param, arg);
+                //     *expr = (**body).clone();
+                //     return self.eval(ctx, expr, stack)
+                // } else
                 // Lower `(fn x => y)(z)` into `let x = z in y`
                 if let Expr::Func(param, body) = &mut **f {
                     *expr = Expr::Match(

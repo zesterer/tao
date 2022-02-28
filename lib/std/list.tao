@@ -3,27 +3,27 @@
 import "lib/core/ops.tao"
 import "lib/std/value.tao"
 
-def map A, B : (A -> B) -> [A] -> [B] =
+fn map A, B : (A -> B) -> [A] -> [B] =
     | _, [] => []
     \ f, [x .. xs] => [x:f .. xs:map(f)]
 
-def filter A : (A -> Bool) -> [A] -> [A] =
+fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
     \ f, [x .. xs] => (if x:f then [x] else []) ++ xs:filter(f)
 
-def len A : [A] -> Nat =
+fn len A : [A] -> Nat =
     | [] => 0
     \ [_ .. tail] => 1 + tail:len
 
-def fold A, B : A -> (A -> B -> A) -> [B] -> A =
+fn fold A, B : A -> (A -> B -> A) -> [B] -> A =
     | init, _, [] => init
     \ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
-def repeat A : Nat -> A -> [A] =
+fn repeat A : Nat -> A -> [A] =
     | 0, _ => []
     \ n + 1, x => [x] ++ x:repeat(n)
 
-def sort A < OrdExt : [A] -> [A] =
+fn sort A < OrdExt : [A] -> [A] =
     | [] => []
     \ [mid .. xs] =>
         xs:filter(fn x => A.less(x, mid)):sort

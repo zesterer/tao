@@ -5,7 +5,7 @@ data Value =
     | Integer Int
     \ Pair (Value, Value)
 
-def give_me_a : Str -> Value =
+fn give_me_a : Str -> Value =
     | "string" => String "Hello"
     | "integer" => Integer 42i
     | "pair" => Pair (String "left", String "right")
@@ -13,7 +13,7 @@ def give_me_a : Str -> Value =
 
 type NatOrBool = (Nat | Bool)
 
-def nat_or_bool1 : Bool -> (Nat | Bool) =
+fn nat_or_bool1 : Bool -> (Nat | Bool) =
     | True => ?5
     \ False => ?True
 
@@ -22,14 +22,14 @@ def match_nat_or_bool =
     | ?x : Nat => ()
     \ ?y : Bool => ()
 
-# def nat : (Nat|) = nat_or_bool(True)
+# fn nat : (Nat|) = nat_or_bool(True)
 
-def takes_union_or_nat : (Nat | Bool) -> (Nat | Bool) =
+fn takes_union_or_nat : (Nat | Bool) -> (Nat | Bool) =
     \ x => ?True
 
 def f : (Nat | Bool) -> (Nat | Bool) = takes_union_or_nat
 
-def nat_or_bool2 : Bool -> (Bool | Nat) =
+fn nat_or_bool2 : Bool -> (Bool | Nat) =
     | True => ?(let x : Nat = 5 in x)
     | True => ?False
     | True => ?True
@@ -48,7 +48,7 @@ def nat_or_bool : (Bool | Nat) = if True
     then ?True
     else ?3
 
-def nat_or_bool_or_real : (Bool | Nat) =
+def nat_or_bool_or_real : (Bool | Nat | Real) =
     # let () = nat_or_bool in
     match nat_or_bool in
     | ? _ : Nat => nat_or_bool
@@ -58,7 +58,7 @@ def main2 = match nat_or_bool2(True) in
     | ? x : Nat => "nat"
     \ ? x : Bool => "bool"
 
-def factorial =
+fn factorial =
     | 0 => 1
     \ m ~ n + 1 => m * factorial(n)
 
@@ -68,7 +68,7 @@ def main3 =
     let f = fn y => x + y in
     f(4)
 
-def and_then A, B, E, D : (A -> Result B D) -> Result A E -> Result B (E | D) =
+fn and_then A, B, E, D : (A -> Result B D) -> Result A E -> Result B (E | D) =
     | _, Err e => Err ?e
     \ f, Ok ok => match ok:f in
         | Err e => Err ?e
@@ -77,22 +77,22 @@ def and_then A, B, E, D : (A -> Result B D) -> Result A E -> Result B (E | D) =
 data TooSmall
 data TooBig
 
-def more_than_5 : Nat -> Result Nat TooSmall =
+fn more_than_5 : Nat -> Result Nat TooSmall =
     \ x => if x > 5
         then Ok x
         else Err TooSmall
 
-def less_than_10 : Nat -> Result Nat TooBig =
+fn less_than_10 : Nat -> Result Nat TooBig =
     \ x => if x < 10
         then Ok x
         else Err TooBig
 
-def between_5_and_10 : Nat -> Result Nat (TooSmall | TooBig) =
+fn between_5_and_10 : Nat -> Result Nat (TooSmall | TooBig) =
     \ x => x:more_than_5
         :and_then(less_than_10)
 
 # $[main]
-# def main = [1, 2, 3, 4, 5, 6]
+# fn main = [1, 2, 3, 4, 5, 6]
 #     :stream
 #     :take(5)
 #     :mapped(fn x => x * x)
@@ -108,7 +108,7 @@ for A member [A] of Mappable =
     => Output = [A]
     => map = fn f, self => self:map(f)
 
-def do_map A < Mappable =
+fn do_map A < Mappable =
     \ f, m => A.map(f, m)
 
 class Foo =
@@ -133,7 +133,7 @@ def main = [
         :contains(4)
         :debug
 
-# def main2 = do
+# fn main2 = do
 #     let msg = input;
 #     if msg = "exit" then do
 #         print("Now exiting...");

@@ -22,13 +22,13 @@ functions, currying, good diagnostics, and much more!
 - [x] Typeclasses
 - [x] Associated types
 - [x] Built-in lists
-- [x] Monomorphisation
+- [x] Monomorphisation of generic code
 - [x] MIR optimiser
     - [x] Inlining
     - [x] Const folding
     - [x] Symbolic execution
-    - [x] Unreachable elision
     - [x] Dead code removal
+    - [x] Exhaustive pattern flattening
 - [x] Bytecode compiler
 
 ## Current working on

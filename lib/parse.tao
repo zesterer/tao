@@ -1,20 +1,18 @@
 import "lib/std.tao"
 
-# def fold A, B : ? -> (? -> A -> ?) -> ? -> B =
+# fn fold A, B : ? -> (? -> A -> ?) -> ? -> B =
 #     | init, _, [] => init
 #     \ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
-def reduce A, B =
-	\ f, (init, xs) : (A, [B]) => fold(init, f, xs)
+fn reduce A, B = f, (init, xs) : (A, [B]) => fold(init, f, xs)
 
-def fold_r A, B =
+fn fold_r A, B =
 	| init, _, [] => init
 	\ init, f : A -> B -> ?, [x .. xs] => f(x, fold_r(init, f, xs))
 
-def reduce_r A, B =
-	\ f, (xs, init) : ([B], A) => fold_r(init, f, xs)
+fn reduce_r A, B = f, (xs, init) : ([B], A) => fold_r(init, f, xs)
 
-def map_res A, B, E : (A -> B) -> Result A E -> Result B E =
+fn map_res A, B, E : (A -> B) -> Result A E -> Result B E =
 	| f, Ok ok => Ok ok:f
 	\ _, Err err => Err err
 
@@ -26,75 +24,74 @@ data ParseErr I =
 
 type Parser I, O = [I] -> Result (O, [I]) (ParseErr I)
 
-def filter_tok I, O : (I -> Result O (ParseErr I)) -> Parser I O =
+fn filter_tok I, O : (I -> Result O (ParseErr I)) -> Parser I O =
     | _, [] => Err UnexpectedEnd
     \ f, [head .. tail] => head:f:map_res(fn o => (o, tail))
 
-def just : Char -> ? =
-    \ c => filter_tok(fn head => if head = c
+fn just : Char -> ? =
+    c => filter_tok(fn head => if head = c
         then Ok head
         else Err ExpectedFound (c, head))
 
-def and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
-	\ b, a, xs => match xs:a in
+fn and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
+	b, a, xs => match xs:a in
 		| Err err => Err err
 		\ Ok (a, xs) => match xs:b in
 			| Err err => Err err
 			\ Ok (b, xs) => Ok ((a, b), xs)
 
-def or_else I, O : Parser I O -> Parser I O -> Parser I O =
-	\ a, b, xs => match xs:a in
+fn or_else I, O : Parser I O -> Parser I O -> Parser I O =
+	a, b, xs => match xs:a in
 		| ok ~ Ok _ => ok
 		\ Err _ => match xs:b in
 			| ok ~ Ok _ => ok
 			\ err ~ Err _ => err
 
-def repeated I, O : Parser I O -> Parser I [O] =
-	\ a, xs => match xs:a in
+fn repeated I, O : Parser I O -> Parser I [O] =
+	a, xs => match xs:a in
 		| Ok (out, tail) => match tail:repeated(a) in
 			| Ok (items, tail) => Ok ([out .. items], tail)
 			\ err ~ Err _ => Ok ([], tail)
 		\ Err err => Ok ([], xs)
 
-def repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
-	\ n, a, xs => match xs:repeated(a) in
+fn repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
+	n, a, xs => match xs:repeated(a) in
 		| ok ~ Ok (out, tail) => if out:len >= n
 			then ok
 			else Err ExpectedMore
 		\ err ~ Err _ => err
 
-def map_to I, O, U : (O -> U) -> Parser I O -> Parser I U =
-	\ f, a, xs => xs:a:map_res(fn (out, tail) => (out:f, tail))
+fn map_to I, O, U : (O -> U) -> Parser I O -> Parser I U =
+    f, a, xs => xs:a:map_res(fn (out, tail) => (out:f, tail))
 
-def then_ignore I, O, U : Parser I U -> Parser I O -> Parser I O =
-	\ b, a => a
-		:and_then(b)
-		:map_to(fn (a, _) => a)
+fn then_ignore I, O, U : Parser I U -> Parser I O -> Parser I O =
+    b, a => a
+        :and_then(b)
+        :map_to(fn (a, _) => a)
 
-def ignore_then I, O, U : Parser I U -> Parser I O -> Parser I U =
-	\ b, a => a
-		:and_then(b)
-		:map_to(fn (_, b) => b)
+fn ignore_then I, O, U : Parser I U -> Parser I O -> Parser I U =
+    b, a => a
+        :and_then(b)
+        :map_to(fn (_, b) => b)
 
 def whitespace = just(' ')
 	:or_else(just('\t'))
 
 def whitespaces = whitespace:repeated
 
-def padded O : Parser Char O -> Parser Char O =
-    \ a => whitespaces
-		:ignore_then(a)
-		:then_ignore(whitespaces)
+fn padded O : Parser Char O -> Parser Char O =
+    a => whitespaces
+        :ignore_then(a)
+        :then_ignore(whitespaces)
 
-def recurse I, O : Parser I O -> Parser I O =
-	\ f, xs => match xs:f in
-		| Ok (out, tail) => Ok (out, tail)
-		\ Err e => Err e
+fn recurse I, O : Parser I O -> Parser I O = f, xs => match xs:f in
+    | Ok (out, tail) => Ok (out, tail)
+    \ Err e => Err e
 
 data FindErr =
 	\ NotFound
 
-def find_start : Nat -> Char -> Str -> Result Nat FindErr =
+fn find_start : Nat -> Char -> Str -> Result Nat FindErr =
 	| idx, c, [head .. tail] => if c = head
 		then Ok idx
 		else tail:find_start(idx + 1, c)
@@ -102,8 +99,7 @@ def find_start : Nat -> Char -> Str -> Result Nat FindErr =
 
 def find = find_start(0)
 
-def char_to_num =
-	\ c => "0123456789":find(c)
+fn char_to_num = c => "0123456789":find(c)
 
 def digit = filter_tok(fn c => match c:char_to_num in
 	| Ok n => Ok n
@@ -135,8 +131,7 @@ def atom = number
 		:then_ignore(just(')'))
 		:padded)
 
-def op =
-	\ c => just(c):padded
+fn op = c => just(c):padded
 
 def unary = op('-')
 	:map_to(fn _ => Neg)
@@ -159,7 +154,7 @@ def sum_parser = product_parser
 
 def expr : Parser Char Expr = sum_parser
 
-def eval =
+fn eval =
 	| Natural x => --x
 	| Unary (Neg, a) => -a:eval
 	| Binary (Add, a, b) => a:eval + b:eval

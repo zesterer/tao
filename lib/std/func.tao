@@ -9,5 +9,5 @@
 ## in
 ## factorial(10)
 ## ```
-def fix A : ((A -> A) -> A -> A) -> A -> A =
+fn fix A : ((A -> A) -> A -> A) -> A -> A =
     \ f, n => f(f:fix, n)

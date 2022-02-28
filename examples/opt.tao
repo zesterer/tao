@@ -4,7 +4,7 @@ data Result A, E =
     | Ok A
     \ Err E
 
-def f A : A -> A =
+fn f A : A -> A =
     \ x => let x = Ok x in
         match x in
         | Ok x => x
@@ -14,14 +14,27 @@ data Option A =
     | Just A
     \ None
 
+fn filter A : ? -> ? -> [A] =
+    | _, [] => []
+    \ f, [head .. tail] =>
+        let head = if head:f
+            then [head]
+            else []
+        in head ++ tail:filter(f)
 
-def map A, B =
+fn map A, B =
     | _ : A -> B, None => None
     \ f, Just a => Just a:f
 
-def do_map A, B =
-    \ f : A -> B, x => x:map(fn x => x:f)
+fn do_map A, B =
+    f : A -> B, x => x:map(fn x => x:f)
+
+fn join = xs : [Nat], ys : [?] => xs ++ ys
 
 $[main]
-def main = (Just 4)
-    :do_map(fn x => x + 7)
+def main =
+    let x = 5 in
+    let y = fn x => x + 7 in
+    x * y(x)
+
+def foo = ((((((((((((((((((((((((((((((((((((((((((((((((()))))))))))))))))))))))))))))))))))))))))))))))))
