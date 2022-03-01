@@ -118,7 +118,13 @@ impl ToHir for ast::Type {
                                 let get_gen = |index, scope, ctx: &Context| {
                                     params[index]
                                 };
-                                TyInfo::Ref(infer.instantiate(alias_ty, self.span(), &get_gen, None))
+
+                                // Bit messy, makes sure that we don't accidentally infer a bad type backwards
+                                let inner_ty_actual = infer.instantiate(alias_ty, self.span(), &get_gen, None);
+                                let inner_ty = infer.unknown(self.span());
+                                infer.check_flow(inner_ty_actual, inner_ty, EqInfo::default());
+
+                                TyInfo::Ref(inner_ty)
                             }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error(ErrorReason::Unknown));
@@ -289,7 +295,13 @@ impl ToHir for ast::Binding {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
                     let get_gen = |index, _, ctx: &Context| generic_tys[index];
-                    infer.instantiate(inner_ty, name.span(), &get_gen, None)
+
+                    // Bit messy, makes sure that we don't accidentally infer a bad type backwards
+                    let inner_ty_actual = infer.instantiate(inner_ty, name.span(), &get_gen, None);
+                    let inner_ty = infer.unknown(self.span());
+                    infer.check_flow(inner_ty_actual, inner_ty, EqInfo::default());
+
+                    inner_ty
                 };
 
                 let inner = inner.to_hir(infer, scope);
@@ -373,7 +385,7 @@ impl ToHir for ast::Expr {
                         .map(|body| body.meta().1))
                 {
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-                    let def_ty_actual = infer.instantiate(body_ty, self.span(), &get_gen, None);
+                    let def_ty_actual = infer.instantiate(body_ty, None /*Some(self.span())*/, &get_gen, None);
                     let def_ty = infer.unknown(self.span());
                     infer.check_flow(def_ty_actual, def_ty, EqInfo::default());
                     Some(def_ty)
@@ -550,7 +562,7 @@ impl ToHir for ast::Expr {
                 // TODO: Don't always refuse 0-branch functions? Can they be useful with never types?
                 if let Some(first_arm) = arms.first() {
                     let mut is_err = false;
-                    for arm in arms {
+                    for arm in arms.iter() {
                         if arm.0.len() != first_arm.0.len() {
                             infer.ctx_mut().emit(Error::WrongNumberOfParams(arm.0.span(), arm.0.len(), first_arm.0.span(), first_arm.0.len()));
                             is_err = true;
@@ -560,7 +572,11 @@ impl ToHir for ast::Expr {
                     if is_err {
                         (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                     } else {
-                        let output_ty = infer.unknown(self.span());
+                        let output_ty = infer.unknown(if arms.len() == 1 {
+                            arms[0].1.span()
+                        } else {
+                            arms.span()
+                        });
 
                         let pseudos = (0..first_arm.0.len())
                             .map(|i| {
@@ -659,7 +675,13 @@ impl ToHir for ast::Expr {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
                     let get_gen = |index, _, ctx: &Context| generic_tys[index];
-                    infer.instantiate(inner_ty, name.span(), &get_gen, None)
+
+                    // Bit messy, makes sure that we don't accidentally infer a bad type backwards
+                    let inner_ty_actual = infer.instantiate(inner_ty, name.span(), &get_gen, None);
+                    let inner_ty = infer.unknown(self.span());
+                    infer.check_flow(inner_ty, inner_ty_actual, EqInfo::default());
+
+                    inner_ty
                 };
 
                 let inner = inner.to_hir(infer, scope);

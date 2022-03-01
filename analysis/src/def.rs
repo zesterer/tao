@@ -9,7 +9,7 @@ pub struct Def {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct DefId(usize);
+pub struct DefId(pub usize);
 
 #[derive(Default)]
 pub struct Defs {

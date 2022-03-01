@@ -46,33 +46,37 @@ pub enum Error {
 
 impl Error {
     pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, main_src: SrcId, writer: impl Write) {
-        use ariadne::{Report, ReportKind, Label, Color, Fmt, Span};
+        use ariadne::{Report, ReportKind, Label, Color, Fmt, Span, Config};
 
         let display = |id| ctx.tys.display(&ctx.datas, id);
 
         let (msg, spans, notes) = match self {
-            Error::CannotCoerce(x, y, inner, info) => (
-                format!(
-                    "Type {} does not coerce to {}",
-                    display(inner.map_or(x, |(a, _)| a)).fg(Color::Red),
-                    display(inner.map_or(y, |(_, b)| b)).fg(Color::Yellow),
-                ),
-                {
-                    let mut labels = vec![
-                        (ctx.tys.get_span(inner.map_or(x, |(a, _)| a)), format!("Type {} was found here", display(x).fg(Color::Red)), Color::Red),
-                        (ctx.tys.get_span(inner.map_or(x, |(_, b)| b)), format!("Type {} is required here", display(y).fg(Color::Yellow)), Color::Yellow),
-                    ];
-                    if let Some(at) = info.at {
-                        labels.push((at, format!("Coercion is required here"), Color::Yellow));
-                    }
-                    labels
-                },
-                if let Some(reason) = info.reason {
-                    vec![reason]
-                } else {
-                    Vec::new()
-                },
-            ),
+            Error::CannotCoerce(x, y, inner, info) => {
+                let src = inner.map_or(x, |(a, _)| a);
+                let dst = inner.map_or(y, |(_, b)| b);
+                (
+                    format!(
+                        "Type {} does not coerce to {}",
+                        display(src).fg(Color::Red),
+                        display(dst).fg(Color::Yellow),
+                    ),
+                    {
+                        let mut labels = vec![
+                            (ctx.tys.get_span(src), format!("Type {} was found here", display(src).fg(Color::Red)), Color::Red),
+                            (ctx.tys.get_span(dst), format!("Type {} is required here", display(dst).fg(Color::Yellow)), Color::Yellow),
+                        ];
+                        if let Some(at) = info.at {
+                            labels.push((at, format!("Coercion is required here"), Color::Yellow));
+                        }
+                        labels
+                    },
+                    if let Some(reason) = info.reason {
+                        vec![reason]
+                    } else {
+                        Vec::new()
+                    },
+                )
+            },
             Error::CannotInfer(a, origin) => (
                 format!("Cannot infer type {}", display(a).fg(Color::Red)),
                 match origin {
@@ -398,6 +402,8 @@ impl Error {
         }
 
         report
+            .with_config(Config::default()
+                .with_compact(false))
             .finish()
             .write(cache, writer)
             .unwrap();

@@ -391,7 +391,7 @@ impl Context {
                                 let self_ty = member.member.to_hir(&mut infer, &Scope::Empty).meta().1;
                                 let val_ty = infer.instantiate(
                                     *field_ty,
-                                    Some(field_ty.span()),
+                                    None,//Some(field_ty.span()),
                                     &|_, _, _| panic!("Generics not yet supported on classes"),
                                     Some(self_ty),
                                 );

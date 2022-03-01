@@ -208,7 +208,7 @@ pub enum Expr {
     Let(Vec<(SrcNode<Binding>, SrcNode<Self>)>, SrcNode<Self>),
     Match(SrcNode<Vec<SrcNode<Self>>>, Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>),
     If(SrcNode<Self>, SrcNode<Self>, SrcNode<Self>),
-    Func(Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>),
+    Func(SrcNode<Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>>),
     Apply(SrcNode<Self>, SrcNode<Self>),
     Cons(SrcNode<Ident>, SrcNode<Self>),
     ClassAccess(SrcNode<Type>, SrcNode<Ident>),

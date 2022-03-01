@@ -13,7 +13,7 @@ fn give_me_a : Str -> Value =
 
 type NatOrBool = (Nat | Bool)
 
-fn nat_or_bool1 : Bool -> (Nat | Bool) =
+fn nat_or_bool1 : Bool -> NatOrBool =
     | True => ?5
     \ False => ?True
 

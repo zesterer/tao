@@ -403,7 +403,7 @@ impl Expr {
                 }
                 match self.0 {
                     Expr::Local(local) => write!(f, "${}", local.0),
-                    Expr::Global(global, _) => write!(f, "global {:?}", global),
+                    Expr::Global(global, _) => write!(f, "global <{} {}>", global.0.0, global.1.iter().map(|ty| ty.id().to_string()).collect::<Vec<_>>().join(" ")),
                     Expr::Literal(c) => write!(f, "const {:?}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
@@ -427,9 +427,10 @@ impl Expr {
                         write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))
                     },
                     Expr::Match(pred, arms) => {
-                        write!(f, "match {} in", DisplayExpr(pred, self.1, false))?;
-                        for (arm, body) in arms {
-                            write!(f, "\n{}| {} => {}", "    ".repeat(self.1 + 1), DisplayBinding(arm, self.1 + 1), DisplayExpr(body, self.1 + 1, false))?;
+                        write!(f, "match {} in", DisplayExpr(pred, self.1 + 1, false))?;
+                        for (i, (arm, body)) in arms.iter().enumerate() {
+                            let start = if i + 1 == arms.len() { '\\' } else { '|' };
+                            write!(f, "\n{}{} {} => {}", "    ".repeat(self.1 + 1), start, DisplayBinding(arm, self.1 + 1), DisplayExpr(body, self.1 + 1, false))?;
                         }
                         if arms.len() == 0 {
                             write!(f, " (no arms)")?;

@@ -449,7 +449,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         let branches = branches(branch);
 
         let func = just(Token::Fn)
-            .ignore_then(branches.clone())
+            .ignore_then(branches.clone().map_with_span(SrcNode::new))
             .map(ast::Expr::Func);
 
         let class_access = type_parser()
@@ -797,7 +797,7 @@ pub fn fn_parser() -> impl Parser<ast::Def> {
         .then(ty_hint_parser())
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(branches(branch)
-            .map_with_span(|branches, span| SrcNode::new(ast::Expr::Func(branches), span)))
+            .map_with_span(|branches, span| SrcNode::new(ast::Expr::Func(SrcNode::new(branches, span)), span)))
         .map(|(((name, generics), ty_hint), body)| ast::Def {
             generics,
             ty_hint: ty_hint.unwrap_or_else(|| SrcNode::new(ast::Type::Unknown, name.span())),
@@ -807,15 +807,6 @@ pub fn fn_parser() -> impl Parser<ast::Def> {
 }
 
 pub fn def_parser() -> impl Parser<ast::Def> {
-    let branches = always_branches(binding_parser()
-        .map_with_span(SrcNode::new)
-        .separated_by(just(Token::Comma))
-        .allow_trailing()
-        .map_with_span(SrcNode::new)
-        .then_ignore(just(Token::Op(Op::RFlow)))
-        .then(expr_parser().map_with_span(SrcNode::new)))
-        .map_with_span(|branches, span| SrcNode::new(ast::Expr::Func(branches), span));
-
     just(Token::Def)
         .ignore_then(term_ident_parser()
             .map_with_span(SrcNode::new))

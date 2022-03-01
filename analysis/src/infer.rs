@@ -303,10 +303,6 @@ impl<'a> Infer<'a> {
         self.insert(span, TyInfo::Unknown(None))
     }
 
-    // pub fn usage(&mut self, span: Span, ty: TyVar) -> TyVar {
-    //     self.insert(span, TyInfo::Ref(ty))
-    // }
-
     pub fn make_access(&mut self, record: TyVar, field_name: SrcNode<Ident>, field: TyVar) {
         self.constraints.push_back(Constraint::Access(record, field_name, field));
     }
@@ -468,6 +464,7 @@ impl<'a> Infer<'a> {
                 self.set_info(y, TyInfo::Error(ErrorReason::Recursive));
                 Ok(self.set_error(y)) // TODO: Not actually ok
             } else {
+                self.vars[x.0].0 = self.vars[y.0].0; // Give the rhs a better span
                 Ok(self.set_info(y, TyInfo::Ref(x)))
             },
 
@@ -492,8 +489,8 @@ impl<'a> Infer<'a> {
                 });
                 // Small optimisation to reduce complexity
                 // TODO: Is this necessary?
-                ys.sort();
-                ys.dedup();
+                // ys.sort();
+                // ys.dedup();
                 self.set_info(y, TyInfo::Union(ys));
                 self.set_info(x, TyInfo::Ref(y));
                 Ok(())
@@ -504,7 +501,7 @@ impl<'a> Infer<'a> {
                     .into_iter()
                     .try_for_each(|(x, x_ty)| self.make_flow_inner(x_ty, ys[&x])),
             (TyInfo::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                let i_err = self.make_flow_inner(y_i, x_i).err(); // Input is contravariant
+                let i_err = self.make_flow_inner(y_i, x_i).err().map(|(a, b)| (b, a)); // Input is contravariant
                 let o_err = self.make_flow_inner(x_o, y_o).err();
                 i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
@@ -512,7 +509,7 @@ impl<'a> Infer<'a> {
                 xs.len() == ys.len() => {
                 // TODO: Unnecessarily conservative, variance of data type generics should be determined
                 let co_error = make_flow_many(self, xs.iter().copied(), ys.iter().copied()).err();
-                let contra_error = make_flow_many(self, ys, xs).err();
+                let contra_error = make_flow_many(self, ys, xs).err().map(|(a, b)| (b, a));
                 co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
@@ -521,7 +518,7 @@ impl<'a> Infer<'a> {
                 if class_x == class_y && assoc_x == assoc_y => {
                     // associated types are invariant
                     let co_error = self.make_flow_inner(x, y).err();
-                    let contra_error = self.make_flow_inner(y, x).err();
+                    let contra_error = self.make_flow_inner(y, x).err().map(|(a, b)| (b, a));
                     co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
                 },
             (_, _) => Err((x, y)),
