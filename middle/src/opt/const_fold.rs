@@ -23,13 +23,19 @@ impl ConstFold {
         } else {
             match (&mut binding.pat, partial) {
                 (Pat::Wildcard, _) => true,
+                (Pat::Literal(litr), partial) => if let Some(rhs) = partial.to_literal() {
+                    litr == &rhs
+                } else {
+                    true
+                },
+                (Pat::Single(inner), partial) => self.extract(ctx, inner, partial, locals),
                 (Pat::Variant(variant, x), Partial::Sum(tag, y)) => if variant == tag {
                     self.extract(ctx, x, y, locals)
                 } else {
                     false
                 },
                 (Pat::Tuple(xs), Partial::Tuple(ys)) => {
-                    assert_eq!(xs.len(), ys.len());
+                    debug_assert_eq!(xs.len(), ys.len());
                     xs
                         .iter_mut()
                         .zip(ys.iter())
@@ -55,6 +61,16 @@ impl ConstFold {
                         .iter_mut()
                         .zip(ys.iter())
                         .all(|(x, y)| self.extract(ctx, x, y, locals))
+                },
+                (Pat::Add(inner, n), partial) => if let Some(rhs) = partial.to_literal() {
+                    let rhs = rhs.nat();
+                    if rhs >= *n {
+                        self.extract(ctx, inner, &Partial::Nat(rhs - *n), locals)
+                    } else {
+                        false
+                    }
+                } else {
+                    true
                 },
                 p => todo!("{:?}", p),
             }

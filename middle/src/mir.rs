@@ -387,7 +387,7 @@ impl Expr {
                         tail.as_ref().map(|tail| format!("{}", DisplayBinding(tail, self.1))).unwrap_or_default(),
                     ),
                     Pat::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayBinding(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
-                    // _ => write!(f, "<PAT>"),
+                    Pat::Add(inner, n) => write!(f, "{} + {}", DisplayBinding(inner, self.1), n),
                     pat => todo!("{:?}", pat),
                 }
             }
@@ -403,7 +403,12 @@ impl Expr {
                 }
                 match self.0 {
                     Expr::Local(local) => write!(f, "${}", local.0),
-                    Expr::Global(global, _) => write!(f, "global <{} {}>", global.0.0, global.1.iter().map(|ty| ty.id().to_string()).collect::<Vec<_>>().join(" ")),
+                    Expr::Global(global, _) => write!(
+                        f,
+                        "global <{}{}{}>",
+                        global.0.0, if global.1.is_empty() { "" } else { " " },
+                        global.1.iter().map(|ty| ty.id().to_string()).collect::<Vec<_>>().join(" "),
+                    ),
                     Expr::Literal(c) => write!(f, "const {:?}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),

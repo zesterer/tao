@@ -31,10 +31,9 @@ fn do_map A, B =
 
 fn join = xs : [Nat], ys : [?] => xs ++ ys
 
-$[main]
-def main =
-    let x = 5 in
-    let y = fn x => x + 7 in
-    x * y(x)
+fn factorial =
+    | 0 => 1
+    \ m ~ n + 1 => m * factorial(n)
 
-def foo = ((((((((((((((((((((((((((((((((((((((((((((((((()))))))))))))))))))))))))))))))))))))))))))))))))
+$[main]
+def main = factorial(10)
