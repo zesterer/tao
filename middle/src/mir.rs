@@ -249,6 +249,9 @@ pub enum Expr {
     Func(Local, MirNode<Self>),
     Apply(MirNode<Self>, MirNode<Self>),
 
+    // Tail recursion
+    Go(MirNode<Local>, MirNode<Self>, MirNode<Self>),
+
     Tuple(Vec<MirNode<Self>>),
     Access(MirNode<Self>, usize),
     List(Vec<MirNode<Self>>),
@@ -305,6 +308,15 @@ impl Expr {
                 stack.pop();
                 *arg = new_arg;
             },
+            Expr::Go(next, body, init) => {
+                init.refresh_locals_inner(stack);
+
+                let new_init = Local::new();
+                stack.push((**next, new_init));
+                body.refresh_locals_inner(stack);
+                stack.pop();
+                **next = new_init;
+            },
             _ => self.for_children_mut(|expr| expr.refresh_locals_inner(stack)),
         }
     }
@@ -334,6 +346,12 @@ impl Expr {
             },
             Expr::Func(arg, body) => {
                 stack.push(*arg);
+                body.required_locals_inner(stack, required);
+                stack.pop();
+            },
+            Expr::Go(next, body, init) => {
+                init.required_locals_inner(stack, required);
+                stack.push(**next);
                 body.required_locals_inner(stack, required);
                 stack.pop();
             },
@@ -411,6 +429,7 @@ impl Expr {
                     ),
                     Expr::Literal(c) => write!(f, "const {:?}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
+                    Expr::Go(next, body, init) => write!(f, "go(${} => {}, {})", next.0, DisplayExpr(body, self.1, false), DisplayExpr(init, self.1, false)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),

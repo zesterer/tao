@@ -128,6 +128,15 @@ impl ConstFold {
 
                 Partial::Unknown(None)
             },
+            Expr::Go(next, body, init) => {
+                self.eval(ctx, init, stack);
+
+                stack.push((**next, Partial::Unknown(Some(**next))));
+                self.eval(ctx, body, stack);
+                stack.pop();
+
+                Partial::Unknown(None)
+            },
             Expr::Variant(variant, inner) => Partial::Sum(*variant, Box::new(self.eval(ctx, inner, stack))),
             Expr::Tuple(fields) => Partial::Tuple(fields
                 .iter_mut()
@@ -212,6 +221,7 @@ impl Intrinsic {
         match self {
             NegNat => op!(Nat(x) => Int(-(*x as i64))),
             AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
+            SubNat => op!(Nat(x), Nat(y) => Int(*x as i64 - *y as i64)),
             MulNat => op!(Nat(x), Nat(y) => Nat(x * y)),
             LessNat => op!(Nat(x), Nat(y) => Bool(x < y)),
             MoreNat => op!(Nat(x), Nat(y) => Bool(x > y)),

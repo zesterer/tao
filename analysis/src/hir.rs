@@ -103,6 +103,7 @@ pub enum Intrinsic {
     NegNat,
     NegInt,
     NegReal,
+    Go,
 }
 
 #[derive(Debug)]

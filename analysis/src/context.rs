@@ -68,7 +68,7 @@ impl Context {
             let (gen_scope, mut errs) = GenScope::from_ast(&data.generics);
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            if let Err(err) = this.datas.declare_data(data.name.clone(), gen_scope) {
+            if let Err(err) = this.datas.declare_data(data.name.clone(), gen_scope, &attr) {
                 errors.push(err);
                 continue;
             } else {
@@ -98,6 +98,7 @@ impl Context {
 
         // Check for lang items
         this.errors.append(&mut this.classes.check_lang_items());
+        this.errors.append(&mut this.datas.check_lang_items());
 
         // Now that we have declarations for all classes and data types, we can check generic scope constraints
         let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);

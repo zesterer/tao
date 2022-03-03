@@ -94,6 +94,12 @@ impl Pass for RemoveUnusedBindings {
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
                 },
+                Expr::Go(next, body, init) => {
+                    visit(mir, init, stack, proc_stack);
+                    stack.push((**next, 0));
+                    visit(mir, body, stack, proc_stack);
+                    stack.pop();
+                },
                 _ => expr.for_children_mut(|expr| visit(mir, expr, stack, proc_stack)),
             }
         }

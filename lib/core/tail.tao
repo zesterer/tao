@@ -1,9 +1,9 @@
+$[lang(go)]
 data Go C, R =
     | Next C
     \ Done R
 
-## Guaranteed to tail call (TODO: actually implement this)
-fn go C, R : (C -> Go C R) -> C -> R = f, c => match c:f in
-    | Done r => r
-    \ Next c => go(f, c)
-    # @go(f, rec)
+## Guaranteed to tail call
+fn go C, R : (C -> Go C R) -> C -> R = f, c =>
+    @go(f, c)
+

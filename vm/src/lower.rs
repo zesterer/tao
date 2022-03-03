@@ -262,6 +262,31 @@ impl Program {
                         assert_eq!(*ty as usize as u64, *ty, "usize too small for this union variant");
                         self.push(Instr::MakeSum(*ty as usize));
                     },
+                    Go => {
+                        let luup = self.next_addr();
+                        // Apply function
+                        self.push(Instr::PushLocal);
+                        self.push(Instr::Dup);
+                        self.push(Instr::ApplyFunc);
+
+                        const NEXT_VARIANT: usize = 0;
+                        const DONE_VARIANT: usize = 1;
+
+                        // Try unwrapping result
+                        self.push(Instr::Dup);
+                        self.push(Instr::VariantSum);
+                        self.push(Instr::Imm(Value::Int(NEXT_VARIANT as i64)));
+                        self.push(Instr::EqInt);
+                        self.push(Instr::IfNot);
+                        let done = self.push(Instr::Jump(0)); // Fixed by #6
+                        self.push(Instr::IndexSum(NEXT_VARIANT));
+                        let again = self.push(Instr::Jump(0));
+                        self.fixup(again, luup, Instr::Jump);
+
+                        self.fixup(done, self.next_addr(), Instr::Jump); // Fixes #6
+                        self.push(Instr::IndexSum(DONE_VARIANT));
+                        self.push(Instr::Replace);
+                    },
                 };
             },
             mir::Expr::Tuple(fields) => {
@@ -356,6 +381,35 @@ impl Program {
                 self.push(Instr::MakeFunc(self.next_addr().jump_to(f_addr), captures.len()));
 
                 stack.truncate(old_stack);
+            },
+            mir::Expr::Go(arg, body, init) => {
+                self.compile_expr(mir, init, stack, proc_fixups);
+
+                let luup = self.next_addr();
+                // Execute body
+                self.push(Instr::PushLocal);
+                stack.push(**arg);
+                self.compile_expr(mir, body, stack, proc_fixups);
+                stack.pop();
+                self.push(Instr::PopLocal(1));
+
+                const NEXT_VARIANT: usize = 0;
+                const DONE_VARIANT: usize = 1;
+
+                // Try unwrapping result
+                self.push(Instr::Dup);
+                self.push(Instr::VariantSum);
+                self.push(Instr::Imm(Value::Int(NEXT_VARIANT as i64)));
+                self.push(Instr::EqInt);
+                self.push(Instr::IfNot);
+                let done = self.push(Instr::Jump(0)); // Fixed by #6
+                self.push(Instr::IndexSum(NEXT_VARIANT));
+                let again = self.push(Instr::Jump(0));
+                self.fixup(again, luup, Instr::Jump);
+
+                self.fixup(done, self.next_addr(), Instr::Jump); // Fixes #6
+                self.push(Instr::IndexSum(DONE_VARIANT));
+                self.push(Instr::Replace);
             },
             mir::Expr::Apply(f, arg) => {
                 self.compile_expr(mir, f, stack, proc_fixups);

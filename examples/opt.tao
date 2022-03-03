@@ -1,36 +1,5 @@
 import "lib/core.tao"
 
-data Result A, E =
-    | Ok A
-    \ Err E
-
-fn f A : A -> A =
-    \ x => let x = Ok x in
-        match x in
-        | Ok x => x
-        \ Err x => x
-
-data Option A =
-    | Just A
-    \ None
-
-fn filter A : ? -> ? -> [A] =
-    | _, [] => []
-    \ f, [head .. tail] =>
-        let head = if head:f
-            then [head]
-            else []
-        in head ++ tail:filter(f)
-
-fn map A, B =
-    | _ : A -> B, None => None
-    \ f, Just a => Just a:f
-
-fn do_map A, B =
-    f : A -> B, x => x:map(fn x => x:f)
-
-fn join = xs : [Nat], ys : [?] => xs ++ ys
-
 fn factorial_go = n => go(
     fn
         | (0, a) => Done a
@@ -39,9 +8,9 @@ fn factorial_go = n => go(
     (n, 1),
 )
 
-# fn factorial =
-#     | 0 => 1
-#     \ m ~ n + 1 => m * factorial(n)
+fn factorial =
+    | 0 => 1
+    \ m ~ n + 1 => m * factorial(n)
 
 $[main]
 def main = factorial_go(10)

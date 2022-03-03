@@ -714,6 +714,11 @@ impl ToHir for ast::Expr {
                     .collect::<Vec<_>>();
                 match name.as_str() {
                     "type_name" if args.len() == 1 => {
+                        // Takes an empty list
+                        let item = infer.unknown(args[0].meta().0);
+                        let list = infer.insert(args[0].meta().0, TyInfo::List(item));
+                        infer.make_flow(args[0].meta().1, list, EqInfo::default());
+                        // Produces a string
                         let c = infer.insert(name.span(), TyInfo::Prim(Prim::Char));
                         (TyInfo::List(c), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TypeName, name.span()), args))
                     },
@@ -737,6 +742,16 @@ impl ToHir for ast::Expr {
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Real));
                         infer.make_flow(args[0].meta().1, nat, EqInfo::default());
                         (TyInfo::Prim(Prim::Real), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegReal, name.span()), args))
+                    },
+                    "go" if args.len() == 2 => if let Some(go_data) = infer.ctx().datas.lang.go {
+                        let c = args[1].meta().1;
+                        let r = infer.unknown(self.span());
+                        let ret = infer.insert(args[0].meta().0, TyInfo::Data(go_data, vec![c, r]));
+                        let f = infer.insert(args[0].meta().0, TyInfo::Func(c, ret));
+                        infer.make_flow(args[0].meta().1, f, EqInfo::default());
+                        (TyInfo::Ref(r), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Go, name.span()), args))
+                    } else {
+                        (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                     },
                     _ => {
                         infer.ctx_mut().emit(Error::InvalidIntrinsic(name.clone()));

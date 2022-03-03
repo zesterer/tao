@@ -21,6 +21,11 @@ pub struct Alias {
 }
 
 #[derive(Default)]
+pub struct Lang {
+    pub go: Option<DataId>,
+}
+
+#[derive(Default)]
 pub struct Datas {
     // TODO: Don't use `Result`
     name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>, GenScopeId)>,
@@ -28,6 +33,7 @@ pub struct Datas {
     alias_lut: HashMap<Ident, Alias>,
     datas: Vec<(Span, Option<Data>)>,
     aliases: Vec<(Span, Option<Alias>)>,
+    pub lang: Lang,
 }
 
 impl Datas {
@@ -74,14 +80,32 @@ impl Datas {
         self.aliases[alias.0].0
     }
 
-    pub fn declare_data(&mut self, name: SrcNode<Ident>, gen_scope: GenScopeId) -> Result<DataId, Error> {
+    pub fn declare_data(&mut self, name: SrcNode<Ident>, gen_scope: GenScopeId, attr: &[SrcNode<ast::Attr>]) -> Result<DataId, Error> {
         let id = DataId(self.datas.len());
         if let Err(old) = self.name_lut.try_insert(*name, (name.span(), Ok(id), gen_scope)) {
             Err(Error::DuplicateTypeName(*name, old.entry.get().0, name.span()))
         } else {
+            if let Some(lang) = attr
+                .iter()
+                .find(|a| &**a.name == "lang")
+                .and_then(|a| a.args.as_ref())
+            {
+                if lang.iter().find(|a| &**a.name == "go").is_some() {
+                    self.lang.go = Some(id);
+                }
+            }
+
             self.datas.push((name.span(), None));
             Ok(id)
         }
+    }
+
+    pub fn check_lang_items(&self) -> Vec<Error> {
+        let mut errors = Vec::new();
+
+        if self.lang.go.is_none() { errors.push(Error::MissingLangItem("go")); }
+
+        errors
     }
 
     pub fn declare_alias(&mut self, name: Ident, span: Span, gen_scope: GenScopeId) -> Result<AliasId, Error> {

@@ -317,6 +317,17 @@ impl Context {
                     hir::Intrinsic::NegNat => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::NegReal => mir::Expr::Intrinsic(mir::Intrinsic::NegReal, vec![self.lower_expr(hir, con, &args[0], stack)]),
+                    hir::Intrinsic::Go => {
+                        let next_local = Local::new();
+                        let func = self.lower_expr(hir, con, &args[0], stack);
+                        let next = self.lower_expr(hir, con, &args[1], stack);
+                        let output_repr = if let Repr::Func(_, o) = func.meta() { (**o).clone() } else { unreachable!() };
+                        mir::Expr::Go(
+                            MirNode::new(next_local, next.meta().clone()),
+                            MirNode::new(mir::Expr::Apply(func, MirNode::new(mir::Expr::Local(next_local), next.meta().clone())), output_repr),
+                            next,
+                        )
+                    },
                 }
             },
         };

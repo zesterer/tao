@@ -213,8 +213,10 @@ impl Expr {
                     f(body);
                 }
             },
-            Expr::Func(_, body) => {
+            Expr::Func(_, body) => f(body),
+            Expr::Go(_, body, init) => {
                 f(body);
+                f(init);
             },
             Expr::Apply(func, arg) => {
                 f(func);
@@ -245,8 +247,10 @@ impl Expr {
                     f(body);
                 }
             },
-            Expr::Func(_, body) => {
+            Expr::Func(_, body) => f(body),
+            Expr::Go(_, body, init) => {
                 f(body);
+                f(init);
             },
             Expr::Apply(func, arg) => {
                 f(func);
@@ -312,6 +316,10 @@ impl Expr {
             },
             Expr::Func(_, body) => {
                 body.visit_inner(order, repr, binding, expr);
+            },
+            Expr::Go(_, body, init) => {
+                body.visit_inner(order, repr, binding, expr);
+                init.visit_inner(order, repr, binding, expr);
             },
             Expr::Apply(f, arg) => {
                 f.visit_inner(order, repr, binding, expr);
@@ -388,6 +396,9 @@ pub fn check(ctx: &Context) {
                 stack.push((*i, (**i_repr).clone()));
                 visit_expr(ctx, body, stack);
                 stack.pop();
+            },
+            (Expr::Go(_, body, init), _) => {
+                // TODO: Validate return body and return type
             },
             (Expr::Apply(f, arg), _) => {
                 assert!(matches!(f.meta(), Repr::Func(_, _)));
