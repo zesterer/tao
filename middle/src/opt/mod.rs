@@ -3,11 +3,13 @@ use std::any::{Any, type_name};
 
 mod const_fold;
 mod flatten_single_field;
+mod remove_dead_proc;
 mod remove_unused_bindings;
 
 pub use {
     const_fold::ConstFold,
     flatten_single_field::FlattenSingleField,
+    remove_dead_proc::RemoveDeadProc,
     remove_unused_bindings::RemoveUnusedBindings,
 };
 

@@ -138,7 +138,11 @@ impl ToHir for ast::Type {
                             let err = Error::WrongNumberOfGenerics(
                                 self.span(),
                                 params.len(),
-                                data_gen_scope.span,
+                                if data_gen_scope.len() == 0 {
+                                    infer.ctx().datas.get_data_span(data)
+                                } else {
+                                    data_gen_scope.span
+                                },
                                 data_gen_scope.len(),
                             );
                             infer.ctx_mut().emit(err);

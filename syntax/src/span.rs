@@ -40,6 +40,7 @@ impl chumsky::Span for Span {
     type Offset = usize;
 
     fn new(src: SrcId, range: Range<usize>) -> Self {
+        assert!(range.start <= range.end);
         Self { src, range: (range.start, range.end) }
     }
 

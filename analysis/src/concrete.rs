@@ -427,11 +427,11 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .join(", ")),
             ConTy::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
             ConTy::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-            ConTy::Data(data_id) if self.lhs_exposed && data_id.1.len() > 0 => write!(f, "({}{})", self.datas.get_data(data_id.0).name, data_id.1
+            ConTy::Data(data_id) if self.lhs_exposed && data_id.1.len() > 0 => write!(f, "({}{})", *self.datas.get_data(data_id.0).name, data_id.1
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            ConTy::Data(data_id) => write!(f, "{}{}", self.datas.get_data(data_id.0).name, data_id.1
+            ConTy::Data(data_id) => write!(f, "{}{}", *self.datas.get_data(data_id.0).name, data_id.1
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),

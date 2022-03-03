@@ -183,11 +183,11 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 .join(", ")),
             Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
             Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-            Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", self.datas.get_data(name).name, params
+            Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", *self.datas.get_data(name).name, params
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            Ty::Data(name, params) => write!(f, "{}{}", self.datas.get_data(name).name, params
+            Ty::Data(name, params) => write!(f, "{}{}", *self.datas.get_data(name).name, params
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),

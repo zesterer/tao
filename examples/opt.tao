@@ -31,9 +31,17 @@ fn do_map A, B =
 
 fn join = xs : [Nat], ys : [?] => xs ++ ys
 
-fn factorial =
-    | 0 => 1
-    \ m ~ n + 1 => m * factorial(n)
+fn factorial_go = n => go(
+    fn
+        | (0, a) => Done a
+        \ (m ~ n + 1, a) : (Nat, Nat) => Next (n, m * a)
+    ,
+    (n, 1),
+)
+
+# fn factorial =
+#     | 0 => 1
+#     \ m ~ n + 1 => m * factorial(n)
 
 $[main]
-def main = factorial(10)
+def main = factorial_go(10)

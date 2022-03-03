@@ -68,7 +68,7 @@ impl Context {
             let (gen_scope, mut errs) = GenScope::from_ast(&data.generics);
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            if let Err(err) = this.datas.declare_data(*data.name, data.name.span(), gen_scope) {
+            if let Err(err) = this.datas.declare_data(data.name.clone(), gen_scope) {
                 errors.push(err);
                 continue;
             } else {
@@ -360,7 +360,7 @@ impl Context {
                     .expect("Data must be pre-declared before definition"),
                 data.name.span(),
                 Data {
-                    name: *data.name,
+                    name: data.name.clone(),
                     attr: attr.to_vec(),
                     gen_scope,
                     cons,

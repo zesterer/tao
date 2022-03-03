@@ -31,7 +31,7 @@ dependencies = [
 [[package]]
 name = "ariadne"
 version = "0.1.5"
-source = "git+https://github.com/zesterer/ariadne.git#bcbd515cfb7a2b9ae188bf29e648c53e3ec44659"
+source = "git+https://github.com/zesterer/ariadne.git#dc1396c5e430b455d3b685db5e773cab689f7c1d"
 dependencies = [
  "yansi",
 ]
@@ -74,7 +74,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "chumsky"
 version = "0.8.0"
-source = "git+https://github.com/zesterer/chumsky.git#dd23eafd11af675d6905538ab037a94f9a306e91"
+source = "git+https://github.com/zesterer/chumsky.git#0653848c8c5704c285eb96d07b99402a8c7e1047"
 dependencies = [
  "hashbrown 0.11.2",
  "stacker",

@@ -46,6 +46,7 @@ impl Context {
             }
                 .run(self, debug);
             opt::RemoveUnusedBindings::default().run(self, debug);
+            opt::RemoveDeadProc::default().run(self, debug);
         }
     }
 

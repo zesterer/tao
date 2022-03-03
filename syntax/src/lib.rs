@@ -23,7 +23,7 @@ fn parse<T>(parser: impl parse::Parser<T>, code: &str, src: SrcId) -> (Option<T>
     let mut errors = Vec::new();
 
     let len = code.chars().count();
-    let eoi = Span::new(src, len..len + 1);
+    let eoi = Span::new(src, len..len);
 
     let (tokens, mut lex_errors) = token::lexer()
         .parse_recovery(chumsky::Stream::from_iter(

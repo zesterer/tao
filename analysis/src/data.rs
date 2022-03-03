@@ -1,7 +1,7 @@
 use super::*;
 
 pub struct Data {
-    pub name: Ident,
+    pub name: SrcNode<Ident>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
     pub cons: Vec<(SrcNode<Ident>, TyId)>,
@@ -26,7 +26,7 @@ pub struct Datas {
     name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>, GenScopeId)>,
     cons_lut: HashMap<Ident, (Span, DataId)>,
     alias_lut: HashMap<Ident, Alias>,
-    datas: Vec<Option<Data>>,
+    datas: Vec<(Span, Option<Data>)>,
     aliases: Vec<(Span, Option<Alias>)>,
 }
 
@@ -55,8 +55,13 @@ impl Datas {
 
     pub fn get_data(&self, data: DataId) -> &Data {
         self.datas[data.0]
+            .1
             .as_ref()
             .expect("Declared data accessed before being defined")
+    }
+
+    pub fn get_data_span(&self, data: DataId) -> Span {
+        self.datas[data.0].0
     }
 
     pub fn get_alias(&self, alias: AliasId) -> Option<&Alias> {
@@ -69,12 +74,12 @@ impl Datas {
         self.aliases[alias.0].0
     }
 
-    pub fn declare_data(&mut self, name: Ident, span: Span, gen_scope: GenScopeId) -> Result<DataId, Error> {
+    pub fn declare_data(&mut self, name: SrcNode<Ident>, gen_scope: GenScopeId) -> Result<DataId, Error> {
         let id = DataId(self.datas.len());
-        if let Err(old) = self.name_lut.try_insert(name, (span, Ok(id), gen_scope)) {
-            Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
+        if let Err(old) = self.name_lut.try_insert(*name, (name.span(), Ok(id), gen_scope)) {
+            Err(Error::DuplicateTypeName(*name, old.entry.get().0, name.span()))
         } else {
-            self.datas.push(None);
+            self.datas.push((name.span(), None));
             Ok(id)
         }
     }
@@ -96,7 +101,7 @@ impl Datas {
                 errors.push(Error::DuplicateConsName(**cons, old.entry.get().0, cons.span()));
             }
         }
-        self.datas[id.0] = Some(data);
+        self.datas[id.0].1 = Some(data);
         if errors.len() == 0 {
             Ok(())
         } else {
