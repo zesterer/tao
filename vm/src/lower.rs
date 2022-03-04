@@ -21,6 +21,7 @@ fn litr_to_value(literal: &mir::Literal) -> Value {
             assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
             Value::Sum(*id as usize, Box::new(litr_to_value(inner)))
         },
+        mir::Literal::Data(_, inner) => litr_to_value(inner),
     }
 }
 
@@ -83,6 +84,10 @@ impl Program {
                 self.push(Instr::Dup);
                 assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
                 self.push(Instr::IndexSum(*id as usize));
+                self.compile_extractor(mir, inner);
+            },
+            mir::Pat::Data(_, inner) => {
+                self.push(Instr::Dup);
                 self.compile_extractor(mir, inner);
             },
         }
@@ -206,6 +211,7 @@ impl Program {
                 self.push(Instr::IndexSum(*id as usize));
                 self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
             },
+            mir::Pat::Data(_, inner) => self.compile_matcher(inner),
         }
     }
 
@@ -432,6 +438,9 @@ impl Program {
             mir::Expr::Debug(inner) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
                 self.push(Instr::Break);
+            },
+            mir::Expr::Data(_, inner) => {
+                self.compile_expr(mir, inner, stack, proc_fixups);
             },
         }
     }

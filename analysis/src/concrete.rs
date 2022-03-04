@@ -300,7 +300,11 @@ impl ConContext {
                 .iter()
                 .map(|item| self.lower_binding(hir, item, ty_insts))
                 .collect(), tail.as_ref().map(|tail| self.lower_binding(hir, tail, ty_insts))),
-            hir::Pat::Decons(data, variant, inner) => hir::Pat::Decons(data.clone(), *variant, self.lower_binding(hir, inner, ty_insts)),
+            hir::Pat::Decons(data, variant, inner) => {
+                let ty = self.lower_ty(hir, binding.meta().1, ty_insts);
+                let ConTy::Data(data) = self.get_ty(ty) else { unreachable!() };
+                hir::Pat::Decons(*data, *variant, self.lower_binding(hir, inner, ty_insts))
+            },
         };
 
         ConNode::new(
@@ -366,7 +370,11 @@ impl ConContext {
                 self.lower_expr(hir, f, ty_insts),
                 self.lower_expr(hir, arg, ty_insts),
             ),
-            hir::Expr::Cons(data, variant, inner) => hir::Expr::Cons(data.clone(), *variant, self.lower_expr(hir, inner, ty_insts)),
+            hir::Expr::Cons(data, variant, inner) => {
+                let ty = self.lower_ty(hir, ty_expr.meta().1, ty_insts);
+                let ConTy::Data(data) = self.get_ty(ty) else { unreachable!() };
+                hir::Expr::Cons(*data, *variant, self.lower_expr(hir, inner, ty_insts))
+            },
             hir::Expr::ClassAccess(ty, class, field) => {
                 let self_ty = self.lower_ty(hir, ty.1, ty_insts);
                 let member = hir.classes

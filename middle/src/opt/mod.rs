@@ -49,11 +49,11 @@ impl Context {
 
         self.reprs
             .iter_mut()
-            .for_each(|r| r.visit_inner(order, repr, binding, expr));
+            .for_each(|r| r.repr.visit_inner(order, repr, binding, expr));
 
         self.reprs.datas
             .values_mut()
-            .for_each(|r| r.as_mut().unwrap().visit_inner(order, repr, binding, expr));
+            .for_each(|r| r.as_mut().unwrap().repr.visit_inner(order, repr, binding, expr));
     }
     pub fn visit(
         &mut self,
@@ -102,7 +102,6 @@ impl Repr {
             Repr::Union(inhabitants) => inhabitants
                 .iter_mut()
                 .for_each(|inhabitant| inhabitant.visit_inner(order, repr, binding, expr)),
-            Repr::Indirect(inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
@@ -131,6 +130,7 @@ impl Binding {
             },
             mir::Pat::Variant(_, inner) => f(inner),
             mir::Pat::UnionVariant(_, inner) => f(inner),
+            mir::Pat::Data(_, inner) => f(inner),
         }
     }
 
@@ -153,6 +153,7 @@ impl Binding {
             },
             mir::Pat::Variant(_, inner) => f(inner),
             mir::Pat::UnionVariant(_, inner) => f(inner),
+            mir::Pat::Data(_, inner) => f(inner),
         }
     }
 
@@ -187,6 +188,7 @@ impl Binding {
             },
             mir::Pat::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             mir::Pat::UnionVariant(_, inner) => inner.visit_inner(order, repr, binding, expr),
+            mir::Pat::Data(_, inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
@@ -227,6 +229,7 @@ impl Expr {
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
             Expr::Debug(inner) => f(inner),
+            Expr::Data(_, inner) => f(inner),
         }
     }
 
@@ -261,6 +264,7 @@ impl Expr {
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
             Expr::Debug(inner) => f(inner),
+            Expr::Data(_, inner) => f(inner),
         }
     }
 
@@ -330,6 +334,7 @@ impl Expr {
             Expr::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             Expr::AccessVariant(inner, _) => inner.visit_inner(order, repr, binding, expr),
             Expr::Debug(inner) => inner.visit_inner(order, repr, binding, expr),
+            Expr::Data(_, inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
@@ -366,11 +371,11 @@ pub fn prepare(ctx: &mut Context) {
 pub fn check(ctx: &Context) {
     fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (&binding.pat, repr) {
-            (_, Repr::Indirect(inner)) => check_binding(ctx, binding, inner, stack),
+            (Pat::Data(a, inner), Repr::Data(b)) if a == b => {}, // TODO: Check inner
             (Pat::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
-            (Pat::Variant(_, _), Repr::Data(_)) => {},
+            (Pat::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => check_binding(ctx, inner, &variants[*idx], stack),
             (Pat::Single(inner), _) => check_binding(ctx, inner, repr, stack),
             (Pat::UnionVariant(_, _), Repr::Union(_)) => {},
             (Pat::ListExact(_), Repr::List(_)) => {},
@@ -383,12 +388,13 @@ pub fn check(ctx: &Context) {
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (expr, repr) {
-            (expr, Repr::Indirect(inner)) => check_expr(ctx, expr, inner, stack),
+            (Expr::Data(a, inner), Repr::Data(b)) if a == b => {}, // TODO: Check inner
             // TODO: Check literals elsewhere
             (Expr::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {},
             (Expr::Literal(Literal::List(_)), Repr::List(_)) => {},
             (Expr::Literal(Literal::Sum(_, _)), _) => {},
+            (Expr::Literal(Literal::Data(a, _)), Repr::Data(b)) if a == b => {},
             (Expr::Global(_, _), _) => {}, // TODO
             (Expr::Local(local), repr) if &stack
                 .iter()
@@ -429,7 +435,7 @@ pub fn check(ctx: &Context) {
                 expr.for_children(|expr| visit_expr(ctx, expr, stack));
             },
             (expr, Repr::Data(data)) => {
-                check_expr(ctx, expr, ctx.reprs.get(*data), stack);
+                check_expr(ctx, expr, &ctx.reprs.get(*data).repr, stack);
             },
             (Expr::Variant(idx, inner), Repr::Data(_)) => {}, // TODO
             (Expr::Intrinsic(_, _), _) => {}, // TODO

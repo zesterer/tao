@@ -72,6 +72,10 @@ impl ConstFold {
                 } else {
                     true
                 },
+                (Pat::Data(a, inner), Partial::Data(b, partial)) => {
+                    debug_assert_eq!(a, b);
+                    self.extract(ctx, inner, partial, locals)
+                },
                 p => todo!("{:?}", p),
             }
         }
@@ -189,6 +193,10 @@ impl ConstFold {
                 } else {
                     Partial::Unknown(None)
                 }
+            },
+            Expr::Data(data, inner) => {
+                let inner = self.eval(ctx, inner, stack);
+                Partial::Data(*data, Box::new(inner))
             },
             e => todo!("{:?}", e),
         };

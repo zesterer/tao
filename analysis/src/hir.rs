@@ -4,21 +4,25 @@ pub use ast::Literal as Literal;
 
 pub trait Meta {
     type Ty;
+    type Data: fmt::Debug;
     type Class;
 }
 
 impl Meta for InferMeta {
     type Ty = TyVar;
+    type Data = SrcNode<DataId>;
     type Class = ClassVar;
 }
 
 impl Meta for TyMeta {
     type Ty = TyId;
+    type Data = SrcNode<DataId>;
     type Class = Option<ClassId>; // Required because we don't have proper error classes yet
 }
 
 impl Meta for ConMeta {
     type Ty = ConTyId;
+    type Data = ConDataId;
     type Class = !;
 }
 
@@ -34,7 +38,7 @@ pub enum Pat<M: Meta> {
     Record(BTreeMap<Ident, Node<Binding<M>, M>>),
     ListExact(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<Node<Binding<M>, M>>),
-    Decons(SrcNode<DataId>, Ident, Node<Binding<M>, M>),
+    Decons(M::Data, Ident, Node<Binding<M>, M>),
 }
 
 #[derive(Debug)]
@@ -123,7 +127,7 @@ pub enum Expr<M: Meta> {
     Match(bool, Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
     Func(Node<Ident, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>),
-    Cons(SrcNode<DataId>, Ident, Node<Self, M>),
+    Cons(M::Data, Ident, Node<Self, M>),
 
     // member, class, field
     ClassAccess(M, M::Class, SrcNode<Ident>),

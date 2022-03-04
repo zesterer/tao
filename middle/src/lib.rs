@@ -13,7 +13,7 @@ pub use crate::{
     opt::Pass,
     proc::{ProcId, Proc, Procs},
     mir::{MirNode, Pat, Binding, Expr, Literal, Partial, Intrinsic, Local},
-    repr::{Repr, Reprs, Prim},
+    repr::{Repr, Reprs, Prim, Data},
     context::{Context, OptMode},
 };
 pub use tao_analysis::Ident;

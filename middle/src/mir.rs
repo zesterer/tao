@@ -23,6 +23,7 @@ pub enum Const<U> {
     List(Vec<Self>),
     Sum(usize, Box<Self>),
     Union(u64, Box<Self>),
+    Data(ConDataId, Box<Self>),
 }
 
 pub type Literal = Const<!>;
@@ -54,6 +55,7 @@ impl Partial {
                 .collect::<Option<_>>()?)),
             Self::Sum(v, inner) => Some(Literal::Sum(*v, Box::new(inner.to_literal()?))),
             Self::Union(ty, inner) => Some(Literal::Union(*ty, Box::new(inner.to_literal()?))),
+            Self::Data(data, inner) => Some(Literal::Data(*data, Box::new(inner.to_literal()?))),
         }
     }
 }
@@ -77,6 +79,7 @@ impl Literal {
                 .collect()),
             Self::Sum(v, inner) => Partial::Sum(*v, Box::new(inner.to_partial())),
             Self::Union(ty, inner) => Partial::Union(*ty, Box::new(inner.to_partial())),
+            Self::Data(data, inner) => Partial::Data(*data, Box::new(inner.to_partial())),
         }
     }
 }
@@ -123,6 +126,7 @@ pub enum Pat {
     ListFront(Vec<MirNode<Binding>>, Option<MirNode<Binding>>),
     Variant(usize, MirNode<Binding>),
     UnionVariant(u64, MirNode<Binding>),
+    Data(ConDataId, MirNode<Binding>),
 }
 
 // Uniquely refer to locals *without* shadowing
@@ -167,6 +171,7 @@ impl Binding {
             Pat::ListFront(items, tail) => items.len() > 0 || tail.as_ref().map_or(false, |tail| tail.is_refutable()),
             Pat::Variant(_, _) => true, // TODO: Check number of variants
             Pat::UnionVariant(_, _) => true, // TODO: Check number of variants
+            Pat::Data(_, inner) => inner.is_refutable(),
         }
     }
 
@@ -191,6 +196,7 @@ impl Binding {
             },
             Pat::Variant(_, inner) => inner.visit_bindings(bind),
             Pat::UnionVariant(_, inner) => inner.visit_bindings(bind),
+            Pat::Data(_, inner) => inner.visit_bindings(bind),
         }
     }
 
@@ -258,6 +264,7 @@ pub enum Expr {
 
     Variant(usize, MirNode<Self>),
     AccessVariant(MirNode<Self>, usize), // Unsafely assume the value is a specific variant
+    Data(ConDataId, MirNode<Self>),
 
     Debug(MirNode<Self>),
 }
@@ -369,6 +376,7 @@ impl Expr {
             Expr::Variant(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessVariant(inner, _) => inner.required_locals_inner(stack, required),
             Expr::Debug(inner) => inner.required_locals_inner(stack, required),
+            Expr::Data(_, inner) => inner.required_locals_inner(stack, required),
         }
     }
 
@@ -406,6 +414,7 @@ impl Expr {
                     ),
                     Pat::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayBinding(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Pat::Add(inner, n) => write!(f, "{} + {}", DisplayBinding(inner, self.1), n),
+                    Pat::Data(data, inner) => write!(f, "{:?} {}", data.0, DisplayBinding(inner, self.1)),
                     pat => todo!("{:?}", pat),
                 }
             }
@@ -462,6 +471,7 @@ impl Expr {
                         Ok(())
                     },
                     Expr::Debug(inner) => write!(f, "?{}", DisplayExpr(inner, self.1, false)),
+                    Expr::Data(data, inner) => write!(f, "{:?} {}", data.0, DisplayExpr(inner, self.1, false)),
                     // _ => write!(f, "<TODO>"),
                     expr => todo!("{:?}", expr),
                 }

@@ -19,24 +19,28 @@ pub enum Repr {
     Data(ConDataId),
     Func(Box<Repr>, Box<Repr>),
     Union(Vec<Repr>),
-    Indirect(Box<Repr>),
+}
+
+pub struct Data {
+    pub is_recursive: bool,
+    pub repr: Repr,
 }
 
 #[derive(Default)]
 pub struct Reprs {
-    pub datas: HashMap<ConDataId, Option<Repr>>,
+    pub datas: HashMap<ConDataId, Option<Data>>,
 }
 
 impl Reprs {
-    pub fn get(&self, data: ConDataId) -> &Repr {
+    pub fn get(&self, data: ConDataId) -> &Data {
         self.datas
             .get(&data)
             .unwrap()
             .as_ref()
-            .expect("Repr declared but not defined")
+            .expect("Data declared but not defined")
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Repr> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Data> {
         self.datas
             .values_mut()
             .filter_map(|r| r.as_mut())
@@ -52,7 +56,7 @@ impl Reprs {
         }
     }
 
-    pub fn define(&mut self, data: ConDataId, repr: Repr) {
-        assert!(self.datas.insert(data, Some(repr)).unwrap().is_none());
+    pub fn define(&mut self, id: ConDataId, data: Data) {
+        assert!(self.datas.insert(id, Some(data)).unwrap().is_none());
     }
 }

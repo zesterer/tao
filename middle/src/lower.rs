@@ -43,6 +43,22 @@ impl Context {
         }
     }
 
+    pub fn lower_data(&mut self, hir: &HirContext, con: &ConContext, data: ConDataId) -> Repr {
+        if self.reprs.declare(data) {
+            let con_data = con.get_data(data);
+            let variants = con_data
+                .cons
+                .iter()
+                .map(|(_, ty)| self.lower_ty(hir, con, *ty))
+                .collect();
+            self.reprs.define(data, Data {
+                is_recursive: con_data.is_recursive,
+                repr: Repr::Sum(variants),
+            });
+        }
+        Repr::Data(data)
+    }
+
     pub fn lower_ty(&mut self, hir: &HirContext, con: &ConContext, ty: ConTyId) -> Repr {
         fn prim_to_mir(prim: ty::Prim) -> repr::Prim {
             match prim {
@@ -72,24 +88,12 @@ impl Context {
             ConTy::Data(data_id) => {
                 let data = con.get_data(*data_id);
 
-                let args = data_id.1
-                    .iter()
-                    .map(|arg| self.lower_ty(hir, con, *arg))
-                    .collect::<Vec<_>>();
+                // let args = data_id.1
+                //     .iter()
+                //     .map(|arg| self.lower_ty(hir, con, *arg))
+                //     .collect::<Vec<_>>();
 
-                if self.reprs.declare(*data_id) {
-                    let variants = data
-                        .cons
-                        .iter()
-                        .map(|(_, ty)| self.lower_ty(hir, con, *ty))
-                        .collect();
-                    self.reprs.define(*data_id, Repr::Sum(variants));
-                }
-                if data.is_recursive {
-                    Repr::Indirect(Box::new(Repr::Data(*data_id)))
-                } else {
-                    Repr::Data(*data_id)
-                }
+                self.lower_data(hir, con, *data_id)
             },
             ConTy::Record(fields) => {
                 let mut fields = fields
@@ -126,14 +130,16 @@ impl Context {
             ),
             hir::Pat::Decons(data, variant, inner) => {
                 let variant = hir.datas
-                    .get_data(**data)
+                    .get_data(data.0)
                     .cons
                     .iter()
                     .enumerate()
                     .find(|(_, (name, _))| **name == *variant)
                     .unwrap()
                     .0;
-                mir::Pat::Variant(variant, self.lower_binding(hir, con, inner, bindings))
+                self.lower_data(hir, con, *data);
+                let pat = mir::Pat::Variant(variant, self.lower_binding(hir, con, inner, bindings));
+                mir::Pat::Data(*data, MirNode::new(mir::Binding { pat, name: None }, self.reprs.get(*data).repr.clone()))
             },
             hir::Pat::Record(fields) => {
                 let mut fields = fields
@@ -255,14 +261,16 @@ impl Context {
             hir::Expr::Apply(f, arg) => mir::Expr::Apply(self.lower_expr(hir, con, f, stack), self.lower_expr(hir, con, arg, stack)),
             hir::Expr::Cons(data, variant, inner) => {
                 let variant = hir.datas
-                    .get_data(**data)
+                    .get_data(data.0)
                     .cons
                     .iter()
                     .enumerate()
                     .find(|(_, (name, _))| **name == *variant)
                     .unwrap()
                     .0;
-                mir::Expr::Variant(variant, self.lower_expr(hir, con, inner, stack))
+                self.lower_data(hir, con, *data);
+                let expr = mir::Expr::Variant(variant, self.lower_expr(hir, con, inner, stack));
+                mir::Expr::Data(*data, MirNode::new(expr, self.reprs.get(*data).repr.clone()))
             },
             hir::Expr::Access(record, field) => {
                 let (record_ty, _, indirections) = con.follow_field_access(hir, *record.meta(), **field).unwrap();
@@ -277,7 +285,7 @@ impl Context {
                 // Perform indirections for field accesses
                 for _ in 0..indirections {
                     let variant_repr = if let Repr::Data(data) = record.meta() {
-                        if let Repr::Sum(variants) = self.reprs.get(*data) {
+                        if let Repr::Sum(variants) = &self.reprs.get(*data).repr {
                             variants[0].clone()
                         } else {
                             unreachable!()

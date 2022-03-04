@@ -67,6 +67,7 @@ impl Pass for RemoveUnusedBindings {
                                     },
                                     Pat::Variant(_, inner) => remove_unused(inner, stack),
                                     Pat::UnionVariant(_, inner) => remove_unused(inner, stack),
+                                    Pat::Data(_, inner) => remove_unused(inner, stack),
                                 }
                             }
 
