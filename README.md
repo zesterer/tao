@@ -11,20 +11,34 @@ functions, currying, good diagnostics, and much more!
 
 - [x] Hindley-Milner type inference
 - [x] Useful error messages
-- [x] Sum types
-- [x] Records
-- [x] Nominal data types
+- [x] Algebraic data types
+    - [x] Sum types
+    - [x] Record types
+    - [x] Type generic
+    - [x] Nominal aliases (i.e: `data Metres = Real`)
+- [x] Type alises
 - [x] Union types (anonymous sum types)
-- [x] Pattern matching (inc. union patterns)
+    - [x] Flattening
+    - [x] Subtyping
+- [x] Pattern matching
+    - [x] Destructuring and binding
+    - [x] Union and variant patterns
+    - [x] List patterns (`[a, b, c]`, `[a, b .. c]`, etc.)
+    - [x] Arithmetic patterns (i.e: `n + k`)
+    - [x] Inhabitance checks (i.e: `None` exhaustively covers `Maybe Never`)
+    - [x] Recursive exhaustivity checks
+    - [x] `let` does pattern matching
 - [x] First-class functions
-- [x] Currying
+    - [x] Functions support pattern-matching
+    - [x] Currying
 - [x] Type polymorphism (for both types and values)
 - [x] Typeclasses
-- [x] Associated types
+    - [x] Associated types
 - [x] Built-in lists
+    - [x] Dedicated list construction syntax (`[a, b, c]`, `[a, b .. c, d]`, etc.)
 - [x] Explicit tail call optimisation
-- [x] Monomorphisation of generic code
 - [x] MIR optimiser
+    - [x] Monomorphisation of generic code
     - [x] Inlining
     - [x] Const folding
     - [x] Symbolic execution
@@ -38,9 +52,15 @@ functions, currying, good diagnostics, and much more!
 
 - [ ] Pattern exhaustivity checking (sound, but unnecessarily conservative)
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
-- [ ] Typeclasses (simple implementation done, no compile-time coherence checker, compiler panics on detection of
-      incoherence during monomorphisation)
+- [ ] Typeclasses
+    - [ ] Type parameters
+    - [ ] More expressive bounds (`where` clauses)
+    - [ ] Coherence checker
 - [ ] MIR optimiser
+    - [ ] Unboxing
+    - [ ] Automatic repr changes for recursive types
+        - [ ] Transform `data Nat = Succ Nat | Zero` into a runtime integer
+        - [ ] Transform `data List A = Cons (A, List A) | Nil` into a vector
 
 ## Planned features
 
