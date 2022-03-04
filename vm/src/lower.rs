@@ -242,6 +242,7 @@ impl Program {
                 }
                 use mir::Intrinsic::*;
                 match intrinsic {
+                    Debug => { self.push(Instr::Break); },
                     MakeList(_) => { self.push(Instr::MakeList(args.len())); },
                     NotBool => { self.push(Instr::NotBool); },
                     NegNat | NegInt => { self.push(Instr::NegInt); },
@@ -434,10 +435,6 @@ impl Program {
             mir::Expr::AccessVariant(inner, variant) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
                 self.push(Instr::IndexSum(*variant));
-            },
-            mir::Expr::Debug(inner) => {
-                self.compile_expr(mir, inner, stack, proc_fixups);
-                self.push(Instr::Break);
             },
             mir::Expr::Data(_, inner) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);

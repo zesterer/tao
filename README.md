@@ -15,7 +15,7 @@ have a few goals for the language itself:
 
 - **Totality**
     - All programs *must* explicitly handle all inputs. There are no mechanisms for panicking, exceptions, etc. The goal
-      is to build a type system that's expressive enough to prove that the totality of a wide range of programs.
+      is to build a type system that's expressive enough to prove the totality of a wide range of programs.
     - In time, I'd like to see the language develop support for *termination analysis* techniques like
       [Walther recursion](https://en.wikipedia.org/wiki/Walther_recursion).
 

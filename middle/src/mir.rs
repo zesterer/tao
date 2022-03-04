@@ -86,6 +86,7 @@ impl Literal {
 
 #[derive(Clone, Debug)]
 pub enum Intrinsic {
+    Debug,
     MakeList(Repr),
     NotBool,
     NegNat,
@@ -251,7 +252,6 @@ pub enum Expr {
     Intrinsic(Intrinsic, Vec<MirNode<Self>>),
     Match(MirNode<Self>, Vec<(MirNode<Binding>, MirNode<Self>)>),
 
-    // (captures, arg, body)
     Func(Local, MirNode<Self>),
     Apply(MirNode<Self>, MirNode<Self>),
 
@@ -265,8 +265,6 @@ pub enum Expr {
     Variant(usize, MirNode<Self>),
     AccessVariant(MirNode<Self>, usize), // Unsafely assume the value is a specific variant
     Data(ConDataId, MirNode<Self>),
-
-    Debug(MirNode<Self>),
 }
 
 impl Expr {
@@ -375,7 +373,6 @@ impl Expr {
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Variant(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessVariant(inner, _) => inner.required_locals_inner(stack, required),
-            Expr::Debug(inner) => inner.required_locals_inner(stack, required),
             Expr::Data(_, inner) => inner.required_locals_inner(stack, required),
         }
     }
@@ -470,7 +467,6 @@ impl Expr {
                         }
                         Ok(())
                     },
-                    Expr::Debug(inner) => write!(f, "?{}", DisplayExpr(inner, self.1, false)),
                     Expr::Data(data, inner) => write!(f, "{:?} {}", data.0, DisplayExpr(inner, self.1, false)),
                     // _ => write!(f, "<TODO>"),
                     expr => todo!("{:?}", expr),

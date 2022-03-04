@@ -698,10 +698,6 @@ impl ToHir for ast::Expr {
                 let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, ty.meta().0);
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },
-            ast::Expr::Debug(inner) => {
-                let inner = inner.to_hir(infer, scope);
-                (TyInfo::Ref(inner.meta().1), hir::Expr::Debug(inner))
-            },
             ast::Expr::Intrinsic(name, args) => {
                 let args = args
                     .iter()

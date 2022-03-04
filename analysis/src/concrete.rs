@@ -397,7 +397,6 @@ impl ConContext {
                     gen: &gen,
                 }).into_inner()
             },
-            hir::Expr::Debug(inner) => hir::Expr::Debug(self.lower_expr(hir, inner, ty_insts)),
             hir::Expr::Intrinsic(name, args) => hir::Expr::Intrinsic(name.clone(), args
                 .into_iter()
                 .map(|arg| self.lower_expr(hir, arg, ty_insts))

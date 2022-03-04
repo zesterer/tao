@@ -97,7 +97,6 @@ impl Reify for hir::Expr<InferMeta> {
             hir::Expr::ClassAccess((ty_span, ty), class, field) => {
                 hir::Expr::ClassAccess((ty_span, infer.reify(ty)), infer.reify_class(class), field)
             },
-            hir::Expr::Debug(inner) => hir::Expr::Debug(inner.reify(infer)),
             hir::Expr::Intrinsic(name, args) => hir::Expr::Intrinsic(name, args
                 .into_iter()
                 .map(|arg| arg.reify(infer))

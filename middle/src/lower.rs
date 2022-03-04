@@ -309,7 +309,6 @@ impl Context {
                 mir::Expr::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             },
             hir::Expr::ClassAccess(ty, class, field) => panic!("Class access should not still exist during MIR lowering"),
-            hir::Expr::Debug(inner) => mir::Expr::Debug(self.lower_expr(hir, con, inner, stack)),
             hir::Expr::Intrinsic(name, args) => {
                 match name.inner() {
                     hir::Intrinsic::TypeName => {

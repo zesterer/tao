@@ -213,7 +213,6 @@ pub enum Expr {
     ClassAccess(SrcNode<Type>, SrcNode<Ident>),
 
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
-    Debug(SrcNode<Self>),
     // statements, return
     Do(Vec<DoItem>, Option<SrcNode<Self>>),
 }

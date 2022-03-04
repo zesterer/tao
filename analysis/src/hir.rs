@@ -131,7 +131,6 @@ pub enum Expr<M: Meta> {
     // member, class, field
     ClassAccess(M, M::Class, SrcNode<Ident>),
 
-    Debug(Node<Self, M>),
     Intrinsic(SrcNode<Intrinsic>, Vec<Node<Self, M>>),
 }
 
@@ -192,7 +191,6 @@ impl Expr<ConMeta> {
             Expr::Cons(_, _, inner) => inner.required_locals_inner(stack, required),
             Expr::Access(inner, _) => inner.required_locals_inner(stack, required),
             Expr::ClassAccess(_, _, _) => {},
-            Expr::Debug(inner) => inner.required_locals_inner(stack, required),
         }
     }
 
