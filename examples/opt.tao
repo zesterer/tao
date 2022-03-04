@@ -14,3 +14,13 @@ fn factorial =
 
 $[main]
 def main = factorial_go(10)
+
+data Maybe A =
+    | Just A
+    \ None
+
+data Never =|
+
+fn foo = x : Maybe Never =>
+    let None = x in
+    ()

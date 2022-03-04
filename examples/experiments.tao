@@ -1,14 +1,49 @@
-for A, B where
-    A < Add B
-fn add x : A, y : B =
-    x + y
-
-fn to_str
+def to_str
     0 = "zero"
     n = "non-zero"
 
-fn add x, y = x + y
+def add x, y = x + y
 
-fn filter
+def filter
     _, [] = []
     f, [x .. xs] = [.. if x:f then [x] else [], xs]
+
+def factorial
+    0 = 1
+    m ~ n + 1 = m * n:factorial
+
+def sum
+    [] = zero
+    [x .. xs] = x + xs:sum
+
+data Maybe a
+    Just a
+    None
+
+data Result a, e
+    Ok a
+    Err e
+
+class Iterator
+    Item
+    next : Self -> (Maybe Item, Self)
+
+member [a] of Iterator
+    Item =
+    next = fn
+        [] = (None, [])
+        [x .. xs] = (Just x, xs)
+
+def foobar x, y
+    let xy = x + y
+    let xyz = xy + 5
+    xy
+
+def main = do
+    let text = input;
+    if msg = "exit" then do
+        print("Now exiting...")
+        print("Goodbye!")
+    else do
+        print("Hello, world!")
+        main;

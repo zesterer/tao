@@ -450,7 +450,6 @@ impl<'a> Infer<'a> {
             (_, TyInfo::Ref(y)) => self.make_flow_inner(x, y),
 
             // Unify unknown or erronoeus types
-            // (TyInfo::Unknown(_), y_info) if matches!(y_info, TyInfo::Union(_)) => Ok(()),
             (TyInfo::Unknown(_), y_info) => if self.occurs_in(x, y) {
                 self.errors.push(InferError::Recursive(y, self.follow(x)));
                 self.set_info(x, TyInfo::Error(ErrorReason::Recursive));
@@ -458,13 +457,15 @@ impl<'a> Infer<'a> {
             } else {
                 Ok(self.set_info(x, TyInfo::Ref(y)))
             },
-            // (x_info, TyInfo::Unknown(_)) if matches!(x_info, TyInfo::Union(_)) => Ok(()),
-            (_, TyInfo::Unknown(_)) => if self.occurs_in(y, x) {
+            (x_info, TyInfo::Unknown(_)) => if self.occurs_in(y, x) {
                 self.errors.push(InferError::Recursive(x, self.follow(y)));
                 self.set_info(y, TyInfo::Error(ErrorReason::Recursive));
                 Ok(self.set_error(y)) // TODO: Not actually ok
             } else {
-                self.vars[x.0].0 = self.vars[y.0].0; // Give the rhs a better span
+                // Move the span if we're unioning (hacky, but makes for better errors)
+                if matches!(x_info, TyInfo::Union(_)) {
+                    self.vars[x.0].0 = self.vars[y.0].0;
+                }
                 Ok(self.set_info(y, TyInfo::Ref(x)))
             },
 

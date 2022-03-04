@@ -320,7 +320,10 @@ impl AbstractPat {
                         if let Some(pat) = Self::inexhaustive_pat(ctx, *cons_ty, &mut variants.into_iter(), Some(&get_gen_ty)) {
                             return Some(ExamplePat::Variant(**cons, Box::new(pat)));
                         }
-                    } else {
+                    // TODO: This is ugly, but checks for inhabitants of sub-patterns, allowing things like `let Just x = Just 5`
+                    } else if ctx.tys.has_inhabitants(&ctx.datas, *cons_ty, &mut |id| {
+                        ctx.tys.has_inhabitants(&ctx.datas, gen_tys[id], &mut |_| true)
+                    }) {
                         return Some(ExamplePat::Variant(**cons, Box::new(ExamplePat::Wildcard)));
                     }
                 }

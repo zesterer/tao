@@ -120,6 +120,34 @@ impl Types {
         }
     }
 
+    pub fn has_inhabitants(&self, datas: &Datas, ty: TyId, gen: &mut dyn FnMut(usize) -> bool) -> bool {
+        match self.get(ty) {
+            Ty::Error(_) => false,
+            Ty::Prim(_) => true,
+            Ty::List(_) => true, // Empty list
+            Ty::Tuple(fields) => fields
+                .into_iter()
+                .all(|field| self.has_inhabitants(datas, field, gen)),
+            Ty::Union(variants) => variants
+                .into_iter()
+                .any(|variant| self.has_inhabitants(datas, variant, gen)),
+            Ty::Record(fields) => fields
+                .into_iter()
+                .all(|(_, field)| self.has_inhabitants(datas, field, gen)),
+            Ty::Func(_, _) => true,
+            Ty::Data(data, args) => {println!("{:?}", data);datas
+                .get_data(data)
+                .cons
+                .iter()
+                .any(|(_, ty)| {
+                    self.has_inhabitants(datas, *ty, &mut |id| self.has_inhabitants(datas, args[id], gen))
+                })},
+            Ty::Gen(id, _) => gen(id),
+            Ty::SelfType => true,
+            Ty::Assoc(_, _, _) => true,
+        }
+    }
+
     pub fn display<'a>(&'a self, datas: &'a Datas, ty: TyId) -> TyDisplay<'a> {
         TyDisplay {
             types: self,
