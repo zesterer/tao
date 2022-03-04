@@ -119,7 +119,7 @@ pub enum Expr<M: Meta> {
     Global(DefId, Vec<M>),
     Tuple(Vec<Node<Self, M>>),
     List(Vec<Node<Self, M>>),
-    ListFront(Vec<Node<Self, M>>, Node<Self, M>),
+    ListFront(Vec<Node<Self, M>>, Vec<Node<Self, M>>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
     Access(Node<Self, M>, SrcNode<Ident>),
     Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
@@ -184,11 +184,13 @@ impl Expr<ConMeta> {
             Expr::List(items) => items
                 .iter()
                 .for_each(|item| item.required_locals_inner(stack, required)),
-            Expr::ListFront(items, tail) => {
+            Expr::ListFront(items, tails) => {
                 items
                     .iter()
                     .for_each(|item| item.required_locals_inner(stack, required));
-                tail.required_locals_inner(stack, required);
+                tails
+                    .iter()
+                    .for_each(|tail| tail.required_locals_inner(stack, required));
             },
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Cons(_, _, inner) => inner.required_locals_inner(stack, required),

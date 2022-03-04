@@ -422,7 +422,10 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
                 .then(just(Token::Op(Op::Ellipsis))
-                    .ignore_then(expr.clone().map_with_span(SrcNode::new))
+                    .ignore_then(expr.clone()
+                        .map_with_span(SrcNode::new)
+                        .separated_by(just(Token::Comma))
+                        .allow_trailing())
                     .or_not())
                 .map(Some),
             Delimiter::Brack,
@@ -430,7 +433,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         )
             .map(|x| match x {
                 Some((items, None)) => ast::Expr::List(items),
-                Some((items, Some(tail))) => ast::Expr::ListFront(items, tail),
+                Some((items, Some(tails))) => ast::Expr::ListFront(items, tails),
                 None => ast::Expr::Error,
             })
             .labelled("list");

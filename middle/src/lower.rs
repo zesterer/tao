@@ -234,21 +234,27 @@ impl Context {
                 .iter()
                 .map(|item| self.lower_expr(hir, con, item, stack))
                 .collect()),
-            hir::Expr::ListFront(items, tail) => {
-                let tail = self.lower_expr(hir, con, tail, stack);
-                mir::Expr::Intrinsic(
-                    mir::Intrinsic::Join(match tail.meta() {
-                        Repr::List(item) => (**item).clone(),
-                        _ => unreachable!(),
-                    }),
-                    vec![
-                        MirNode::new(mir::Expr::List(items
-                            .iter()
-                            .map(|item| self.lower_expr(hir, con, item, stack))
-                            .collect()), tail.meta().clone()),
-                        tail,
-                    ],
-                )
+            hir::Expr::ListFront(items, tails) => {
+                let mut list = mir::Expr::List(items
+                    .iter()
+                    .map(|item| self.lower_expr(hir, con, item, stack))
+                    .collect());
+
+                for tail in tails {
+                    let tail = self.lower_expr(hir, con, tail, stack);
+                    list = mir::Expr::Intrinsic(
+                        mir::Intrinsic::Join(match tail.meta() {
+                            Repr::List(item) => (**item).clone(),
+                            _ => unreachable!(),
+                        }),
+                        vec![
+                            MirNode::new(list, tail.meta().clone()),
+                            tail,
+                        ],
+                    );
+                }
+
+                list
             },
             hir::Expr::Func(arg, body) => {
                 let arg_local = Local::new();

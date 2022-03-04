@@ -22,6 +22,7 @@ functions, currying, good diagnostics, and much more!
 - [x] Typeclasses
 - [x] Associated types
 - [x] Built-in lists
+- [x] Explicit tail call optimisation
 - [x] Monomorphisation of generic code
 - [x] MIR optimiser
     - [x] Inlining
@@ -29,7 +30,9 @@ functions, currying, good diagnostics, and much more!
     - [x] Symbolic execution
     - [x] Dead code removal
     - [x] Exhaustive pattern flattening
+    - [x] Unused function pruning
 - [x] Bytecode compiler
+- [x] Bytecode virtual machine
 
 ## Current working on
 
@@ -37,6 +40,7 @@ functions, currying, good diagnostics, and much more!
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
 - [ ] Typeclasses (simple implementation done, no compile-time coherence checker, compiler panics on detection of
       incoherence during monomorphisation)
+- [ ] MIR optimiser
 
 ## Planned features
 

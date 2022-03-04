@@ -200,7 +200,7 @@ pub enum Expr {
     Local(Ident),
     Tuple(Vec<SrcNode<Self>>),
     List(Vec<SrcNode<Self>>),
-    ListFront(Vec<SrcNode<Self>>, SrcNode<Self>),
+    ListFront(Vec<SrcNode<Self>>, Vec<SrcNode<Self>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Access(SrcNode<Self>, SrcNode<Ident>),
     Unary(SrcNode<UnaryOp>, SrcNode<Self>),

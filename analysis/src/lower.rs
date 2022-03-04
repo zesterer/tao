@@ -430,12 +430,18 @@ impl ToHir for ast::Expr {
                     .collect::<Vec<_>>();
                 (TyInfo::List(item_ty), hir::Expr::List(items))
             },
-            ast::Expr::ListFront(items, tail) => {
+            ast::Expr::ListFront(items, tails) => {
                 let item_ty = infer.unknown(self.span());
                 let list_ty = infer.insert(self.span(), TyInfo::List(item_ty));
 
-                let tail = tail.to_hir(infer, scope);
-                infer.make_flow(tail.meta().1, list_ty, tail.meta().0);
+                let tails = tails
+                    .iter()
+                    .map(|tail| {
+                        let tail = tail.to_hir(infer, scope);
+                        infer.make_flow(tail.meta().1, list_ty, tail.meta().0);
+                        tail
+                    })
+                    .collect();
 
                 let items = items
                     .iter()
@@ -445,7 +451,7 @@ impl ToHir for ast::Expr {
                         item
                     })
                     .collect::<Vec<_>>();
-                (TyInfo::Ref(list_ty), hir::Expr::ListFront(items, tail))
+                (TyInfo::Ref(list_ty), hir::Expr::ListFront(items, tails))
             },
             ast::Expr::Record(fields) => {
                 let fields = fields

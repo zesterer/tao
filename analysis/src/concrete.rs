@@ -337,10 +337,16 @@ impl ConContext {
                 .iter()
                 .map(|item| self.lower_expr(hir, item, ty_insts))
                 .collect()),
-            hir::Expr::ListFront(items, tail) => hir::Expr::ListFront(items
-                .iter()
-                .map(|item| self.lower_expr(hir, item, ty_insts))
-                .collect(), self.lower_expr(hir, tail, ty_insts)),
+            hir::Expr::ListFront(items, tails) => hir::Expr::ListFront(
+                items
+                    .iter()
+                    .map(|item| self.lower_expr(hir, item, ty_insts))
+                    .collect(),
+                tails
+                    .iter()
+                    .map(|tail| self.lower_expr(hir, tail, ty_insts))
+                    .collect(),
+            ),
             hir::Expr::Record(fields) => hir::Expr::Record(fields
                 .iter()
                 .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))

@@ -1,0 +1,15 @@
+for A, B where
+    A < Add B
+fn add x : A, y : B =
+    x + y
+
+fn to_str
+    0 = "zero"
+    n = "non-zero"
+
+fn add x, y = x + y
+
+fn filter
+    _, [] = []
+    f, [x .. xs] =
+        [.. if x:f then [x] else [], xs]
