@@ -432,8 +432,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             |_| None,
         )
             .map(|x| match x {
-                Some((items, None)) => ast::Expr::List(items),
-                Some((items, Some(tails))) => ast::Expr::ListFront(items, tails),
+                Some((items, tails)) => ast::Expr::List(items, tails.unwrap_or_else(Vec::new)),
                 None => ast::Expr::Error,
             })
             .labelled("list");

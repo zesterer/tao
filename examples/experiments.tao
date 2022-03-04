@@ -11,5 +11,4 @@ fn add x, y = x + y
 
 fn filter
     _, [] = []
-    f, [x .. xs] =
-        [.. if x:f then [x] else [], xs]
+    f, [x .. xs] = [.. if x:f then [x] else [], xs]

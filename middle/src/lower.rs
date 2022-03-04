@@ -230,11 +230,7 @@ impl Context {
                 .iter()
                 .map(|field| self.lower_expr(hir, con, field, stack))
                 .collect()),
-            hir::Expr::List(items) => mir::Expr::List(items
-                .iter()
-                .map(|item| self.lower_expr(hir, con, item, stack))
-                .collect()),
-            hir::Expr::ListFront(items, tails) => {
+            hir::Expr::List(items, tails) => {
                 let mut list = mir::Expr::List(items
                     .iter()
                     .map(|item| self.lower_expr(hir, con, item, stack))

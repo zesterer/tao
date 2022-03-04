@@ -161,7 +161,6 @@ impl ConContext {
             };
             // Mark the data type as recursive if the recursive flag got set during lowering
             if *self.datas.get(&id).unwrap().as_ref().map(|_| ()).unwrap_err() {
-                println!("{:?} is recursive!", id);
                 data.is_recursive = true;
             }
             self.datas.insert(id, Ok(data));
@@ -333,11 +332,7 @@ impl ConContext {
                 .iter()
                 .map(|field| self.lower_expr(hir, field, ty_insts))
                 .collect()),
-            hir::Expr::List(items) => hir::Expr::List(items
-                .iter()
-                .map(|item| self.lower_expr(hir, item, ty_insts))
-                .collect()),
-            hir::Expr::ListFront(items, tails) => hir::Expr::ListFront(
+            hir::Expr::List(items, tails) => hir::Expr::List(
                 items
                     .iter()
                     .map(|item| self.lower_expr(hir, item, ty_insts))

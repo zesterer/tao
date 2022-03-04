@@ -62,11 +62,7 @@ impl Reify for hir::Expr<InferMeta> {
                 .into_iter()
                 .map(|item| item.reify(infer))
                 .collect()),
-            hir::Expr::List(items) => hir::Expr::List(items
-                .into_iter()
-                .map(|item| item.reify(infer))
-                .collect()),
-            hir::Expr::ListFront(items, tails) => hir::Expr::ListFront(
+            hir::Expr::List(items, tails) => hir::Expr::List(
                 items
                     .into_iter()
                     .map(|item| item.reify(infer))
