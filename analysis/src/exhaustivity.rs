@@ -66,7 +66,7 @@ impl AbstractPat {
         }
     }
 
-    fn is_refutable(&self, ctx: &Context) -> bool {
+    fn is_refutable_basic(&self, ctx: &Context) -> bool {
         match self {
             AbstractPat::Wildcard => false,
             AbstractPat::Bool([t, f]) => !(*t && *f),
@@ -75,15 +75,19 @@ impl AbstractPat {
             AbstractPat::Char(_) => true,
             AbstractPat::Tuple(fields) => !fields
                 .iter()
-                .all(|field| !field.is_refutable(ctx)),
+                .all(|field| !field.is_refutable_basic(ctx)),
             AbstractPat::ListExact(_) => true,
-            AbstractPat::ListFront(items, tail) => !items.is_empty() || tail.is_refutable(ctx),
+            AbstractPat::ListFront(items, tail) => !items.is_empty() || tail.is_refutable_basic(ctx),
             AbstractPat::Variant(data, _, _) => ctx.datas.get_data(*data).cons.len() > 1,
             AbstractPat::Record(fields) => !fields
                 .iter()
-                .all(|(_, field)| !field.is_refutable(ctx)),
+                .all(|(_, field)| !field.is_refutable_basic(ctx)),
             pat => todo!("{:?}", pat),
         }
+    }
+
+    fn is_refutable(&self, ctx: &Context, ty: TyId, get_gen_ty: Option<&dyn Fn(usize) -> Option<TyId>>) -> bool {
+        Self::inexhaustive_pat(ctx, ty, &mut std::iter::once(self), get_gen_ty).is_some()
     }
 
     fn inexhaustive_pat<'a>(
@@ -165,30 +169,34 @@ impl AbstractPat {
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
             Ty::Union(required) => {
-                let mut required = required
-                    .into_iter()
-                    .map(|r| (r, true))
-                    .collect::<Vec<_>>();
+                let mut variants = Vec::new();
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
-                        AbstractPat::Union(variant, inner) if !inner.is_refutable(ctx) => {
-                            if let Some(idx) = required
-                                .iter()
-                                .rposition(|(req, _)| ctx.tys.is_eq(*req, *variant))
-                            {
-                                required[idx].1 = false;
+                        AbstractPat::Union(ty, inner) => {
+                            if let Some((_, pats)) = variants.iter_mut().find(|(v, _): &&mut (_, Vec<&AbstractPat>)| ctx.tys.is_eq(*v, *ty)) {
+                                pats.push(&**inner);
+                            } else {
+                                variants.push((*ty, vec![&**inner]));
                             }
                         },
-                        AbstractPat::Union(_, _) => {},
                         _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
-                if let Some((ty, _)) = required.iter().find(|(_, r)| *r) {
-                    Some(ExamplePat::Union(*ty, Box::new(ExamplePat::Wildcard)))
-                } else {
-                    None
+                for variant_ty in required {
+                    if let Some((_, variants)) = variants.drain_filter(|(ty, _)| ctx.tys.is_eq(*ty, variant_ty)).next() {
+                        if let Some(pat) = Self::inexhaustive_pat(ctx, variant_ty, &mut variants.into_iter(), get_gen_ty) {
+                            return Some(ExamplePat::Union(variant_ty, Box::new(pat)));
+                        }
+                    // TODO: This is ugly, but checks for inhabitants of sub-patterns, allowing things like `let Just x = Just 5`
+                    } else if ctx.tys.has_inhabitants(&ctx.datas, variant_ty, &mut |id| match get_gen_ty {
+                        Some(get_gen_ty) => get_gen_ty(id).map_or(true, |gen_ty| ctx.tys.has_inhabitants(&ctx.datas, gen_ty, &mut |_| true)),
+                        None => true,
+                    }) {
+                        return Some(ExamplePat::Union(variant_ty, Box::new(ExamplePat::Wildcard)));
+                    }
                 }
+                None
             },
             Ty::Tuple(fields) if fields.len() == 1 => {
                 let mut inners = Vec::new();
@@ -217,18 +225,18 @@ impl AbstractPat {
             Ty::Tuple(fields) => {
                 let filter = (&mut filter).collect::<Vec<_>>();
 
-                if filter.iter().copied().any(|pat| !pat.is_refutable(ctx)) {
+                if filter.iter().copied().any(|pat| !pat.is_refutable_basic(ctx)) {
                     None
                 } else {
                     let wildcard = AbstractPat::Wildcard;
                     let mut cols = vec![Vec::new(); fields.len()];
                     for pat in filter.iter().copied() {
                         match pat {
-                            AbstractPat::Wildcard => (0..fields.len()).for_each(|i| cols[i].push(&wildcard)),
-                            AbstractPat::Tuple(fields) => {
-                                assert_eq!(fields.len(), cols.len());
-                                for (i, pat) in fields.iter().enumerate() {
-                                    cols[i].push(pat);
+                            AbstractPat::Wildcard => (0..fields.len()).for_each(|i| cols[i].push((&wildcard, ty))),
+                            AbstractPat::Tuple(pat_fields) => {
+                                debug_assert_eq!(pat_fields.len(), cols.len());
+                                for ((i, pat), ty) in pat_fields.iter().enumerate().zip(fields.iter()) {
+                                    cols[i].push((pat, *ty));
                                 }
                             },
                             _ => return None, // Type mismatch, don't yield an error because one was already generated
@@ -238,14 +246,14 @@ impl AbstractPat {
                     let mut refutable = cols
                         .into_iter()
                         .enumerate()
-                        .filter(|(_, col)| col.iter().any(|pat| pat.is_refutable(ctx)))
+                        .filter(|(_, col)| col.iter().any(|(pat, ty)| pat.is_refutable(ctx, *ty, get_gen_ty)))
                         .collect::<Vec<_>>();
 
                     match refutable.len() {
                         0 => None,
                         1 => {
                             let (idx, col) = refutable.remove(0);
-                            Self::inexhaustive_pat(ctx, fields[idx], &mut col.into_iter(), get_gen_ty)
+                            Self::inexhaustive_pat(ctx, fields[idx], &mut col.into_iter().map(|(pat, _)| pat), get_gen_ty)
                                 .map(|pat| ExamplePat::Tuple(
                                     (0..idx).map(|_| ExamplePat::Wildcard)
                                         .chain(std::iter::once(pat))
@@ -259,18 +267,18 @@ impl AbstractPat {
             Ty::Record(fields) => {
                 let filter = (&mut filter).collect::<Vec<_>>();
 
-                if filter.iter().copied().any(|pat| !pat.is_refutable(ctx)) {
+                if filter.iter().copied().any(|pat| !pat.is_refutable_basic(ctx)) {
                     None
                 } else {
                     let wildcard = AbstractPat::Wildcard;
                     let mut cols = vec![Vec::new(); fields.len()];
                     for pat in filter.iter().copied() {
                         match pat {
-                            AbstractPat::Wildcard => (0..fields.len()).for_each(|i| cols[i].push(&wildcard)),
-                            AbstractPat::Record(fields) => {
-                                assert_eq!(fields.len(), cols.len());
-                                for (i, (_, pat)) in fields.iter().enumerate() {
-                                    cols[i].push(pat);
+                            AbstractPat::Wildcard => (0..fields.len()).for_each(|i| cols[i].push((&wildcard, ty))),
+                            AbstractPat::Record(pat_fields) => {
+                                debug_assert_eq!(fields.len(), cols.len());
+                                for ((i, (_, pat)), (_, ty)) in pat_fields.iter().enumerate().zip(fields.iter()) {
+                                    cols[i].push((pat, *ty));
                                 }
                             },
                             _ => return None, // Type mismatch, don't yield an error because one was already generated
@@ -280,14 +288,14 @@ impl AbstractPat {
                     let mut refutable = cols
                         .into_iter()
                         .enumerate()
-                        .filter(|(_, col)| col.iter().any(|pat| pat.is_refutable(ctx)))
+                        .filter(|(_, col)| col.iter().any(|(pat, ty)| pat.is_refutable(ctx, *ty, get_gen_ty)))
                         .collect::<Vec<_>>();
 
                     match refutable.len() {
                         0 => None,
                         1 => {
                             let (idx, col) = refutable.remove(0);
-                            Self::inexhaustive_pat(ctx, *fields.values().nth(idx).unwrap(), &mut col.into_iter(), get_gen_ty)
+                            Self::inexhaustive_pat(ctx, *fields.values().nth(idx).unwrap(), &mut col.into_iter().map(|(pat, _)| pat), get_gen_ty)
                                 .map(|pat| ExamplePat::Record(
                                     (0..idx).map(|idx| (*fields.keys().nth(idx).unwrap(), ExamplePat::Wildcard))
                                         .chain(std::iter::once((*fields.keys().nth(idx).unwrap(), pat)))
@@ -344,12 +352,12 @@ impl AbstractPat {
                     match pat {
                         AbstractPat::Wildcard => return None,
                         AbstractPat::ListExact(items) => {
-                            if items.iter().all(|item| !item.is_refutable(ctx)) {
+                            if items.iter().all(|item| !item.is_refutable(ctx, item_ty, get_gen_ty)) {
                                 covered_lens.insert(items.len() as u64..items.len() as u64 + 1);
                             }
                         },
                         AbstractPat::ListFront(items, tail) => {
-                            if items.iter().all(|item| !item.is_refutable(ctx)) && !tail.is_refutable(ctx) {
+                            if items.iter().all(|item| !item.is_refutable(ctx, item_ty, get_gen_ty)) && !tail.is_refutable(ctx, ty, get_gen_ty) {
                                 covered_lens.insert(items.len() as u64..);
                             }
                         },

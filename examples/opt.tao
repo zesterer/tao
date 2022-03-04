@@ -22,5 +22,9 @@ data Maybe A =
 data Never =|
 
 fn foo = x : Maybe Never =>
-    let None = x in
-    ()
+    match ?x in
+        | ? Just x : Maybe Nat => ()
+        | ? None : Maybe Never => ()
+        \ ? None : Maybe Nat => ()
+
+

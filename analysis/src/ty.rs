@@ -135,13 +135,13 @@ impl Types {
                 .into_iter()
                 .all(|(_, field)| self.has_inhabitants(datas, field, gen)),
             Ty::Func(_, _) => true,
-            Ty::Data(data, args) => {println!("{:?}", data);datas
+            Ty::Data(data, args) => datas
                 .get_data(data)
                 .cons
                 .iter()
                 .any(|(_, ty)| {
                     self.has_inhabitants(datas, *ty, &mut |id| self.has_inhabitants(datas, args[id], gen))
-                })},
+                }),
             Ty::Gen(id, _) => gen(id),
             Ty::SelfType => true,
             Ty::Assoc(_, _, _) => true,

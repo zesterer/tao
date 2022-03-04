@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types, option_zip, bool_to_option, never_type, let_else)]
+#![feature(arbitrary_self_types, option_zip, bool_to_option, never_type, let_else, drain_filter)]
 
 pub mod class;
 pub mod concrete;
