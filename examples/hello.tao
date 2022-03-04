@@ -140,7 +140,7 @@ fn fallible : (Nat | Bool) -> () =
 def fallible2 =
     let x = match () in
         | () => ?5
-        | () => ?()
+        # | () => ?()
         \ () => ?True
     in
     fallible(x)

@@ -19,6 +19,7 @@ pub enum Repr {
     Data(ConDataId),
     Func(Box<Repr>, Box<Repr>),
     Union(Vec<Repr>),
+    Indirect(Box<Repr>),
 }
 
 #[derive(Default)]

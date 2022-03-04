@@ -102,6 +102,7 @@ impl Repr {
             Repr::Union(inhabitants) => inhabitants
                 .iter_mut()
                 .for_each(|inhabitant| inhabitant.visit_inner(order, repr, binding, expr)),
+            Repr::Indirect(inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
@@ -365,6 +366,7 @@ pub fn prepare(ctx: &mut Context) {
 pub fn check(ctx: &Context) {
     fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (&binding.pat, repr) {
+            (_, Repr::Indirect(inner)) => check_binding(ctx, binding, inner, stack),
             (Pat::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
@@ -381,6 +383,7 @@ pub fn check(ctx: &Context) {
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (expr, repr) {
+            (expr, Repr::Indirect(inner)) => check_expr(ctx, expr, inner, stack),
             // TODO: Check literals elsewhere
             (Expr::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {},

@@ -70,21 +70,26 @@ impl Context {
                 Box::new(self.lower_ty(hir, con, *o)),
             ),
             ConTy::Data(data_id) => {
+                let data = con.get_data(*data_id);
+
                 let args = data_id.1
                     .iter()
                     .map(|arg| self.lower_ty(hir, con, *arg))
                     .collect::<Vec<_>>();
 
                 if self.reprs.declare(*data_id) {
-                    let variants = con
-                        .get_data(*data_id)
+                    let variants = data
                         .cons
                         .iter()
                         .map(|(_, ty)| self.lower_ty(hir, con, *ty))
                         .collect();
                     self.reprs.define(*data_id, Repr::Sum(variants));
                 }
-                Repr::Data(*data_id)
+                if data.is_recursive {
+                    Repr::Indirect(Box::new(Repr::Data(*data_id)))
+                } else {
+                    Repr::Data(*data_id)
+                }
             },
             ConTy::Record(fields) => {
                 let mut fields = fields

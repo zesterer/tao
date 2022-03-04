@@ -31,11 +31,12 @@ pub struct TyInsts<'a> {
 }
 
 pub struct ConData {
+    pub is_recursive: bool,
     pub cons: Vec<(Ident, ConTyId)>,
 }
 
 pub struct ConContext {
-    datas: HashMap<ConDataId, Option<ConData>>,
+    datas: HashMap<ConDataId, Result<ConData, bool>>,
     tys: Vec<ConTy>,
     ty_lookup: HashMap<ConTy, ConTyId>,
     defs: HashMap<ConDefId, Option<ConExpr>>,
@@ -137,6 +138,38 @@ impl ConContext {
         }
     }
 
+    pub fn lower_data(&mut self, hir: &Context, data: DataId, args: &[ConTyId]) -> ConDataId {
+        let id = Intern::new((data, args.to_vec()));
+        if let Some(data) = self.datas.get_mut(&id) {
+            if let Err(is_recursive) = data {
+                // We're already in the process of initialising this data type so it must be recursive
+                *is_recursive = true;
+            }
+        } else {
+            self.datas.insert(id, Err(false)); // Prevent overflow with phoney value
+            let mut data = ConData {
+                is_recursive: false,
+                cons: hir.datas
+                    .get_data(data)
+                    .cons
+                    .iter()
+                    .map(|(name, ty)| (**name, self.lower_ty(hir, *ty, &TyInsts {
+                        self_ty: None,
+                        gen: &args,
+                    })))
+                    .collect(),
+            };
+            // Mark the data type as recursive if the recursive flag got set during lowering
+            if *self.datas.get(&id).unwrap().as_ref().map(|_| ()).unwrap_err() {
+                println!("{:?} is recursive!", id);
+                data.is_recursive = true;
+            }
+            self.datas.insert(id, Ok(data));
+        }
+
+        id
+    }
+
     pub fn lower_ty(&mut self, hir: &Context, ty: TyId, ty_insts: &TyInsts) -> ConTyId {
         let cty = match hir.tys.get(ty) {
             Ty::Error(_) => panic!("Concretizable type cannot be an error"),
@@ -163,23 +196,7 @@ impl ConContext {
                     .into_iter()
                     .map(|arg| self.lower_ty(hir, arg, ty_insts))
                     .collect::<Vec<_>>();
-                let id = Intern::new((data, args.clone()));
-                if !self.datas.contains_key(&id) {
-                    self.datas.insert(id, None); // Prevent overflow with phoney value
-                    let data = ConData {
-                        cons: hir.datas
-                            .get_data(data)
-                            .cons
-                            .iter()
-                            .map(|(name, ty)| (**name, self.lower_ty(hir, *ty, &TyInsts {
-                                self_ty: None,
-                                gen: &args,
-                            })))
-                            .collect(),
-                    };
-                    self.datas.insert(id, Some(data));
-                }
-                ConTy::Data(id)
+                ConTy::Data(self.lower_data(hir, data, &args))
             },
             Ty::Gen(idx, _) => return ty_insts.gen[idx],
             Ty::SelfType => return ty_insts.self_ty.expect("Self type required during concretization but none was provided"),

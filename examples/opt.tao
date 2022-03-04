@@ -3,7 +3,7 @@ import "lib/core.tao"
 fn factorial_go = n => go(
     fn
         | (0, a) => Done a
-        \ (m ~ n + 1, a) : (Nat, Nat) => Next (n, m * a)
+        \ (m ~ n + 1, a) => Next (n, m * a)
     ,
     (n, 1),
 )
