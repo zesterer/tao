@@ -7,6 +7,32 @@ functions, currying, good diagnostics, and much more!
     <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/example.png" alt="Demo of Tao's features"/>
 </a>
 
+## Goals
+
+Right now, Tao is a hobby project and I have no plans to turn it into a production-worthy language. This may change as
+the project evolves, but I'd rather spend as much time experimenting with new language features for now. That said, I do
+have a few goals for the language itself:
+
+- **Totality**
+    - All programs *must* explicitly handle all inputs. There are no mechanisms for panicking, exceptions, etc. The goal
+      is to build a type system that's expressive enough to prove that the totality of a wide range of programs.
+    - In time, I'd like to see the language develop support for *termination analysis* techniques like
+      [Walther recursion](https://en.wikipedia.org/wiki/Walther_recursion).
+
+- **Extreme optimisation**
+    - A rather dogged and obnoxious opinion of mine is that the 'optimisation ceiling' for statically-typed, total
+      functional programming languages is significantly higher than traditional imperative languages with comparably
+      weak type systems. I want Tao to be a practical example of this that I can point to rather than deploying nebulous
+      talking points about invariants.
+    - I've deliberately made sure that the core MIR of Tao has a very small surface area, making it amenable to a
+      variety of optimisations and static analyses.
+
+- **Learning**
+    - I have only a high-school knowledge of mathematics. I want to use Tao as a test bench to help me learn more about
+      mathematics, proofs, type systems, logic, and computation.
+    - In addition, I hope that Tao can serve as a useful tool for others looking to get into language design, compiler
+      development, or simply functional programming in general.
+
 ## Features
 
 - [x] Hindley-Milner type inference
@@ -69,12 +95,6 @@ functions, currying, good diagnostics, and much more!
 - [ ] Monadic IO (or an effect system?)
 - [ ] Do notation
 - [ ] LLVM/Cranelift backend
-
-## Why?
-
-Tao is primarily a personal hobby project. I have no real aspirations for the language, and I plan to spend a lot of
-time changing the syntax and semantics as my ideas about language design evolve. If you find the language interesting,
-feel free to give it a try!
 
 ## Interesting features
 
