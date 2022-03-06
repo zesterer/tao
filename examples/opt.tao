@@ -17,21 +17,10 @@ data Result A, E =
     \ Err E
 
 $[main]
-def main : Result Never Never -> Nat = #factorial_go(10)
-    fn x : Result Never Never => match x in |
-        # | Ok x => Err x
-        # \ Err _ => Ok 5
+def main = factorial_go(10)
 
 data Maybe A =
     | Just A
     \ None
 
 data Never =|
-
-fn foo = x : Maybe Never =>
-    match ?x in
-        | ? Just x : Maybe Nat => ()
-        | ? None : Maybe Never => ()
-        \ ? None : Maybe Nat => ()
-
-

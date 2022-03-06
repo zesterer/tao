@@ -122,6 +122,27 @@ impl Literal {
     }
 }
 
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Never => write!(f, "!"),
+            Self::Unknown(x) => *x,
+            Self::Nat(x) => write!(f, "{}", x),
+            Self::Int(x) => write!(f, "{}", x),
+            Self::Real(x) => write!(f, "{}", x),
+            Self::Char('\t') => write!(f, "'\\t'"),
+            Self::Char('\n') => write!(f, "'\\n'"),
+            Self::Char(c) => write!(f, "'{}'", c),
+            Self::Bool(x) => write!(f, "{}", x),
+            Self::Tuple(xs) => write!(f, "({})", xs.iter().map(|x| format!("{},", x)).collect::<Vec<_>>().join(" ")),
+            Self::List(xs) => write!(f, "[{}]", xs.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(", ")),
+            Self::Sum(v, x) => write!(f, "#{} {}", v, x),
+            Self::Union(ty, x) => write!(f, "#{} {}", ty, x),
+            Self::Data(data, x) => write!(f, "{:?} {}", data, x),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Intrinsic {
     Debug,
@@ -355,7 +376,7 @@ impl Expr {
 
     pub fn refresh_locals(&mut self) {
         let required = self.required_locals(None);
-        debug_assert_eq!(required.len(), 0, "Cannot refresh locals for an expression\n\n{}\n\nthat captures (required = {:?})", self.print(), required);
+        // debug_assert_eq!(required.len(), 0, "Cannot refresh locals for an expression\n\n{}\n\nthat captures (required = {:?})", self.print(), required);
         self.refresh_locals_inner(&mut Vec::new());
     }
 
@@ -455,8 +476,8 @@ impl Expr {
         required
     }
 
-    pub fn print(&self) -> impl fmt::Display + '_ {
-        struct DisplayBinding<'a>(&'a Binding, usize);
+    pub fn print<'a>(self: &'a MirNode<Self>) -> impl fmt::Display + 'a {
+        struct DisplayBinding<'a>(&'a MirNode<Binding>, usize);
 
         impl<'a> fmt::Display for DisplayBinding<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -470,7 +491,7 @@ impl Expr {
                 }
                 match &self.0.pat {
                     Pat::Wildcard => write!(f, "_"),
-                    Pat::Literal(c) => write!(f, "const {:?}", c),
+                    Pat::Literal(c) => write!(f, "{}", c),
                     Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
                     Pat::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayBinding(inner, self.1)),
                     Pat::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayBinding(inner, self.1)),
@@ -489,7 +510,7 @@ impl Expr {
             }
         }
 
-        struct DisplayExpr<'a>(&'a Expr, usize, bool);
+        struct DisplayExpr<'a>(&'a MirNode<Expr>, usize, bool);
 
         impl<'a> fmt::Display for DisplayExpr<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -497,7 +518,7 @@ impl Expr {
                 if self.2 {
                     write!(f, "{}", "    ".repeat(self.1))?;
                 }
-                match self.0 {
+                match &**self.0 {
                     Expr::Local(local) => write!(f, "${}", local.0),
                     Expr::Global(global, _) => write!(
                         f,
@@ -505,7 +526,7 @@ impl Expr {
                         global.0.0, if global.1.is_empty() { "" } else { " " },
                         global.1.iter().map(|ty| ty.id().to_string()).collect::<Vec<_>>().join(" "),
                     ),
-                    Expr::Literal(c) => write!(f, "const {:?}", c),
+                    Expr::Literal(c) => write!(f, "{}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Go(next, body, init) => write!(f, "go(${} => {}, {})", next.0, DisplayExpr(body, self.1, false), DisplayExpr(init, self.1, false)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
