@@ -91,7 +91,7 @@ impl Pass for RemoveUnusedBindings {
                     }
                 },
                 Expr::Func(arg, body) => {
-                    stack.push((*arg, 0));
+                    stack.push((**arg, 0));
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
                 },

@@ -200,7 +200,7 @@ impl Binding {
 impl Expr {
     pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
         match self {
-            Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| f(arg)),
@@ -234,7 +234,7 @@ impl Expr {
 
     pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut MirNode<Self>)) {
         match self {
-            Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
                 .iter_mut()
                 .for_each(|arg| f(arg)),
@@ -278,7 +278,7 @@ impl Expr {
                 }
             },
             Expr::Func(arg, body) => {
-                if *arg != name {
+                if **arg != name {
                     body.inline_local(name, local_expr);
                 }
             },
@@ -300,7 +300,7 @@ impl Expr {
         self.meta_mut().visit_inner(order, repr, binding, expr);
 
         match &mut **self {
-            Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
             Expr::Intrinsic(_, args) => args
                 .iter_mut()
                 .for_each(|arg| arg.visit_inner(order, repr, binding, expr)),
@@ -399,7 +399,7 @@ pub fn check(ctx: &Context) {
                 .find(|(name, _)| name == local)
                 .unwrap_or_else(|| panic!("Failed to find local ${} in scope", local.0)).1 == repr => {},
             (Expr::Func(i, body), Repr::Func(i_repr, _)) => {
-                stack.push((*i, (**i_repr).clone()));
+                stack.push((**i, (**i_repr).clone()));
                 visit_expr(ctx, body, stack);
                 stack.pop();
             },

@@ -448,7 +448,8 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .map_with_span(SrcNode::new))
             .boxed();
 
-        let branches = branches(branch);
+        let branches = branches(branch)
+            .or(just(Token::Pipe).map(|_| Vec::new()));
 
         let func = just(Token::Fn)
             .ignore_then(branches.clone().map_with_span(SrcNode::new))

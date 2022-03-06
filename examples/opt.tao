@@ -12,8 +12,15 @@ fn factorial =
     | 0 => 1
     \ m ~ n + 1 => m * factorial(n)
 
+data Result A, E =
+    | Ok A
+    \ Err E
+
 $[main]
-def main = factorial_go(10)
+def main : Result Never Never -> Nat = #factorial_go(10)
+    fn x : Result Never Never => match x in |
+        # | Ok x => Err x
+        # \ Err _ => Ok 5
 
 data Maybe A =
     | Just A

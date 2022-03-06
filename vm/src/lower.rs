@@ -2,6 +2,7 @@ use super::*;
 
 fn litr_to_value(literal: &mir::Literal) -> Value {
     match literal {
+        mir::Literal::Never => Value::Char('!'), // Evaluating a `Never` is UB anyway, so who cares what is generates?
         mir::Literal::Unknown(x) => *x,
         mir::Literal::Nat(x) => Value::Int(*x as i64),
         mir::Literal::Int(x) => Value::Int(*x),
@@ -224,6 +225,7 @@ impl Program {
         proc_fixups: &mut Vec<(ProcId, Addr)>,
     ) {
         match &*expr {
+            mir::Expr::Undefined => {}, // Do the minimum possible work, execution is undefined anyway
             mir::Expr::Literal(literal) => { self.push(Instr::Imm(litr_to_value(literal))); },
             mir::Expr::Local(local) => {
                 let idx = stack
@@ -356,7 +358,7 @@ impl Program {
                 }
             },
             mir::Expr::Func(arg, body) => {
-                let captures = body.required_locals(Some(*arg));
+                let captures = body.required_locals(Some(**arg));
 
                 let old_stack = stack.len();
 
@@ -365,12 +367,15 @@ impl Program {
                 let f_addr = self.next_addr();
 
                 let mut f_stack = Vec::new();
-                f_stack.push(*arg); // Will be pushed to locals stack on application
+                f_stack.push(**arg); // Will be pushed to locals stack on application
                 f_stack.append(&mut captures.clone());
 
-                self.compile_expr(mir, body, &mut f_stack, proc_fixups);
-                self.push(Instr::PopLocal(1 + captures.len())); // +1 is for the argument
-                self.push(Instr::Ret);
+                // A function with an undefined body doesn't need to be compiled!
+                if !matches!(&**body, mir::Expr::Undefined) {
+                    self.compile_expr(mir, body, &mut f_stack, proc_fixups);
+                    self.push(Instr::PopLocal(1 + captures.len())); // +1 is for the argument
+                    self.push(Instr::Ret);
+                }
 
                 self.fixup(jump_over, self.next_addr(), Instr::Jump); // Fixes #5
 

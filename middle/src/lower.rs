@@ -258,7 +258,7 @@ impl Context {
                 let body = self.lower_expr(hir, con, body, stack);
                 stack.pop();
 
-                mir::Expr::Func(arg_local, body)
+                mir::Expr::Func(MirNode::new(arg_local, self.lower_ty(hir, con, *arg.meta())), body)
             },
             hir::Expr::Apply(f, arg) => mir::Expr::Apply(self.lower_expr(hir, con, f, stack), self.lower_expr(hir, con, arg, stack)),
             hir::Expr::Cons(data, variant, inner) => {

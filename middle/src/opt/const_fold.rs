@@ -9,17 +9,24 @@ pub struct ConstFold {
 }
 
 impl ConstFold {
-    // Returns `true` if the branch *could* still match the partial value. If `false` is returned, there's no
-    // saying what was or wasn't added to the stack.
-    fn extract(&self, ctx: &Context, binding: &mut Binding, partial: &Partial, locals: &mut Vec<(Local, Partial)>) -> bool {
+    // Returns `true` if the branch *could* still match the partial value and the partial value has inhabitants. If
+    // `false` is returned, there's no saying what was or wasn't added to the stack.
+    fn extract(&self, ctx: &Context, binding: &mut MirNode<Binding>, partial: &Partial, locals: &mut Vec<(Local, Partial)>) -> bool {
         if let Some(name) = binding.name {
             locals.push((name, partial.clone()));
         }
 
-        if let Partial::Unknown(_) = partial {
+        if !binding.has_matches(ctx) {
+            false
+        } else if let Partial::Unknown(_) = partial {
             // Extract child bindings
-            binding.for_children_mut(|binding| { self.extract(ctx, binding, &Partial::Unknown(None), locals); });
-            true // TODO: Can we be smarter?
+            let mut matches = true;
+            binding.for_children_mut(|binding| {
+                // TODO: This will become unsound if or patterns are ever added because it assumes that all child
+                // patterns are and patterns.
+                matches &= self.extract(ctx, binding, &Partial::Unknown(None), locals);
+            });
+            matches
         } else {
             match (&mut binding.pat, partial) {
                 (Pat::Wildcard, _) => true,
@@ -83,6 +90,7 @@ impl ConstFold {
 
     fn eval(&self, ctx: &Context, expr: &mut Expr, stack: &mut Vec<(Local, Partial)>) -> Partial {
         let partial = match expr {
+            Expr::Undefined => Partial::Never,
             Expr::Literal(litr) => return litr.to_partial(), // Return directly, no need to set
             Expr::Local(local) => match stack
                 .iter()
@@ -109,13 +117,20 @@ impl ConstFold {
             },
             Expr::Match(pred, arms) => {
                 let pred = self.eval(ctx, pred, stack);
+                let mut output = Partial::Never;
                 arms
+                    // Remove arms that cannot possibly match
                     .drain_filter(|(binding, arm)| {
                         let old_stack = stack.len();
                         let cull = if self.extract(ctx, binding, &pred, stack) {
-                            self.eval(ctx, arm, stack);
+                            let arm_output = self.eval(ctx, arm, stack);
+
+                            // Combine outputs together in an attempt to unify their values
+                            output = std::mem::replace(&mut output, Partial::Unknown(None)).or(arm_output);
+
                             false
                         } else {
+                            // Arm could not possibly match, cull it
                             true
                         };
                         stack.truncate(old_stack);
@@ -123,14 +138,17 @@ impl ConstFold {
                         cull
                     })
                     .for_each(|_| {});
-                Partial::Unknown(None) // TODO: unify arms
+                output
             },
             Expr::Func(arg, body) => {
-                stack.push((*arg, Partial::Unknown(Some(*arg))));
-                self.eval(ctx, body, stack); // TODO: Turn into a `Partial::Func` if no captures
-                stack.pop();
-
-                Partial::Unknown(None)
+                if ctx.reprs.has_inhabitants(arg.meta()) {
+                    stack.push((**arg, Partial::Unknown(Some(**arg))));
+                    self.eval(ctx, body, stack);
+                    stack.pop();
+                } else {
+                    **body = Expr::Undefined;
+                }
+                Partial::Unknown(None) // TODO: Turn into a `Partial::Func` if no captures
             },
             Expr::Go(next, body, init) => {
                 self.eval(ctx, init, stack);
@@ -154,16 +172,11 @@ impl ConstFold {
                 self.eval(ctx, f, stack);
                 self.eval(ctx, arg, stack);
 
-                // if let Expr::Func(param, body) = &mut **f {
-                //     body.inline_local(*param, arg);
-                //     *expr = (**body).clone();
-                //     return self.eval(ctx, expr, stack)
-                // } else
                 // Lower `(fn x => y)(z)` into `let x = z in y`
                 if let Expr::Func(param, body) = &mut **f {
                     *expr = Expr::Match(
                         arg.clone(),
-                        vec![(MirNode::new(Binding::wildcard(*param), arg.meta().clone()), body.clone())],
+                        vec![(MirNode::new(Binding::wildcard(**param), arg.meta().clone()), body.clone())],
                     );
                     return self.eval(ctx, expr, stack)
                 } else {
@@ -201,9 +214,25 @@ impl ConstFold {
             e => todo!("{:?}", e),
         };
 
-        if let Some(literal) = partial.to_literal() {
-            *expr = Expr::Literal(literal);
-        }
+        let partial = match partial {
+            // If the partial output of this expression is a local found in the enclosing expression, just refer to it
+            // directly.
+            Partial::Unknown(local) if local
+                .map_or(false, |local| stack
+                    .iter()
+                    .find(|(l, _)| *l == local)
+                    .is_some()) => {
+                *expr = Expr::Local(local.unwrap());
+                partial
+            },
+            partial => {
+                // Otherwise, if the partial is just a literal, use the literal directly.
+                if let Some(literal) = partial.to_literal() {
+                    *expr = Expr::Literal(literal);
+                }
+                partial
+            },
+        };
 
         partial
     }

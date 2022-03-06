@@ -1,3 +1,5 @@
+//! The MIR is *not* correct (in the context of Tao's abstract machine) by construction. See the 'SAFETY' notes.
+
 use super::*;
 use std::{
     cell::Cell,
@@ -13,7 +15,11 @@ pub struct LocalId(usize);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Const<U> {
-    Unknown(U), // Value not currently known
+    // Value has no possible inhabitants, even if the type of the value has inhabitants. For example, `x` in
+    // `let x : Char = match never in` may have an inferred never value, even though `Char` has inhabitants.
+    Never,
+    // Value could not be inferred at compile-time
+    Unknown(U),
     Nat(u64),
     Int(i64),
     Real(f64),
@@ -39,6 +45,7 @@ impl<U: fmt::Debug + Clone> Const<U> {
 impl Partial {
     pub fn to_literal(&self) -> Option<Literal> {
         match self {
+            Self::Never => Some(Literal::Never),
             Self::Unknown(_) => None,
             Self::Nat(x) => Some(Literal::Nat(*x)),
             Self::Int(x) => Some(Literal::Int(*x)),
@@ -58,11 +65,42 @@ impl Partial {
             Self::Data(data, inner) => Some(Literal::Data(*data, Box::new(inner.to_literal()?))),
         }
     }
+
+    pub fn or(self, other: Self) -> Self {
+        match (self, other) {
+            (x, Self::Never) => x,
+            (Self::Never, y) => y,
+
+            (Self::Unknown(a), Self::Unknown(b)) if a == b => Self::Unknown(a),
+            (Self::Unknown(_), _) | (_, Self::Unknown(_)) => Self::Unknown(None),
+
+            (Self::Nat(x), Self::Nat(y)) if x == y => Self::Nat(x),
+            (Self::Int(x), Self::Int(y)) if x == y => Self::Int(x),
+            (Self::Real(x), Self::Real(y)) if x == y => Self::Real(x),
+            (Self::Char(x), Self::Char(y)) if x == y => Self::Char(x),
+            (Self::Bool(x), Self::Bool(y)) if x == y => Self::Bool(x),
+            (Self::Tuple(xs), Self::Tuple(ys)) => Self::Tuple(xs
+                .into_iter()
+                .zip(ys)
+                .map(|(x, y)| x.or(y))
+                .collect()),
+            (Self::List(xs), Self::List(ys)) if xs.len() == ys.len() => Self::List(xs
+                .into_iter()
+                .zip(ys)
+                .map(|(x, y)| x.or(y))
+                .collect()),
+            (Self::Sum(a, x), Self::Sum(b, y)) if a == b => Self::Sum(a, Box::new(x.or(*y))),
+            (Self::Union(a, x), Self::Union(b, y)) if a == b => Self::Union(a, Box::new(x.or(*y))),
+            (Self::Data(a, x), Self::Data(b, y)) if a == b => Self::Data(a, Box::new(x.or(*y))),
+            _ => Self::Unknown(None),
+        }
+    }
 }
 
 impl Literal {
     pub fn to_partial(&self) -> Partial {
         match self {
+            Self::Never => Partial::Never,
             Self::Unknown(x) => Partial::Unknown(*x),
             Self::Nat(x) => Partial::Nat(*x),
             Self::Int(x) => Partial::Int(*x),
@@ -226,6 +264,34 @@ impl Binding {
         }
         self.for_children_mut(|expr| expr.refresh_locals_inner(stack));
     }
+
+    /// Returns `true` is might be inhabitant values that can match this pattern.
+    pub fn has_matches(self: &MirNode<Self>, ctx: &Context) -> bool {
+        if !ctx.reprs.has_inhabitants(self.meta()) {
+            false
+        } else {
+            match &self.pat {
+                Pat::Wildcard => true,
+                Pat::Literal(_) => true,
+                Pat::Single(inner) => inner.has_matches(ctx),
+                Pat::Add(inner, _) => inner.has_matches(ctx),
+                Pat::Tuple(xs) => xs
+                    .iter()
+                    .all(|x| x.has_matches(ctx)),
+                Pat::ListExact(xs) => xs
+                    .iter()
+                    .all(|x| x.has_matches(ctx)),
+                Pat::ListFront(xs, tail) => xs
+                    .iter()
+                    .all(|x| x.has_matches(ctx)) && tail
+                        .as_ref()
+                        .map_or(true, |tail| tail.has_matches(ctx)),
+                Pat::Variant(_, inner) => inner.has_matches(ctx),
+                Pat::UnionVariant(_, inner) => inner.has_matches(ctx),
+                Pat::Data(_, inner) => inner.has_matches(ctx),
+            }
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -245,14 +311,19 @@ impl Default for GlobalFlags {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
+    /// SAFETY: this node must never be evaluated at run-time
+    Undefined,
     Literal(Literal),
+    /// SAFETY: The local *must* be available in the enclosing scope of the expression.
     Local(Local),
     Global(ProcId, Cell<GlobalFlags>),
 
     Intrinsic(Intrinsic, Vec<MirNode<Self>>),
+    /// SAFETY: All possible *inhabitant* (i.e: values that can actually be generated at run-time) predicate values
+    /// must be matched by at least one arm. If this is not the case, the compiler's output is undefined.
     Match(MirNode<Self>, Vec<(MirNode<Binding>, MirNode<Self>)>),
 
-    Func(Local, MirNode<Self>),
+    Func(MirNode<Local>, MirNode<Self>),
     Apply(MirNode<Self>, MirNode<Self>),
 
     // Tail recursion
@@ -308,10 +379,10 @@ impl Expr {
             },
             Expr::Func(arg, body) => {
                 let new_arg = Local::new();
-                stack.push((*arg, new_arg));
+                stack.push((**arg, new_arg));
                 body.refresh_locals_inner(stack);
                 stack.pop();
-                *arg = new_arg;
+                **arg = new_arg;
             },
             Expr::Go(next, body, init) => {
                 init.refresh_locals_inner(stack);
@@ -328,6 +399,7 @@ impl Expr {
 
     fn required_locals_inner(&self, stack: &mut Vec<Local>, required: &mut Vec<Local>) {
         match self {
+            Expr::Undefined => {},
             Expr::Literal(_) => {},
             Expr::Local(local) => {
                 if !stack.contains(local) {
@@ -350,7 +422,7 @@ impl Expr {
                 }
             },
             Expr::Func(arg, body) => {
-                stack.push(*arg);
+                stack.push(**arg);
                 body.required_locals_inner(stack, required);
                 stack.pop();
             },

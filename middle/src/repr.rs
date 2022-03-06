@@ -59,4 +59,22 @@ impl Reprs {
     pub fn define(&mut self, id: ConDataId, data: Data) {
         assert!(self.datas.insert(id, Some(data)).unwrap().is_none());
     }
+
+    pub fn has_inhabitants(&self, repr: &Repr) -> bool {
+        match repr {
+            Repr::Prim(_) => true,
+            Repr::List(_) => true, // Empty list
+            Repr::Tuple(xs) => xs
+                .iter()
+                .all(|x| self.has_inhabitants(x)),
+            Repr::Sum(variants) => variants
+                .iter()
+                .any(|v| self.has_inhabitants(v)),
+            Repr::Data(data) => self.has_inhabitants(&self.get(*data).repr),
+            Repr::Func(_, _) => true,
+            Repr::Union(variants) => variants
+                .iter()
+                .any(|v| self.has_inhabitants(v)),
+        }
+    }
 }
