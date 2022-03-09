@@ -37,6 +37,11 @@ impl AbstractPat {
                 range.insert(*x..*x + 1);
                 range
             }),
+            hir::Pat::Literal(hir::Literal::Int(x)) => Self::Int({
+                let mut range = Ranges::new();
+                range.insert(*x..*x + 1);
+                range
+            }),
             hir::Pat::Literal(hir::Literal::Str(x)) => Self::ListExact(x.chars().map(Self::Char).collect()),
             hir::Pat::Single(inner) => Self::from_binding(ctx, inner),
             hir::Pat::Union(inner) => Self::Union(inner.meta().1, Box::new(Self::from_binding(ctx, inner))),
@@ -162,6 +167,15 @@ impl AbstractPat {
                     match pat {
                         AbstractPat::Wildcard => return None,
                         AbstractPat::Real(_) => {},
+                        _ => return None, // Type mismatch, don't yield an error because one was already generated
+                    }
+                }
+                Some(ExamplePat::Wildcard)
+            },
+            Ty::Prim(Prim::Universe) => {
+                for pat in filter {
+                    match pat {
+                        AbstractPat::Wildcard => return None,
                         _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }

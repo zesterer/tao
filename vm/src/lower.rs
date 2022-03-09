@@ -1,8 +1,8 @@
 use super::*;
 
-fn litr_to_value(literal: &mir::Literal) -> Value {
-    match literal {
-        mir::Literal::Never => Value::Char('!'), // Evaluating a `Never` is UB anyway, so who cares what is generates?
+fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
+    Some(match literal {
+        mir::Literal::Never => return None, // Evaluating a `Never` is UB anyway, so who cares what it generates?
         mir::Literal::Unknown(x) => *x,
         mir::Literal::Nat(x) => Value::Int(*x as i64),
         mir::Literal::Int(x) => Value::Int(*x),
@@ -12,26 +12,41 @@ fn litr_to_value(literal: &mir::Literal) -> Value {
         mir::Literal::Tuple(fields) => Value::List(fields
             .iter()
             .map(litr_to_value)
-            .collect()),
+            .collect::<Option<_>>()?),
         mir::Literal::List(items) => Value::List(items
             .iter()
             .map(litr_to_value)
-            .collect()),
-        mir::Literal::Sum(variant, inner) => Value::Sum(*variant, Box::new(litr_to_value(inner))),
+            .collect::<Option<_>>()?),
+        mir::Literal::Sum(variant, inner) => Value::Sum(*variant, Box::new(litr_to_value(inner)?)),
         mir::Literal::Union(id, inner) => {
             assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-            Value::Sum(*id as usize, Box::new(litr_to_value(inner)))
+            Value::Sum(*id as usize, Box::new(litr_to_value(inner)?))
         },
-        mir::Literal::Data(_, inner) => litr_to_value(inner),
-    }
+        mir::Literal::Data(_, inner) => litr_to_value(inner)?,
+    })
 }
 
 impl Program {
     // [.., T] => [..]
     pub fn compile_extractor(&mut self, mir: &MirContext, binding: &MirNode<mir::Binding>) {
+        // The total number of locals this pattern produces
+        let mut binds = binding.bindings().len();
+
         if let Some(_) = binding.name {
-            self.push(Instr::Dup);
-            self.push(Instr::PushLocal);
+            if binds == 1 {
+                self.push(Instr::PushLocal);
+                return;
+            } else {
+                self.push(Instr::Dup);
+                self.push(Instr::PushLocal);
+            }
+
+            binds -= 1; // Account for the local we just generate
+        }
+
+        if binds == 0 {
+            self.push(Instr::Pop(1));
+            return;
         }
 
         match &binding.pat {
@@ -127,92 +142,96 @@ impl Program {
 
     // [.., T] -> [.., Bool]
     pub fn compile_matcher(&mut self, binding: &MirNode<mir::Binding>) {
-        match &binding.pat {
-            mir::Pat::Wildcard => {
-                self.push(Instr::Pop(1));
-                self.push(Instr::bool(true));
-            },
-            mir::Pat::Literal(constant) => match constant {
-                mir::Literal::Bool(true) => {},
-                mir::Literal::Bool(false) => {
-                    self.push(Instr::NotBool);
+        if !binding.is_refutable() {
+            self.push(Instr::Pop(1));
+            self.push(Instr::bool(true));
+        } else {
+            match &binding.pat {
+                mir::Pat::Wildcard => unreachable!(), // Caught by refutability check above
+                mir::Pat::Literal(constant) => match constant {
+                    mir::Literal::Bool(true) => {},
+                    mir::Literal::Bool(false) => {
+                        self.push(Instr::NotBool);
+                    },
+                    literal => {
+                        if let Some(val) = litr_to_value(literal) {
+                            self.push(Instr::Imm(val));
+                        }
+                        self.push(match binding.meta() {
+                            repr::Repr::Prim(repr::Prim::Bool) => Instr::EqBool,
+                            repr::Repr::Prim(repr::Prim::Nat) => Instr::EqInt,
+                            repr::Repr::Prim(repr::Prim::Int) => Instr::EqInt,
+                            r => todo!("{:?}", r),
+                        });
+                    },
                 },
-                literal => {
-                    self.push(Instr::Imm(litr_to_value(literal)));
-                    self.push(match binding.meta() {
-                        repr::Repr::Prim(repr::Prim::Bool) => Instr::EqBool,
-                        repr::Repr::Prim(repr::Prim::Nat) => Instr::EqInt,
-                        repr::Repr::Prim(repr::Prim::Int) => Instr::EqInt,
-                        r => todo!("{:?}", r),
-                    });
-                },
-            },
-            mir::Pat::Single(inner) => self.compile_matcher(inner),
-            mir::Pat::Add(lhs, rhs) => {
-                self.push(Instr::Dup);
-                self.push(Instr::Imm(Value::Int(*rhs as i64)));
-                self.push(Instr::MoreEqInt);
-                self.push(Instr::IfNot);
-                let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
-                self.compile_item_matcher(Some(lhs), false, Some(fail_fixup));
-            },
-            mir::Pat::Tuple(items) => {
-                self.compile_item_matcher(items, true, None);
-            },
-            mir::Pat::ListExact(items) => if items.len() == 0 {
-                self.push(Instr::LenList);
-                self.push(Instr::Imm(Value::Int(items.len() as i64)));
-                self.push(Instr::EqInt);
-            } else {
-                self.push(Instr::Dup);
-                self.push(Instr::LenList);
-                self.push(Instr::Imm(Value::Int(items.len() as i64)));
-                self.push(Instr::EqInt);
-                self.push(Instr::IfNot);
-                let fail_fixup = Some(self.push(Instr::Jump(0))); // Fixed by #2
-
-                self.compile_item_matcher(items, true, fail_fixup);
-            },
-            mir::Pat::ListFront(items, tail) => {
-                self.push(Instr::Dup);
-                self.push(Instr::LenList);
-                self.push(Instr::Imm(Value::Int(items.len() as i64)));
-                self.push(Instr::MoreEqInt);
-                self.push(Instr::IfNot);
-                let mut fail_fixup = vec![self.push(Instr::Jump(0))]; // Fixed by #2
-
-                if let Some(tail) = tail.as_ref() {
+                mir::Pat::Single(inner) => self.compile_matcher(inner),
+                mir::Pat::Add(lhs, rhs) => {
                     self.push(Instr::Dup);
-                    self.push(Instr::SkipList(items.len()));
-                    self.compile_matcher(tail);
+                    self.push(Instr::Imm(Value::Int(*rhs as i64)));
+                    self.push(Instr::MoreEqInt);
                     self.push(Instr::IfNot);
-                    fail_fixup.push(self.push(Instr::Jump(0))); // Fixed by #2
-                }
+                    let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
+                    self.compile_item_matcher(Some(lhs), false, Some(fail_fixup));
+                },
+                mir::Pat::Tuple(items) => {
+                    self.compile_item_matcher(items, true, None);
+                },
+                mir::Pat::ListExact(items) => if items.len() == 0 {
+                    self.push(Instr::LenList);
+                    self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                    self.push(Instr::EqInt);
+                } else {
+                    self.push(Instr::Dup);
+                    self.push(Instr::LenList);
+                    self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                    self.push(Instr::EqInt);
+                    self.push(Instr::IfNot);
+                    let fail_fixup = Some(self.push(Instr::Jump(0))); // Fixed by #2
 
-                self.compile_item_matcher(items, true, fail_fixup);
-            },
-            mir::Pat::Variant(variant, inner) => {
-                self.push(Instr::Dup);
-                self.push(Instr::VariantSum);
-                self.push(Instr::Imm(Value::Int(*variant as i64)));
-                self.push(Instr::EqInt);
-                self.push(Instr::IfNot);
-                let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
-                self.push(Instr::IndexSum(*variant));
-                self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
-            },
-            mir::Pat::UnionVariant(id, inner) => {
-                self.push(Instr::Dup);
-                self.push(Instr::VariantSum);
-                self.push(Instr::Imm(Value::Int(*id as i64)));
-                self.push(Instr::EqInt);
-                self.push(Instr::IfNot);
-                let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
-                assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-                self.push(Instr::IndexSum(*id as usize));
-                self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
-            },
-            mir::Pat::Data(_, inner) => self.compile_matcher(inner),
+                    self.compile_item_matcher(items, true, fail_fixup);
+                },
+                mir::Pat::ListFront(items, tail) => {
+                    self.push(Instr::Dup);
+                    self.push(Instr::LenList);
+                    self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                    self.push(Instr::MoreEqInt);
+                    self.push(Instr::IfNot);
+                    let mut fail_fixup = vec![self.push(Instr::Jump(0))]; // Fixed by #2
+
+                    if let Some(tail) = tail.as_ref() {
+                        self.push(Instr::Dup);
+                        self.push(Instr::SkipList(items.len()));
+                        self.compile_matcher(tail);
+                        self.push(Instr::IfNot);
+                        fail_fixup.push(self.push(Instr::Jump(0))); // Fixed by #2
+                    }
+
+                    self.compile_item_matcher(items, true, fail_fixup);
+                },
+                mir::Pat::Variant(variant, inner) => {
+                    self.push(Instr::Dup);
+                    self.push(Instr::VariantSum);
+                    self.push(Instr::Imm(Value::Int(*variant as i64)));
+                    self.push(Instr::EqInt);
+                    self.push(Instr::IfNot);
+                    let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
+                    self.push(Instr::IndexSum(*variant));
+                    self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
+                },
+                mir::Pat::UnionVariant(id, inner) => {
+                    self.push(Instr::Dup);
+                    self.push(Instr::VariantSum);
+                    self.push(Instr::Imm(Value::Int(*id as i64)));
+                    self.push(Instr::EqInt);
+                    self.push(Instr::IfNot);
+                    let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
+                    assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
+                    self.push(Instr::IndexSum(*id as usize));
+                    self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
+                },
+                mir::Pat::Data(_, inner) => self.compile_matcher(inner),
+            }
         }
     }
 
@@ -226,7 +245,11 @@ impl Program {
     ) {
         match &*expr {
             mir::Expr::Undefined => {}, // Do the minimum possible work, execution is undefined anyway
-            mir::Expr::Literal(literal) => { self.push(Instr::Imm(litr_to_value(literal))); },
+            mir::Expr::Literal(literal) => {
+                if let Some(val) = litr_to_value(literal) {
+                    self.push(Instr::Imm(val));
+                }
+            },
             mir::Expr::Local(local) => {
                 let idx = stack
                     .iter()
@@ -242,60 +265,38 @@ impl Program {
                 for arg in args {
                     self.compile_expr(mir, arg, stack, proc_fixups);
                 }
-                use mir::Intrinsic::*;
+                use mir::Intrinsic;
                 match intrinsic {
-                    Debug => { self.push(Instr::Break); },
-                    MakeList(_) => { self.push(Instr::MakeList(args.len())); },
-                    NotBool => { self.push(Instr::NotBool); },
-                    NegNat | NegInt => { self.push(Instr::NegInt); },
-                    NegReal => { self.push(Instr::NegReal); },
-                    AddNat | AddInt => { self.push(Instr::AddInt); },
-                    SubNat | SubInt => { self.push(Instr::SubInt); },
-                    MulNat | MulInt => { self.push(Instr::MulInt); },
-                    EqNat | EqInt => { self.push(Instr::EqInt); },
-                    EqChar => { self.push(Instr::EqChar); },
-                    NotEqNat | NotEqInt => {
+                    Intrinsic::Debug => { self.push(Instr::Break); },
+                    Intrinsic::MakeList(_) => { self.push(Instr::MakeList(args.len())); },
+                    Intrinsic::NotBool => { self.push(Instr::NotBool); },
+                    Intrinsic::NegNat | Intrinsic::NegInt => { self.push(Instr::NegInt); },
+                    Intrinsic::NegReal => { self.push(Instr::NegReal); },
+                    Intrinsic::AddNat | Intrinsic::AddInt => { self.push(Instr::AddInt); },
+                    Intrinsic::SubNat | Intrinsic::SubInt => { self.push(Instr::SubInt); },
+                    Intrinsic::MulNat | Intrinsic::MulInt => { self.push(Instr::MulInt); },
+                    Intrinsic::EqNat | Intrinsic::EqInt => { self.push(Instr::EqInt); },
+                    Intrinsic::EqChar => { self.push(Instr::EqChar); },
+                    Intrinsic::NotEqNat | Intrinsic::NotEqInt => {
                         self.push(Instr::EqInt);
                         self.push(Instr::NotBool);
                     },
-                    NotEqChar => {
+                    Intrinsic::NotEqChar => {
                         self.push(Instr::EqChar);
                         self.push(Instr::NotBool);
                     },
-                    LessNat | LessInt => { self.push(Instr::LessInt); },
-                    MoreNat | MoreInt => { self.push(Instr::MoreInt); },
-                    LessEqNat | LessEqInt => { self.push(Instr::LessEqInt); },
-                    MoreEqNat | MoreEqInt => { self.push(Instr::MoreEqInt); },
-                    Join(_) => { self.push(Instr::JoinList); },
-                    Union(ty) => {
+                    Intrinsic::LessNat | Intrinsic::LessInt => { self.push(Instr::LessInt); },
+                    Intrinsic::MoreNat | Intrinsic::MoreInt => { self.push(Instr::MoreInt); },
+                    Intrinsic::LessEqNat | Intrinsic::LessEqInt => { self.push(Instr::LessEqInt); },
+                    Intrinsic::MoreEqNat | Intrinsic::MoreEqInt => { self.push(Instr::MoreEqInt); },
+                    Intrinsic::Join(_) => { self.push(Instr::JoinList); },
+                    Intrinsic::AndBool => { self.push(Instr::AndBool); },
+                    Intrinsic::Union(ty) => {
                         assert_eq!(*ty as usize as u64, *ty, "usize too small for this union variant");
                         self.push(Instr::MakeSum(*ty as usize));
                     },
-                    Go => {
-                        let luup = self.next_addr();
-                        // Apply function
-                        self.push(Instr::PushLocal);
-                        self.push(Instr::Dup);
-                        self.push(Instr::ApplyFunc);
-
-                        const NEXT_VARIANT: usize = 0;
-                        const DONE_VARIANT: usize = 1;
-
-                        // Try unwrapping result
-                        self.push(Instr::Dup);
-                        self.push(Instr::VariantSum);
-                        self.push(Instr::Imm(Value::Int(NEXT_VARIANT as i64)));
-                        self.push(Instr::EqInt);
-                        self.push(Instr::IfNot);
-                        let done = self.push(Instr::Jump(0)); // Fixed by #6
-                        self.push(Instr::IndexSum(NEXT_VARIANT));
-                        let again = self.push(Instr::Jump(0));
-                        self.fixup(again, luup, Instr::Jump);
-
-                        self.fixup(done, self.next_addr(), Instr::Jump); // Fixes #6
-                        self.push(Instr::IndexSum(DONE_VARIANT));
-                        self.push(Instr::Replace);
-                    },
+                    Intrinsic::Print => { self.push(Instr::Print); },
+                    Intrinsic::Input => { self.push(Instr::Input); },
                 };
             },
             mir::Expr::Tuple(fields) => {
@@ -447,10 +448,13 @@ impl Program {
         }
     }
 
-    pub fn compile_proc(&mut self, mir: &MirContext, proc: ProcId, proc_fixups: &mut Vec<(ProcId, Addr)>) -> Addr {
+    pub fn compile_proc(&mut self, mir: &MirContext, proc: ProcId, entry_io: bool, proc_fixups: &mut Vec<(ProcId, Addr)>) -> Addr {
         self.debug(format!("Proc {:?}", proc));
         let addr = self.next_addr();
         self.compile_expr(mir, &mir.procs.get(proc).unwrap().body, &mut Vec::new(), proc_fixups);
+        if entry_io {
+            self.push(Instr::ApplyFunc);
+        }
         self.push(Instr::Ret);
         addr
     }
@@ -458,18 +462,33 @@ impl Program {
     pub fn from_mir(mir: &MirContext) -> Self {
         let mut this = Self::default();
 
+        let entry = mir.entry.expect("No entry point");
+        this.does_io = if let repr::Repr::Func(i, o) = mir.procs.get(entry).unwrap().body.meta() {
+            if let (repr::Repr::Prim(repr::Prim::Universe), repr::Repr::Tuple(xs)) = (&**i, &**o) {
+                if let [repr::Repr::Prim(repr::Prim::Universe), repr::Repr::Tuple(xs)] = &xs[..] {
+                    xs.len() == 0
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         let mut procs = HashMap::new();
         let mut proc_fixups = Vec::new();
 
         for proc_id in mir.reachable_procs() {
-            procs.insert(proc_id, this.compile_proc(mir, proc_id, &mut proc_fixups));
+            procs.insert(proc_id, this.compile_proc(mir, proc_id, this.does_io && proc_id == entry, &mut proc_fixups));
         }
 
         for (proc_id, addr) in proc_fixups {
             this.fixup(addr, procs[&proc_id], Instr::Call); // Fixes #4
         }
 
-        this.entry = procs[&mir.entry.expect("No entry point")];
+        this.entry = procs[&entry];
 
         this
     }

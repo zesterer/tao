@@ -12,9 +12,16 @@ pub struct Def {
 pub struct DefId(pub usize);
 
 #[derive(Default)]
+pub struct Lang {
+    pub io_unit: Option<DefId>,
+    pub io_bind: Option<DefId>,
+}
+
+#[derive(Default)]
 pub struct Defs {
     lut: HashMap<Ident, (Span, DefId)>,
     defs: Vec<Def>,
+    pub lang: Lang,
 }
 
 impl Defs {
@@ -40,9 +47,31 @@ impl Defs {
         if let Err(old) = self.lut.try_insert(name, (span, id)) {
             Err(Error::DuplicateDefName(name, old.entry.get().0, span))
         } else {
+            if let Some(lang) = def.attr
+                .iter()
+                .find(|a| &**a.name == "lang")
+                .and_then(|a| a.args.as_ref())
+            {
+                if lang.iter().find(|a| &**a.name == "io_unit").is_some() {
+                    self.lang.io_unit = Some(id);
+                }
+                if lang.iter().find(|a| &**a.name == "io_bind").is_some() {
+                    self.lang.io_bind = Some(id);
+                }
+            }
+
             self.defs.push(def);
             Ok(id)
         }
+    }
+
+    pub fn check_lang_items(&self) -> Vec<Error> {
+        let mut errors = Vec::new();
+
+        if self.lang.io_unit.is_none() { errors.push(Error::MissingLangItem("io_unit")); }
+        if self.lang.io_bind.is_none() { errors.push(Error::MissingLangItem("io_bind")); }
+
+        errors
     }
 
     pub fn define_body(&mut self, id: DefId, expr: TyExpr) {

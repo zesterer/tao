@@ -1,0 +1,21 @@
+import "lib/parse.tao"
+
+fn eq : Str -> Str -> Bool =
+    | [], [] => True
+    | [x .. xs], [y .. ys] => x = y and xs:eq(ys)
+    \ _, _ => False
+
+$[main]
+def main : IO () = loop
+
+def loop : IO () = do
+    print("Enter an expression to evaluate, q to quit");
+    let text <- input;
+    if text:eq("q")
+    then print("Ok, goodbye")
+    else do
+        match text:parse(expr_parser) in
+            | Ok expr => print(expr:eval:display)
+            \ Err err => print("Failed to parse expression '" ++ text ++ "'");
+        loop;
+    ;

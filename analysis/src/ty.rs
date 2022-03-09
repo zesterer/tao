@@ -11,6 +11,7 @@ pub enum Prim {
     Real,
     Bool,
     Char,
+    Universe,
 }
 
 impl fmt::Display for Prim {
@@ -21,6 +22,7 @@ impl fmt::Display for Prim {
             Prim::Real => write!(f, "Real"),
             Prim::Bool => write!(f, "Bool"),
             Prim::Char => write!(f, "Char"),
+            Prim::Universe => write!(f, "@"),
         }
     }
 }

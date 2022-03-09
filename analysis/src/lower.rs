@@ -17,7 +17,7 @@ pub enum Scope<'a> {
     Empty,
     Recursive(SrcNode<Ident>, TyVar, DefId, Vec<(Span, TyVar)>),
     Binding(&'a Scope<'a>, SrcNode<Ident>, TyVar),
-    Many(&'a Scope<'a>, Vec<(SrcNode<Ident>, TyVar)>),
+    Many(&'a Scope<'a>, &'a [(SrcNode<Ident>, TyVar)]),
 }
 
 impl<'a> Scope<'a> {
@@ -27,7 +27,7 @@ impl<'a> Scope<'a> {
         Scope::Binding(self, name, ty)
     }
 
-    fn with_many(&self, many: Vec<(SrcNode<Ident>, TyVar)>) -> Scope<'_> {
+    fn with_many<'b>(&'b self, many: &'b [(SrcNode<Ident>, TyVar)]) -> Scope<'b> {
         Scope::Many(self, many)
     }
 
@@ -64,6 +64,7 @@ impl ToHir for ast::Type {
         let info = match &**self {
             ast::Type::Error => TyInfo::Error(ErrorReason::Unknown),
             ast::Type::Unknown => TyInfo::Unknown(None),
+            ast::Type::Universe => TyInfo::Prim(Prim::Universe),
             ast::Type::List(item) => TyInfo::List(item.to_hir(infer, scope).meta().1),
             ast::Type::Tuple(items) => TyInfo::Tuple(items
                 .iter()
@@ -333,6 +334,57 @@ impl ToHir for ast::Binding {
     }
 }
 
+fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer) -> (TyInfo, hir::Expr<InferMeta>) {
+    let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
+    let generics_count = scope.len();
+    let generic_tys = (0..generics_count)
+        .map(|i| TyInfo::Unknown(Some(scope.get(i).name.span())))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|info| (span, infer.insert(span, info)))
+        .collect::<Vec<_>>();
+
+    // Enforce class obligations
+    for (idx, (span, ty)) in generic_tys.iter().enumerate() {
+        let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
+        for obl in scope
+            .get(idx)
+            .obligations()
+            .to_vec()
+        {
+            match &*obl {
+                Obligation::MemberOf(class) => infer.make_impl(*ty, *class, obl.span(), Vec::new()),
+            }
+        }
+    }
+
+    // Recreate type in context
+    let def = infer.ctx().defs.get(def_id);
+    let def_gen_scope = def.gen_scope;
+    let def_name = def.name.clone();
+    let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
+    let ty = if let Some(body_ty) = def.ty_hint
+        .or_else(|| def.body
+            .as_ref()
+            .map(|body| body.meta().1))
+    {
+        // Bit messy, makes sure that we don't accidentally infer a bad type backwards
+        let def_ty_actual = infer.instantiate(body_ty, None /*Some(self.span())*/, &get_gen, None);
+        let def_ty = infer.unknown(span);
+        infer.check_flow(def_ty_actual, def_ty, EqInfo::default());
+        Some(def_ty)
+    } else {
+        None
+    };
+
+    if let Some(ty) = ty {
+        (TyInfo::Ref(ty), hir::Expr::Global(def_id, generic_tys))
+    } else {
+        infer.ctx_mut().emit(Error::DefTypeNotSpecified(def_name.span(), span, *def_name));
+        (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
+    }
+}
+
 impl ToHir for ast::Expr {
     type Output = hir::Expr<InferMeta>;
 
@@ -348,64 +400,27 @@ impl ToHir for ast::Expr {
                 }
                 (TyInfo::Ref(ty), hir::Expr::Literal(*litr))
             }
-            ast::Expr::Local(local) => if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
-                if let Some((def_id, gens)) = rec {
-                    (TyInfo::Ref(ty), hir::Expr::Global(def_id, gens))
-                } else {
-                    (TyInfo::Ref(ty), hir::Expr::Local(*local))
-                }
-            } else if let Some(def_id) = infer.ctx().defs.lookup(*local) {
-                let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
-                let generics_count = scope.len();
-                let generic_tys = (0..generics_count)
-                    .map(|i| TyInfo::Unknown(Some(scope.get(i).name.span())))
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .map(|info| (self.span(), infer.insert(self.span(), info)))
-                    .collect::<Vec<_>>();
-
-                // Enforce class obligations
-                for (idx, (span, ty)) in generic_tys.iter().enumerate() {
-                    let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
-                    for obl in scope
-                        .get(idx)
-                        .obligations()
-                        .to_vec()
-                    {
-                        match &*obl {
-                            Obligation::MemberOf(class) => infer.make_impl(*ty, *class, obl.span(), Vec::new()),
-                        }
-                    }
-                }
-
-                // Recreate type in context
-                let def = infer.ctx().defs.get(def_id);
-                let def_gen_scope = def.gen_scope;
-                let def_name = def.name.clone();
-                let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
-                let ty = if let Some(body_ty) = def.ty_hint
-                    .or_else(|| def.body
-                        .as_ref()
-                        .map(|body| body.meta().1))
-                {
-                    // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-                    let def_ty_actual = infer.instantiate(body_ty, None /*Some(self.span())*/, &get_gen, None);
-                    let def_ty = infer.unknown(self.span());
-                    infer.check_flow(def_ty_actual, def_ty, EqInfo::default());
-                    Some(def_ty)
-                } else {
-                    None
+            ast::Expr::LangDef(def) => {
+                let def = match def {
+                    ast::LangDef::IoUnit => infer.ctx().defs.lang.io_unit.unwrap(),
+                    ast::LangDef::IoBind => infer.ctx().defs.lang.io_bind.unwrap(),
                 };
 
-                if let Some(ty) = ty {
-                    (TyInfo::Ref(ty), hir::Expr::Global(def_id, generic_tys))
+                instantiate_def(def, self.span(), infer)
+            },
+            ast::Expr::Local(local) => {
+                if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
+                    if let Some((def_id, gens)) = rec {
+                        (TyInfo::Ref(ty), hir::Expr::Global(def_id, gens))
+                    } else {
+                        (TyInfo::Ref(ty), hir::Expr::Local(*local))
+                    }
+                } else if let Some(def_id) = infer.ctx().defs.lookup(*local) {
+                    instantiate_def(def_id, self.span(), infer)
                 } else {
-                    infer.ctx_mut().emit(Error::DefTypeNotSpecified(def_name.span(), self.span(), *def_name));
+                    infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
                     (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                 }
-            } else {
-                infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
-                (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
             },
             ast::Expr::Tuple(items) => {
                 let items = items
@@ -495,7 +510,7 @@ impl ToHir for ast::Expr {
                             let binding = binding.to_hir(infer, scope);
                             let val = val.to_hir(infer, scope);
                             infer.make_flow(val.meta().1, binding.meta().1, binding.meta().0);
-                            let then = fold(then, bindings, infer, &scope.with_many(binding.get_binding_tys()));
+                            let then = fold(then, bindings, infer, &scope.with_many(&binding.get_binding_tys()));
                             let span = binding.meta().0;
                             let ty = then.meta().1; // TODO: Make a TyInfo::Ref?
                             InferNode::new(hir::Expr::Match(
@@ -533,7 +548,7 @@ impl ToHir for ast::Expr {
                         .map(|(bindings, body)| {
                             let binding = tupleify_binding(bindings, infer, scope);
                             infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
-                            let body = body.to_hir(infer, &scope.with_many(binding.get_binding_tys()));
+                            let body = body.to_hir(infer, &scope.with_many(&binding.get_binding_tys()));
                             infer.make_flow(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                             (binding, body)
                         })
@@ -588,14 +603,14 @@ impl ToHir for ast::Expr {
                         let pred = tupleify_expr(&SrcNode::new(pseudos
                             .iter()
                             .map(|(pseudo, _)| SrcNode::new(ast::Expr::Local(**pseudo), pseudo.span()))
-                            .collect(), self.span()), infer, &scope.with_many(pseudos.clone()));
+                            .collect(), self.span()), infer, &scope.with_many(&pseudos.clone()));
 
                         let arms = arms
                             .iter()
                             .map(|(bindings, body)| {
                                 let binding = tupleify_binding(bindings, infer, scope);
                                 infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
-                                let body = body.to_hir(infer, &scope.with_many(binding.get_binding_tys()));
+                                let body = body.to_hir(infer, &scope.with_many(&binding.get_binding_tys()));
                                 infer.make_flow(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                                 (binding, body)
                             })
@@ -744,15 +759,35 @@ impl ToHir for ast::Expr {
                     } else {
                         (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                     },
+                    "print" if args.len() == 2 => {
+                        let a = &args[0];
+                        let b = &args[1];
+
+                        let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
+                        infer.make_flow(a.meta().1, universe, EqInfo::default());
+
+                        let c = infer.insert(b.meta().0, TyInfo::Prim(Prim::Char));
+                        let s = infer.insert(b.meta().0, TyInfo::List(c));
+                        infer.make_flow(b.meta().1, s, EqInfo::default());
+
+                        (TyInfo::Prim(Prim::Universe), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Print, name.span()), args))
+                    },
+                    "input" if args.len() == 1 => {
+                        let a = &args[0];
+
+                        let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
+                        infer.make_flow(a.meta().1, universe, EqInfo::default());
+
+                        let c = infer.insert(self.span(), TyInfo::Prim(Prim::Char));
+                        let s = infer.insert(self.span(), TyInfo::List(c));
+
+                        (TyInfo::Tuple(vec![universe, s]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Input, name.span()), args))
+                    },
                     _ => {
                         infer.ctx_mut().emit(Error::InvalidIntrinsic(name.clone()));
                         (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
                     },
                 }
-            },
-            ast::Expr::Do(_, _) => {
-                infer.ctx_mut().emit(Error::Unsupported(self.span(), "do notation"));
-                (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
             },
         };
 

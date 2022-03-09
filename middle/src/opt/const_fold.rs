@@ -268,8 +268,10 @@ impl Intrinsic {
             MulInt => op!(Int(x), Int(y) => Int(x * y)),
             EqChar => op!(Char(x), Char(y) => Bool(x == y)),
             Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
+            AndBool => op!(Bool(x), Bool(y) => Bool(*x && *y)),
+            Print => Partial::Unknown(None),
+            Input => Partial::Unknown(None),
             i => todo!("{:?}", i),
-            _ => Partial::Unknown(None),
         }
     }
 }

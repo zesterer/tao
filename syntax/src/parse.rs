@@ -101,6 +101,9 @@ pub fn type_parser() -> impl Parser<ast::Type> {
         let unknown = just(Token::Question)
             .map(|_| ast::Type::Unknown);
 
+        let universe = just(Token::At)
+            .map(|_| ast::Type::Universe);
+
         let paren_ty = nested_parser(
             ty.clone().map(Some),
             Delimiter::Paren,
@@ -115,6 +118,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(union)
             .or(record)
             .or(unknown)
+            .or(universe)
             .or(select! { Token::Error(_) => () }.map(|_| ast::Type::Error))
             .map_with_span(SrcNode::new)
             .boxed();
@@ -516,23 +520,71 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .then(paren_exp_list.clone().or_not())
             .map(|(name, args)| ast::Expr::Intrinsic(name, args.flatten().unwrap_or_default()));
 
-        let do_let = just(Token::Let)
+        enum DoItem {
+            Stmt(SrcNode<ast::Expr>),
+            Bind(SrcNode<ast::Binding>, SrcNode<ast::Expr>),
+        }
+
+        let do_bind = just(Token::Let)
             .ignore_then(binding_parser().map_with_span(SrcNode::new))
-            .then_ignore(just(Token::Op(Op::Eq)))
-            .then(expr.clone().map_with_span(SrcNode::new));
+            .then_ignore(just(Token::Op(Op::LArrow)))
+            .then(expr.clone().map_with_span(SrcNode::new))
+            .map(|(lhs, rhs)| DoItem::Bind(lhs, rhs));
+
+        let do_stmt = expr.clone()
+            .map_with_span(SrcNode::new)
+            .map(DoItem::Stmt);
+
+        let do_chain = do_bind
+            .or(do_stmt)
+            .then_ignore(just(Token::Semicolon))
+            .repeated()
+            .then(expr.clone()
+                .map_with_span(SrcNode::new)
+                .or_not());
 
         let do_ = just(Token::Do)
-            .ignore_then(do_let
-                .map(|(lhs, rhs)| ast::DoItem::Let(lhs, rhs))
-                .or(expr.clone()
-                    .map_with_span(SrcNode::new)
-                    .map(ast::DoItem::Expr))
-                .then_ignore(just(Token::Semicolon))
-                .repeated()
-                .then(expr.clone()
-                    .map_with_span(SrcNode::new)
-                    .or_not()))
-            .map(|(stmts, tail)| ast::Expr::Do(stmts, tail));
+            .ignore_then(do_chain.clone())
+            .map_with_span(|(items, tail), span| {
+                let tail = tail.unwrap_or_else(|| SrcNode::new(ast::Expr::Tuple(Vec::new()), span));
+                let mut expr = SrcNode::new(ast::Expr::Apply(
+                    SrcNode::new(ast::Expr::LangDef(ast::LangDef::IoUnit), span),
+                    tail,
+                ), span);
+
+                for item in items.into_iter().rev() {
+                    expr = match item {
+                        DoItem::Stmt(rhs) => {
+                            let expr_span = rhs.span().union(expr.span());
+                            let binding = SrcNode::new(ast::Binding {
+                                pat: SrcNode::new(ast::Pat::Wildcard, expr_span),
+                                name: None,
+                                ty: None,
+                            }, expr_span);
+                            SrcNode::new(ast::Expr::Apply(
+                                SrcNode::new(ast::Expr::Apply(
+                                    SrcNode::new(ast::Expr::LangDef(ast::LangDef::IoBind), expr.span()),
+                                    rhs,
+                                ), expr_span),
+                                SrcNode::new(ast::Expr::Func(SrcNode::new(vec![(SrcNode::new(vec![binding], expr.span()), expr)], expr_span)), expr_span),
+                            ), expr_span)
+                        },
+                        DoItem::Bind(binding, rhs) => {
+                            let binding_span = binding.span().union(rhs.span());
+                            let expr_span = binding.span().union(expr.span());
+                            SrcNode::new(ast::Expr::Apply(
+                                SrcNode::new(ast::Expr::Apply(
+                                    SrcNode::new(ast::Expr::LangDef(ast::LangDef::IoBind), binding_span),
+                                    rhs,
+                                ), binding_span),
+                                SrcNode::new(ast::Expr::Func(SrcNode::new(vec![(SrcNode::new(vec![binding], expr.span()), expr)], expr_span)), expr_span),
+                            ), expr_span)
+                        },
+                    };
+                }
+
+                expr.into_inner()
+            });
 
         let atom = litr
             .or(ident)
@@ -600,7 +652,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                     let span = expr.span().union(f.span());
                     SrcNode::new(ast::Expr::Apply(f, expr), span)
                 },
-                Chain::Apply(None, span) => SrcNode::new(ast::Expr::Error, expr.span()),
+                Chain::Apply(None, _span) => SrcNode::new(ast::Expr::Error, expr.span()),
                 Chain::Apply(Some(args), outer_span) => {
                     let arg_count = args.len();
                     args

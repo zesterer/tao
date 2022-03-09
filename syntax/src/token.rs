@@ -97,9 +97,11 @@ pub enum Token {
     In,
     Of,
     Do,
+    At,
     Tilde,
     Dollar,
     Semicolon,
+    Return,
 }
 
 impl fmt::Display for Token {
@@ -145,9 +147,11 @@ impl fmt::Display for Token {
             Token::In => write!(f, "in"),
             Token::Of => write!(f, "of"),
             Token::Do => write!(f, "do"),
+            Token::Return => write!(f, "return"),
             Token::Tilde => write!(f, "~"),
             Token::Dollar => write!(f, "$"),
             Token::Semicolon => write!(f, ";"),
+            Token::At => write!(f, "@"),
         }
     }
 }
@@ -242,6 +246,8 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         .map(Token::Intrinsic)
         .labelled("intrinsic");
 
+    let at = just('@').to(Token::At);
+
     let word = text::ident().map(|s: String| match s.as_str() {
         "import" => Token::Import,
         "data" => Token::Data,
@@ -259,6 +265,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         "in" => Token::In,
         "of" => Token::Of,
         "do" => Token::Do,
+        "return" => Token::Return,
         "and" => Token::Op(Op::And),
         "or" => Token::Op(Op::Or),
         "xor" => Token::Op(Op::Xor),
@@ -292,10 +299,11 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         string,
         r#char,
         intrinsic,
+        at,
     ))
         .or(any()
             .map(Token::Error)
-            .validate(|t, span, mut emit| {
+            .validate(|t, span, emit| {
                 emit(Error::expected_input_found(span, None, Some(t)));
                 t
             }))

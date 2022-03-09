@@ -4,3 +4,19 @@ type Str = [Char]
 
 class Display =
     => display : Self -> Str
+
+fn display A < Display : A -> Str = x => A.display(x)
+
+member Int of Display =
+    => display = fn
+        \ _ => "todo"
+        # | x * 10 + 0 => x:display ++ "0"
+        # | x * 10 + 1 => x:display ++ "1"
+        # | x * 10 + 2 => x:display ++ "2"
+        # | x * 10 + 3 => x:display ++ "3"
+        # | x * 10 + 4 => x:display ++ "4"
+        # | x * 10 + 5 => x:display ++ "5"
+        # | x * 10 + 6 => x:display ++ "6"
+        # | x * 10 + 7 => x:display ++ "7"
+        # | x * 10 + 8 => x:display ++ "8"
+        # \ x * 10 + 9 => x:display ++ "9"

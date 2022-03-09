@@ -10,6 +10,7 @@ pub enum Value {
     List(Vec<Self>),
     Func(Addr, Vec<Self>),
     Sum(usize, Box<Self>),
+    Universe(u64),
 }
 
 impl Value {
@@ -20,6 +21,7 @@ impl Value {
     pub fn list(self) -> Vec<Self> { if let Value::List(xs) = self { xs } else { panic!("{}", self) } }
     pub fn func(self) -> (Addr, Vec<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
     pub fn sum(self) -> (usize, Box<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
+    pub fn universe(self) -> u64 { if let Value::Universe(x) = self { x } else { panic!("{}", self) } }
 }
 
 impl fmt::Display for Value {
@@ -47,16 +49,22 @@ impl fmt::Display for Value {
                 captures.len(),
             ),
             Value::Sum(variant, inner) => write!(f, "#{} {}", variant, inner),
+            Value::Universe(x) => write!(f, "Universe({})", x),
         }
     }
 }
 
 pub fn exec(prog: &Program) -> Option<Value> {
     let mut addr = prog.entry;
+    let mut universe_counter = 0;
 
     let mut funcs = Vec::new();
     let mut stack = Vec::new();
-    let mut locals = Vec::new();
+    let mut locals = if prog.does_io {
+        vec![Value::Universe(universe_counter)]
+    } else {
+        Vec::new()
+    };
 
     let mut tick = 0;
     loop {
@@ -88,10 +96,17 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::Ret => if let Some(addr) = funcs.pop() {
                 next_addr = addr;
             } else {
+
                 assert_eq!(locals.len(), 0, "Local stack still has values, this is probably a bug");
-                assert_eq!(stack.len(), 1, "Stack size must be 0 on program exit");
+                assert_eq!(stack.len(), 1, "Stack size must be 1 on program exit");
                 println!("Executed {} instructions.", tick);
-                break stack.pop();
+                break if prog.does_io {
+                    let mut r = stack.pop().unwrap().list();
+                    assert_eq!(r.remove(0).universe(), universe_counter);
+                    None
+                } else {
+                    stack.pop()
+                };
             },
             Instr::MakeFunc(i, n) => {
                 let f_addr = addr.jump(i);
@@ -223,6 +238,31 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let y = stack.pop().unwrap().bool();
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::Bool(x && y))
+            },
+            Instr::Print => {
+                let s = stack.pop().unwrap().list();
+                let universe = stack.pop().unwrap().universe();
+                assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
+                universe_counter += 1;
+                println!("{}", s.into_iter().map(|c| c.char()).collect::<String>());
+                stack.push(Value::Universe(universe_counter))
+            },
+            Instr::Input => {
+                use std::io::{stdin, stdout, Write};
+
+                let universe = stack.pop().unwrap().universe();
+                assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
+                universe_counter += 1;
+
+                let mut s = String::new();
+                print!("> ");
+                stdout().flush();
+                stdin().read_line(&mut s).expect("IO error");
+
+                stack.push(Value::List(vec![
+                    Value::Universe(universe_counter),
+                    Value::List(s.trim_end().chars().map(Value::Char).collect()),
+                ]));
             },
         }
 

@@ -92,9 +92,11 @@ impl Classes {
             {
                 if lang.iter().find(|a| &**a.name == "not").is_some() {
                     self.lang.not = Some(id);
-                } else if lang.iter().find(|a| &**a.name == "neg").is_some() {
+                }
+                if lang.iter().find(|a| &**a.name == "neg").is_some() {
                     self.lang.neg = Some(id);
-                } else if lang.iter().find(|a| &**a.name == "union").is_some() {
+                }
+                if lang.iter().find(|a| &**a.name == "union").is_some() {
                     self.lang.union = Some(id);
                 }
             }

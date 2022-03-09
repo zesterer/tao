@@ -96,10 +96,6 @@ impl Context {
             defs_init.push((attr, def, gen_scope));
         }
 
-        // Check for lang items
-        this.errors.append(&mut this.classes.check_lang_items());
-        this.errors.append(&mut this.datas.check_lang_items());
-
         // Now that we have declarations for all classes and data types, we can check generic scope constraints
         let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
         this.errors.append(&mut gen_scope_errors);
@@ -333,6 +329,11 @@ impl Context {
                 defs.push((attr, def));
             }
         }
+
+        // Check for lang items
+        this.errors.append(&mut this.classes.check_lang_items());
+        this.errors.append(&mut this.datas.check_lang_items());
+        this.errors.append(&mut this.defs.check_lang_items());
 
         // Define datas
         for (attr, data) in datas {

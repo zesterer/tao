@@ -172,7 +172,10 @@ pub enum Intrinsic {
     MoreEqNat,
     MoreEqInt,
     Join(Repr),
+    AndBool,
     Union(u64), // Type ID
+    Print,
+    Input,
 }
 
 #[derive(Clone, Debug)]
@@ -544,7 +547,10 @@ impl Expr {
                     Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(AndBool, args) => write!(f, "{} and {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Union(_), args) => write!(f, "?{}", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(Print, args) => write!(f, "@print({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(Input, args) => write!(f, "@input({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
                         write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))

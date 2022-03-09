@@ -18,7 +18,7 @@ fn map_res A, B, E : (A -> B) -> Result A E -> Result B E =
 
 data ParseErr I =
 	| UnexpectedEnd
-	| ExpectedFound (I, I)
+	| ExpectedFound (Maybe I, I)
 	| ExpectedPat Str
 	\ ExpectedMore
 
@@ -31,7 +31,7 @@ fn filter_tok I, O : (I -> Result O (ParseErr I)) -> Parser I O =
 fn just : Char -> ? =
     c => filter_tok(fn head => if head = c
         then Ok head
-        else Err ExpectedFound (c, head))
+        else Err ExpectedFound (Just c, head))
 
 fn and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
 	b, a, xs => match xs:a in
@@ -99,6 +99,10 @@ fn find_start : Nat -> Char -> Str -> Result Nat FindErr =
 
 def find = find_start(0)
 
+fn end I : Parser I () =
+    | [] => Ok ((), [])
+    \ [x ..] => Err ExpectedFound (None, x)
+
 fn char_to_num = c => "0123456789":find(c)
 
 def digit = filter_tok(fn c => match c:char_to_num in
@@ -127,7 +131,7 @@ def atom = number
 	:map_to(fn x => Natural x)
 	:or_else(just('(')
 		:padded
-		:ignore_then(recurse(fn xs => xs:expr))
+		:ignore_then(recurse(fn xs => xs:expr_parser))
 		:then_ignore(just(')'))
 		:padded)
 
@@ -146,13 +150,18 @@ def product_parser = unary
 	:map_to(reduce(fn a, (op, b) => Binary (op, a, b)))
 
 def sum_parser = product_parser
-	:and_then(op('*'):map_to(fn _ => Add)
+	:and_then(op('+'):map_to(fn _ => Add)
 		:or_else(op('-'):map_to(fn _ => Sub))
 		:and_then(product_parser)
 		:repeated)
 	:map_to(reduce(fn a, (op, b) => Binary (op, a, b)))
 
-def expr : Parser Char Expr = sum_parser
+def expr_parser : Parser Char Expr = sum_parser
+
+fn parse I, O : Parser I O -> [I] -> Result O (ParseErr I) = parser, input =>
+    match input:(parser:and_then(end)) in
+        | Ok ((o, _), _) => Ok o
+        \ Err e => Err e
 
 fn eval =
 	| Natural x => --x
@@ -161,7 +170,7 @@ fn eval =
 	| Binary (Sub, a, b) => a:eval - b:eval
 	\ Binary (Mul, a, b) => a:eval * b:eval
 
-$[main]
-def main =
-	let parser = expr:map_to(eval) in
-	parser("2 * (5 - 1)")
+# $[main]
+# def main =
+#     let parser = expr_parser:map_to(eval) in
+#     parser("2 * (5 - 1)")

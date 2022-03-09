@@ -1,4 +1,4 @@
-import "lib/core.tao"
+import "lib/std.tao"
 
 fn factorial_go = n => go(
     fn
@@ -12,15 +12,11 @@ fn factorial =
     | 0 => 1
     \ m ~ n + 1 => m * factorial(n)
 
-data Result A, E =
-    | Ok A
-    \ Err E
+def factorial_fix = fix(fn
+    | rec, 0 => 1
+    \ rec, m ~ n + 1 => m * rec(n))
 
 $[main]
 def main = factorial_go(10)
-
-data Maybe A =
-    | Just A
-    \ None
 
 data Never =|

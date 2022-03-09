@@ -8,6 +8,7 @@ pub enum Prim {
     Real,
     Char,
     Bool,
+    Universe,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

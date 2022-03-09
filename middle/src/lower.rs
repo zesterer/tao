@@ -1,15 +1,5 @@
 use super::*;
 
-fn prim_to_mir(prim: ty::Prim) -> repr::Prim {
-    match prim {
-        ty::Prim::Nat => repr::Prim::Nat,
-        ty::Prim::Int => repr::Prim::Int,
-        ty::Prim::Char => repr::Prim::Char,
-        ty::Prim::Bool => repr::Prim::Bool,
-        p => todo!("{:?}", p),
-    }
-}
-
 // Type instantiations for generic types
 pub struct TyInsts<'a> {
     pub self_ty: Option<Repr>,
@@ -67,6 +57,7 @@ impl Context {
                 ty::Prim::Real => repr::Prim::Real,
                 ty::Prim::Char => repr::Prim::Char,
                 ty::Prim::Bool => repr::Prim::Bool,
+                ty::Prim::Universe => repr::Prim::Universe,
             }
         }
 
@@ -209,6 +200,7 @@ impl Context {
                     (Eq, Prim(Char), Prim(Char)) => mir::Intrinsic::EqChar,
                     (NotEq, Prim(Char), Prim(Char)) => mir::Intrinsic::NotEqChar,
                     (Join, List(x), List(y)) => mir::Intrinsic::Join(self.lower_ty(hir, con, *x)), // Assume x = y
+                    (And, Prim(Bool), Prim(Bool)) => mir::Intrinsic::AndBool,
                     op => panic!("Invalid binary op in HIR: {:?}", op),
                 };
                 mir::Expr::Intrinsic(intrinsic, vec![self.lower_expr(hir, con, x, stack), self.lower_expr(hir, con, y, stack)])
@@ -342,6 +334,13 @@ impl Context {
                             next,
                         )
                     },
+                    hir::Intrinsic::Print => mir::Expr::Intrinsic(mir::Intrinsic::Print, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                        self.lower_expr(hir, con, &args[1], stack),
+                    ]),
+                    hir::Intrinsic::Input => mir::Expr::Intrinsic(mir::Intrinsic::Input, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                    ]),
                 }
             },
         };

@@ -120,6 +120,7 @@ impl fmt::Debug for Literal {
 pub enum Type {
     // Generated only by parser errors.
     Error,
+    Universe,
     Unknown,
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
@@ -134,7 +135,7 @@ pub enum Type {
 impl Type {
     pub fn is_fully_specified(&self) -> bool {
         match self {
-            Self::Error => true,
+            Self::Error | Self::Universe => true,
             Self::Unknown => false,
             Self::List(item) => item.is_fully_specified(),
             Self::Tuple(fields) => fields
@@ -186,9 +187,9 @@ pub struct Binding {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum DoItem {
-    Expr(SrcNode<Expr>),
-    Let(SrcNode<Binding>, SrcNode<Expr>),
+pub enum LangDef {
+    IoUnit,
+    IoBind,
 }
 
 #[derive(Debug, PartialEq)]
@@ -198,6 +199,7 @@ pub enum Expr {
     Literal(Literal),
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
+    LangDef(LangDef),
     Tuple(Vec<SrcNode<Self>>),
     List(Vec<SrcNode<Self>>, Vec<SrcNode<Self>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
@@ -213,8 +215,6 @@ pub enum Expr {
     ClassAccess(SrcNode<Type>, SrcNode<Ident>),
 
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
-    // statements, return
-    Do(Vec<DoItem>, Option<SrcNode<Self>>),
 }
 
 #[derive(Debug, PartialEq)]

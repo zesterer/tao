@@ -50,6 +50,9 @@ pub enum Instr {
     MoreEqInt,
 
     AndBool, // Bool -> Bool -> Bool
+
+    Print,
+    Input,
 }
 
 impl Instr {
@@ -70,8 +73,9 @@ impl Addr {
 #[derive(Default, Debug)]
 pub struct Program {
     instrs: Vec<Instr>,
-    pub entry: Addr,
     debug: Vec<(Addr, String)>,
+    pub entry: Addr,
+    pub does_io: bool,
 }
 
 impl Program {
@@ -144,6 +148,8 @@ impl Program {
                 | Instr::LessEqInt
                 | Instr::MoreEqInt
                 | Instr::AndBool => -1,
+                Instr::Print => -1,
+                Instr::Input => 0,
             };
 
             let instr_display = match instr {
@@ -185,6 +191,8 @@ impl Program {
                 Instr::LessEqInt => format!("int.less_eq"),
                 Instr::MoreEqInt => format!("int.more_eq"),
                 Instr::AndBool => format!("bool.and"),
+                Instr::Print => format!("io.print"),
+                Instr::Input => format!("io.input"),
             };
 
             writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();
