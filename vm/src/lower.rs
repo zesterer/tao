@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
     Some(match literal {
@@ -148,21 +149,22 @@ impl Program {
         } else {
             match &binding.pat {
                 mir::Pat::Wildcard => unreachable!(), // Caught by refutability check above
-                mir::Pat::Literal(constant) => match constant {
+                mir::Pat::Literal(litr) => match litr {
                     mir::Literal::Bool(true) => {},
                     mir::Literal::Bool(false) => {
                         self.push(Instr::NotBool);
                     },
-                    literal => {
-                        if let Some(val) = litr_to_value(literal) {
+                    litr => {
+                        if let Some(val) = litr_to_value(litr) {
                             self.push(Instr::Imm(val));
                         }
-                        self.push(match binding.meta() {
-                            repr::Repr::Prim(repr::Prim::Bool) => Instr::EqBool,
-                            repr::Repr::Prim(repr::Prim::Nat) => Instr::EqInt,
-                            repr::Repr::Prim(repr::Prim::Int) => Instr::EqInt,
-                            r => todo!("{:?}", r),
-                        });
+                        match binding.meta() {
+                            repr::Repr::Prim(repr::Prim::Bool) => self.push(Instr::EqBool),
+                            repr::Repr::Prim(repr::Prim::Nat) => self.push(Instr::EqInt),
+                            repr::Repr::Prim(repr::Prim::Int) => self.push(Instr::EqInt),
+                            repr::Repr::Prim(repr::Prim::Char) => self.push(Instr::EqChar),
+                            r => todo!("repr = {:?}, litr = {:?}", r, litr),
+                        };
                     },
                 },
                 mir::Pat::Single(inner) => self.compile_matcher(inner),
@@ -297,6 +299,7 @@ impl Program {
                     },
                     Intrinsic::Print => { self.push(Instr::Print); },
                     Intrinsic::Input => { self.push(Instr::Input); },
+                    Intrinsic::UpdateField(idx) => { self.push(Instr::SetList(*idx)); },
                 };
             },
             mir::Expr::Tuple(fields) => {
@@ -445,6 +448,9 @@ impl Program {
             mir::Expr::Data(_, inner) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
             },
+            mir::Expr::AccessData(inner, _) => {
+                self.compile_expr(mir, inner, stack, proc_fixups);
+            },
         }
     }
 
@@ -477,7 +483,7 @@ impl Program {
             false
         };
 
-        let mut procs = HashMap::new();
+        let mut procs = BTreeMap::new();
         let mut proc_fixups = Vec::new();
 
         for proc_id in mir.reachable_procs() {

@@ -79,6 +79,7 @@ pub enum InferError {
     // Type, recursive element
     Recursive(TyVar, TyVar),
     NoSuchItem(TyVar, Span, SrcNode<Ident>),
+    NoSuchField(TyVar, Span, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
     TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>),
@@ -93,6 +94,7 @@ enum Constraint {
     CheckFlow(TyVar, TyVar, EqInfo),
     // (record, field_name, field)
     Access(TyVar, SrcNode<Ident>, TyVar),
+    Update(TyVar, SrcNode<Ident>, TyVar),
     Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
     Impl(TyVar, ClassId, Span, Vec<(SrcNode<Ident>, TyVar)>),
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
@@ -305,6 +307,10 @@ impl<'a> Infer<'a> {
 
     pub fn make_access(&mut self, record: TyVar, field_name: SrcNode<Ident>, field: TyVar) {
         self.constraints.push_back(Constraint::Access(record, field_name, field));
+    }
+
+    pub fn make_update(&mut self, record: TyVar, field_name: SrcNode<Ident>, field: TyVar) {
+        self.constraints.push_back(Constraint::Update(record, field_name, field));
     }
 
     pub fn make_binary(&mut self, op: SrcNode<ast::BinaryOp>, a: TyVar, b: TyVar, output: TyVar) {
@@ -703,6 +709,51 @@ impl<'a> Infer<'a> {
         }
     }
 
+    fn resolve_access(&mut self, record: TyVar, field_name: &SrcNode<Ident>, field: TyVar, flow_out: bool) -> Option<bool> {
+        match self.follow_info(record) {
+            _ if self.is_error(record) => {
+                self.set_error(field);
+                // Trying to access a field on an error type counts as success because we don't want to emit more
+                // errors than necessary.
+                Some(true)
+            },
+            TyInfo::Unknown(_) => None,
+            TyInfo::Record(fields) => if let Some(field_ty) = fields.get(&field_name) {
+                self.make_flow(*field_ty, field, field_name.span());
+                Some(true)
+            } else {
+                Some(false)
+            },
+            // Field access through a data type
+            TyInfo::Data(data, params) => {
+                // TODO: Use `self.ctx.follow_field_access(...)` but work out how to instantiate type parameters
+                // throughout the chain.
+                let data = self.ctx.datas.get_data(data);
+                // Field access on data only works for single-variant, record datatypes
+                if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
+                    if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
+                        if let Some(field_ty) = fields.get(&field_name) {
+                            let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index], None);
+                            if flow_out {
+                                self.make_flow(field_ty, field, field_name.span());
+                            } else {
+                                self.make_flow(field, field_ty, field_name.span());
+                            }
+                            Some(true)
+                        } else {
+                            Some(false)
+                        }
+                    } else {
+                        Some(false)
+                    }
+                } else {
+                    Some(false)
+                }
+            },
+            _ => Some(false),
+        }
+    }
+
     fn resolve(&mut self, c: Constraint) -> Option<Result<(), InferError>> {
         use ast::BinaryOp::*;
         match c {
@@ -711,49 +762,19 @@ impl<'a> Infer<'a> {
                 Some(Err(err)) => Some(Err(err)),
                 None => None,
             },
-            Constraint::Access(record, field_name, field) => match self.follow_info(record) {
-                _ if self.is_error(record) => {
-                    self.set_error(field);
-                    // Trying to access a field on an error type counts as success because we don't want to emit more
-                    // errors than necessary.
-                    Some(true)
-                },
-                TyInfo::Unknown(_) => None,
-                TyInfo::Record(fields) => if let Some(field_ty) = fields.get(&field_name) {
-                    self.make_flow(*field_ty, field, field_name.span());
-                    Some(true)
-                } else {
-                    Some(false)
-                },
-                // Field access through a data type
-                TyInfo::Data(data, params) => {
-                    // TODO: Use `self.ctx.follow_field_access(...)` but work out how to instantiate type parameters
-                    // throughout the chain.
-                    let data = self.ctx.datas.get_data(data);
-                    // Field access on data only works for single-variant, record datatypes
-                    if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
-                        if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
-                            if let Some(field_ty) = fields.get(&field_name) {
-                                let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index], None);
-                                self.make_flow(field_ty, field, field_name.span());
-                                Some(true)
-                            } else {
-                                Some(false)
-                            }
-                        } else {
-                            Some(false)
-                        }
-                    } else {
-                        Some(false)
-                    }
-                },
-                _ => Some(false),
-            }
+            Constraint::Access(record, field_name, field) => self.resolve_access(record, &field_name, field, true)
                 .map(|success| if success {
                     Ok(())
                 } else {
                     self.set_error(field);
-                    Err(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
+                    Err(InferError::NoSuchField(record, self.span(record), field_name.clone()))
+                }),
+            Constraint::Update(record, field_name, field) => self.resolve_access(record, &field_name, field, false)
+                .map(|success| if success {
+                    Ok(())
+                } else {
+                    self.set_error(field);
+                    Err(InferError::NoSuchField(record, self.span(record), field_name.clone()))
                 }),
             Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
                 (_, _, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
@@ -1200,6 +1221,9 @@ impl<'a> Infer<'a> {
                 Constraint::Access(record, field_name, _field) => {
                     InferError::NoSuchItem(record, self.span(record), field_name.clone())
                 },
+                Constraint::Update(record, field_name, _field) => {
+                    InferError::NoSuchItem(record, self.span(record), field_name.clone())
+                },
                 Constraint::Binary(op, a, b, _output) => {
                     InferError::InvalidBinaryOp(op.clone(), a, b)
                 },
@@ -1247,6 +1271,7 @@ impl<'a> Infer<'a> {
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
                 InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
                 InferError::NoSuchItem(a, record_span, field) => Error::NoSuchItem(checked.reify(a), record_span, field),
+                InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
                 InferError::TypeDoesNotFulfil(class, ty, span, gen_span) => Error::TypeDoesNotFulfil(class, checked.reify(ty), span, gen_span),

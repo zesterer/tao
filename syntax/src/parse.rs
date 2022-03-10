@@ -397,7 +397,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .map(|x| x.map(ast::Expr::Tuple).unwrap_or(ast::Expr::Error))
             .labelled("tuple");
 
-        let record = nested_parser(
+        let fields = nested_parser(
             term_ident_parser()
                 .map_with_span(SrcNode::new)
                 .then(just(Token::Colon)
@@ -412,11 +412,15 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 })
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
-                .map(ast::Expr::Record)
+                .map(Some)
                 .boxed(),
             Delimiter::Brace,
-            |_| ast::Expr::Error,
-        )
+            |_| None,
+        );
+
+        let record = fields
+            .clone()
+            .map(|fields| fields.map(ast::Expr::Record).unwrap_or(ast::Expr::Error))
             .labelled("record");
 
         let list = nested_parser(
@@ -471,19 +475,6 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .then(just(Token::Op(Op::Dot))
                 .ignore_then(term_ident_parser().map_with_span(SrcNode::new)))
             .map(|(ty, field)| ast::Expr::ClassAccess(ty, field));
-
-        let cons = type_ident_parser()
-            .map_with_span(SrcNode::new)
-            .then(expr.clone()
-                .map_with_span(SrcNode::new)
-                .or_not())
-            .map(|(cons, expr)| {
-                let span = cons.span();
-                ast::Expr::Cons(
-                    cons,
-                    expr.unwrap_or_else(|| SrcNode::new(ast::Expr::Tuple(Vec::new()), span)),
-                )
-            });
 
         let let_ = just(Token::Let)
             .ignore_then(binding_parser().map_with_span(SrcNode::new)
@@ -544,13 +535,15 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .or_not());
 
         let do_ = just(Token::Do)
-            .ignore_then(do_chain.clone())
-            .map_with_span(|(items, tail), span| {
-                let tail = tail.unwrap_or_else(|| SrcNode::new(ast::Expr::Tuple(Vec::new()), span));
-                let mut expr = SrcNode::new(ast::Expr::Apply(
-                    SrcNode::new(ast::Expr::LangDef(ast::LangDef::IoUnit), span),
-                    tail,
-                ), span);
+            .ignore_then(nested_parser(do_chain.map(Some), Delimiter::Brace, |_| None))
+            .map_with_span(|x, span| if let Some((items, tail)) = x {
+                let mut expr = match tail {
+                    Some(tail) => tail,
+                    None => SrcNode::new(ast::Expr::Apply(
+                        SrcNode::new(ast::Expr::LangDef(ast::LangDef::IoUnit), span),
+                        SrcNode::new(ast::Expr::Tuple(Vec::new()), span),
+                    ), span),
+                };
 
                 for item in items.into_iter().rev() {
                     expr = match item {
@@ -584,11 +577,28 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 }
 
                 expr.into_inner()
+            } else {
+                ast::Expr::Error
+            });
+
+        let return_ = just(Token::Return)
+            .ignore_then(expr.clone()
+                .map_with_span(SrcNode::new))
+            .map_with_span(|expr, span| ast::Expr::Apply(
+                SrcNode::new(ast::Expr::LangDef(ast::LangDef::IoUnit), span),
+                expr,
+            ));
+
+        let cons_unit = type_ident_parser()
+            .map_with_span(SrcNode::new)
+            .map(|cons| {
+                let span = cons.span();
+                ast::Expr::Cons(cons, SrcNode::new(ast::Expr::Tuple(Vec::new()), span))
             });
 
         let atom = litr
             .or(ident)
-            .or(nested_parser(expr, Delimiter::Paren, |_| ast::Expr::Error))
+            .or(nested_parser(expr.clone(), Delimiter::Paren, |_| ast::Expr::Error))
             .or(tuple)
             .or(record)
             .or(list)
@@ -597,9 +607,10 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(match_)
             .or(func)
             .or(class_access)
-            .or(cons)
             .or(intrinsic)
             .or(do_)
+            .or(return_)
+            .or(cons_unit)
             .or(select! { Token::Error(_) => () }.map(|_| ast::Expr::Error))
             .map_with_span(SrcNode::new)
             .boxed();
@@ -748,8 +759,25 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             })
             .boxed();
 
-        logical
-            .map(|expr| expr.into_inner())
+        let with = logical
+            .then(just(Token::With).ignore_then(fields).or_not())
+            .map_with_span(|(expr, fields), span| if let Some(fields) = fields {
+                SrcNode::new(if let Some(fields) = fields {
+                    ast::Expr::Update(expr, fields)
+                } else {
+                    ast::Expr::Error
+                }, span)
+            } else {
+                expr
+            });
+
+        let cons = type_ident_parser()
+            .map_with_span(SrcNode::new)
+            .then(expr.map_with_span(SrcNode::new))
+            .map(|(cons, expr)| ast::Expr::Cons(cons, expr))
+            .or(with.map(|expr| expr.into_inner()));
+
+        cons
     })
         .labelled("expression")
 }

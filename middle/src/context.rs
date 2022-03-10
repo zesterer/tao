@@ -29,7 +29,7 @@ impl Context {
         opt::prepare(self);
 
         let debug_before = false;
-        let debug = false;
+        let debug = true;
 
         if debug_before || debug {
             println!("\nMIR before optimisation:\n\n");
@@ -40,17 +40,17 @@ impl Context {
         }
 
         for _ in 0..3 {
-            opt::FlattenSingleField::default().run(self, debug);
+            // opt::FlattenSingleField::default().run(self, debug);
             opt::ConstFold {
                 inline: !matches!(opt_mode, OptMode::Size),
             }
                 .run(self, debug);
-            opt::RemoveUnusedBindings::default().run(self, debug);
-            opt::RemoveDeadProc::default().run(self, debug);
+            // opt::RemoveUnusedBindings::default().run(self, debug);
+            // opt::RemoveDeadProc::default().run(self, debug);
         }
     }
 
-    fn reachable_procs_from(&self, proc: ProcId, globals: &mut HashSet<ProcId>) {
+    fn reachable_procs_from(&self, proc: ProcId, globals: &mut BTreeSet<ProcId>) {
         globals.insert(proc);
 
         let required = self.procs.get(proc).unwrap().body.required_globals();
@@ -61,8 +61,8 @@ impl Context {
         }
     }
 
-    pub fn reachable_procs(&self) -> HashSet<ProcId> {
-        let mut globals = HashSet::new();
+    pub fn reachable_procs(&self) -> BTreeSet<ProcId> {
+        let mut globals = BTreeSet::new();
 
         if let Some(entry) = self.entry {
             self.reachable_procs_from(entry, &mut globals);

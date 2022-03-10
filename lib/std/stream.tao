@@ -24,7 +24,7 @@ for A member [A] of IntoStream =
     => Stream = List A
     => into = fn xs => List xs
 
-fn stream A < IntoStream =
+fn into_stream A < IntoStream =
     \ s => A.into(s)
 
 data List A = [A]

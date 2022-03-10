@@ -101,7 +101,7 @@ impl Literal {
     pub fn to_partial(&self) -> Partial {
         match self {
             Self::Never => Partial::Never,
-            Self::Unknown(x) => Partial::Unknown(*x),
+            Self::Unknown(x) => *x,
             Self::Nat(x) => Partial::Nat(*x),
             Self::Int(x) => Partial::Int(*x),
             Self::Real(x) => Partial::Real(*x),
@@ -176,6 +176,7 @@ pub enum Intrinsic {
     Union(u64), // Type ID
     Print,
     Input,
+    UpdateField(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -360,6 +361,7 @@ pub enum Expr {
     Variant(usize, MirNode<Self>),
     AccessVariant(MirNode<Self>, usize), // Unsafely assume the value is a specific variant
     Data(ConDataId, MirNode<Self>),
+    AccessData(MirNode<Self>, ConDataId),
 }
 
 impl Expr {
@@ -470,6 +472,7 @@ impl Expr {
             Expr::Variant(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessVariant(inner, _) => inner.required_locals_inner(stack, required),
             Expr::Data(_, inner) => inner.required_locals_inner(stack, required),
+            Expr::AccessData(inner, _) => inner.required_locals_inner(stack, required),
         }
     }
 
@@ -551,6 +554,7 @@ impl Expr {
                     Expr::Intrinsic(Union(_), args) => write!(f, "?{}", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(Print, args) => write!(f, "@print({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Input, args) => write!(f, "@input({})", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(UpdateField(idx), args) => write!(f, "@update_field<{}>({}, {})", idx, DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
                         write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))
@@ -566,7 +570,10 @@ impl Expr {
                         }
                         Ok(())
                     },
+                    Expr::Access(inner, field) => write!(f, "({}).{}", DisplayExpr(inner, self.1, false), field),
+                    Expr::AccessVariant(inner, variant) => write!(f, "({}).#{}", DisplayExpr(inner, self.1, false), variant),
                     Expr::Data(data, inner) => write!(f, "{:?} {}", data.0, DisplayExpr(inner, self.1, false)),
+                    Expr::AccessData(inner, data) => write!(f, "{}.#{:?}", DisplayExpr(inner, self.1, false), data.0),
                     // _ => write!(f, "<TODO>"),
                     expr => todo!("{:?}", expr),
                 }

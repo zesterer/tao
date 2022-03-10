@@ -123,7 +123,7 @@ impl ToHir for ast::Type {
                                 // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                                 let inner_ty_actual = infer.instantiate(alias_ty, self.span(), &get_gen, None);
                                 let inner_ty = infer.unknown(self.span());
-                                infer.check_flow(inner_ty_actual, inner_ty, EqInfo::default());
+                                infer.check_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
 
                                 TyInfo::Ref(inner_ty)
                             }
@@ -198,7 +198,21 @@ impl ToHir for ast::Binding {
                 if let Some(num_litr) = num_litr {
                     infer.make_num_litr(ty, self.pat.span(), num_litr);
                 }
-                (TyInfo::Ref(ty), hir::Pat::Literal(*litr))
+                (TyInfo::Ref(ty), match litr {
+                    ast::Literal::Nat(x) => hir::Pat::Literal(ast::Literal::Nat(*x)),
+                    ast::Literal::Int(x) => hir::Pat::Literal(ast::Literal::Int(*x)),
+                    ast::Literal::Real(x) => hir::Pat::Literal(ast::Literal::Real(*x)),
+                    ast::Literal::Bool(x) => hir::Pat::Literal(ast::Literal::Bool(*x)),
+                    ast::Literal::Char(c) => hir::Pat::Literal(ast::Literal::Char(*c)),
+                    ast::Literal::Str(s) => {
+                        // Bit of a hack, we do this because equality of literals is not supported in the MIR
+                        let c_ty = infer.insert(self.span(), TyInfo::Prim(Prim::Char));
+                        hir::Pat::ListExact(s
+                            .chars()
+                            .map(|c| InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Literal(ast::Literal::Char(c)), self.span())), (self.span(), c_ty)))
+                            .collect())
+                    },
+                })
             },
             ast::Pat::Single(inner) => {
                 let binding = inner.to_hir(infer, scope);
@@ -304,7 +318,7 @@ impl ToHir for ast::Binding {
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                     let inner_ty_actual = infer.instantiate(inner_ty, name.span(), &get_gen, None);
                     let inner_ty = infer.unknown(self.span());
-                    infer.check_flow(inner_ty_actual, inner_ty, EqInfo::default());
+                    infer.check_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
 
                     inner_ty
                 };
@@ -334,7 +348,7 @@ impl ToHir for ast::Binding {
     }
 }
 
-fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer) -> (TyInfo, hir::Expr<InferMeta>) {
+fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: Option<Span>) -> (TyInfo, hir::Expr<InferMeta>) {
     let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
     let generics_count = scope.len();
     let generic_tys = (0..generics_count)
@@ -369,9 +383,9 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer) -> (TyInfo, hir
             .map(|body| body.meta().1))
     {
         // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-        let def_ty_actual = infer.instantiate(body_ty, None /*Some(self.span())*/, &get_gen, None);
+        let def_ty_actual = infer.instantiate(body_ty, span_override, &get_gen, None);
         let def_ty = infer.unknown(span);
-        infer.check_flow(def_ty_actual, def_ty, EqInfo::default());
+        infer.check_flow(def_ty_actual, def_ty, EqInfo::from(span));
         Some(def_ty)
     } else {
         None
@@ -406,7 +420,7 @@ impl ToHir for ast::Expr {
                     ast::LangDef::IoBind => infer.ctx().defs.lang.io_bind.unwrap(),
                 };
 
-                instantiate_def(def, self.span(), infer)
+                instantiate_def(def, self.span(), infer, Some(self.span()))
             },
             ast::Expr::Local(local) => {
                 if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
@@ -416,7 +430,7 @@ impl ToHir for ast::Expr {
                         (TyInfo::Ref(ty), hir::Expr::Local(*local))
                     }
                 } else if let Some(def_id) = infer.ctx().defs.lookup(*local) {
-                    instantiate_def(def_id, self.span(), infer)
+                    instantiate_def(def_id, self.span(), infer, None)
                 } else {
                     infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
                     (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
@@ -693,7 +707,7 @@ impl ToHir for ast::Expr {
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                     let inner_ty_actual = infer.instantiate(inner_ty, name.span(), &get_gen, None);
                     let inner_ty = infer.unknown(self.span());
-                    infer.check_flow(inner_ty, inner_ty_actual, EqInfo::default());
+                    infer.check_flow(inner_ty, inner_ty_actual, EqInfo::from(self.span()));
 
                     inner_ty
                 };
@@ -723,7 +737,7 @@ impl ToHir for ast::Expr {
                         // Takes an empty list
                         let item = infer.unknown(args[0].meta().0);
                         let list = infer.insert(args[0].meta().0, TyInfo::List(item));
-                        infer.make_flow(args[0].meta().1, list, EqInfo::default());
+                        infer.make_flow(args[0].meta().1, list, EqInfo::from(self.span()));
                         // Produces a string
                         let c = infer.insert(name.span(), TyInfo::Prim(Prim::Char));
                         (TyInfo::List(c), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TypeName, name.span()), args))
@@ -734,19 +748,19 @@ impl ToHir for ast::Expr {
                     "neg_nat" if args.len() == 1 => {
                         let a = &args[0];
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Nat));
-                        infer.make_flow(args[0].meta().1, nat, EqInfo::default());
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(self.span()));
                         (TyInfo::Prim(Prim::Int), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegNat, name.span()), args))
                     },
                     "neg_int" if args.len() == 1 => {
                         let a = &args[0];
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Int));
-                        infer.make_flow(args[0].meta().1, nat, EqInfo::default());
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(self.span()));
                         (TyInfo::Prim(Prim::Int), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegInt, name.span()), args))
                     },
                     "neg_real" if args.len() == 1 => {
                         let a = &args[0];
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Real));
-                        infer.make_flow(args[0].meta().1, nat, EqInfo::default());
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(self.span()));
                         (TyInfo::Prim(Prim::Real), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegReal, name.span()), args))
                     },
                     "go" if args.len() == 2 => if let Some(go_data) = infer.ctx().datas.lang.go {
@@ -754,7 +768,7 @@ impl ToHir for ast::Expr {
                         let r = infer.unknown(self.span());
                         let ret = infer.insert(args[0].meta().0, TyInfo::Data(go_data, vec![c, r]));
                         let f = infer.insert(args[0].meta().0, TyInfo::Func(c, ret));
-                        infer.make_flow(args[0].meta().1, f, EqInfo::default());
+                        infer.make_flow(args[0].meta().1, f, EqInfo::from(self.span()));
                         (TyInfo::Ref(r), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Go, name.span()), args))
                     } else {
                         (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
@@ -764,11 +778,11 @@ impl ToHir for ast::Expr {
                         let b = &args[1];
 
                         let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
-                        infer.make_flow(a.meta().1, universe, EqInfo::default());
+                        infer.make_flow(a.meta().1, universe, EqInfo::from(self.span()));
 
                         let c = infer.insert(b.meta().0, TyInfo::Prim(Prim::Char));
                         let s = infer.insert(b.meta().0, TyInfo::List(c));
-                        infer.make_flow(b.meta().1, s, EqInfo::default());
+                        infer.make_flow(b.meta().1, s, EqInfo::from(self.span()));
 
                         (TyInfo::Prim(Prim::Universe), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Print, name.span()), args))
                     },
@@ -776,7 +790,7 @@ impl ToHir for ast::Expr {
                         let a = &args[0];
 
                         let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
-                        infer.make_flow(a.meta().1, universe, EqInfo::default());
+                        infer.make_flow(a.meta().1, universe, EqInfo::from(self.span()));
 
                         let c = infer.insert(self.span(), TyInfo::Prim(Prim::Char));
                         let s = infer.insert(self.span(), TyInfo::List(c));
@@ -788,6 +802,19 @@ impl ToHir for ast::Expr {
                         (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
                     },
                 }
+            },
+            ast::Expr::Update(record, fields) => {
+                let record = record.to_hir(infer, scope);
+                let fields = fields
+                    .iter()
+                    .map(|(name, field)| {
+                        let field = field.to_hir(infer, scope);
+                        infer.make_update(record.meta().1, name.clone(), field.meta().1);
+                        (name.clone(), field)
+                    })
+                    .collect();
+
+                (TyInfo::Ref(record.meta().1), hir::Expr::Update(record, fields))
             },
         };
 

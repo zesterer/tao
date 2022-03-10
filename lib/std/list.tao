@@ -11,6 +11,10 @@ fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
     \ f, [x .. xs] => (if x:f then [x] else []) ++ xs:filter(f)
 
+fn find_first A : (A -> Bool) -> [A] -> Maybe A = f, xs => match xs:filter(f) in
+    | [] => None
+    \ [x ..] => Just x
+
 fn len A : [A] -> Nat =
     | [] => 0
     \ [_ .. tail] => 1 + tail:len

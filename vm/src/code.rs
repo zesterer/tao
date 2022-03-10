@@ -15,6 +15,7 @@ pub enum Instr {
     MakeList(usize), // T * N => [T]
     IndexList(usize), // Nth field of list/tuple
     SkipList(usize), // (N..) fields of list/tuple
+    SetList(usize), // Set Nth field of list
     LenList,
     JoinList,
 
@@ -123,6 +124,7 @@ impl Program {
                 Instr::MakeList(n) => -(n as isize) + 1,
                 Instr::IndexList(_) => 0,
                 Instr::SkipList(_) => 0,
+                Instr::SetList(_) => -1,
                 Instr::LenList => 0,
                 Instr::JoinList => -1,
                 Instr::MakeSum(_) => 0,
@@ -166,6 +168,7 @@ impl Program {
                 Instr::MakeList(n) => format!("list.make {}", n),
                 Instr::IndexList(i) => format!("list.index #{}", i),
                 Instr::SkipList(i) => format!("list.skip #{}", i),
+                Instr::SetList(idx) => format!("list.set #{}", idx),
                 Instr::LenList => format!("list.len"),
                 Instr::JoinList => format!("list.join"),
                 Instr::MakeSum(i) => format!("sum.make #{}", i),

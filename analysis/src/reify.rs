@@ -101,6 +101,10 @@ impl Reify for hir::Expr<InferMeta> {
                 .into_iter()
                 .map(|arg| arg.reify(infer))
                 .collect()),
+            hir::Expr::Update(record, fields) => hir::Expr::Update(record.reify(infer), fields
+                .into_iter()
+                .map(|(name, field)| (name, field.reify(infer)))
+                .collect()),
         };
 
         TyNode::new(expr, (span, infer.reify(ty)))

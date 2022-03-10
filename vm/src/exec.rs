@@ -70,6 +70,8 @@ pub fn exec(prog: &Program) -> Option<Value> {
     loop {
         let mut next_addr = addr.incr();
 
+        // println!("Executing 0x{:03X}... Stack: {}", addr.0, stack.iter().rev().map(|x| format!("{}", x)).collect::<Vec<_>>().join(", "));
+
         match prog.instr(addr) {
             Instr::Error(err) => panic!("Error: {}", err),
             Instr::Nop => {},
@@ -135,6 +137,12 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::SkipList(i) => {
                 let mut x = stack.pop().unwrap().list();
                 stack.push(Value::List(x.split_off(i)));
+            },
+            Instr::SetList(idx) => {
+                let item = stack.pop().unwrap();
+                let mut xs = stack.pop().unwrap().list();
+                xs[idx] = item;
+                stack.push(Value::List(xs));
             },
             Instr::LenList => {
                 let len = stack.pop().unwrap().list().len();
@@ -267,8 +275,6 @@ pub fn exec(prog: &Program) -> Option<Value> {
         }
 
         tick += 1;
-
-        // println!("Executing 0x{:03X}... Stack: {}", addr.0, stack.iter().rev().map(|x| format!("{}", x)).collect::<Vec<_>>().join(", "));
 
         addr = next_addr;
     }

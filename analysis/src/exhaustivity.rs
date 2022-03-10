@@ -42,6 +42,7 @@ impl AbstractPat {
                 range.insert(*x..*x + 1);
                 range
             }),
+            hir::Pat::Literal(hir::Literal::Char(c)) => Self::Char(*c),
             hir::Pat::Literal(hir::Literal::Str(x)) => Self::ListExact(x.chars().map(Self::Char).collect()),
             hir::Pat::Single(inner) => Self::from_binding(ctx, inner),
             hir::Pat::Union(inner) => Self::Union(inner.meta().1, Box::new(Self::from_binding(ctx, inner))),

@@ -6,6 +6,8 @@ pub struct FlattenSingleField;
 
 impl Pass for FlattenSingleField {
     fn apply(&mut self, ctx: &mut Context) {
+        // TODO: Implement
+        /*
         ctx.visit(
             VisitOrder::First,
             |repr| {
@@ -36,5 +38,6 @@ impl Pass for FlattenSingleField {
                 }
             },
         );
+        */
     }
 }

@@ -134,6 +134,7 @@ pub enum Expr<M: Meta> {
     ClassAccess(M, M::Class, SrcNode<Ident>),
 
     Intrinsic(SrcNode<Intrinsic>, Vec<Node<Self, M>>),
+    Update(Node<Self, M>, Vec<(SrcNode<Ident>, Node<Self, M>)>),
 }
 
 pub type InferExpr = InferNode<Expr<InferMeta>>;
@@ -193,6 +194,12 @@ impl Expr<ConMeta> {
             Expr::Cons(_, _, inner) => inner.required_locals_inner(stack, required),
             Expr::Access(inner, _) => inner.required_locals_inner(stack, required),
             Expr::ClassAccess(_, _, _) => {},
+            Expr::Update(record, fields) => {
+                record.required_locals_inner(stack, required);
+                fields
+                    .iter()
+                    .for_each(|(_, field)| field.required_locals_inner(stack, required));
+            },
         }
     }
 

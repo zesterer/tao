@@ -1,5 +1,6 @@
 use super::*;
-use hashbrown::hash_map::Entry;
+// use hashbrown::hash_map::Entry;
+use std::collections::{BTreeMap, btree_map::Entry};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Prim {
@@ -29,7 +30,7 @@ pub struct Data {
 
 #[derive(Default)]
 pub struct Reprs {
-    pub datas: HashMap<ConDataId, Option<Data>>,
+    pub datas: BTreeMap<ConDataId, Option<Data>>,
 }
 
 impl Reprs {

@@ -1,0 +1,93 @@
+import "lib/std.tao"
+
+data Location =
+    | Beach
+    | Forest
+    | Village
+    \ Mountain
+
+fn describe_loc =
+    | Beach => "You are standing on a gravel beach"
+    | Forest => "You are in a dark, spooky forest"
+    | Village => "You are standing in the centre of sleepy village"
+    \ Mountain => "You are on the side of a desolate mountain"
+
+fn directions =
+    | Beach => [("uphill", Forest)]
+    | Forest => [("downhill", Beach), ("east", Village)]
+    | Village => [("west", Forest), ("climb", Mountain)]
+    \ Mountain => [("descend", Village)]
+
+data State = {
+    loc: Location,
+}
+
+def default_state = State {
+    loc: Beach,
+}
+
+fn describe : State -> IO () = state => do {
+    print(state.loc:describe_loc);
+    print("You can go...");
+    state.loc
+        :directions
+        :into_stream
+        :for_each(fn (dir, _) => do {
+            print("- " ++ dir);
+        });
+}
+
+data Event =
+    | Grab
+    \ MoveTo Location
+
+fn apply : Event -> State -> IO State =
+    | Grab, state => do {
+            print("There was nothing to grab!");
+            return state
+        }
+    \ MoveTo loc, state => do {
+        let state <- return state with { loc };
+        print("You moved.");
+        print(loc:describe_loc);
+        return state
+    }
+
+$[main]
+def main : IO () = do {
+    print("Welcome to the adventure game!");
+    print("Type 'help' to get started.");
+    default_state:fold_until(fn state : State => do {
+        let cmd <- input;
+        let ret <- match cmd in
+        | "quit" => return Done
+        | "help" => do {
+                print("Commands: 'help', 'quit', 'look', 'grab'");
+                return Next None
+            }
+        | "look" => do {
+                state:describe;
+                return Next None
+            }
+        | "grab" => do {
+                return Next Just Grab
+            }
+        \ other => do {
+            match state.loc:directions:find_first(fn (name, _) => name:eq(cmd)) in
+            | Just (_, loc) => return Next Just MoveTo loc
+            \ None => do {
+                    print("Unknown command '" ++ cmd ++ "'");
+                    return Next None
+                }
+        };
+        match ret in
+            | Next Just event => do {
+                    let state <- state:apply(event);
+                    return Next state
+                }
+            | Next None => return Next state
+            \ Done => return Done
+    });
+    print("Goodbye!");
+}
+

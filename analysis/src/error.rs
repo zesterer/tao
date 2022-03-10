@@ -8,6 +8,7 @@ pub enum Error {
     CannotInfer(TyId, Option<Span>),
     Recursive(TyId, Span, Span),
     NoSuchItem(TyId, Span, SrcNode<Ident>),
+    NoSuchField(TyId, Span, SrcNode<Ident>),
     NoSuchLocal(SrcNode<Ident>),
     WrongNumberOfParams(Span, usize, Span, usize),
     NoBranches(Span),
@@ -104,6 +105,14 @@ impl Error {
                 vec![
                     (record_span, format!("Has type {}", display(a).fg(Color::Yellow)), Color::Yellow),
                     (field.span(), format!("Item does not exist"), Color::Red),
+                ],
+                vec![],
+            ),
+            Error::NoSuchField(a, record_span, field) => (
+                format!("Type {} has no field named {}", display(a).fg(Color::Red), (*field).fg(Color::Red)),
+                vec![
+                    (record_span, format!("Has type {}", display(a).fg(Color::Yellow)), Color::Yellow),
+                    (field.span(), format!("Field does not exist"), Color::Red),
                 ],
                 vec![],
             ),

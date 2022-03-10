@@ -35,6 +35,7 @@ pub enum VisitOrder {
     Last,
 }
 
+/*
 impl Context {
     pub fn visit_inner(
         &mut self,
@@ -72,7 +73,9 @@ impl Context {
     //     self.visit_inner(&mut visit_repr, &mut visit_binding, &mut visit_expr
     // }
 }
+*/
 
+/*
 impl Repr {
     fn visit_inner(
         &mut self,
@@ -109,6 +112,7 @@ impl Repr {
         }
     }
 }
+*/
 
 impl Binding {
     pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
@@ -157,6 +161,7 @@ impl Binding {
         }
     }
 
+    /*
     fn visit_inner(
         self: &mut MirNode<Self>,
         order: VisitOrder,
@@ -195,6 +200,7 @@ impl Binding {
             binding(self);
         }
     }
+    */
 }
 
 impl Expr {
@@ -229,6 +235,7 @@ impl Expr {
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
             Expr::Data(_, inner) => f(inner),
+            Expr::AccessData(inner, _) => f(inner),
         }
     }
 
@@ -263,6 +270,7 @@ impl Expr {
             Expr::Variant(_, inner) => f(inner),
             Expr::AccessVariant(inner, _) => f(inner),
             Expr::Data(_, inner) => f(inner),
+            Expr::AccessData(inner, _) => f(inner),
         }
     }
 
@@ -286,6 +294,7 @@ impl Expr {
         }
     }
 
+    /*
     fn visit_inner(
         self: &mut MirNode<Self>,
         order: VisitOrder,
@@ -332,12 +341,14 @@ impl Expr {
             Expr::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             Expr::AccessVariant(inner, _) => inner.visit_inner(order, repr, binding, expr),
             Expr::Data(_, inner) => inner.visit_inner(order, repr, binding, expr),
+            Expr::AccessData(inner, _) => inner.visit_inner(order, repr, binding, expr),
         }
 
         if order == VisitOrder::Last {
             expr(self);
         }
     }
+    */
 }
 
 /// Ready a context for optimisation, making a variety of adjustments
@@ -390,6 +401,7 @@ pub fn check(ctx: &Context) {
             (Expr::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {},
             (Expr::Literal(Literal::List(_)), Repr::List(_)) => {},
+            (Expr::Literal(Literal::Tuple(_)), Repr::Tuple(_)) => {},
             (Expr::Literal(Literal::Sum(_, _)), _) => {},
             (Expr::Literal(Literal::Data(a, _)), Repr::Data(b)) if a == b => {},
             (Expr::Global(_, _), _) => {}, // TODO

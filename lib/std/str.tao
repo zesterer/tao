@@ -1,3 +1,5 @@
+import "lib/core/ops.tao"
+
 #! Utilities for programming with strings.
 
 type Str = [Char]
@@ -20,3 +22,11 @@ member Int of Display =
         # | x * 10 + 7 => x:display ++ "7"
         # | x * 10 + 8 => x:display ++ "8"
         # \ x * 10 + 9 => x:display ++ "9"
+
+fn eq_str : Str -> Str -> Bool =
+    | [], [] => True
+    | [x .. xs], [y .. ys] => x = y and xs:eq(ys)
+    \ _, _ => False
+
+member Str of Eq =
+    => eq = eq_str

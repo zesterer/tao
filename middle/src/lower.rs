@@ -278,15 +278,16 @@ impl Context {
                 let mut record = self.lower_expr(hir, con, record, stack);
                 // Perform indirections for field accesses
                 for _ in 0..indirections {
-                    let variant_repr = if let Repr::Data(data) = record.meta() {
+                    let (data, variant_repr) = if let Repr::Data(data) = record.meta() {
                         if let Repr::Sum(variants) = &self.reprs.get(*data).repr {
-                            variants[0].clone()
+                            (*data, variants[0].clone())
                         } else {
                             unreachable!()
                         }
                     } else {
                         unreachable!()
                     };
+                    record = MirNode::new(mir::Expr::AccessData(record, data), Repr::Data(data));
                     record = MirNode::new(mir::Expr::AccessVariant(record, 0), variant_repr);
                 }
 
@@ -342,6 +343,50 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                     ]),
                 }
+            },
+            hir::Expr::Update(record, fields) => {
+                let mut mir_record = self.lower_expr(hir, con, record, stack);
+
+                for (field_name, field) in fields {
+                    let (record_ty, _, indirections) = con.follow_field_access(hir, *record.meta(), **field_name).unwrap();
+                    let field_idx = if let ConTy::Record(fields) = con.get_ty(record_ty) {
+                        let mut fields = fields.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+                        fields.sort_by_key(|name| name.as_ref());
+                        fields.iter().enumerate().find(|(_, name)| **name == **field_name).unwrap().0
+                    } else {
+                        unreachable!();
+                    };
+                    // Perform indirections for field accesses, unwrapping until we reach the record
+                    let mut datas = Vec::new();
+                    for _ in 0..indirections {
+                        let (data, variant_repr) = if let Repr::Data(data) = mir_record.meta() {
+                            let repr = &self.reprs.get(*data).repr;
+                            if let Repr::Sum(variants) = repr {
+                                datas.push((*data, repr.clone()));
+                                (*data, variants[0].clone())
+                            } else {
+                                unreachable!()
+                            }
+                        } else {
+                            unreachable!()
+                        };
+                        mir_record = MirNode::new(mir::Expr::AccessData(mir_record, data), Repr::Data(data));
+                        mir_record = MirNode::new(mir::Expr::AccessVariant(mir_record, 0), variant_repr);
+                    }
+
+                    // Update field
+                    let record_repr = mir_record.meta().clone();
+                    let field = self.lower_expr(hir, con, field, stack);
+                    mir_record = MirNode::new(mir::Expr::Intrinsic(Intrinsic::UpdateField(field_idx), vec![mir_record, field]), record_repr);
+
+                    // Re-wrap the record
+                    for (data, sum_repr) in datas.into_iter().rev() {
+                        let sum = MirNode::new(mir::Expr::Variant(0, mir_record), sum_repr);
+                        mir_record = MirNode::new(mir::Expr::Data(data, sum), Repr::Data(data));
+                    }
+                }
+
+                mir_record.into_inner()
             },
         };
 

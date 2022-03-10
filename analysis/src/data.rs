@@ -7,7 +7,7 @@ pub struct Data {
     pub cons: Vec<(SrcNode<Ident>, TyId)>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DataId(usize);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

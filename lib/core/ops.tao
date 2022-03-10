@@ -65,6 +65,8 @@ class Eq =
 member Nat of Eq =
     => eq = fn x, y => x = y
 
+fn eq A < Eq : A -> A -> Bool = x, y => A.eq(x, y)
+
 # Ord
 
 class Ord =

@@ -1,4 +1,5 @@
 import "lib/std/str.tao"
+import "lib/core/tail.tao"
 
 type IO A = @ -> (@, A)
 
@@ -9,6 +10,36 @@ $[lang(io_bind)]
 fn io_bind A, B : IO A -> (A -> IO B) -> IO B = a, f, uni =>
     let (uni, a) = a(uni) in
     f(a, uni)
+
+fn when A : Bool -> IO A -> IO (Maybe A) =
+    | True, m => do { let x <- m; return Just x }
+    \ False, _ => return None
+
+fn while : IO Bool -> IO () = body => do {
+    let again <- body;
+    when(again, while(body));
+}
+
+fn fold_until C, R : (C -> IO (Go C R)) -> C -> IO R = body, c => do {
+    let res <- body(c);
+    match res in
+        | Done r => return r
+        \ Next c => c:fold_until(body)
+}
+
+fn iter C, R : C -> IO (Go C R) -> IO R = succ, body => do {
+    let succ <- body;
+    match succ in
+    | Next c => iter(c, body)
+    \ Done r => return r
+}
+
+fn for_each S < Stream : (S.Item -> IO ()) -> S -> IO () = f, s => match S.next(s) in
+    | (Just x, xs) => do {
+            f(x);
+            xs:for_each(f);
+        }
+    \ (None, _) => return ()
 
 # IO operations
 

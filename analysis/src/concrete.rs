@@ -401,6 +401,10 @@ impl ConContext {
                 .into_iter()
                 .map(|arg| self.lower_expr(hir, arg, ty_insts))
                 .collect()),
+            hir::Expr::Update(record, fields) => hir::Expr::Update(self.lower_expr(hir, record, ty_insts), fields
+                .iter()
+                .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))
+                .collect()),
         };
 
         ConNode::new(expr, self.lower_ty(hir, ty_expr.meta().1, ty_insts))

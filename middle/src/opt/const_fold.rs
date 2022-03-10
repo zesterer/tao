@@ -211,6 +211,15 @@ impl ConstFold {
                 let inner = self.eval(ctx, inner, stack);
                 Partial::Data(*data, Box::new(inner))
             },
+            Expr::AccessData(inner, data) => {
+                let inner = self.eval(ctx, inner, stack);
+                if let Partial::Data(id, inner) = inner {
+                    assert_eq!(*data, id);
+                    *inner
+                } else {
+                    Partial::Unknown(None)
+                }
+            },
             e => todo!("{:?}", e),
         };
 
@@ -269,6 +278,7 @@ impl Intrinsic {
             EqChar => op!(Char(x), Char(y) => Bool(x == y)),
             Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
             AndBool => op!(Bool(x), Bool(y) => Bool(*x && *y)),
+            UpdateField(idx) => Partial::Unknown(None), // TODO
             Print => Partial::Unknown(None),
             Input => Partial::Unknown(None),
             i => todo!("{:?}", i),

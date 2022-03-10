@@ -6,16 +6,25 @@ fn eq : Str -> Str -> Bool =
     \ _, _ => False
 
 $[main]
-def main : IO () = loop
+def main : IO () = do {
+    ["a", "b", "c", "d"]
+        :into_stream
+        :for_each(fn x => do {
+            print("Element = " ++ x);
+        });
 
-def loop : IO () = do
-    print("Enter an expression to evaluate, q to quit");
-    let text <- input;
-    if text:eq("q")
-    then print("Ok, goodbye")
-    else do
-        match text:parse(expr_parser) in
-            | Ok expr => print(expr:eval:display)
-            \ Err err => print("Failed to parse expression '" ++ text ++ "'");
-        loop;
-    ;
+    while(do {
+        print("Enter an expression to evaluate, q to quit");
+        let text <- input;
+        if text:eq("q") then do {
+            print("Ok, goodbye");
+            return False
+        } else do {
+            match text:parse(expr_parser) in
+                | Ok expr => print(expr:eval:display)
+                \ Err err => print("Failed to parse expression '" ++ text ++ "'")
+            ;
+            return True
+        }
+    })
+}
