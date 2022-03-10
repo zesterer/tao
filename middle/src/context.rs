@@ -29,7 +29,7 @@ impl Context {
         opt::prepare(self);
 
         let debug_before = false;
-        let debug = true;
+        let debug = false;
 
         if debug_before || debug {
             println!("\nMIR before optimisation:\n\n");
@@ -40,13 +40,13 @@ impl Context {
         }
 
         for _ in 0..3 {
-            // opt::FlattenSingleField::default().run(self, debug);
+            opt::FlattenSingleField::default().run(self, debug);
             opt::ConstFold {
                 inline: !matches!(opt_mode, OptMode::Size),
             }
                 .run(self, debug);
-            // opt::RemoveUnusedBindings::default().run(self, debug);
-            // opt::RemoveDeadProc::default().run(self, debug);
+            opt::RemoveUnusedBindings::default().run(self, debug);
+            opt::RemoveDeadProc::default().run(self, debug);
         }
     }
 

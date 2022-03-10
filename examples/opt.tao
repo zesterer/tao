@@ -19,6 +19,6 @@ def factorial_fix = fix(fn
 data Foo = { x: Nat, y: Bool }
 
 $[main]
-def main = (Foo {y: True, x: 1}) with {y:False}#factorial_go(10)
+def main = factorial_go(10)
 
 data Never =|
