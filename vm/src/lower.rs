@@ -1,5 +1,8 @@
 use super::*;
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    rc::Rc,
+};
 
 fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
     Some(match literal {
@@ -18,10 +21,10 @@ fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
             .iter()
             .map(litr_to_value)
             .collect::<Option<_>>()?),
-        mir::Literal::Sum(variant, inner) => Value::Sum(*variant, Box::new(litr_to_value(inner)?)),
+        mir::Literal::Sum(variant, inner) => Value::Sum(*variant, Rc::new(litr_to_value(inner)?)),
         mir::Literal::Union(id, inner) => {
             assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-            Value::Sum(*id as usize, Box::new(litr_to_value(inner)?))
+            Value::Sum(*id as usize, Rc::new(litr_to_value(inner)?))
         },
         mir::Literal::Data(_, inner) => litr_to_value(inner)?,
     })
@@ -88,7 +91,7 @@ impl Program {
                 }
 
                 if let Some(tail) = tail.as_ref() {
-                    self.push(Instr::SkipList(items.len()));
+                    self.push(Instr::SkipListImm(items.len()));
                     self.compile_extractor(mir, tail);
                 }
             },
@@ -203,7 +206,7 @@ impl Program {
 
                     if let Some(tail) = tail.as_ref() {
                         self.push(Instr::Dup);
-                        self.push(Instr::SkipList(items.len()));
+                        self.push(Instr::SkipListImm(items.len()));
                         self.compile_matcher(tail);
                         self.push(Instr::IfNot);
                         fail_fixup.push(self.push(Instr::Jump(0))); // Fixed by #2
@@ -300,6 +303,9 @@ impl Program {
                     Intrinsic::Print => { self.push(Instr::Print); },
                     Intrinsic::Input => { self.push(Instr::Input); },
                     Intrinsic::UpdateField(idx) => { self.push(Instr::SetList(*idx)); },
+                    Intrinsic::LenList => { self.push(Instr::LenList); },
+                    Intrinsic::SkipList => { self.push(Instr::SkipList); },
+                    Intrinsic::TrimList => { self.push(Instr::TrimList); },
                 };
             },
             mir::Expr::Tuple(fields) => {

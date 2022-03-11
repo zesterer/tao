@@ -1,5 +1,9 @@
 use super::*;
-use std::fmt;
+use std::{
+    fmt,
+    rc::Rc,
+};
+use im::{Vector, vector};
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -7,9 +11,9 @@ pub enum Value {
     Real(f64),
     Char(char),
     Bool(bool),
-    List(Vec<Self>),
-    Func(Addr, Vec<Self>),
-    Sum(usize, Box<Self>),
+    List(Vector<Self>),
+    Func(Addr, Vector<Self>),
+    Sum(usize, Rc<Self>),
     Universe(u64),
 }
 
@@ -18,9 +22,9 @@ impl Value {
     pub fn real(self) -> f64 { if let Value::Real(x) = self { x } else { panic!("{}", self) } }
     pub fn char(self) -> char { if let Value::Char(c) = self { c } else { panic!("{}", self) } }
     pub fn bool(self) -> bool { if let Value::Bool(x) = self { x } else { panic!("{}", self) } }
-    pub fn list(self) -> Vec<Self> { if let Value::List(xs) = self { xs } else { panic!("{}", self) } }
-    pub fn func(self) -> (Addr, Vec<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
-    pub fn sum(self) -> (usize, Box<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
+    pub fn list(self) -> Vector<Self> { if let Value::List(xs) = self { xs } else { panic!("{}", self) } }
+    pub fn func(self) -> (Addr, Vector<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
+    pub fn sum(self) -> (usize, Rc<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
     pub fn universe(self) -> u64 { if let Value::Universe(x) = self { x } else { panic!("{}", self) } }
 }
 
@@ -66,7 +70,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
         Vec::new()
     };
 
-    let mut tick = 0;
+    let mut tick = 0u64;
     loop {
         let mut next_addr = addr.incr();
 
@@ -98,7 +102,6 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::Ret => if let Some(addr) = funcs.pop() {
                 next_addr = addr;
             } else {
-
                 assert_eq!(locals.len(), 0, "Local stack still has values, this is probably a bug");
                 assert_eq!(stack.len(), 1, "Stack size must be 1 on program exit");
                 println!("Executed {} instructions.", tick);
@@ -112,7 +115,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
             },
             Instr::MakeFunc(i, n) => {
                 let f_addr = addr.jump(i);
-                let func = Value::Func(f_addr, stack.split_off(stack.len().saturating_sub(n)));
+                let func = Value::Func(f_addr, stack.split_off(stack.len().saturating_sub(n)).into());
                 stack.push(func);
             },
             Instr::ApplyFunc => {
@@ -121,10 +124,10 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 funcs.push(next_addr);
                 next_addr = f_addr;
 
-                locals.append(&mut captures);
+                locals.extend(captures.into_iter());
             },
             Instr::MakeList(n) => {
-                let val = Value::List(stack.split_off(stack.len().saturating_sub(n)));
+                let val = Value::List(stack.split_off(stack.len().saturating_sub(n)).into());
                 stack.push(val);
             },
             Instr::IndexList(i) => {
@@ -134,9 +137,9 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 }
                 stack.push(x.remove(i));
             },
-            Instr::SkipList(i) => {
-                let mut x = stack.pop().unwrap().list();
-                stack.push(Value::List(x.split_off(i)));
+            Instr::SkipListImm(i) => {
+                let x = stack.pop().unwrap().list();
+                stack.push(Value::List(x.skip(i)));
             },
             Instr::SetList(idx) => {
                 let item = stack.pop().unwrap();
@@ -151,17 +154,28 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::JoinList => {
                 let mut y = stack.pop().unwrap().list();
                 let mut x = stack.pop().unwrap().list();
-                x.append(&mut y);
+                x.append(y);
                 stack.push(Value::List(x));
+            },
+            Instr::SkipList => {
+                let i = stack.pop().unwrap().int();
+                let xs = stack.pop().unwrap().list();
+                stack.push(Value::List(xs.skip((i as usize).min(xs.len()))));
+            },
+            Instr::TrimList => {
+                let i = stack.pop().unwrap().int();
+                let mut xs = stack.pop().unwrap().list();
+                xs.truncate((i as usize).min(xs.len()));
+                stack.push(Value::List(xs));
             },
             Instr::MakeSum(variant) => {
                 let x = stack.pop().unwrap();
-                stack.push(Value::Sum(variant, Box::new(x)));
+                stack.push(Value::Sum(variant, Rc::new(x)));
             },
             Instr::IndexSum(variant) => {
                 let (v, inner) = stack.pop().unwrap().sum();
                 debug_assert_eq!(variant, v);
-                stack.push(*inner);
+                stack.push((*inner).clone());
             },
             Instr::VariantSum => {
                 let (variant, _) = stack.pop().unwrap().sum();
@@ -170,7 +184,6 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::Dup => stack.push(stack.last().unwrap().clone()),
             Instr::Jump(n) => {
                 next_addr = addr.jump(n);
-                // println!("Jump from 0x{:03X} to 0x{:03X}", addr.0, next_addr.0);
             },
             Instr::IfNot => {
                 if stack.pop().unwrap().bool() {
@@ -264,10 +277,10 @@ pub fn exec(prog: &Program) -> Option<Value> {
 
                 let mut s = String::new();
                 print!("> ");
-                stdout().flush();
+                stdout().flush().expect("IO error");
                 stdin().read_line(&mut s).expect("IO error");
 
-                stack.push(Value::List(vec![
+                stack.push(Value::List(vector![
                     Value::Universe(universe_counter),
                     Value::List(s.trim_end().chars().map(Value::Char).collect()),
                 ]));

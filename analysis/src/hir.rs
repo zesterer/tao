@@ -114,6 +114,9 @@ pub enum Intrinsic {
     Go,
     Print,
     Input,
+    LenList,
+    SkipList,
+    TrimList,
 }
 
 #[derive(Debug)]

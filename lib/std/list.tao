@@ -15,9 +15,7 @@ fn find_first A : (A -> Bool) -> [A] -> Maybe A = f, xs => match xs:filter(f) in
     | [] => None
     \ [x ..] => Just x
 
-fn len A : [A] -> Nat =
-    | [] => 0
-    \ [_ .. tail] => 1 + tail:len
+fn len A : [A] -> Nat = xs => @len_list(xs)
 
 fn fold A, B : A -> (A -> B -> A) -> [B] -> A =
     | init, _, [] => init
@@ -27,10 +25,13 @@ fn repeat A : Nat -> [A] -> [A] =
     | 0, _ => []
     \ n + 1, x => x ++ x:repeat(n)
 
-fn swap A : Nat -> (A -> A) -> [A] -> [A] =
-    | 0, f, [x .. xs] => [x:f .. xs]
-    | n + 1, f, [x .. xs] => [x .. xs:swap(n, f)]
-    \ _, _, _ #([])# => []
+fn swap A : Nat -> (A -> A) -> [A] -> [A] = n, f, xs => match @skip_list(xs, n) in
+    | [] => xs
+    \ [x .. tail] => @trim_list(xs, n) ++ [x:f .. tail]
+
+fn nth A : Nat -> [A] -> Maybe A = n, xs => match @skip_list(xs, n) in
+    | [x ..] => Just x
+    \ [] => None
 
 fn sort A < OrdExt : [A] -> [A] =
     | [] => []

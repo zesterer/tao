@@ -14,10 +14,12 @@ pub enum Instr {
 
     MakeList(usize), // T * N => [T]
     IndexList(usize), // Nth field of list/tuple
-    SkipList(usize), // (N..) fields of list/tuple
+    SkipListImm(usize), // (N..) fields of list/tuple
     SetList(usize), // Set Nth field of list
     LenList,
     JoinList,
+    SkipList,
+    TrimList,
 
     MakeSum(usize),
     IndexSum(usize),
@@ -123,10 +125,12 @@ impl Program {
                 Instr::ApplyFunc => 0, // Turns input stack item into output stack item
                 Instr::MakeList(n) => -(n as isize) + 1,
                 Instr::IndexList(_) => 0,
-                Instr::SkipList(_) => 0,
+                Instr::SkipListImm(_) => 0,
                 Instr::SetList(_) => -1,
                 Instr::LenList => 0,
                 Instr::JoinList => -1,
+                Instr::SkipList => -1,
+                Instr::TrimList => -1,
                 Instr::MakeSum(_) => 0,
                 Instr::IndexSum(_) => 0,
                 Instr::VariantSum => 0,
@@ -167,10 +171,12 @@ impl Program {
                 Instr::ApplyFunc => format!("func.apply"),
                 Instr::MakeList(n) => format!("list.make {}", n),
                 Instr::IndexList(i) => format!("list.index #{}", i),
-                Instr::SkipList(i) => format!("list.skip #{}", i),
+                Instr::SkipListImm(i) => format!("list.skip_imm #{}", i),
                 Instr::SetList(idx) => format!("list.set #{}", idx),
                 Instr::LenList => format!("list.len"),
                 Instr::JoinList => format!("list.join"),
+                Instr::SkipList => format!("list.skip"),
+                Instr::TrimList => format!("list.trim"),
                 Instr::MakeSum(i) => format!("sum.make #{}", i),
                 Instr::IndexSum(i) => format!("sum.index #{}", i),
                 Instr::VariantSum => format!("sum.variant"),

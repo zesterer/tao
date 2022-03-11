@@ -177,6 +177,9 @@ pub enum Intrinsic {
     Print,
     Input,
     UpdateField(usize),
+    LenList,
+    SkipList,
+    TrimList,
 }
 
 #[derive(Clone, Debug)]
@@ -550,6 +553,9 @@ impl Expr {
                     Expr::Intrinsic(Print, args) => write!(f, "@print({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Input, args) => write!(f, "@input({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(UpdateField(idx), args) => write!(f, "@update_field<{}>({}, {})", idx, DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(LenList, args) => write!(f, "@len_list({})", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(SkipList, args) => write!(f, "@skip_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(TrimList, args) => write!(f, "@trim_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
                         write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))

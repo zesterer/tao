@@ -70,8 +70,8 @@ fn collect S < Stream = s => match S.next(s) in
     | (Just x, s) => [x .. s:collect]
     \ (None, _) => []
 
-fn nth S < Stream : Nat -> S -> Maybe S.Item =
+fn stream_nth S < Stream : Nat -> S -> Maybe S.Item =
     | 0, s =>
         let (x, _) = S.next(s) in x
     \ n + 1, s =>
-        let (_, s) = S.next(s) in s:nth(n)
+        let (_, s) = S.next(s) in s:stream_nth(n)

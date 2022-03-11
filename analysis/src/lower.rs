@@ -737,7 +737,7 @@ impl ToHir for ast::Expr {
                         // Takes an empty list
                         let item = infer.unknown(args[0].meta().0);
                         let list = infer.insert(args[0].meta().0, TyInfo::List(item));
-                        infer.make_flow(args[0].meta().1, list, EqInfo::from(self.span()));
+                        infer.make_flow(args[0].meta().1, list, EqInfo::from(name.span()));
                         // Produces a string
                         let c = infer.insert(name.span(), TyInfo::Prim(Prim::Char));
                         (TyInfo::List(c), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TypeName, name.span()), args))
@@ -748,19 +748,19 @@ impl ToHir for ast::Expr {
                     "neg_nat" if args.len() == 1 => {
                         let a = &args[0];
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Nat));
-                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(self.span()));
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(name.span()));
                         (TyInfo::Prim(Prim::Int), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegNat, name.span()), args))
                     },
                     "neg_int" if args.len() == 1 => {
                         let a = &args[0];
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Int));
-                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(self.span()));
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(name.span()));
                         (TyInfo::Prim(Prim::Int), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegInt, name.span()), args))
                     },
                     "neg_real" if args.len() == 1 => {
                         let a = &args[0];
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Real));
-                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(self.span()));
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(name.span()));
                         (TyInfo::Prim(Prim::Real), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegReal, name.span()), args))
                     },
                     "go" if args.len() == 2 => if let Some(go_data) = infer.ctx().datas.lang.go {
@@ -768,7 +768,7 @@ impl ToHir for ast::Expr {
                         let r = infer.unknown(self.span());
                         let ret = infer.insert(args[0].meta().0, TyInfo::Data(go_data, vec![c, r]));
                         let f = infer.insert(args[0].meta().0, TyInfo::Func(c, ret));
-                        infer.make_flow(args[0].meta().1, f, EqInfo::from(self.span()));
+                        infer.make_flow(args[0].meta().1, f, EqInfo::from(name.span()));
                         (TyInfo::Ref(r), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Go, name.span()), args))
                     } else {
                         (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
@@ -778,11 +778,11 @@ impl ToHir for ast::Expr {
                         let b = &args[1];
 
                         let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
-                        infer.make_flow(a.meta().1, universe, EqInfo::from(self.span()));
+                        infer.make_flow(a.meta().1, universe, EqInfo::from(name.span()));
 
                         let c = infer.insert(b.meta().0, TyInfo::Prim(Prim::Char));
                         let s = infer.insert(b.meta().0, TyInfo::List(c));
-                        infer.make_flow(b.meta().1, s, EqInfo::from(self.span()));
+                        infer.make_flow(b.meta().1, s, EqInfo::from(name.span()));
 
                         (TyInfo::Prim(Prim::Universe), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Print, name.span()), args))
                     },
@@ -790,12 +790,34 @@ impl ToHir for ast::Expr {
                         let a = &args[0];
 
                         let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
-                        infer.make_flow(a.meta().1, universe, EqInfo::from(self.span()));
+                        infer.make_flow(a.meta().1, universe, EqInfo::from(name.span()));
 
                         let c = infer.insert(self.span(), TyInfo::Prim(Prim::Char));
                         let s = infer.insert(self.span(), TyInfo::List(c));
 
                         (TyInfo::Tuple(vec![universe, s]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Input, name.span()), args))
+                    },
+                    "len_list" if args.len() == 1 => {
+                        let item = infer.unknown(args[0].meta().0);
+                        let list = infer.insert(args[0].meta().0, TyInfo::List(item));
+                        infer.make_flow(args[0].meta().1, list, EqInfo::from(name.span()));
+                        (TyInfo::Prim(Prim::Nat), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::LenList, name.span()), args))
+                    },
+                    "skip_list" if args.len() == 2 => {
+                        let item = infer.unknown(args[0].meta().0);
+                        let list = infer.insert(args[0].meta().0, TyInfo::List(item));
+                        infer.make_flow(args[0].meta().1, list, EqInfo::from(name.span()));
+                        let nat = infer.insert(args[1].meta().0, TyInfo::Prim(Prim::Nat));
+                        infer.make_flow(args[1].meta().1, nat, EqInfo::from(name.span()));
+                        (TyInfo::Ref(list), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::SkipList, name.span()), args))
+                    },
+                    "trim_list" if args.len() == 2 => {
+                        let item = infer.unknown(args[0].meta().0);
+                        let list = infer.insert(args[0].meta().0, TyInfo::List(item));
+                        infer.make_flow(args[0].meta().1, list, EqInfo::from(name.span()));
+                        let nat = infer.insert(args[1].meta().0, TyInfo::Prim(Prim::Nat));
+                        infer.make_flow(args[1].meta().1, nat, EqInfo::from(name.span()));
+                        (TyInfo::Ref(list), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TrimList, name.span()), args))
                     },
                     _ => {
                         infer.ctx_mut().emit(Error::InvalidIntrinsic(name.clone()));

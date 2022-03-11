@@ -1,10 +1,5 @@
 import "lib/parse.tao"
 
-fn eq : Str -> Str -> Bool =
-    | [], [] => True
-    | [x .. xs], [y .. ys] => x = y and xs:eq(ys)
-    \ _, _ => False
-
 def main : IO () = do {
     ["a", "b", "c", "d"]
         :into_stream
