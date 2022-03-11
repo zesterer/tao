@@ -57,13 +57,26 @@ impl ConContext {
 
         let mut entries = hir.defs
             .iter()
-            .filter_map(|(id, def)| def.attr
+            .filter_map(|(id, def)| if def.attr
                 .iter()
-                .find(|attr| attr.name.as_str() == "main")
-                .zip(Some((id, def))));
+                .find(|attr| attr.name.as_str() == "entry")
+                .is_some()
+            {
+                Some((id, def))
+            } else {
+                None
+            })
+            .collect::<Vec<_>>();
+        // If no entry point attribute exists, use 'main'
+        if entries.is_empty() {
+            entries.extend(hir.defs
+                .lookup(Ident::new("main"))
+                .map(|id| (id, hir.defs.get(id))));
+        }
 
-        if let Some((entry_attr, (id, main))) = entries.next() {
-            if let Some((_, (_, second))) = entries.next() {
+        let mut entries = entries.into_iter();
+        if let Some((id, main)) = entries.next() {
+            if let Some((_, second)) = entries.next() {
                 errors.push(Error::MultipleEntryPoints(main.name.span(), second.name.span()));
             }
 
@@ -73,7 +86,7 @@ impl ConContext {
                 this.lower_def(hir, main_def);
                 this.entry = Some(main_def);
             } else {
-                errors.push(Error::GenericEntryPoint(main.name.clone(), gen_scope.span, entry_attr.span()));
+                errors.push(Error::GenericEntryPoint(main.name.clone(), gen_scope.span));
             }
         } else {
             errors.push(Error::NoEntryPoint(hir.root_span));

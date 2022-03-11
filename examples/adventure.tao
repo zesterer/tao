@@ -53,7 +53,6 @@ fn apply : Event -> State -> IO State =
         return state
     }
 
-$[main]
 def main : IO () = do {
     print("Welcome to the adventure game!");
     print("Type 'help' to get started.");

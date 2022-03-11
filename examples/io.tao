@@ -5,7 +5,6 @@ fn eq : Str -> Str -> Bool =
     | [x .. xs], [y .. ys] => x = y and xs:eq(ys)
     \ _, _ => False
 
-$[main]
 def main : IO () = do {
     ["a", "b", "c", "d"]
         :into_stream

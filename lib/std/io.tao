@@ -34,12 +34,15 @@ fn iter C, R : C -> IO (Go C R) -> IO R = succ, body => do {
     \ Done r => return r
 }
 
-fn for_each S < Stream : (S.Item -> IO ()) -> S -> IO () = f, s => match S.next(s) in
+fn fold_for_each A, S < Stream : A -> (A -> S.Item -> IO A) -> S -> IO A = a, f, s => match S.next(s) in
     | (Just x, xs) => do {
-            f(x);
-            xs:for_each(f);
+            let a <- f(a, x);
+            xs:fold_for_each(a, f)
         }
-    \ (None, _) => return ()
+    \ (None, _) => return a
+
+fn for_each S < Stream : (S.Item -> IO ()) -> S -> IO () = f =>
+    fold_for_each((), fn () => f)
 
 # IO operations
 

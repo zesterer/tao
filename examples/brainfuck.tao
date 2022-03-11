@@ -1,0 +1,108 @@
+import "lib/std.tao"
+
+data Instr =
+    | Left
+    | Right
+    | Incr
+    | Decr
+    | Read
+    | Write
+    \ Loop [Instr]
+
+fn pretty_print =
+    | n, Left => print(" ":repeat(n) ++ "<")
+    | n, Right => print(" ":repeat(n) ++ ">")
+    | n, Incr => print(" ":repeat(n) ++ "+")
+    | n, Decr => print(" ":repeat(n) ++ "-")
+    | n, Read => print(" ":repeat(n) ++ ",")
+    | n, Write => print(" ":repeat(n) ++ ".")
+    \ n, Loop xs => do {
+            print(" ":repeat(n) ++ "[");
+            xs:into_stream:for_each(pretty_print(n + 1));
+            print(" ":repeat(n) ++ "]");
+        }
+
+fn parse =
+    | ['<' .. s] => let (xs, s) = s:parse in ([Left .. xs], s)
+    | ['>' .. s] => let (xs, s) = s:parse in ([Right .. xs], s)
+    | ['+' .. s] => let (xs, s) = s:parse in ([Incr .. xs], s)
+    | ['-' .. s] => let (xs, s) = s:parse in ([Decr .. xs], s)
+    | [',' .. s] => let (xs, s) = s:parse in ([Read .. xs], s)
+    | ['.' .. s] => let (xs, s) = s:parse in ([Write .. xs], s)
+    | [']' .. s] => ([], s)
+    | ['[' .. s] =>
+        let (xs, s) = s:parse in
+        let (tail, s) = s:parse in
+        ([Loop xs] ++ tail, s)
+    | [_ .. s] => s:parse
+    \ [] => ([], "")
+
+data State = {
+    ptr: Nat,
+    tape: [Nat],
+    stdin: Str,
+    stdout: Str,
+}
+
+member State of Default =
+    => default = State {
+        ptr: 0,
+        tape: [0]:repeat(100),
+        stdin: "",
+        stdout: "",
+    }
+
+fn exec : State -> Instr -> IO State =
+    | state, Left => return state with {
+            ptr: match state.ptr in
+                | 0 => 9999
+                \ l + 1 => l
+        }
+    | state, Right => return state with {
+            ptr: match state.ptr in
+                | 9999 => 0
+                \ l => l + 1
+        }
+    | state, Incr => return state with {
+            tape: state.tape:swap(state.ptr, fn
+                | 255 => 0
+                \ n => n + 1)
+        }
+    | state, Decr => return state with {
+            tape: state.tape:swap(state.ptr, fn
+                | 0 => 255
+                \ n + 1 => n)
+        }
+    | state, Read => do {
+            print("Read not supported yet");
+            return state
+        }
+    | state, Write => match state.tape:into_stream:nth(state.ptr) in
+        # Newline
+        | Just 10 => do {
+                print(state.stdout);
+                return state with { stdout: "" }
+            }
+        | Just n + 32 => match " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+            :into_stream
+            :nth(n) in
+            | Just c => return state with { stdout: state.stdout ++ [c] }
+            \ None => return state
+        \ _ => return state
+    \ state, Loop xs => match state.tape:into_stream:nth(state.ptr) in
+        | Just 0 => return state
+        | Just _ => do {
+                let state <- xs
+                    :into_stream
+                    :fold_for_each(state, exec);
+                exec(state, Loop xs)
+            }
+        \ None => return state
+
+def main = do {
+    let (xs, _) <- return "++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.":parse;
+    # xs:into_stream:for_each(pretty_print(0));
+    xs
+        :into_stream
+        :fold_for_each(default, exec);
+}

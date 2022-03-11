@@ -7,6 +7,12 @@ functions, currying, good diagnostics, and much more!
     <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/example.png" alt="Demo of Tao's features"/>
 </a>
 
+For more example programs, see...
+
+- `examples/hello.tao`: Hello world in Tao
+- `examples/adventure.tao`: A text adventure game written in Tao
+- `examples/brainfuck.tao`: A brainfuck interpreter written in Tao
+
 ## Goals
 
 Right now, Tao is a hobby project and I have no plans to turn it into a production-worthy language. This may change as

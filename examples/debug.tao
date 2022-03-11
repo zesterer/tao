@@ -9,5 +9,4 @@ def takes A < X =
 
 # def foo = takes(5)
 
-$[main]
 def real : (Nat|) = ?5.3

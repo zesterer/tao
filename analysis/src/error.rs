@@ -38,7 +38,7 @@ pub enum Error {
     SelfNotValidHere(Span),
     NoEntryPoint(Span),
     MultipleEntryPoints(Span, Span),
-    GenericEntryPoint(SrcNode<Ident>, Span, Span),
+    GenericEntryPoint(SrcNode<Ident>, Span),
     InvalidIntrinsic(SrcNode<Ident>),
     Unsupported(Span, &'static str),
     NonNumeric(TyId, Span, NumLitr),
@@ -344,11 +344,10 @@ impl Error {
                 ],
                 vec![format!("A program may only have a single entry point")],
             ),
-            Error::GenericEntryPoint(name, gen, entry) => (
+            Error::GenericEntryPoint(name, gen) => (
                 format!("Entry point {} cannot be generic", (*name).fg(Color::Red)),
                 vec![
                     (gen, format!("Generics are not allowed here"), Color::Red),
-                    (entry, format!("Declared as an entry point because of this attribute"), Color::Yellow),
                 ],
                 vec![format!("A program cannot be generic over types")],
             ),
