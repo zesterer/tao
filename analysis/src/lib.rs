@@ -15,7 +15,7 @@ pub mod ty;
 
 pub use crate::{
     class::{ClassId, Class, Classes, ClassItem, Member, MemberId, MemberItem},
-    concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConDefId, ConDataId},
+    concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConProc, ConProcId, ConDataId},
     context::Context,
     data::{Datas, Data, DataId, Alias, AliasId},
     def::{Defs, Def, DefId},

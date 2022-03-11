@@ -1,6 +1,6 @@
 use super::*;
 
-pub type ProcId = ConDefId;
+pub type ProcId = ConProcId;
 
 pub struct Proc {
     pub body: mir::MirNode<mir::Expr>,
@@ -12,7 +12,7 @@ pub struct Procs {
 }
 
 impl Procs {
-    pub fn id_of_con(&self, def: ConDefId) -> ProcId {
+    pub fn id_of_con(&self, def: ConProcId) -> ProcId {
         def
     }
 

@@ -21,7 +21,22 @@ impl ConTyId {
     pub fn id(&self) -> u64 { self.0 as u64 }
 }
 
-pub type ConDefId = Intern<(DefId, Vec<ConTyId>)>;
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ConProc {
+    Def(DefId, Vec<ConTyId>),
+    Field(ConTyId, MemberId, Ident),
+}
+
+impl fmt::Display for ConProc {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConProc::Def(def, params) => write!(f, "{}<{}>", def.0, params.iter().map(|ty| ty.0.to_string()).collect::<Vec<_>>().join(", ")),
+            ConProc::Field(ty, member, field) => write!(f, "<{} in {}>.{}", ty.0, member.0, field),
+        }
+    }
+}
+
+pub type ConProcId = Intern<ConProc>;
 
 pub type ConDataId = Intern<(DataId, Vec<ConTyId>)>;
 
@@ -39,8 +54,8 @@ pub struct ConContext {
     datas: HashMap<ConDataId, Result<ConData, bool>>,
     tys: Vec<ConTy>,
     ty_lookup: HashMap<ConTy, ConTyId>,
-    defs: HashMap<ConDefId, Option<ConExpr>>,
-    entry: Option<ConDefId>,
+    procs: HashMap<ConProcId, Option<ConExpr>>,
+    entry: Option<ConProcId>,
 }
 
 impl ConContext {
@@ -49,7 +64,7 @@ impl ConContext {
             datas: HashMap::default(),
             tys: Vec::new(),
             ty_lookup: HashMap::default(),
-            defs: HashMap::default(),
+            procs: HashMap::default(),
             entry: None,
         };
 
@@ -82,8 +97,8 @@ impl ConContext {
 
             let gen_scope = hir.tys.get_gen_scope(main.gen_scope);
             if gen_scope.len() == 0 {
-                let main_def = Intern::new((id, Vec::new()));
-                this.lower_def(hir, main_def);
+                let main_def = Intern::new(ConProc::Def(id, Vec::new()));
+                this.lower_proc(hir, main_def);
                 this.entry = Some(main_def);
             } else {
                 errors.push(Error::GenericEntryPoint(main.name.clone(), gen_scope.span));
@@ -95,13 +110,13 @@ impl ConContext {
         (this, errors)
     }
 
-    pub fn entry_def(&self) -> ConDefId {
+    pub fn entry_proc(&self) -> ConProcId {
         self.entry.clone().unwrap()
     }
 
-    pub fn get_def(&self, def: ConDefId) -> &ConExpr {
+    pub fn get_proc(&self, proc: ConProcId) -> &ConExpr {
         // Can't fail
-        self.defs[&def].as_ref().unwrap()
+        self.procs[&proc].as_ref().unwrap()
     }
 
     pub fn get_ty(&self, ty: ConTyId) -> &ConTy {
@@ -216,6 +231,7 @@ impl ConContext {
                 let self_ty = self.lower_ty(hir, ty, ty_insts);
                 let member = hir.classes
                     .lookup_member(hir, self, self_ty, class)
+                    .map(|m| hir.classes.get_member(m))
                     .expect("Could not select member candidate");
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
@@ -268,23 +284,39 @@ impl ConContext {
         }
     }
 
-    pub fn lower_def(&mut self, hir: &Context, def: ConDefId) {
-        if !self.defs.contains_key(&def) {
-            self.defs.insert(def, None);
+    pub fn lower_proc(&mut self, hir: &Context, proc: ConProcId) {
+        if !self.procs.contains_key(&proc) {
+            self.procs.insert(proc, None);
 
-            let body = self.lower_expr(
-                hir,
-                hir.defs
-                    .get(def.0)
-                    .body
-                    .as_ref()
-                    .unwrap(),
-                &TyInsts {
-                    self_ty: None,
-                    gen: &def.1,
+            let body = match &*proc {
+                ConProc::Def(def, gen) => self.lower_expr(
+                    hir,
+                    hir.defs
+                        .get(*def)
+                        .body
+                        .as_ref()
+                        .unwrap(),
+                    &TyInsts { self_ty: None, gen },
+                ),
+                ConProc::Field(self_ty, member_id, field) => {
+                    let member = hir.classes.get_member(*member_id);
+                    let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
+
+                    let mut links = HashMap::new();
+                    self.derive_links(hir, member.member, *self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                    let gen = (0..member_gen_scope.len())
+                        .map(|idx| *links.get(&idx).expect("Generic type not mentioned in member"))
+                        .collect::<Vec<_>>();
+                    self.lower_expr(
+                        hir,
+                        member
+                            .field(*field)
+                            .unwrap(),
+                        &TyInsts { self_ty: Some(*self_ty), gen: &gen },
+                    )
                 },
-            );
-            self.defs.insert(def, Some(body));
+            };
+            self.procs.insert(proc, Some(body));
         }
     }
 
@@ -333,13 +365,14 @@ impl ConContext {
             hir::Expr::Error => panic!("Error expression should not exist during concretization"),
             hir::Expr::Literal(litr) => hir::Expr::Literal(*litr),
             hir::Expr::Local(local) => hir::Expr::Local(*local),
-            hir::Expr::Global(x, args) => {
+            hir::Expr::Global((x, args)) => {
                 let args = args
                     .iter()
                     .map(|arg| self.lower_ty(hir, arg.1, ty_insts))
                     .collect::<Vec<_>>();
-                self.lower_def(hir, Intern::new((*x, args.clone())));
-                hir::Expr::Global(*x, args)
+                let id = Intern::new(ConProc::Def(*x, args.clone()));
+                self.lower_proc(hir, id);
+                hir::Expr::Global(id)
             },
             hir::Expr::Tuple(fields) => hir::Expr::Tuple(fields
                 .iter()
@@ -391,24 +424,13 @@ impl ConContext {
             },
             hir::Expr::ClassAccess(ty, class, field) => {
                 let self_ty = self.lower_ty(hir, ty.1, ty_insts);
-                let member = hir.classes
+                let member_id = hir.classes
                     .lookup_member(hir, self, self_ty, class.expect("Uninferred class during concretization"))
                     .expect("Could not select member candidate");
-                let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
-                let mut links = HashMap::new();
-                self.derive_links(hir, member.member, self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
-                let gen = (0..member_gen_scope.len())
-                    .map(|idx| *links.get(&idx).expect("Generic type not mentioned in member"))
-                    .collect::<Vec<_>>();
-
-                let field = member
-                    .field(**field)
-                    .unwrap();
-                self.lower_expr(hir, field, &TyInsts {
-                    self_ty: Some(self_ty),
-                    gen: &gen,
-                }).into_inner()
+                let id = Intern::new(ConProc::Field(self_ty, member_id, **field));
+                self.lower_proc(hir, id);
+                hir::Expr::Global(id)
             },
             hir::Expr::Intrinsic(name, args) => hir::Expr::Intrinsic(name.clone(), args
                 .into_iter()

@@ -6,24 +6,28 @@ pub trait Meta {
     type Ty;
     type Data: fmt::Debug;
     type Class;
+    type Global;
 }
 
 impl Meta for InferMeta {
     type Ty = TyVar;
     type Data = SrcNode<DataId>;
     type Class = ClassVar;
+    type Global = (DefId, Vec<Self>);
 }
 
 impl Meta for TyMeta {
     type Ty = TyId;
     type Data = SrcNode<DataId>;
     type Class = Option<ClassId>; // Required because we don't have proper error classes yet
+    type Global = (DefId, Vec<Self>);
 }
 
 impl Meta for ConMeta {
     type Ty = ConTyId;
     type Data = ConDataId;
     type Class = !;
+    type Global = ConProcId;
 }
 
 #[derive(Debug)]
@@ -118,7 +122,7 @@ pub enum Expr<M: Meta> {
     Literal(Literal),
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
-    Global(DefId, Vec<M>),
+    Global(M::Global),
     Tuple(Vec<Node<Self, M>>),
     List(Vec<Node<Self, M>>, Vec<Node<Self, M>>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
@@ -150,7 +154,7 @@ impl Expr<ConMeta> {
                     required.push(*local);
                 }
             },
-            Expr::Global(_, _) => {},
+            Expr::Global(_) => {},
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| arg.required_locals_inner(stack, required)),

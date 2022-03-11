@@ -392,7 +392,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     };
 
     if let Some(ty) = ty {
-        (TyInfo::Ref(ty), hir::Expr::Global(def_id, generic_tys))
+        (TyInfo::Ref(ty), hir::Expr::Global((def_id, generic_tys)))
     } else {
         infer.ctx_mut().emit(Error::DefTypeNotSpecified(def_name.span(), span, *def_name));
         (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
@@ -425,7 +425,7 @@ impl ToHir for ast::Expr {
             ast::Expr::Local(local) => {
                 if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
                     if let Some((def_id, gens)) = rec {
-                        (TyInfo::Ref(ty), hir::Expr::Global(def_id, gens))
+                        (TyInfo::Ref(ty), hir::Expr::Global((def_id, gens)))
                     } else {
                         (TyInfo::Ref(ty), hir::Expr::Local(*local))
                     }

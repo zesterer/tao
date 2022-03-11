@@ -54,10 +54,10 @@ impl Reify for hir::Expr<InferMeta> {
             hir::Expr::Error => hir::Expr::Error,
             hir::Expr::Literal(litr) => hir::Expr::Literal(litr),
             hir::Expr::Local(local) => hir::Expr::Local(local),
-            hir::Expr::Global(global, generic_tys) => hir::Expr::Global(global, generic_tys
+            hir::Expr::Global((global, generic_tys)) => hir::Expr::Global((global, generic_tys
                 .into_iter()
                 .map(|(span, ty)| (span, infer.reify(ty)))
-                .collect()),
+                .collect())),
             hir::Expr::Tuple(items) => hir::Expr::Tuple(items
                 .into_iter()
                 .map(|item| item.reify(infer))

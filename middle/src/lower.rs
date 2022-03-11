@@ -7,14 +7,14 @@ pub struct TyInsts<'a> {
 }
 
 impl Context {
-    pub fn lower_def(&mut self, hir: &HirContext, con: &ConContext, def: ConDefId) -> ProcId {
-        let id = self.procs.id_of_con(def.clone());
+    pub fn lower_proc(&mut self, hir: &HirContext, con: &ConContext, proc: ConProcId) -> ProcId {
+        let id = self.procs.id_of_con(proc.clone());
 
         // Instantiate proc if not already done
         if !self.procs.is_declared(id) {
             self.procs.declare(id);
             let proc = Proc {
-                body: self.lower_expr(hir, con, con.get_def(def), &mut Vec::new()),
+                body: self.lower_expr(hir, con, con.get_proc(proc), &mut Vec::new()),
             };
             self.procs.define(id, proc);
         }
@@ -171,9 +171,7 @@ impl Context {
                 .find(|(name, _)| name == local)
                 .expect("No such local")
                 .1),
-            hir::Expr::Global(def_id, args) => {
-                mir::Expr::Global(self.lower_def(hir, con, Intern::new((*def_id, args.clone()))), Default::default())
-            },
+            hir::Expr::Global(proc) => mir::Expr::Global(self.lower_proc(hir, con, *proc), Default::default()),
             hir::Expr::Binary(op, x, y) => {
                 use ast::BinaryOp::*;
                 use ty::Prim::*;

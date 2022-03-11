@@ -16,4 +16,12 @@ def factorial_fix = fix(fn
     | rec, 0 => 1
     \ rec, m ~ n + 1 => m * rec(n))
 
-def main = factorial_go(10)
+class Factorial =
+    => factorial : Nat -> Nat
+
+member () of Factorial =
+    => factorial = fn
+        | 0 => 1
+        \ m ~ n + 1 => m * Self.factorial(n)
+
+def main = <()>.factorial(10)#factorial_go(10)

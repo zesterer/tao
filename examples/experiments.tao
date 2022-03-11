@@ -1,18 +1,18 @@
-def to_str
+fn to_str
     0 = "zero"
     n = "non-zero"
 
-def add x, y = x + y
+fn add x, y = x + y
 
-def filter
+fn filter
     _, [] = []
     f, [x .. xs] = [.. if x:f then [x] else [], xs]
 
-def factorial
+fn factorial
     0 = 1
     m ~ n + 1 = m * n:factorial
 
-def sum
+fn sum
     [] = zero
     [x .. xs] = x + xs:sum
 
@@ -34,7 +34,7 @@ member [a] of Iterator
         [] = (None, [])
         [x .. xs] = (Just x, xs)
 
-def foobar x, y
+fn foobar x, y
     let xy = x + y
     let xyz = xy + 5
     xy

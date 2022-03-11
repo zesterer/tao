@@ -44,11 +44,11 @@ impl Class {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ClassId(usize);
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct MemberId(usize);
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MemberId(pub usize);
 
 #[derive(Default)]
 pub struct Lang {
@@ -149,7 +149,7 @@ impl Classes {
         self.members[id.0].fields = Some(fields);
     }
 
-    pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<&Member> {
+    pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<MemberId> {
         // Returns true if member covers ty
         fn covers(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
@@ -180,13 +180,12 @@ impl Classes {
             .and_then(|xs| {
                 let candidates = xs
                     .iter()
-                    .map(|m| self.get_member(*m))
-                    .filter(|member| covers(hir, ctx, member.member, ty))
+                    .filter(|m| covers(hir, ctx, self.get_member(**m).member, ty))
                     .collect::<Vec<_>>();
 
                 assert!(candidates.len() <= 1, "Multiple member candidates detected during lowering <{:?} as {:?}>, incoherence has occurred", ctx.get_ty(ty), class);
 
-                candidates.first().copied()
+                candidates.first().copied().copied()
             })
     }
 

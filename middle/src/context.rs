@@ -16,7 +16,7 @@ impl Context {
             entry: None,
         };
 
-        this.entry = Some(this.lower_def(hir, con, con.entry_def()));
+        this.entry = Some(this.lower_proc(hir, con, con.entry_proc()));
 
         this
     }

@@ -526,12 +526,7 @@ impl Expr {
                 }
                 match &**self.0 {
                     Expr::Local(local) => write!(f, "${}", local.0),
-                    Expr::Global(global, _) => write!(
-                        f,
-                        "global <{}{}{}>",
-                        global.0.0, if global.1.is_empty() { "" } else { " " },
-                        global.1.iter().map(|ty| ty.id().to_string()).collect::<Vec<_>>().join(" "),
-                    ),
+                    Expr::Global(global, _) => write!(f, "{}", global),
                     Expr::Literal(c) => write!(f, "{}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Go(next, body, init) => write!(f, "go(${} => {}, {})", next.0, DisplayExpr(body, self.1, false), DisplayExpr(init, self.1, false)),

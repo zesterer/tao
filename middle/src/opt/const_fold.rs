@@ -249,7 +249,7 @@ impl ConstFold {
 
 impl Intrinsic {
     pub fn eval(&self, ctx: &Context, args: &[Partial]) -> Partial {
-        use {Intrinsic::*, mir::Const::*};
+        use mir::Const::*;
 
         macro_rules! op {
             ($($X:ident($x:ident)),* => $O:ident($out:expr)) => {
@@ -265,22 +265,23 @@ impl Intrinsic {
         }
 
         match self {
-            NegNat => op!(Nat(x) => Int(-(*x as i64))),
-            AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
-            SubNat => op!(Nat(x), Nat(y) => Int(*x as i64 - *y as i64)),
-            MulNat => op!(Nat(x), Nat(y) => Nat(x * y)),
-            LessNat => op!(Nat(x), Nat(y) => Bool(x < y)),
-            MoreNat => op!(Nat(x), Nat(y) => Bool(x > y)),
-            MoreEqNat => op!(Nat(x), Nat(y) => Bool(x >= y)),
-            AddInt => op!(Int(x), Int(y) => Int(x + y)),
-            SubInt => op!(Int(x), Int(y) => Int(x - y)),
-            MulInt => op!(Int(x), Int(y) => Int(x * y)),
-            EqChar => op!(Char(x), Char(y) => Bool(x == y)),
-            Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
-            AndBool => op!(Bool(x), Bool(y) => Bool(*x && *y)),
-            UpdateField(idx) => Partial::Unknown(None), // TODO
-            Print => Partial::Unknown(None),
-            Input => Partial::Unknown(None),
+            Intrinsic::NegNat => op!(Nat(x) => Int(-(*x as i64))),
+            Intrinsic::AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
+            Intrinsic::SubNat => op!(Nat(x), Nat(y) => Int(*x as i64 - *y as i64)),
+            Intrinsic::MulNat => op!(Nat(x), Nat(y) => Nat(x * y)),
+            Intrinsic::LessNat => op!(Nat(x), Nat(y) => Bool(x < y)),
+            Intrinsic::MoreNat => op!(Nat(x), Nat(y) => Bool(x > y)),
+            Intrinsic::MoreEqNat => op!(Nat(x), Nat(y) => Bool(x >= y)),
+            Intrinsic::AddInt => op!(Int(x), Int(y) => Int(x + y)),
+            Intrinsic::SubInt => op!(Int(x), Int(y) => Int(x - y)),
+            Intrinsic::MulInt => op!(Int(x), Int(y) => Int(x * y)),
+            Intrinsic::EqChar => op!(Char(x), Char(y) => Bool(x == y)),
+            Intrinsic::Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
+            Intrinsic::AndBool => op!(Bool(x), Bool(y) => Bool(*x && *y)),
+            Intrinsic::Union(ty) => Partial::Union(*ty, Box::new(args[0].clone())),
+            Intrinsic::Print => Partial::Unknown(None),
+            Intrinsic::Input => Partial::Unknown(None),
+            Intrinsic::UpdateField(idx) => Partial::Unknown(None), // TODO
             i => todo!("{:?}", i),
         }
     }
