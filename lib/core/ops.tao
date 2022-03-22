@@ -59,11 +59,21 @@ member Nat of Mul =
 
 # Eq
 
+$[lang(eq)]
 class Eq =
     => eq : Self -> Self -> Bool
 
 member Nat of Eq =
-    => eq = fn x, y => x = y
+    => eq = fn x, y => @eq_nat(x, y)
+
+member Char of Eq =
+    => eq = fn x, y => @eq_char(x, y)
+
+for A < Eq member [A] of Eq =
+    => eq = fn
+        | [], [] => True
+        | [x .. xs], [y .. ys] => x = y and xs = ys
+        \ _, _ => False
 
 fn eq A < Eq : A -> A -> Bool = x, y => A.eq(x, y)
 

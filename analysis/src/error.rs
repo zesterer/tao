@@ -167,7 +167,7 @@ impl Error {
                 format!("Type {} does not fulfil {} obligation", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Red)),
                 {
                     let mut labels = vec![
-                        (span, format!("Required by the bound here"), Color::Yellow),
+                        (span, format!("Obligation is required here"), Color::Yellow),
                         (ctx.tys.get_span(ty), format!(
                             "{} must be a member of {}",
                             display(ty).fg(Color::Red),

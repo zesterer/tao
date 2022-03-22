@@ -190,6 +190,7 @@ impl<'a> Infer<'a> {
     }
 
     fn set_error(&mut self, ty: TyVar) {
+        self.vars[ty.0].1 = TyInfo::Error(ErrorReason::Unknown);
         if self.vars[ty.0].2.is_ok() {
             self.vars[ty.0].2 = Err(());
             match self.vars[ty.0].1.clone() {
@@ -1146,7 +1147,7 @@ impl<'a> Infer<'a> {
             } => {
                 Some(Ok(Err(false)))
             },
-            _ => {
+            info => {
                 // Find a class member declaration that covers our type
                 let covering_member = self.ctx.classes
                     .members_of(obligation)
@@ -1174,7 +1175,11 @@ impl<'a> Infer<'a> {
                         obligation,
                         ty,
                         span,
-                        None,
+                        if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
+                            Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
+                        } else {
+                            None
+                        },
                     )))
                 }
             },

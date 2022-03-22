@@ -1,12 +1,16 @@
-class X
-class Y
+import "lib/std.tao"
 
-for A < Y member A of X
-for A < X member A of Y
+data Natural =
+    | Zero
+    \ Succ Natural
 
-def takes A < X =
-    \ _ : A => ()
+member Natural of Eq =
+    => eq = fn
+        | Zero, Zero => True
+        | Succ x, Succ y => x = y
+        \ _, _ => False
 
-# def foo = takes(5)
+def true = [4] = [3]
 
-def real : (Nat|) = ?5.3
+def main : IO () =
+    print("hello")

@@ -502,20 +502,41 @@ impl ToHir for ast::Expr {
                 };
                 let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, op.span());
 
-                (TyInfo::Ref(output_ty), hir::Expr::Apply(Node::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)), a))
+                (TyInfo::Ref(output_ty), hir::Expr::Apply(InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)), a))
             },
-                // _ => {
-                //     let a = a.to_hir(infer, scope);
-                //     let output_ty = infer.unknown(self.span());
-                //     infer.make_unary(op.clone(), a.meta().1, output_ty);
-                //     (TyInfo::Ref(output_ty), hir::Expr::Unary(op.clone(), a))
-                // },
             ast::Expr::Binary(op, a, b) => {
                 let a = a.to_hir(infer, scope);
                 let b = b.to_hir(infer, scope);
                 let output_ty = infer.unknown(self.span());
-                infer.make_binary(op.clone(), a.meta().1, b.meta().1, output_ty);
-                (TyInfo::Ref(output_ty), hir::Expr::Binary(op.clone(), a, b))
+
+                let lang_op = match &**op {
+                    ast::BinaryOp::Eq => Some((infer.ctx().classes.lang.eq, SrcNode::new(Ident::new("eq"), op.span()))),
+                    _ => None,
+                };
+
+                if let Some((class, field)) = lang_op {
+                    let boolean = infer.insert(op.span(), TyInfo::Prim(Prim::Bool));
+                    infer.make_flow(boolean, output_ty, EqInfo::from(self.span()));
+                    let func2 = infer.insert(op.span(), TyInfo::Func(b.meta().1, boolean));
+                    let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, func2));
+                    infer.make_flow(a.meta().1, b.meta().1, EqInfo::from(self.span()));
+                    infer.make_flow(b.meta().1, a.meta().1, EqInfo::from(self.span()));
+
+                    let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, op.span());
+
+                    let expr = hir::Expr::Apply(
+                        InferNode::new(hir::Expr::Apply(
+                            InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)),
+                            a,
+                        ), (self.span(), func)),
+                        b,
+                    );
+
+                    (TyInfo::Ref(output_ty), expr)
+                } else {
+                    infer.make_binary(op.clone(), a.meta().1, b.meta().1, output_ty);
+                    (TyInfo::Ref(output_ty), hir::Expr::Binary(op.clone(), a, b))
+                }
             },
             ast::Expr::Let(bindings, then) => {
                 fn fold<'a>(then: &SrcNode<ast::Expr>, bindings: &'a mut impl Iterator<Item = &'a (SrcNode<ast::Binding>, SrcNode<ast::Expr>)>, infer: &mut Infer, scope: &Scope) -> InferExpr {
@@ -762,6 +783,22 @@ impl ToHir for ast::Expr {
                         let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Real));
                         infer.make_flow(args[0].meta().1, nat, EqInfo::from(name.span()));
                         (TyInfo::Prim(Prim::Real), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::NegReal, name.span()), args))
+                    },
+                    "eq_char" if args.len() == 2 => {
+                        let a = &args[0];
+                        let b = &args[1];
+                        let char_ = infer.insert(a.meta().0, TyInfo::Prim(Prim::Char));
+                        infer.make_flow(args[0].meta().1, char_, EqInfo::from(name.span()));
+                        infer.make_flow(args[1].meta().1, char_, EqInfo::from(name.span()));
+                        (TyInfo::Prim(Prim::Bool), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::EqChar, name.span()), args))
+                    },
+                    "eq_nat" if args.len() == 2 => {
+                        let a = &args[0];
+                        let b = &args[1];
+                        let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Nat));
+                        infer.make_flow(args[0].meta().1, nat, EqInfo::from(name.span()));
+                        infer.make_flow(args[1].meta().1, nat, EqInfo::from(name.span()));
+                        (TyInfo::Prim(Prim::Bool), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::EqNat, name.span()), args))
                     },
                     "go" if args.len() == 2 => if let Some(go_data) = infer.ctx().datas.lang.go {
                         let c = args[1].meta().1;
