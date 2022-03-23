@@ -496,11 +496,11 @@ impl ToHir for ast::Expr {
                 let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, output_ty));
 
                 let (class, field) = match &**op {
-                    ast::UnaryOp::Not => (infer.ctx().classes.lang.not, SrcNode::new(Ident::new("not"), op.span())),
+                    ast::UnaryOp::Not => (infer.ctx().classes.lang.not, SrcNode::new(Ident::new("not"), self.span())),
                     ast::UnaryOp::Neg => (infer.ctx().classes.lang.neg, SrcNode::new(Ident::new("neg"), op.span())),
                     ast::UnaryOp::Union => (infer.ctx().classes.lang.union, SrcNode::new(Ident::new("union"), op.span())),
                 };
-                let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, op.span());
+                let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, self.span());
 
                 (TyInfo::Ref(output_ty), hir::Expr::Apply(InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)), a))
             },
@@ -510,19 +510,17 @@ impl ToHir for ast::Expr {
                 let output_ty = infer.unknown(self.span());
 
                 let lang_op = match &**op {
-                    ast::BinaryOp::Eq => Some((infer.ctx().classes.lang.eq, SrcNode::new(Ident::new("eq"), op.span()))),
+                    ast::BinaryOp::Eq => Some((infer.ctx().classes.lang.eq, SrcNode::new(Ident::new("eq"), self.span()))),
                     _ => None,
                 };
 
                 if let Some((class, field)) = lang_op {
-                    let boolean = infer.insert(op.span(), TyInfo::Prim(Prim::Bool));
-                    infer.make_flow(boolean, output_ty, EqInfo::from(self.span()));
-                    let func2 = infer.insert(op.span(), TyInfo::Func(b.meta().1, boolean));
+                    let func2 = infer.insert(op.span(), TyInfo::Func(b.meta().1, output_ty));
                     let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, func2));
                     infer.make_flow(a.meta().1, b.meta().1, EqInfo::from(self.span()));
                     infer.make_flow(b.meta().1, a.meta().1, EqInfo::from(self.span()));
 
-                    let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, op.span());
+                    let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, self.span());
 
                     let expr = hir::Expr::Apply(
                         InferNode::new(hir::Expr::Apply(

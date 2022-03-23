@@ -10,7 +10,9 @@ member Natural of Eq =
         | Succ x, Succ y => x = y
         \ _, _ => False
 
-def true = [4] = [3]
+def true = -[1, 2]# = [1, 2, 3]
 
-def main : IO () =
-    print("hello")
+def main = true
+
+# def main : IO () =
+#     print("hello")

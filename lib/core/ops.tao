@@ -13,6 +13,12 @@ member Bool of Not =
         | True => False
         \ False => True
 
+for A < Not member [A] of Not =
+    => Output = [A.Output]
+    => not = fn
+        | [] => []
+        \ [x .. xs] => [!x .. !xs]
+
 # Not
 
 $[lang(neg)]
@@ -31,6 +37,12 @@ member Int of Neg =
 member Real of Neg =
     => Output = Real
     => neg = fn x => @neg_real(x)
+
+for A < Neg member [A] of Neg =
+    => Output = [A.Output]
+    => neg = fn
+        | [] => []
+        \ [x .. xs] => [-x .. -xs]
 
 # Union
 

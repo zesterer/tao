@@ -16,12 +16,15 @@ def factorial_fix = fix(fn
     | rec, 0 => 1
     \ rec, m ~ n + 1 => m * rec(n))
 
-class Factorial =
-    => factorial : Nat -> Nat
+#def main = factorial_go(10)
 
-member () of Factorial =
-    => factorial = fn
-        | 0 => 1
-        \ m ~ n + 1 => m * Self.factorial(n)
+data Three A, B, C =
+    | One A
+    | Two B
+    \ Three C
 
-def main = <()>.factorial(10)#factorial_go(10)
+def main = fn x =>
+    match if x then One 5 else Two 3 in
+        | One x => x
+        | Two x => x
+        \ Three x => x

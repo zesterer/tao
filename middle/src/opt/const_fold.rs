@@ -276,6 +276,7 @@ impl Intrinsic {
             Intrinsic::SubInt => op!(Int(x), Int(y) => Int(x - y)),
             Intrinsic::MulInt => op!(Int(x), Int(y) => Int(x * y)),
             Intrinsic::EqChar => op!(Char(x), Char(y) => Bool(x == y)),
+            Intrinsic::EqNat => op!(Nat(x), Nat(y) => Bool(x == y)),
             Intrinsic::Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
             Intrinsic::AndBool => op!(Bool(x), Bool(y) => Bool(*x && *y)),
             Intrinsic::Union(ty) => Partial::Union(*ty, Box::new(args[0].clone())),
