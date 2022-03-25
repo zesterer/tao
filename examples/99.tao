@@ -1,0 +1,97 @@
+import "lib/std.tao"
+
+## 1. Find the last element of a list
+fn last A : [A] -> Maybe A =
+    | [] => None
+    | [x] => Just x
+    \ [_ .. xs] => xs:last
+
+## 2. Find the last but one element of a list
+fn last_but_one A : [A] -> Maybe A =
+    | [] => None
+    | [_] => None
+    | [x, _] => Just x
+    \ [.. xs] => xs:last_but_one
+
+## 3. Find the k'th element of a list
+fn kth A : Nat -> [A] -> Maybe A =
+    | 0, [x ..] => Just x
+    | n + 1, [.. xs] => xs:kth(n)
+    \ _, _ => None
+
+## 4. Find the number of elements of a list
+fn length A : [A] -> Nat =
+    | [] => 0
+    \ [_ .. xs] => 1 + xs:length
+
+## 5. Reverse a list
+fn reverse A : [A] -> [A] =
+    | [] => []
+    \ [x .. xs] => xs:reverse ++ [x]
+
+## 6. Find out whether a list is a palindrome
+fn is_palindrome A < Eq : [A] -> Bool = xs => xs:eq(xs:reverse)
+
+## 7. Flatten a nested list structure
+fn flatten A : [[A]] -> [A] =
+    | [] => []
+    \ [x .. xs] => x ++ xs:flatten
+
+## 8. Eliminate consecutive duplicates of list elements
+fn dedup A < Eq : [A] -> [A] =
+    | [x .. tail ~ [y .. xs]] => (if x:eq(y) then [] else [x]) ++ tail:dedup
+    \ xs => xs
+
+## 9. Pack consecutive duplicates of list elements into sublists
+fn pack A < Eq : [A] -> [[A]] =
+    | [x .. xs] =>
+        let monch = fix(fn monch => fn
+            | p, xs ~ [x .. tail] => if x:eq(p)
+                then let (ps, tail) = monch(p, tail) in ([x] ++ ps, tail)
+                else ([], xs)
+            \ _, [] => ([], [])
+        ) in
+        let (ps, xs) = monch(x, xs) in [[x] ++ ps .. xs:pack]
+    \ [] => []
+
+## 10. Run-length encoding of a list
+fn rle A < Eq : [A] -> [(Nat, A)] =
+    | [x .. xs] =>
+        let monch = fix(fn monch => fn
+            | p, xs ~ [x .. tail] => if x:eq(p)
+                then let (tail, l) = monch(p, tail) in (tail, 1 + l)
+                else (xs, 0)
+            \ _, [] => ([], 0)
+        ) in
+        let (xs, l) = monch(x, xs) in [(1 + l, x) .. xs:rle]
+    \ [] => []
+
+data Element A =
+    | Multiple (Nat, A)
+    \ Single A
+
+## 11. Modified run-length encoding of a list
+fn rle_modified A < Eq : [A] -> [Element A] =
+    | [x .. xs] =>
+        let monch = fix(fn monch => fn
+            | p, xs ~ [x .. tail] => if x:eq(p)
+                then let (l, tail) = monch(p, tail) in (1 + l, tail)
+                else (0, xs)
+            \ _, [] => (0, [])
+        ) in
+        let (l, xs) = monch(x, xs) in
+        let elem = match l in
+            | 0 => Single x
+            \ l => Multiple (1 + l, x)
+        in
+        [elem .. xs:rle_modified]
+    \ [] => []
+
+## 11. Decode a modified run-length encoded list
+fn rle_decode A : [Element A] -> [A] =
+    | [] => []
+    \ [x .. xs] => match x in
+        | Multiple (n, x) => [x]:repeat(n) ++ xs:rle_decode
+        \ Single x => [x .. xs:rle_decode]
+
+def main = print("Hello, world!")

@@ -34,7 +34,7 @@ data State = {
 member State of Default =
     => default = State {
         ptr: 0,
-        tape: [0]:repeat(10000),
+        tape: [0]:repeat(1000),
         stdin: "",
         stdout: "",
     }

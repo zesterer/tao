@@ -29,7 +29,7 @@ class Iterator
     next : Self -> (Maybe Item, Self)
 
 member [a] of Iterator
-    Item =
+    Item = a
     next = fn
         [] = (None, [])
         [x .. xs] = (Just x, xs)
