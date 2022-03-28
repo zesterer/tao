@@ -1,0 +1,51 @@
+import "lib/std.tao"
+
+data InvalidCharacter = Char
+member InvalidCharacter of Display =
+    => display = fn InvalidCharacter c => "invalid character: " ++ [c]
+
+fn parse_digit : Char -> Result Nat InvalidCharacter =
+    | '0' => Ok 0
+    | '1' => Ok 1
+    | '2' => Ok 2
+    | '3' => Ok 3
+    | '4' => Ok 4
+    | '5' => Ok 5
+    | '6' => Ok 6
+    | '7' => Ok 7
+    | '8' => Ok 8
+    | '9' => Ok 9
+    \ c => Err InvalidCharacter c
+
+data NoCharacters
+member NoCharacters of Display =
+    => display = fn _ => "no characters"
+
+data CannotBeginWithZero
+member CannotBeginWithZero of Display =
+    => display = fn _ => "nat must not begin with 0"
+
+fn parse_digits : Nat -> Str -> Result Nat InvalidCharacter =
+    | n, [] => Ok n
+    | n, [c .. cs] => match c:parse_digit in
+        | Err e => Err e
+        \ Ok x => cs:parse_digits(n * 10 + x)
+    \ _, [c ..] => Err InvalidCharacter c
+
+fn parse_nat : Str -> Result Nat (NoCharacters | InvalidCharacter | CannotBeginWithZero) =
+    | [] => Err ? NoCharacters
+    | ['0', _ ..] => Err ? CannotBeginWithZero
+    \ cs => match cs:parse_digits(0) in
+        | Ok n => Ok n
+        \ Err e => Err ?e
+
+def main : IO () = do {
+    let nat <- input;
+    print(match nat:parse_nat in
+        | Ok n => "ok!"
+        \ Err e => match ?e in
+            | ? (e : CannotBeginWithZero) => e:display
+            | ? (e : NoCharacters) => e:display
+            \ ? (e : InvalidCharacter) => e:display
+    );
+}

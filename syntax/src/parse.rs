@@ -200,8 +200,14 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
         let litr = literal_parser()
             .map_with_span(|litr, span| SrcNode::new(ast::Pat::Literal(litr), span));
 
-        let paren_expr = nested_parser(
+        let paren_binding = nested_parser(
             binding.clone()
+                .then(ty_hint_parser())
+                .map(|(binding, ty): (SrcNode<ast::Binding>, _)| ast::Binding {
+                    ty,
+                    ..binding.into_inner()
+                })
+                .map_with_span(SrcNode::new)
                 .map(Some),
             Delimiter::Paren,
             |_| None,
@@ -282,7 +288,7 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
 
         let atom = wildcard
             .or(litr)
-            .or(paren_expr)
+            .or(paren_binding)
             .or(tuple)
             .or(record)
             .or(list)
@@ -317,7 +323,7 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
         let pat = sum;
 
         // Bound pattern
-        term_ident_parser()
+        let binding = term_ident_parser()
             .map_with_span(SrcNode::new)
             .then_ignore(just(Token::Tilde))
             .then(pat.clone())
@@ -348,7 +354,22 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
                 name,
                 ty: None,
             }, span))
-            .boxed()
+            .boxed();
+
+        let binding = just(Token::Question)
+            .map_with_span(SrcNode::new)
+            .repeated()
+            .then(binding)
+            .foldr(|union, binding| {
+                let binding_span = binding.span();
+                SrcNode::new(ast::Binding {
+                    pat: SrcNode::new(ast::Pat::Union(binding), binding_span),
+                    name: None,
+                    ty: None,
+                }, union.span().union(binding_span))
+            });
+
+        binding
     });
 
     // Type hint
@@ -362,18 +383,7 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
         });
 
     // Union pattern
-    just(Token::Question).or_not()
-        .then(binding.map_with_span(SrcNode::new))
-        .map(|(union, binding)| if union.is_some() {
-            let binding_span = binding.span();
-            ast::Binding {
-                pat: SrcNode::new(ast::Pat::Union(binding), binding_span),
-                name: None,
-                ty: None,
-            }
-        } else {
-            binding.into_inner()
-        })
+    binding
 }
 
 pub fn expr_parser() -> impl Parser<ast::Expr> {
@@ -684,7 +694,6 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         // Unary
         let op = just(Token::Op(Op::Sub)).to(ast::UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(ast::UnaryOp::Not))
-            .or(just(Token::Question).to(ast::UnaryOp::Union))
             .map_with_span(SrcNode::new);
         let unary = op.repeated()
             .then(chained.labelled("unary operand"))
@@ -775,9 +784,22 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .map_with_span(SrcNode::new)
             .then(expr.map_with_span(SrcNode::new))
             .map(|(cons, expr)| ast::Expr::Cons(cons, expr))
-            .or(with.map(|expr| expr.into_inner()));
+            .map_with_span(SrcNode::new)
+            .or(with);
 
-        cons
+        // Union
+        let union = just(Token::Question)
+            .to(ast::UnaryOp::Union)
+            .map_with_span(SrcNode::new)
+            .repeated()
+            .then(cons.labelled("union"))
+            .foldr(|op, expr| {
+                let span = op.span().union(expr.span());
+                SrcNode::new(ast::Expr::Unary(op, expr), span)
+            })
+            .map(|expr| expr.into_inner());
+
+        union
     })
         .labelled("expression")
 }

@@ -47,3 +47,39 @@ def main = do
     else do
         print("Hello, world!")
         main;
+
+
+
+
+
+
+
+fn add : Int -> Int -> Int is
+    x, y => x + y
+
+fn len : [a] -> Nat is
+    | [] -> 0
+    \ [_ .. as] -> 1 + as:len
+
+fn zip : [a] -> [b] -> [(a, b)] is
+    | [a .. as], [b .. bs] => [(a, b) .. xs:zip]
+    \ _, _ => []
+
+class Sum < Zero + Add
+
+fn sum : [a] -> a where
+    a < Sum
+is
+    | [] => zero
+    \ [a .. as] => a + as:sum
+
+fn sum<A: Sum>(xs: [A]) -> A {
+    match xs {
+        [] => zero(),
+        [x .. xs] => x + sum(xs),
+    }
+}
+
+fn sum : [a < Sum] -> a is
+    | [] => zero
+    \ [a .. as] => a + as:sum

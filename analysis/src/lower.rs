@@ -228,7 +228,7 @@ impl ToHir for ast::Binding {
                 match (&**rhs, &**op) {
                     (ast::Literal::Nat(rhs_nat), ast::BinaryOp::Add) => {
                         let nat = infer.insert(rhs.span(), TyInfo::Prim(Prim::Nat));
-                        infer.make_flow(nat, lhs.meta().1, EqInfo::new(self.span(), format!("Only natural numbers support arithmetic patterns")));
+                        infer.make_flow(lhs.meta().1, nat, EqInfo::new(self.span(), format!("Only natural numbers support arithmetic patterns")));
                         (TyInfo::Ref(nat), hir::Pat::Add(lhs, SrcNode::new(*rhs_nat, rhs.span())))
                     },
                     (_, _) => {

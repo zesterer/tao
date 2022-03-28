@@ -1,0 +1,64 @@
+# Without effect handling
+
+fn map A, B : (A -> B) -> [A] -> [B] is
+    | _, [] => []
+    \ f, [a .. as] => [a:f .. as:map(f)]
+
+# With effect handling
+
+fn map A, B, e : (A -> e ~ B) -> [A] -> e ~ [B] is
+    | _, [] => []
+    \ f, [a .. as] => [a:f! .. as:map(f)]
+
+## Implicitly generates a function like so:
+## ```
+## fn yield A : A -> yield(A) ~ () is
+##     x => @suspend(~ yield(A), x)
+## ```
+effect yield A is A -> ()
+
+## General rule:
+effect foo A, B, C is A -> B -> C
+## ...implicitly generates...
+fn foo A, B, C : A -> B -> foo(A, B, C) ~ C is
+    a, b => @suspend(~ foo(A, B, C), a, b)
+
+# Effects
+effect print is Str -> ()
+effect input is () -> Str
+
+# Composed effects
+effects io = print + input
+
+# Implementation of effect functions
+fn print : Str -> print ~ () is s =>
+    @suspend(~ print, s)
+
+fn input : input ~ Str is
+    @suspend(~ input, ())
+
+fn for_each A, e : (A -> e ~ ()) -> [A] -> e ~ () is
+    | _, [] => ()
+    \ f, [a .. as] => a:f!; as:for_each(f)
+
+# Example usage of effects
+fn main : io ~ () is do {
+    let name = input! in
+    print("Hello, " ++ name)!;
+    print("How are you?")!;
+    handle yield(Nat) in n => print(n:show)! on
+        [1, 2, 3]
+            :for_each(yield);
+}
+
+# Effect handler for IO
+fn handle_io A : print + input ~ A -> @ -> (A, @) is eff, uni =>
+    with uni
+        handle print in uni, s => (@print(s, uni), ())
+        handle input in uni, () => @input(uni)
+    on
+        eff
+
+# Actual program start, just deals in universe mapping
+fn _start : @ -> ((), @) is
+    handle_io(main)

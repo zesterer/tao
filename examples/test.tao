@@ -19,8 +19,8 @@ fn nat_or_bool1 : Bool -> NatOrBool =
 
 def match_nat_or_bool =
     match ?nat_or_bool1(True) in
-    | ?x : Nat => ()
-    \ ?y : Bool => ()
+    | ?(x : Nat) => ()
+    \ ?(y : Bool) => ()
 
 # fn nat : (Nat|) = nat_or_bool(True)
 
@@ -51,12 +51,12 @@ def nat_or_bool : (Bool | Nat) = if True
 def nat_or_bool_or_real : (Bool | Nat | Real) =
     # let () = nat_or_bool in
     match ?nat_or_bool in
-    | ? _ : Nat => nat_or_bool
-    \ ? _ : Bool => ?7
+    | ?(_ : Nat) => nat_or_bool
+    \ ?(_ : Bool) => ?7
 
 def main2 = match ?nat_or_bool2(True) in
-    | ? x : Nat => "nat"
-    \ ? x : Bool => "bool"
+    | ?(x : Nat) => "nat"
+    \ ?(x : Bool) => "bool"
 
 fn factorial =
     | 0 => 1
@@ -131,8 +131,8 @@ def main = [
         :debug
 
 fn fallible : (Nat | Bool) -> () =
-    | ? x : Nat => ()
-    \ ? x : Bool => ()
+    | ?(x : Nat) => ()
+    \ ?(x : Bool) => ()
 
 def fallible2 =
     let x = match () in
