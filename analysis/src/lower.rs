@@ -174,6 +174,10 @@ impl ToHir for ast::Type {
                 infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, self.span());
                 TyInfo::Ref(assoc_ty)
             },
+            ast::Type::Effect(eff, params, out) => {
+                infer.ctx_mut().errors.push(Error::Unsupported(self.span(), "effects"));
+                TyInfo::Error(ErrorReason::Invalid)
+            },
         };
 
         InferNode::new((), (self.span(), infer.insert(self.span(), info)))
@@ -473,7 +477,10 @@ impl ToHir for ast::Expr {
                 // TODO: don't use `Ref` to link types
                 (TyInfo::Ref(field_ty), hir::Expr::Access(record, field.clone()))
             },
-            ast::Expr::Unary(op, a) => {
+            ast::Expr::Unary(op, a) => if let ast::UnaryOp::Propagate = &**op {
+                infer.ctx_mut().errors.push(Error::Unsupported(self.span(), "effects"));
+                (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
+            } else {
                 let a = a.to_hir(infer, scope);
                 let output_ty = infer.unknown(self.span());
 
@@ -482,6 +489,7 @@ impl ToHir for ast::Expr {
                 let (class, field) = match &**op {
                     ast::UnaryOp::Not => (infer.ctx().classes.lang.not, SrcNode::new(Ident::new("not"), self.span())),
                     ast::UnaryOp::Neg => (infer.ctx().classes.lang.neg, SrcNode::new(Ident::new("neg"), op.span())),
+                    ast::UnaryOp::Propagate => unreachable!(), // handled above
                 };
                 let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, self.span());
 

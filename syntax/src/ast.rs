@@ -41,6 +41,7 @@ impl Deref for Ident {
 pub enum UnaryOp {
     Neg,
     Not,
+    Propagate,
 }
 
 impl fmt::Display for UnaryOp {
@@ -48,6 +49,7 @@ impl fmt::Display for UnaryOp {
         match self {
             Self::Neg => write!(f, "-"),
             Self::Not => write!(f, "!"),
+            Self::Propagate => write!(f, "?"),
         }
     }
 }
@@ -127,6 +129,7 @@ pub enum Type {
     // TODO: Replace name with `Item` when ready
     Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Assoc(SrcNode<Self>, SrcNode<Ident>),
+    Effect(SrcNode<Ident>, Vec<SrcNode<Self>>, SrcNode<Self>),
 }
 
 impl Type {
@@ -146,6 +149,9 @@ impl Type {
                 .iter()
                 .all(|arg| arg.is_fully_specified()),
             Self::Assoc(inner, _) => inner.is_fully_specified(),
+            Self::Effect(_, args, out) => args
+                .iter()
+                .all(|arg| arg.is_fully_specified()) && out.is_fully_specified(),
         }
     }
 }
@@ -284,12 +290,21 @@ pub struct Member {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Effect {
+    pub name: SrcNode<Ident>,
+    pub generics: SrcNode<Generics>,
+    pub send: SrcNode<Type>,
+    pub recv: SrcNode<Type>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ItemKind {
     Data(Data),
     Alias(Alias),
     Def(Def),
     Class(Class),
     Member(Member),
+    Effect(Effect),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -352,6 +367,15 @@ impl Module {
             .iter()
             .filter_map(|item| match &item.kind {
                 ItemKind::Def(def) => Some((item.attrs.as_slice(), def)),
+                _ => None,
+            })
+    }
+
+    pub fn effects(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Effect)> + '_ {
+        self.items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                ItemKind::Effect(eff) => Some((item.attrs.as_slice(), eff)),
                 _ => None,
             })
     }

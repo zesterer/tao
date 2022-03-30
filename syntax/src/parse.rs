@@ -127,7 +127,17 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(assoc)
             .boxed();
 
-        data.clone()
+        let effect = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
+            .map_with_span(SrcNode::new)
+            .then(data.clone().repeated())
+            .then_ignore(just(Token::Tilde))
+            .then(data.clone())
+            .map(|((eff, params), out)| ast::Type::Effect(eff, params, out))
+            .map_with_span(SrcNode::new)
+            .or(data)
+            .boxed();
+
+        effect.clone()
             .then(just(Token::Op(Op::RArrow))
                 .ignore_then(ty.clone().map_with_span(SrcNode::new))
                 .repeated())
@@ -135,7 +145,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
                 let span = i.span().union(o.span());
                 SrcNode::new(ast::Type::Func(i, o), span)
             })
-            .or(data)
+            .or(effect)
             .map(|ty| ty.into_inner())
     })
 }
@@ -665,12 +675,23 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             })
             .boxed();
 
+        // Propagated effects
+        let op = just(Token::Question).to(ast::UnaryOp::Propagate)
+            .map_with_span(SrcNode::new);
+        let propagated = chained.clone()
+            .then(op.repeated())
+            .foldl(|a, op| {
+                let span = a.span().union(op.span());
+                SrcNode::new(ast::Expr::Unary(op, a), span)
+            })
+            .boxed();
+
         // Unary
         let op = just(Token::Op(Op::Sub)).to(ast::UnaryOp::Neg)
             .or(just(Token::Op(Op::Not)).to(ast::UnaryOp::Not))
             .map_with_span(SrcNode::new);
         let unary = op.repeated()
-            .then(chained.labelled("unary operand"))
+            .then(propagated.labelled("unary operand"))
             .foldr(|op, expr| {
                 let span = op.span().union(expr.span());
                 SrcNode::new(ast::Expr::Unary(op, expr), span)
@@ -790,7 +811,7 @@ pub fn generics_parser() -> impl Parser<ast::Generics> {
         .map(|tys| ast::Generics { tys })
 }
 
-const ITEM_STARTS: [Token; 7] = [
+const ITEM_STARTS: [Token; 8] = [
     Token::Data,
     Token::Type,
     Token::Def,
@@ -798,6 +819,7 @@ const ITEM_STARTS: [Token; 7] = [
     Token::Member,
     Token::For,
     Token::Fn,
+    Token::Effect,
 ];
 
 pub fn data_parser() -> impl Parser<ast::Data> {
@@ -971,6 +993,26 @@ pub fn member_parser() -> impl Parser<ast::Member> {
         .boxed()
 }
 
+pub fn effect_parser() -> impl Parser<ast::Effect> {
+    let ty = type_parser()
+        .map_with_span(SrcNode::new);
+
+    just(Token::Effect)
+        .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
+        .then(generics_parser().map_with_span(SrcNode::new))
+        .then_ignore(just(Token::Op(Op::Eq)))
+        .then(ty.clone())
+        .then_ignore(just(Token::Op(Op::RFlow)))
+        .then(ty)
+        .map(|(((name, generics), send), recv)| ast::Effect {
+            name,
+            generics,
+            send,
+            recv,
+        })
+        .boxed()
+}
+
 pub fn item_parser() -> impl Parser<ast::Item> {
     let attr = recursive(|attr| term_ident_parser()
         .map_with_span(SrcNode::new)
@@ -1001,7 +1043,8 @@ pub fn item_parser() -> impl Parser<ast::Item> {
         .or(data_parser().map(ast::ItemKind::Data))
         .or(alias_parser().map(ast::ItemKind::Alias))
         .or(class_parser().map(ast::ItemKind::Class))
-        .or(member_parser().map(ast::ItemKind::Member));
+        .or(member_parser().map(ast::ItemKind::Member))
+        .or(effect_parser().map(ast::ItemKind::Effect));
 
     let tail = one_of::<_, _, Error>(ITEM_STARTS)
         .ignored()

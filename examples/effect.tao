@@ -1,0 +1,13 @@
+import "lib/std.tao"
+
+effect yield A = A => ()
+
+def yield_five : yield Nat ~ () = do {
+    yield(5)?;
+    ()
+}
+
+effect print = Str => ()
+effect input = () => Str
+
+def main = "Hello, world!"

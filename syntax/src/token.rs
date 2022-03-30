@@ -103,6 +103,7 @@ pub enum Token {
     Semicolon,
     Return,
     With,
+    Effect,
 }
 
 impl fmt::Display for Token {
@@ -150,6 +151,7 @@ impl fmt::Display for Token {
             Token::Do => write!(f, "do"),
             Token::Return => write!(f, "return"),
             Token::With => write!(f, "with"),
+            Token::Effect => write!(f, "effect"),
             Token::Tilde => write!(f, "~"),
             Token::Dollar => write!(f, "$"),
             Token::Semicolon => write!(f, ";"),
@@ -269,6 +271,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         "do" => Token::Do,
         "return" => Token::Return,
         "with" => Token::With,
+        "effect" => Token::Effect,
         "and" => Token::Op(Op::And),
         "or" => Token::Op(Op::Or),
         "xor" => Token::Op(Op::Xor),

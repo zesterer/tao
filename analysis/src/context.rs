@@ -52,6 +52,9 @@ impl Context {
                 Ok(class_id) => classes.push((attr, class, class_id, gen_scope)),
             }
         }
+        for (attr, eff) in module.effects() {
+            errors.push(Error::Unsupported(eff.name.span(), "effects"));
+        }
         for (attr, alias) in module.aliases() {
             let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics);
             errors.append(&mut errs);
