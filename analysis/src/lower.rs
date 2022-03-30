@@ -176,7 +176,7 @@ impl ToHir for ast::Type {
             ast::Type::Assoc(inner, assoc) => {
                 let inner = inner.to_hir(infer, scope);
                 let assoc_ty = infer.unknown(self.span());
-                infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, inner.meta().0);
+                infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, self.span());
                 TyInfo::Ref(assoc_ty)
             },
         };
@@ -316,7 +316,7 @@ impl ToHir for ast::Binding {
                     let get_gen = |index, _, ctx: &Context| generic_tys[index];
 
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-                    let inner_ty_actual = infer.instantiate(inner_ty, name.span(), &get_gen, None);
+                    let inner_ty_actual = infer.instantiate(inner_ty, inner.span(), &get_gen, None);
                     let inner_ty = infer.unknown(self.span());
                     infer.check_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
 

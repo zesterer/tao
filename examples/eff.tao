@@ -1,0 +1,51 @@
+import "lib/std.tao"
+
+# Desugar of...
+
+#fn greet : io ~ Str is (
+#    let name <- input!;
+#    print("Hello, " ++ name)!;
+#    name
+#)
+
+class Effect =
+    => Waiting
+    => Ready
+    => Input
+    => Output
+    => Final
+    => pull : Self.Output -> Self.Waiting -> Go Self.Ready (Self.Output, Self.Final)
+    => push : Self.Ready -> (Self.Input, Self.Waiting)
+
+data Greet
+
+data GreetWaiting =
+    | Initial
+    \ SayHello Str
+
+data GreetReady =
+    \ GotName (@, Str)
+
+member Greet of Effect =
+    => Waiting = GreetWaiting
+    => Ready = GreetReady
+    => Input = @
+    => Output = @
+    => Final = Str
+    => pull = fn
+        | uni, Initial => Next GotName input(uni)
+        \ uni, SayHello name =>
+            let (uni, ()) = print("Hello, " ++ name, uni) in
+            Done (uni, name)
+    => push = fn
+        \ GotName (uni, name) => (uni, SayHello name)
+
+fn eval : Greet.Waiting -> @ -> (@, Str) =
+    \ waiting, uni => match Greet.pull(uni, waiting) in
+        | Next ready => match Greet.push(ready) in
+            \ (uni, waiting) => eval(waiting, uni)
+        \ Done (uni, name) => (uni, name)
+
+fn main : @ -> (@, ()) = uni =>
+    let (uni, _) = eval(Initial, uni) in
+    (uni, ())

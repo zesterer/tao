@@ -87,9 +87,6 @@ for A < Eq member [A] of Eq =
         | [x .. xs], [y .. ys] => x = y and xs = ys
         \ _, _ => False
 
-member Char of Eq =
-    => eq = fn x, y => x = y
-
 for A < Eq member [A] of Eq =
     => eq = fn
         | [], [] => True

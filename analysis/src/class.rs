@@ -188,7 +188,36 @@ impl Classes {
                     .filter(|m| covers(hir, ctx, self.get_member(**m).member, ty))
                     .collect::<Vec<_>>();
 
-                assert!(candidates.len() <= 1, "Multiple member candidates detected during lowering <{:?} as {:?}>, incoherence has occurred", ctx.get_ty(ty), class);
+                assert!(
+                    candidates.len() <= 1,
+                    "Multiple member candidates detected during lowering <{:?} as {:?}>.\n\
+                    This means that incoherence has occurred!\n\
+                    Candidate members:\n{}",
+                    ctx.get_ty(ty),
+                    **self.get(class).name,
+                    candidates
+                        .iter()
+                        .map(|c| {
+                            let c = self.get_member(**c);
+                            let gen_scope = hir.tys.get_gen_scope(c.gen_scope);
+                            format!(
+                                "- {}member {} of {} (in {})\n",
+                                if gen_scope.len() == 0 {
+                                    String::new()
+                                } else {
+                                    format!("for {} ", (0..gen_scope.len())
+                                        .map(|idx| format!("{}", *gen_scope.get(idx).name))
+                                        .collect::<Vec<_>>()
+                                        .join(", "))
+                                },
+                                hir.tys.display(&hir.datas, c.member),
+                                **self.get(class).name,
+                                gen_scope.span.src(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("")
+                );
 
                 candidates.first().copied().copied()
             })
