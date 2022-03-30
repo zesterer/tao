@@ -41,7 +41,6 @@ impl Deref for Ident {
 pub enum UnaryOp {
     Neg,
     Not,
-    Union,
 }
 
 impl fmt::Display for UnaryOp {
@@ -49,7 +48,6 @@ impl fmt::Display for UnaryOp {
         match self {
             Self::Neg => write!(f, "-"),
             Self::Not => write!(f, "!"),
-            Self::Union => write!(f, "?"),
         }
     }
 }
@@ -124,7 +122,6 @@ pub enum Type {
     Unknown,
     List(SrcNode<Self>),
     Tuple(Vec<SrcNode<Self>>),
-    Union(Vec<SrcNode<Self>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Func(SrcNode<Self>, SrcNode<Self>),
     // TODO: Replace name with `Item` when ready
@@ -139,9 +136,6 @@ impl Type {
             Self::Unknown => false,
             Self::List(item) => item.is_fully_specified(),
             Self::Tuple(fields) => fields
-                .iter()
-                .all(|field| field.is_fully_specified()),
-            Self::Union(fields) => fields
                 .iter()
                 .all(|field| field.is_fully_specified()),
             Self::Record(fields) => fields
@@ -169,7 +163,6 @@ pub enum Pat {
     Wildcard,
     Literal(Literal),
     Single(SrcNode<Binding>),
-    Union(SrcNode<Binding>),
     Binary(SrcNode<BinaryOp>, SrcNode<Binding>, SrcNode<Literal>), // x + N, only for nats
     Tuple(Vec<SrcNode<Binding>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Binding>)>),

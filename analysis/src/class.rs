@@ -54,7 +54,6 @@ pub struct MemberId(pub usize);
 pub struct Lang {
     pub not: Option<ClassId>,
     pub neg: Option<ClassId>,
-    pub union: Option<ClassId>,
     pub eq: Option<ClassId>,
 }
 
@@ -97,9 +96,6 @@ impl Classes {
                 if lang.iter().find(|a| &**a.name == "neg").is_some() {
                     self.lang.neg = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "union").is_some() {
-                    self.lang.union = Some(id);
-                }
                 if lang.iter().find(|a| &**a.name == "eq").is_some() {
                     self.lang.eq = Some(id);
                 }
@@ -115,7 +111,6 @@ impl Classes {
 
         if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
         if self.lang.neg.is_none() { errors.push(Error::MissingLangItem("neg")); }
-        if self.lang.union.is_none() { errors.push(Error::MissingLangItem("union")); }
         if self.lang.eq.is_none() { errors.push(Error::MissingLangItem("eq")); }
 
         errors

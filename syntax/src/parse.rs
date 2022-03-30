@@ -71,18 +71,6 @@ pub fn type_parser() -> impl Parser<ast::Type> {
         )
             .map(|tys| tys.map(ast::Type::Tuple).unwrap_or(ast::Type::Error));
 
-        let union = nested_parser(
-            ty.clone()
-                .map_with_span(SrcNode::new)
-                .separated_by(just(Token::Pipe))
-                .allow_trailing()
-                .then_ignore(just(Token::Pipe).or_not())
-                .map(Some),
-            Delimiter::Paren,
-            |_| None,
-        )
-            .map(|tys| tys.map(ast::Type::Union).unwrap_or(ast::Type::Error));
-
         let record = nested_parser(
             term_ident_parser()
                 .map_with_span(SrcNode::new)
@@ -115,7 +103,6 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(data)
             .or(list)
             .or(tuple)
-            .or(union)
             .or(record)
             .or(unknown)
             .or(universe)
@@ -355,19 +342,6 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
                 ty: None,
             }, span))
             .boxed();
-
-        let binding = just(Token::Question)
-            .map_with_span(SrcNode::new)
-            .repeated()
-            .then(binding)
-            .foldr(|union, binding| {
-                let binding_span = binding.span();
-                SrcNode::new(ast::Binding {
-                    pat: SrcNode::new(ast::Pat::Union(binding), binding_span),
-                    name: None,
-                    ty: None,
-                }, union.span().union(binding_span))
-            });
 
         binding
     });
@@ -787,19 +761,8 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .map_with_span(SrcNode::new)
             .or(with);
 
-        // Union
-        let union = just(Token::Question)
-            .to(ast::UnaryOp::Union)
-            .map_with_span(SrcNode::new)
-            .repeated()
-            .then(cons.labelled("union"))
-            .foldr(|op, expr| {
-                let span = op.span().union(expr.span());
-                SrcNode::new(ast::Expr::Unary(op, expr), span)
-            })
-            .map(|expr| expr.into_inner());
-
-        union
+        cons
+            .map(|b| b.into_inner())
     })
         .labelled("expression")
 }

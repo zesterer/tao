@@ -11,53 +11,6 @@ fn give_me_a : Str -> Value =
     | "pair" => Pair (String "left", String "right")
     \ _ => Pair (Integer 0i, Integer 0i)
 
-type NatOrBool = (Nat | Bool)
-
-fn nat_or_bool1 : Bool -> NatOrBool =
-    | True => ?5
-    \ False => ?True
-
-def match_nat_or_bool =
-    match ?nat_or_bool1(True) in
-    | ?(x : Nat) => ()
-    \ ?(y : Bool) => ()
-
-# fn nat : (Nat|) = nat_or_bool(True)
-
-fn takes_union_or_nat : (Nat | Bool) -> (Nat | Bool) =
-    \ x => ?True
-
-def f : (Nat | Bool) -> (Nat | Bool) = takes_union_or_nat
-
-fn nat_or_bool2 : Bool -> (Bool | Nat) =
-    | True => ?(let x : Nat = 5 in x)
-    | True => ?False
-    | True => ?True
-    \ False => let x = ?nat_or_bool1(False) in
-        x
-
-def foo =
-    let x = nat_or_bool1(True) in
-    let y = match True in
-        | True => ?x
-        \ False => ?()
-    in
-    y
-
-def nat_or_bool : (Bool | Nat) = if True
-    then ?True
-    else ?3
-
-def nat_or_bool_or_real : (Bool | Nat | Real) =
-    # let () = nat_or_bool in
-    match ?nat_or_bool in
-    | ?(_ : Nat) => nat_or_bool
-    \ ?(_ : Bool) => ?7
-
-def main2 = match ?nat_or_bool2(True) in
-    | ?(x : Nat) => "nat"
-    \ ?(x : Bool) => "bool"
-
 fn factorial =
     | 0 => 1
     \ m ~ n + 1 => m * factorial(n)
@@ -66,29 +19,6 @@ def main3 =
     let x = 5 in
     let f = fn y => x + y in
     f(4)
-
-fn and_then A, B, E, D : (A -> Result B D) -> Result A E -> Result B (E | D) =
-    | _, Err e => Err ?e
-    \ f, Ok ok => match ok:f in
-        | Err e => Err ?e
-        \ Ok ok => Ok ok
-
-data TooSmall
-data TooBig
-
-fn more_than_5 : Nat -> Result Nat TooSmall =
-    \ x => if x > 5
-        then Ok x
-        else Err TooSmall
-
-fn less_than_10 : Nat -> Result Nat TooBig =
-    \ x => if x < 10
-        then Ok x
-        else Err TooBig
-
-fn between_5_and_10 : Nat -> Result Nat (TooSmall | TooBig) =
-    \ x => x:more_than_5
-        :and_then(less_than_10)
 
 # fn main = [1, 2, 3, 4, 5, 6]
 #     :stream
@@ -129,24 +59,3 @@ def main = [
         :from_list
         :contains(4)
         :debug
-
-fn fallible : (Nat | Bool) -> () =
-    | ?(x : Nat) => ()
-    \ ?(x : Bool) => ()
-
-def fallible2 =
-    let x = match () in
-        | () => ?5
-        | () => ?()
-        \ () => ?True
-    in
-    fallible(x)
-
-# fn main2 = do
-#     let msg = input;
-#     if msg = "exit" then do
-#         print("Now exiting...");
-#         print("Goodbye!");
-#     else do
-#         print("Hello, world!");
-#         main2; # Loop

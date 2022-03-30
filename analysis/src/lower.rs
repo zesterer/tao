@@ -1,15 +1,14 @@
 use super::*;
 
 // TODO: use `ToHir`?
-fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> (TyInfo, Option<NumLitr>) {
-    // TODO: Numeric literal subtyping
+fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
     match litr {
-        ast::Literal::Nat(_) => (TyInfo::Prim(ty::Prim::Nat), None),//(TyInfo::Unknown(None), Some(NumLitr::Nat)),
-        ast::Literal::Int(_) => (TyInfo::Prim(ty::Prim::Int), None),//(TyInfo::Unknown(None), Some(NumLitr::Int)),
-        ast::Literal::Real(x) => (TyInfo::Prim(ty::Prim::Real), None),//(TyInfo::Unknown(None), Some(NumLitr::Real)),
-        ast::Literal::Bool(_) => (TyInfo::Prim(ty::Prim::Bool), None),
-        ast::Literal::Char(_) => (TyInfo::Prim(ty::Prim::Char), None),
-        ast::Literal::Str(_) => (TyInfo::List(infer.insert(span, TyInfo::Prim(ty::Prim::Char))), None),
+        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Nat),
+        ast::Literal::Int(_) => TyInfo::Prim(ty::Prim::Int),
+        ast::Literal::Real(x) => TyInfo::Prim(ty::Prim::Real),
+        ast::Literal::Bool(_) => TyInfo::Prim(ty::Prim::Bool),
+        ast::Literal::Char(_) => TyInfo::Prim(ty::Prim::Char),
+        ast::Literal::Str(_) => TyInfo::List(infer.insert(span, TyInfo::Prim(ty::Prim::Char))),
     }
 }
 
@@ -70,10 +69,6 @@ impl ToHir for ast::Type {
                 .iter()
                 .map(|item| item.to_hir(infer, scope).meta().1)
                 .collect()),
-            ast::Type::Union(items) => TyInfo::Union(items
-                .iter()
-                .map(|item| item.to_hir(infer, scope).meta().1)
-                .collect()),
             ast::Type::Record(fields) => TyInfo::Record(fields
                 .iter()
                 .map(|(name, field)| (**name, field.to_hir(infer, scope).meta().1))
@@ -123,7 +118,7 @@ impl ToHir for ast::Type {
                                 // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                                 let inner_ty_actual = infer.instantiate(alias_ty, self.span(), &get_gen, None);
                                 let inner_ty = infer.unknown(self.span());
-                                infer.check_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
+                                infer.make_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
 
                                 TyInfo::Ref(inner_ty)
                             }
@@ -193,19 +188,16 @@ impl ToHir for ast::Binding {
             ast::Pat::Error => (TyInfo::Error(ErrorReason::Unknown), hir::Pat::Error),
             ast::Pat::Wildcard => (TyInfo::Unknown(None), hir::Pat::Wildcard),
             ast::Pat::Literal(litr) => {
-                let (ty_info, num_litr) = litr_ty_info(litr, infer, self.pat.span());
-                let ty = infer.insert(self.span(), ty_info);
-                if let Some(num_litr) = num_litr {
-                    infer.make_num_litr(ty, self.pat.span(), num_litr);
-                }
-                (TyInfo::Ref(ty), match litr {
+                let ty_info = litr_ty_info(litr, infer, self.pat.span());
+                (TyInfo::Ref(infer.insert(self.span(), ty_info)), match litr {
                     ast::Literal::Nat(x) => hir::Pat::Literal(ast::Literal::Nat(*x)),
                     ast::Literal::Int(x) => hir::Pat::Literal(ast::Literal::Int(*x)),
                     ast::Literal::Real(x) => hir::Pat::Literal(ast::Literal::Real(*x)),
                     ast::Literal::Bool(x) => hir::Pat::Literal(ast::Literal::Bool(*x)),
                     ast::Literal::Char(c) => hir::Pat::Literal(ast::Literal::Char(*c)),
                     ast::Literal::Str(s) => {
-                        // Bit of a hack, we do this because equality of literals is not supported in the MIR
+                        // Bit of a hack, we do this because equality of literals is not supported in the MIR, so a
+                        // string pattern desugars to a list pattern.
                         let c_ty = infer.insert(self.span(), TyInfo::Prim(Prim::Char));
                         hir::Pat::ListExact(s
                             .chars()
@@ -219,10 +211,6 @@ impl ToHir for ast::Binding {
                 // TODO: don't use `Ref` to link types
                 (TyInfo::Ref(binding.meta().1), hir::Pat::Single(binding))
             },
-            ast::Pat::Union(inner) => {
-                let binding = inner.to_hir(infer, scope);
-                (TyInfo::Union(vec![binding.meta().1]), hir::Pat::Union(binding))
-            },
             ast::Pat::Binary(op, lhs, rhs) => {
                 let lhs = lhs.to_hir(infer, scope);
                 match (&**rhs, &**op) {
@@ -232,8 +220,8 @@ impl ToHir for ast::Binding {
                         (TyInfo::Ref(nat), hir::Pat::Add(lhs, SrcNode::new(*rhs_nat, rhs.span())))
                     },
                     (_, _) => {
-                        let (info, _) = litr_ty_info(rhs, infer, self.pat.span());
-                        let rhs_ty = infer.insert(rhs.span(), info);
+                        let ty_info = litr_ty_info(rhs, infer, self.pat.span());
+                        let rhs_ty = infer.insert(rhs.span(), ty_info);
                         infer.emit(InferError::PatternNotSupported(lhs.meta().1, op.clone(), rhs_ty, self.span()));
                         (TyInfo::Error(ErrorReason::Unknown), hir::Pat::Error)
                     },
@@ -318,7 +306,7 @@ impl ToHir for ast::Binding {
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                     let inner_ty_actual = infer.instantiate(inner_ty, inner.span(), &get_gen, None);
                     let inner_ty = infer.unknown(self.span());
-                    infer.check_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
+                    infer.make_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
 
                     inner_ty
                 };
@@ -338,7 +326,7 @@ impl ToHir for ast::Binding {
 
         if let Some(ty_hint) = &self.ty {
             let hint = ty_hint.to_hir(infer, scope);
-            infer.check_flow(ty, hint.meta().1, self.span());
+            infer.make_flow(ty, hint.meta().1, self.span());
         }
 
         InferNode::new(hir::Binding {
@@ -385,7 +373,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
         // Bit messy, makes sure that we don't accidentally infer a bad type backwards
         let def_ty_actual = infer.instantiate(body_ty, span_override, &get_gen, None);
         let def_ty = infer.unknown(span);
-        infer.check_flow(def_ty_actual, def_ty, EqInfo::from(span));
+        infer.make_flow(def_ty_actual, def_ty, EqInfo::from(span));
         Some(def_ty)
     } else {
         None
@@ -407,13 +395,9 @@ impl ToHir for ast::Expr {
         let (info, expr) = match &**self {
             ast::Expr::Error => (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error),
             ast::Expr::Literal(litr) => {
-                let (ty_info, num_litr) = litr_ty_info(litr, infer, span);
-                let ty = infer.insert(span, ty_info);
-                if let Some(num_litr) = num_litr {
-                    infer.make_num_litr(ty, span, num_litr);
-                }
-                (TyInfo::Ref(ty), hir::Expr::Literal(*litr))
-            }
+                let ty_info = litr_ty_info(litr, infer, span);
+                (TyInfo::Ref(infer.insert(span, ty_info)), hir::Expr::Literal(*litr))
+            },
             ast::Expr::LangDef(def) => {
                 let def = match def {
                     ast::LangDef::IoUnit => infer.ctx().defs.lang.io_unit.unwrap(),
@@ -498,7 +482,6 @@ impl ToHir for ast::Expr {
                 let (class, field) = match &**op {
                     ast::UnaryOp::Not => (infer.ctx().classes.lang.not, SrcNode::new(Ident::new("not"), self.span())),
                     ast::UnaryOp::Neg => (infer.ctx().classes.lang.neg, SrcNode::new(Ident::new("neg"), op.span())),
-                    ast::UnaryOp::Union => (infer.ctx().classes.lang.union, SrcNode::new(Ident::new("union"), op.span())),
                 };
                 let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, self.span());
 
@@ -726,7 +709,7 @@ impl ToHir for ast::Expr {
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                     let inner_ty_actual = infer.instantiate(inner_ty, name.span(), &get_gen, None);
                     let inner_ty = infer.unknown(self.span());
-                    infer.check_flow(inner_ty, inner_ty_actual, EqInfo::from(self.span()));
+                    infer.make_flow(inner_ty, inner_ty_actual, EqInfo::from(self.span()));
 
                     inner_ty
                 };
@@ -760,9 +743,6 @@ impl ToHir for ast::Expr {
                         // Produces a string
                         let c = infer.insert(name.span(), TyInfo::Prim(Prim::Char));
                         (TyInfo::List(c), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TypeName, name.span()), args))
-                    },
-                    "union" if args.len() == 1 => {
-                        (TyInfo::Union(vec![args[0].meta().1]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Union, name.span()), args))
                     },
                     "neg_nat" if args.len() == 1 => {
                         let a = &args[0];

@@ -41,7 +41,6 @@ pub enum Error {
     GenericEntryPoint(SrcNode<Ident>, Span),
     InvalidIntrinsic(SrcNode<Ident>),
     Unsupported(Span, &'static str),
-    NonNumeric(TyId, Span, NumLitr),
     MissingLangItem(&'static str),
 }
 
@@ -375,14 +374,6 @@ impl Error {
                     (span, format!("This is unsupported"), Color::Red),
                 ],
                 vec![],
-            ),
-            Error::NonNumeric(ty, span, num_litr) => (
-                format!("Numeric literal of type {} cannot coerce to type {}", num_litr.fg(Color::Red), display(ty).fg(Color::Red)),
-                vec![
-                    (span, format!("Is not a valid {}", display(ty).fg(Color::Red)), Color::Red),
-                    (ctx.tys.get_span(ty), format!("Coercion to {} is required here", display(ty).fg(Color::Yellow)), Color::Yellow),
-                ],
-                vec![format!("Numeric literals must be valid in the context of their use")],
             ),
             Error::MissingLangItem(name) => (
                 format!("Lang item {} is missing", name.fg(Color::Yellow)),

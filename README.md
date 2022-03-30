@@ -49,12 +49,9 @@ have a few goals for the language itself:
     - [x] Type generic
     - [x] Nominal aliases (i.e: `data Metres = Real`)
 - [x] Type alises
-- [x] Union types (anonymous sum types)
-    - [x] Flattening
-    - [x] Subtyping
 - [x] Pattern matching
     - [x] Destructuring and binding
-    - [x] Union and variant patterns
+    - [x] ADT patterns
     - [x] List patterns (`[a, b, c]`, `[a, b .. c]`, etc.)
     - [x] Arithmetic patterns (i.e: `n + k`)
     - [x] Inhabitance checks (i.e: `None` exhaustively covers `Maybe Never`)

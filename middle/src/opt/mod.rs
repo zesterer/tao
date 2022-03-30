@@ -102,9 +102,6 @@ impl Repr {
                 i.visit_inner(order, repr, binding, expr);
                 o.visit_inner(order, repr, binding, expr);
             },
-            Repr::Union(inhabitants) => inhabitants
-                .iter_mut()
-                .for_each(|inhabitant| inhabitant.visit_inner(order, repr, binding, expr)),
         }
 
         if order == VisitOrder::Last {
@@ -133,7 +130,6 @@ impl Binding {
                 tail.as_ref().map(|tail| f(tail));
             },
             mir::Pat::Variant(_, inner) => f(inner),
-            mir::Pat::UnionVariant(_, inner) => f(inner),
             mir::Pat::Data(_, inner) => f(inner),
         }
     }
@@ -156,7 +152,6 @@ impl Binding {
                 tail.as_mut().map(|tail| f(tail));
             },
             mir::Pat::Variant(_, inner) => f(inner),
-            mir::Pat::UnionVariant(_, inner) => f(inner),
             mir::Pat::Data(_, inner) => f(inner),
         }
     }
@@ -192,7 +187,6 @@ impl Binding {
                 tail.as_mut().map(|tail| tail.visit_inner(order, repr, binding, expr));
             },
             mir::Pat::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
-            mir::Pat::UnionVariant(_, inner) => inner.visit_inner(order, repr, binding, expr),
             mir::Pat::Data(_, inner) => inner.visit_inner(order, repr, binding, expr),
         }
 
@@ -385,7 +379,6 @@ pub fn check(ctx: &Context) {
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
             (Pat::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => check_binding(ctx, inner, &variants[*idx], stack),
             (Pat::Single(inner), _) => check_binding(ctx, inner, repr, stack),
-            (Pat::UnionVariant(_, _), Repr::Union(_)) => {},
             (Pat::ListExact(_), Repr::List(_)) => {},
             (Pat::ListFront(_, _), Repr::List(_)) => {},
             (_, repr) => panic!("Inconsistency between binding\n\n {:?}\n\nand repr {:?}", binding, repr),

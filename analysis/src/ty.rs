@@ -40,7 +40,6 @@ pub enum Ty {
     Prim(Prim),
     List(TyId),
     Tuple(Vec<TyId>),
-    Union(Vec<TyId>),
     Record(BTreeMap<Ident, TyId>),
     Func(TyId, TyId),
     Data(DataId, Vec<TyId>),
@@ -106,7 +105,6 @@ impl Types {
                 .into_iter()
                 .zip(ys)
                 .all(|(x, y)| self.is_eq(x, y)),
-            (Ty::Union(_), Ty::Union(_)) => todo!("Union equality"),
             (Ty::Record(_), Ty::Record(_)) => todo!("Record equality"),
             (Ty::Func(x_i, x_o), Ty::Func(y_i, y_o)) => self.is_eq(x_i, y_i) && self.is_eq(x_o, y_o),
             (Ty::Data(x, xs), Ty::Data(y, ys)) => x == y && xs.len() == ys.len() && xs
@@ -130,9 +128,6 @@ impl Types {
             Ty::Tuple(fields) => fields
                 .into_iter()
                 .all(|field| self.has_inhabitants(datas, field, gen)),
-            Ty::Union(variants) => variants
-                .into_iter()
-                .any(|variant| self.has_inhabitants(datas, variant, gen)),
             Ty::Record(fields) => fields
                 .into_iter()
                 .all(|(_, field)| self.has_inhabitants(datas, field, gen)),
@@ -201,11 +196,6 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 .map(|field| format!("{}", self.with_ty(*field, false)))
                 .collect::<Vec<_>>()
                 .join(", "), if fields.len() == 1 { "," } else { "" }),
-            Ty::Union(variants) => write!(f, "({}{})", variants
-                .iter()
-                .map(|variant| format!("{}", self.with_ty(*variant, false)))
-                .collect::<Vec<_>>()
-                .join(" | "), if variants.len() <= 1 { "|" } else { "" }),
             Ty::Record(fields) => write!(f, "{{ {} }}", fields
                 .into_iter()
                 .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))

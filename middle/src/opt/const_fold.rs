@@ -280,7 +280,6 @@ impl Intrinsic {
             Intrinsic::EqNat => op!(Nat(x), Nat(y) => Bool(x == y)),
             Intrinsic::Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
             Intrinsic::AndBool => op!(Bool(x), Bool(y) => Bool(*x && *y)),
-            Intrinsic::Union(ty) => Partial::Union(*ty, Box::new(args[0].clone())),
             Intrinsic::Print => Partial::Unknown(None),
             Intrinsic::Input => Partial::Unknown(None),
             Intrinsic::UpdateField(idx) => Partial::Unknown(None), // TODO

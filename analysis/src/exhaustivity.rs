@@ -20,7 +20,6 @@ pub enum AbstractPat {
     ListExact(Vec<Self>), // Exactly N in size
     ListFront(Vec<Self>, Box<Self>), // At least N in size
     Gen(Ident),
-    Union(TyId, Box<Self>),
 }
 
 impl AbstractPat {
@@ -45,7 +44,6 @@ impl AbstractPat {
             hir::Pat::Literal(hir::Literal::Char(c)) => Self::Char(*c),
             hir::Pat::Literal(hir::Literal::Str(x)) => Self::ListExact(x.chars().map(Self::Char).collect()),
             hir::Pat::Single(inner) => Self::from_binding(ctx, inner),
-            hir::Pat::Union(inner) => Self::Union(inner.meta().1, Box::new(Self::from_binding(ctx, inner))),
             hir::Pat::Add(lhs, rhs) if matches!(&*lhs.pat, hir::Pat::Wildcard) => Self::Nat({
                 let mut range = Ranges::new();
                 range.insert(**rhs..);
@@ -183,36 +181,6 @@ impl AbstractPat {
                 Some(ExamplePat::Wildcard)
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
-            Ty::Union(required) => {
-                let mut variants = Vec::new();
-                for pat in filter {
-                    match pat {
-                        AbstractPat::Wildcard => return None,
-                        AbstractPat::Union(ty, inner) => {
-                            if let Some((_, pats)) = variants.iter_mut().find(|(v, _): &&mut (_, Vec<&AbstractPat>)| ctx.tys.is_eq(*v, *ty)) {
-                                pats.push(&**inner);
-                            } else {
-                                variants.push((*ty, vec![&**inner]));
-                            }
-                        },
-                        _ => return None, // Type mismatch, don't yield an error because one was already generated
-                    }
-                }
-                for variant_ty in required {
-                    if let Some((_, variants)) = variants.drain_filter(|(ty, _)| ctx.tys.is_eq(*ty, variant_ty)).next() {
-                        if let Some(pat) = Self::inexhaustive_pat(ctx, variant_ty, &mut variants.into_iter(), get_gen_ty) {
-                            return Some(ExamplePat::Union(variant_ty, Box::new(pat)));
-                        }
-                    // TODO: This is ugly, but checks for inhabitants of sub-patterns, allowing things like `let Just x = Just 5`
-                    } else if ctx.tys.has_inhabitants(&ctx.datas, variant_ty, &mut |id| match get_gen_ty {
-                        Some(get_gen_ty) => get_gen_ty(id).map_or(true, |gen_ty| ctx.tys.has_inhabitants(&ctx.datas, gen_ty, &mut |_| true)),
-                        None => true,
-                    }) {
-                        return Some(ExamplePat::Union(variant_ty, Box::new(ExamplePat::Wildcard)));
-                    }
-                }
-                None
-            },
             Ty::Tuple(fields) if fields.len() == 1 => {
                 let mut inners = Vec::new();
                 for pat in filter {
@@ -423,7 +391,6 @@ pub enum ExamplePat {
     Record(Vec<(Ident, Self)>),
     List(Vec<Self>),
     Variant(Ident, Box<Self>),
-    Union(TyId, Box<Self>),
 }
 
 impl ExamplePat {
@@ -449,7 +416,6 @@ impl ExamplePat {
                     ExamplePat::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(" ")),
                     ExamplePat::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExamplePat(i, false, ctx))).collect::<Vec<_>>().join(", ")),
                     ExamplePat::Variant(name, inner) => write!(f, "{} {}", name, DisplayExamplePat(inner, false, ctx)),
-                    ExamplePat::Union(ty, inner) => write!(f, "? {} : {}", DisplayExamplePat(inner, false, ctx), ctx.tys.display(&ctx.datas, *ty)),
                 }
             }
         }

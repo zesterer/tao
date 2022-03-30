@@ -28,7 +28,6 @@ pub enum Const<U> {
     Tuple(Vec<Self>),
     List(Vec<Self>),
     Sum(usize, Box<Self>),
-    Union(u64, Box<Self>),
     Data(ConDataId, Box<Self>),
 }
 
@@ -61,7 +60,6 @@ impl Partial {
                 .map(|item| item.to_literal())
                 .collect::<Option<_>>()?)),
             Self::Sum(v, inner) => Some(Literal::Sum(*v, Box::new(inner.to_literal()?))),
-            Self::Union(ty, inner) => Some(Literal::Union(*ty, Box::new(inner.to_literal()?))),
             Self::Data(data, inner) => Some(Literal::Data(*data, Box::new(inner.to_literal()?))),
         }
     }
@@ -90,7 +88,6 @@ impl Partial {
                 .map(|(x, y)| x.or(y))
                 .collect()),
             (Self::Sum(a, x), Self::Sum(b, y)) if a == b => Self::Sum(a, Box::new(x.or(*y))),
-            (Self::Union(a, x), Self::Union(b, y)) if a == b => Self::Union(a, Box::new(x.or(*y))),
             (Self::Data(a, x), Self::Data(b, y)) if a == b => Self::Data(a, Box::new(x.or(*y))),
             _ => Self::Unknown(None),
         }
@@ -116,7 +113,6 @@ impl Literal {
                 .map(|item| item.to_partial())
                 .collect()),
             Self::Sum(v, inner) => Partial::Sum(*v, Box::new(inner.to_partial())),
-            Self::Union(ty, inner) => Partial::Union(*ty, Box::new(inner.to_partial())),
             Self::Data(data, inner) => Partial::Data(*data, Box::new(inner.to_partial())),
         }
     }
@@ -137,7 +133,6 @@ impl fmt::Display for Literal {
             Self::Tuple(xs) => write!(f, "({})", xs.iter().map(|x| format!("{},", x)).collect::<Vec<_>>().join(" ")),
             Self::List(xs) => write!(f, "[{}]", xs.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(", ")),
             Self::Sum(v, x) => write!(f, "#{} {}", v, x),
-            Self::Union(ty, x) => write!(f, "#{} {}", ty, x),
             Self::Data(data, x) => write!(f, "{:?} {}", data, x),
         }
     }
@@ -173,7 +168,6 @@ pub enum Intrinsic {
     MoreEqInt,
     Join(Repr),
     AndBool,
-    Union(u64), // Type ID
     Print,
     Input,
     UpdateField(usize),
@@ -192,7 +186,6 @@ pub enum Pat {
     ListExact(Vec<MirNode<Binding>>),
     ListFront(Vec<MirNode<Binding>>, Option<MirNode<Binding>>),
     Variant(usize, MirNode<Binding>),
-    UnionVariant(u64, MirNode<Binding>),
     Data(ConDataId, MirNode<Binding>),
 }
 
@@ -237,7 +230,6 @@ impl Binding {
             Pat::ListExact(_) => true,
             Pat::ListFront(items, tail) => items.len() > 0 || tail.as_ref().map_or(false, |tail| tail.is_refutable()),
             Pat::Variant(_, _) => true, // TODO: Check number of variants
-            Pat::UnionVariant(_, _) => true, // TODO: Check number of variants
             Pat::Data(_, inner) => inner.is_refutable(),
         }
     }
@@ -262,7 +254,6 @@ impl Binding {
                 tail.as_ref().map(|tail| tail.visit_bindings(bind));
             },
             Pat::Variant(_, inner) => inner.visit_bindings(bind),
-            Pat::UnionVariant(_, inner) => inner.visit_bindings(bind),
             Pat::Data(_, inner) => inner.visit_bindings(bind),
         }
     }
@@ -315,7 +306,6 @@ impl Binding {
                         .as_ref()
                         .map_or(true, |tail| tail.has_matches(ctx)),
                 Pat::Variant(_, inner) => inner.has_matches(ctx),
-                Pat::UnionVariant(_, inner) => inner.has_matches(ctx),
                 Pat::Data(_, inner) => inner.has_matches(ctx),
             }
         }
@@ -503,7 +493,6 @@ impl Expr {
                     Pat::Literal(c) => write!(f, "{}", c),
                     Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
                     Pat::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayBinding(inner, self.1)),
-                    Pat::UnionVariant(id, inner) => write!(f, "#{} {}", id, DisplayBinding(inner, self.1)),
                     Pat::ListExact(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayBinding(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
                     Pat::ListFront(items, tail) => write!(
                         f,
@@ -549,7 +538,6 @@ impl Expr {
                     Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(AndBool, args) => write!(f, "{} and {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(Union(_), args) => write!(f, "?{}", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(Print, args) => write!(f, "@print({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Input, args) => write!(f, "@input({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(UpdateField(idx), args) => write!(f, "@update_field<{}>({}, {})", idx, DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),

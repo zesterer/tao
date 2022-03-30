@@ -19,7 +19,6 @@ impl Reify for hir::Binding<InferMeta> {
                 hir::Pat::Wildcard => hir::Pat::Wildcard,
                 hir::Pat::Literal(litr) => hir::Pat::Literal(litr),
                 hir::Pat::Single(inner) => hir::Pat::Single(inner.reify(infer)),
-                hir::Pat::Union(inner) => hir::Pat::Union(inner.reify(infer)),
                 hir::Pat::Add(lhs, rhs) => hir::Pat::Add(lhs.reify(infer), rhs),
                 hir::Pat::Tuple(items) => hir::Pat::Tuple(items
                     .into_iter()

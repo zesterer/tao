@@ -44,15 +44,6 @@ for A < Neg member [A] of Neg =
         | [] => []
         \ [x .. xs] => [-x .. -xs]
 
-# Union
-
-$[lang(union)]
-class Union =
-    => union : Self -> (Self|)
-
-for A member A of Union =
-    => union = fn x => @union(x)
-
 # Add
 
 class Add =

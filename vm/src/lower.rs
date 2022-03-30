@@ -22,10 +22,6 @@ fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
             .map(litr_to_value)
             .collect::<Option<_>>()?),
         mir::Literal::Sum(variant, inner) => Value::Sum(*variant, Rc::new(litr_to_value(inner)?)),
-        mir::Literal::Union(id, inner) => {
-            assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-            Value::Sum(*id as usize, Rc::new(litr_to_value(inner)?))
-        },
         mir::Literal::Data(_, inner) => litr_to_value(inner)?,
     })
 }
@@ -98,12 +94,6 @@ impl Program {
             mir::Pat::Variant(variant, inner) => {
                 self.push(Instr::Dup);
                 self.push(Instr::IndexSum(*variant));
-                self.compile_extractor(mir, inner);
-            },
-            mir::Pat::UnionVariant(id, inner) => {
-                self.push(Instr::Dup);
-                assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-                self.push(Instr::IndexSum(*id as usize));
                 self.compile_extractor(mir, inner);
             },
             mir::Pat::Data(_, inner) => {
@@ -224,17 +214,6 @@ impl Program {
                     self.push(Instr::IndexSum(*variant));
                     self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
                 },
-                mir::Pat::UnionVariant(id, inner) => {
-                    self.push(Instr::Dup);
-                    self.push(Instr::VariantSum);
-                    self.push(Instr::Imm(Value::Int(*id as i64)));
-                    self.push(Instr::EqInt);
-                    self.push(Instr::IfNot);
-                    let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
-                    assert_eq!(*id as usize as u64, *id, "usize too small for this union variant");
-                    self.push(Instr::IndexSum(*id as usize));
-                    self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
-                },
                 mir::Pat::Data(_, inner) => self.compile_matcher(inner),
             }
         }
@@ -296,10 +275,6 @@ impl Program {
                     Intrinsic::MoreEqNat | Intrinsic::MoreEqInt => { self.push(Instr::MoreEqInt); },
                     Intrinsic::Join(_) => { self.push(Instr::JoinList); },
                     Intrinsic::AndBool => { self.push(Instr::AndBool); },
-                    Intrinsic::Union(ty) => {
-                        assert_eq!(*ty as usize as u64, *ty, "usize too small for this union variant");
-                        self.push(Instr::MakeSum(*ty as usize));
-                    },
                     Intrinsic::Print => { self.push(Instr::Print); },
                     Intrinsic::Input => { self.push(Instr::Input); },
                     Intrinsic::UpdateField(idx) => { self.push(Instr::SetList(*idx)); },

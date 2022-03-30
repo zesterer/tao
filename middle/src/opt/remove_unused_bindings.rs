@@ -66,7 +66,6 @@ impl Pass for RemoveUnusedBindings {
                                             .map(|tail| remove_unused(tail, stack));
                                     },
                                     Pat::Variant(_, inner) => remove_unused(inner, stack),
-                                    Pat::UnionVariant(_, inner) => remove_unused(inner, stack),
                                     Pat::Data(_, inner) => remove_unused(inner, stack),
                                 }
                             }

@@ -68,10 +68,6 @@ impl Context {
                 .iter()
                 .map(|field| self.lower_ty(hir, con, *field))
                 .collect()),
-            ConTy::Union(variants) => Repr::Sum(variants
-                .iter()
-                .map(|variant| self.lower_ty(hir, con, *variant))
-                .collect()),
             ConTy::Func(i, o) => Repr::Func(
                 Box::new(self.lower_ty(hir, con, *i)),
                 Box::new(self.lower_ty(hir, con, *o)),
@@ -139,10 +135,6 @@ impl Context {
                     .collect::<Vec<_>>();
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 mir::Pat::Tuple(fields.into_iter().map(|(_, field)| field).collect())
-            },
-            hir::Pat::Union(inner) => {
-                let id = inner.meta().id();
-                mir::Pat::UnionVariant(id, self.lower_binding(hir, con, inner, bindings))
             },
             pat => todo!("{:?}", pat),
         };
@@ -308,16 +300,6 @@ impl Context {
                             _ => panic!("type_name argument must be list of type"),
                         };
                         mir::Expr::Literal(mir::Literal::List(name.chars().map(mir::Literal::Char).collect()))
-                    },
-                    hir::Intrinsic::Union => {
-                        let a = &args[0];
-                        let inner = self.lower_expr(hir, con, a, stack);
-                        // If the inner value is already a union, we 'flatten' the union without wrapping it in another union.
-                        // This happens because unions types/values are, by default, flattened.
-                        match con.get_ty(*a.meta()) {
-                            ConTy::Union(_) => inner.into_inner(),
-                            _ => mir::Expr::Intrinsic(Intrinsic::Union(a.meta().id()), vec![inner]),
-                        }
                     },
                     hir::Intrinsic::NegNat => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),

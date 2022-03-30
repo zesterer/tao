@@ -36,7 +36,6 @@ pub enum Pat<M: Meta> {
     Wildcard,
     Literal(Literal),
     Single(Node<Binding<M>, M>),
-    Union(Node<Binding<M>, M>),
     Add(Node<Binding<M>, M>, SrcNode<u64>),
     Tuple(Vec<Node<Binding<M>, M>>),
     Record(BTreeMap<Ident, Node<Binding<M>, M>>),
@@ -82,7 +81,6 @@ impl<M: Meta> Binding<M> {
             Pat::Wildcard => {},
             Pat::Literal(_) => {},
             Pat::Single(inner) => inner.visit_bindings_inner(visit),
-            Pat::Union(inner) => inner.visit_bindings_inner(visit),
             Pat::Add(lhs, _) => lhs.visit_bindings_inner(visit),
             Pat::Tuple(items) => items
                 .iter()
@@ -107,7 +105,6 @@ impl<M: Meta> Binding<M> {
 #[derive(Clone, Debug)]
 pub enum Intrinsic {
     TypeName,
-    Union,
     NegNat,
     NegInt,
     NegReal,
