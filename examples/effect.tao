@@ -2,12 +2,33 @@ import "lib/std.tao"
 
 effect yield A = A => ()
 
-def yield_five : yield Nat ~ () = do {
-    yield(5)?;
-    ()
-}
+def yield_nat : yield Nat ~ () = yield_nat
+def yield_str : yield Str ~ () = yield_nat
+
+# def yield_five : yield Nat ~ () = @{
+#     yield(5)?;
+#     ()
+# }
 
 effect print = Str => ()
 effect input = () => Str
 
-def main = "Hello, world!"
+# def eff_main = do {
+#     print("Hello, world!")?;
+# }
+
+# fn handle_effects : print + input ~ () -> @ -> @ = eff, uni =>
+#     with uni
+#     on eff
+#         handle print in uni, eff, s =>
+#             let uni = @print(uni, s) in
+#             (uni, @resume(~print, eff, ()))
+#         handle input in uni, eff, () =>
+#             let (uni, s) = @input(uni) in
+#             (uni, @resume(~input, eff, s))
+#     until uni, () => uni
+
+# def main : @ -> @ =
+#     handle_effects(eff_main)
+
+def main = print("Hello, world!")

@@ -5,6 +5,7 @@ pub struct Context {
     pub datas: Datas,
     pub tys: Types,
     pub defs: Defs,
+    pub effects: Effects,
     pub errors: Vec<Error>,
     pub root_span: Span,
 }
@@ -16,6 +17,7 @@ impl Context {
             datas: Datas::default(),
             tys: Types::default(),
             defs: Defs::default(),
+            effects: Effects::default(),
             errors: Vec::default(),
             root_span: module.span(),
         };
@@ -25,6 +27,7 @@ impl Context {
         let mut classes = Vec::new();
         let mut aliases = Vec::new();
         let mut datas = Vec::new();
+        let mut effects = Vec::new();
         let mut members_init = Vec::new();
         let mut defs_init = Vec::new();
         // Declare items before declaration
@@ -53,7 +56,23 @@ impl Context {
             }
         }
         for (attr, eff) in module.effects() {
-            errors.push(Error::Unsupported(eff.name.span(), "effects"));
+            let (gen_scope, mut errs) = GenScope::from_ast(&eff.generics);
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
+            match this.effects.declare(Effect {
+                name: eff.name.clone(),
+                attr: attr.to_vec(),
+                gen_scope,
+                send: None,
+                recv: None,
+            }) {
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                },
+                // Only mark for further processing if no errors occurred during declaration
+                Ok(eff_id) => effects.push((attr, eff, eff_id, gen_scope)),
+            }
         }
         for (attr, alias) in module.aliases() {
             let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics);

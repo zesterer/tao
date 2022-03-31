@@ -5,6 +5,7 @@ pub mod concrete;
 pub mod context;
 pub mod data;
 pub mod def;
+pub mod effect;
 pub mod error;
 pub mod exhaustivity;
 pub mod infer;
@@ -19,6 +20,7 @@ pub use crate::{
     context::Context,
     data::{Datas, Data, DataId, Alias, AliasId},
     def::{Defs, Def, DefId},
+    effect::{Effects, Effect, EffectId},
     error::Error,
     exhaustivity::{exhaustivity, ExamplePat},
     hir::{InferExpr, InferBinding, TyExpr, TyBinding, ConBinding, ConExpr, Intrinsic},

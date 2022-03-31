@@ -90,6 +90,7 @@ impl Context {
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 Repr::Tuple(fields.into_iter().map(|(_, ty)| ty).collect())
             },
+            ConTy::Effect(_, _) => todo!(),
         }
     }
 

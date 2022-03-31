@@ -11,6 +11,7 @@ pub enum ConTy {
     Record(BTreeMap<Ident, ConTyId>),
     Func(ConTyId, ConTyId),
     Data(ConDataId),
+    Effect(ConEffectId, ConTyId),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -38,6 +39,8 @@ impl fmt::Display for ConProc {
 pub type ConProcId = Intern<ConProc>;
 
 pub type ConDataId = Intern<(DataId, Vec<ConTyId>)>;
+
+pub type ConEffectId = Intern<(EffectId, Vec<ConTyId>)>;
 
 pub struct TyInsts<'a> {
     self_ty: Option<ConTyId>,
@@ -157,6 +160,13 @@ impl ConContext {
                 .into_iter()
                 .zip(y.1.iter())
                 .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
+            (Ty::Effect(_, xs, x_out), ConTy::Effect(y, y_out)) => {
+                xs
+                    .into_iter()
+                    .zip(y.1.iter())
+                    .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen));
+                self.derive_links(hir, x_out, *y_out, link_gen);
+            },
             (x, y) => todo!("{:?}", (x, y)),
         }
     }
@@ -239,6 +249,14 @@ impl ConContext {
                     self_ty: Some(self_ty),
                     gen: &gen,
                 });
+            },
+            Ty::Effect(eff, args, out) => {
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                    .collect::<Vec<_>>();
+                let out = self.lower_ty(hir, out, ty_insts);
+                ConTy::Effect(Intern::new((eff, args.to_vec())), out)
             },
         };
 
@@ -439,6 +457,7 @@ impl ConContext {
         ConTyDisplay {
             con_ctx: self,
             datas: &hir.datas,
+            effects: &hir.effects,
             ty,
             lhs_exposed: false,
         }
@@ -449,6 +468,7 @@ impl ConContext {
 pub struct ConTyDisplay<'a> {
     con_ctx: &'a ConContext,
     datas: &'a Datas,
+    effects: &'a Effects,
     ty: ConTyId,
     lhs_exposed: bool,
 }
@@ -484,6 +504,10 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
+            ConTy::Effect(eff_id, out) => write!(f, "{}{} ~ {}", *self.effects.get(eff_id.0).name, eff_id.1
+                .iter()
+                .map(|param| format!(" {}", self.with_ty(*param, true)))
+                .collect::<String>(), self.with_ty(out, true)),
         }
     }
 }

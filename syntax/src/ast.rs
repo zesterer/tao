@@ -214,6 +214,7 @@ pub enum Expr {
     ClassAccess(SrcNode<Type>, SrcNode<Ident>),
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Update(SrcNode<Self>, Vec<(SrcNode<Ident>, SrcNode<Self>)>),
+    Block(Vec<SrcNode<Self>>, SrcNode<Self>),
 }
 
 #[derive(Debug, PartialEq)]

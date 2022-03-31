@@ -46,6 +46,7 @@ pub enum Ty {
     Gen(usize, GenScopeId),
     SelfType,
     Assoc(TyId, ClassId, SrcNode<Ident>),
+    Effect(EffectId, Vec<TyId>, TyId),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -116,6 +117,10 @@ impl Types {
             (Ty::Assoc(x_ty, x_class, x_name), Ty::Assoc(y_ty, y_class, y_name)) => self.is_eq(x_ty, y_ty)
                 && x_class == y_class
                 && *x_name == *y_name,
+            (Ty::Effect(x, xs, x_out), Ty::Effect(y, ys, y_out)) => x == y && xs.len() == ys.len() && xs
+                .into_iter()
+                .zip(ys)
+                .all(|(x, y)| self.is_eq(x, y)) && self.is_eq(x_out, y_out),
             _ => false,
         }
     }
@@ -142,13 +147,16 @@ impl Types {
             Ty::Gen(id, _) => gen(id),
             Ty::SelfType => true,
             Ty::Assoc(_, _, _) => true,
+            // An effect is always an inhabited object until propagated, even if the output type is not inhabited
+            Ty::Effect(_, _, _) => true,
         }
     }
 
-    pub fn display<'a>(&'a self, datas: &'a Datas, ty: TyId) -> TyDisplay<'a> {
+    pub fn display<'a>(&'a self, datas: &'a Datas, effects: &'a Effects, ty: TyId) -> TyDisplay<'a> {
         TyDisplay {
             types: self,
             datas,
+            effects,
             ty,
             lhs_exposed: false,
             substitutes: Vec::new(),
@@ -160,6 +168,7 @@ impl Types {
 pub struct TyDisplay<'a> {
     types: &'a Types,
     datas: &'a Datas,
+    effects: &'a Effects,
     ty: TyId,
     lhs_exposed: bool,
     substitutes: Vec<(TyId, Rc<dyn Fn(&mut fmt::Formatter) -> fmt::Result + 'a>)>,
@@ -215,6 +224,14 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             // TODO: Include class_id?
             Ty::Assoc(inner, _class_id, assoc) => write!(f, "{}.{}", self.with_ty(inner, true), *assoc),
             Ty::SelfType => write!(f, "Self"),
+            Ty::Effect(eff, params, out) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{} ~ {})", *self.effects.get(eff).name, params
+                .iter()
+                .map(|param| format!(" {}", self.with_ty(*param, true)))
+                .collect::<String>(), self.with_ty(out, true)),
+            Ty::Effect(eff, params, out) => write!(f, "{}{} ~ {}", *self.effects.get(eff).name, params
+                .iter()
+                .map(|param| format!(" {}", self.with_ty(*param, true)))
+                .collect::<String>(), self.with_ty(out, true)),
         }
     }
 }

@@ -56,6 +56,50 @@ pub trait ToHir: Sized {
     fn to_hir(self: &SrcNode<Self>, infer: &mut Infer, scope: &Scope) -> InferNode<Self::Output>;
 }
 
+// Enforce the obligations of a kind's generics
+// Fails if the number of parameters doesn't match the number of generic types in the scope
+fn enforce_generic_obligations(
+    infer: &mut Infer,
+    gen_scope: GenScopeId,
+    params: &[TyVar],
+    span: Span,
+    item_span: Span,
+) -> Result<(), ()> {
+    let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope);
+
+    if gen_scope.len() != params.len() {
+        let err = Error::WrongNumberOfGenerics(
+            span,
+            params.len(),
+            if gen_scope.len() == 0 {
+                item_span
+            } else {
+                gen_scope.span
+            },
+            gen_scope.len(),
+        );
+        infer.ctx_mut().emit(err);
+        Err(())
+    } else {
+        // Enforce obligations from data type
+        let mut obls = Vec::new();
+        for idx in 0..gen_scope.len() {
+            for obl in gen_scope
+                .get(idx)
+                .obligations()
+            {
+                match &**obl {
+                    Obligation::MemberOf(class) => obls.push((idx, *class, obl.span())),
+                }
+            }
+        }
+        for (idx, class, span) in obls {
+            infer.make_impl(params[idx], class, span, Vec::new());
+        }
+        Ok(())
+    }
+}
+
 impl ToHir for ast::Type {
     type Output = ();
 
@@ -128,39 +172,15 @@ impl ToHir for ast::Type {
                             TyInfo::Ref(err_ty)
                         }
                     } else if let Some(data) = infer.ctx().datas.lookup_data(**name) {
-                        let data_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.name_gen_scope(**name));
-
-                        if data_gen_scope.len() != params.len() {
-                            let err = Error::WrongNumberOfGenerics(
-                                self.span(),
-                                params.len(),
-                                if data_gen_scope.len() == 0 {
-                                    infer.ctx().datas.get_data_span(data)
-                                } else {
-                                    data_gen_scope.span
-                                },
-                                data_gen_scope.len(),
-                            );
-                            infer.ctx_mut().emit(err);
-                            TyInfo::Error(ErrorReason::Unknown)
-                        } else {
-                            // Enforce obligations from data type
-                            let mut obls = Vec::new();
-                            for idx in 0..data_gen_scope.len() {
-                                for obl in data_gen_scope
-                                    .get(idx)
-                                    .obligations()
-                                {
-                                    match &**obl {
-                                        Obligation::MemberOf(class) => obls.push((idx, *class, obl.span())),
-                                    }
-                                }
-                            }
-                            for (idx, class, span) in obls {
-                                infer.make_impl(params[idx], class, span, Vec::new());
-                            }
-
-                            TyInfo::Data(data, params)
+                        match enforce_generic_obligations(
+                            infer,
+                            infer.ctx().datas.name_gen_scope(**name),
+                            &params,
+                            self.span(),
+                            infer.ctx().datas.get_data_span(data),
+                        ) {
+                            Ok(()) => TyInfo::Data(data, params),
+                            Err(()) => TyInfo::Error(ErrorReason::Unknown),
                         }
                     } else {
                         infer.ctx_mut().emit(Error::NoSuchData(name.clone()));
@@ -174,9 +194,32 @@ impl ToHir for ast::Type {
                 infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, self.span());
                 TyInfo::Ref(assoc_ty)
             },
-            ast::Type::Effect(eff, params, out) => {
-                infer.ctx_mut().errors.push(Error::Unsupported(self.span(), "effects"));
-                TyInfo::Error(ErrorReason::Invalid)
+            ast::Type::Effect(name, params, out) => {
+                let params = params
+                    .iter()
+                    .map(|param| param.to_hir(infer, scope).meta().1)
+                    .collect::<Vec<_>>();
+
+                let out = out.to_hir(infer, scope).meta().1;
+
+                if let Some(eff_id) = infer.ctx().effects.lookup(**name) {
+                    let eff = infer.ctx().effects.get(eff_id);
+                    let eff_gen_scope = eff.gen_scope;
+                    let eff_span = eff.name.span();
+                    match enforce_generic_obligations(
+                        infer,
+                        eff_gen_scope,
+                        &params,
+                        self.span(),
+                        eff_span,
+                    ) {
+                        Ok(()) => TyInfo::Effect(eff_id, params, out),
+                        Err(()) => TyInfo::Error(ErrorReason::Unknown),
+                    }
+                } else {
+                    infer.ctx_mut().emit(Error::NoSuchEffect(name.clone()));
+                    TyInfo::Error(ErrorReason::Invalid)
+                }
             },
         };
 
@@ -282,7 +325,8 @@ impl ToHir for ast::Binding {
                 (TyInfo::List(item_ty), hir::Pat::ListFront(items, tail))
             },
             ast::Pat::Deconstruct(name, inner) => if let Some(data) = infer.ctx().datas.lookup_cons(**name) {
-                let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
+                let gen_scope_id = infer.ctx().datas.get_data(data).gen_scope;
+                let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope_id);
                 let generics_count = gen_scope.len();
                 let generic_tys = (0..generics_count)
                     .map(|i| gen_scope.get(i).name.span())
@@ -290,6 +334,17 @@ impl ToHir for ast::Binding {
                     .into_iter()
                     .map(|origin| infer.insert(self.span(), TyInfo::Unknown(Some(origin))))
                     .collect::<Vec<_>>();
+
+                if let Err(()) = enforce_generic_obligations(
+                    infer,
+                    gen_scope_id,
+                    &generic_tys,
+                    self.span(),
+                    infer.ctx().datas.get_data_span(data),
+                ) {
+                    // Only fails if generic count doesn't match, but they're from the same source of truth!
+                    unreachable!();
+                }
 
                 let inner_ty = infer
                     .ctx()
@@ -340,7 +395,7 @@ impl ToHir for ast::Binding {
     }
 }
 
-fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: Option<Span>) -> (TyInfo, hir::Expr<InferMeta>) {
+fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: Option<Span>, inst_span: Span) -> (TyInfo, hir::Expr<InferMeta>) {
     let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
     let generics_count = scope.len();
     let generic_tys = (0..generics_count)
@@ -377,7 +432,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
         // Bit messy, makes sure that we don't accidentally infer a bad type backwards
         let def_ty_actual = infer.instantiate(body_ty, span_override, &get_gen, None);
         let def_ty = infer.unknown(span);
-        infer.make_flow(def_ty_actual, def_ty, EqInfo::from(span));
+        infer.make_flow(def_ty_actual, def_ty, EqInfo::from(inst_span));
         Some(def_ty)
     } else {
         None
@@ -408,7 +463,7 @@ impl ToHir for ast::Expr {
                     ast::LangDef::IoBind => infer.ctx().defs.lang.io_bind.unwrap(),
                 };
 
-                instantiate_def(def, self.span(), infer, Some(self.span()))
+                instantiate_def(def, self.span(), infer, Some(self.span()), self.span())
             },
             ast::Expr::Local(local) => {
                 if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
@@ -418,7 +473,7 @@ impl ToHir for ast::Expr {
                         (TyInfo::Ref(ty), hir::Expr::Local(*local))
                     }
                 } else if let Some(def_id) = infer.ctx().defs.lookup(*local) {
-                    instantiate_def(def_id, self.span(), infer, None)
+                    instantiate_def(def_id, self.span(), infer, None, self.span())
                 } else {
                     infer.ctx_mut().emit(Error::NoSuchLocal(SrcNode::new(*local, self.span())));
                     (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
@@ -680,22 +735,15 @@ impl ToHir for ast::Expr {
                     .map(|origin| infer.insert(self.span(), TyInfo::Unknown(Some(origin))))
                     .collect::<Vec<_>>();
 
-                let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
-
-                // Enforce obligations from data type
-                let mut obls = Vec::new();
-                for idx in 0..gen_scope.len() {
-                    for obl in gen_scope
-                        .get(idx)
-                        .obligations()
-                    {
-                        match &**obl {
-                            Obligation::MemberOf(class) => obls.push((idx, *class, obl.span())),
-                        }
-                    }
-                }
-                for (idx, class, span) in obls {
-                    infer.make_impl(generic_tys[idx], class, span, Vec::new());
+                if let Err(()) = enforce_generic_obligations(
+                    infer,
+                    infer.ctx().datas.get_data(data).gen_scope,
+                    &generic_tys,
+                    self.span(),
+                    infer.ctx().datas.get_data_span(data),
+                ) {
+                    // Only fails if generic count doesn't match, but they're from the same source of truth!
+                    unreachable!();
                 }
 
                 let inner_ty = infer
@@ -860,6 +908,9 @@ impl ToHir for ast::Expr {
                     .collect();
 
                 (TyInfo::Ref(record.meta().1), hir::Expr::Update(record, fields))
+            },
+            ast::Expr::Block(init, last) => {
+                todo!()
             },
         };
 

@@ -19,6 +19,7 @@ pub enum TyInfo {
     SelfType,
     // An opaque associated type that *cannot* be determined due to lack of information
     Assoc(TyVar, ClassId, SrcNode<Ident>),
+    Effect(EffectId, Vec<TyVar>, TyVar),
 }
 
 #[derive(Clone, Default, Debug)]
@@ -174,6 +175,12 @@ impl<'a> Infer<'a> {
                 // Type is projected, so error does not propagate backwards
                 // TODO: Should it?
                 TyInfo::Assoc(_, _, _) => {},
+                TyInfo::Effect(_, args, out) => {
+                    args
+                        .into_iter()
+                        .for_each(|arg| self.set_error(arg));
+                    self.set_error(out);
+                },
             }
         }
     }
@@ -248,6 +255,10 @@ impl<'a> Infer<'a> {
                 self.make_impl(inner, class_id, span, vec![(assoc, assoc_ty)]);
                 TyInfo::Ref(assoc_ty)
             },
+            Ty::Effect(eff, params, out) => TyInfo::Effect(eff, params
+                .into_iter()
+                .map(|param| self.instantiate(param, span, f, self_ty))
+                .collect(), self.instantiate(out, span, f, self_ty)),
         };
         self.insert(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), info)
     }
@@ -323,6 +334,9 @@ impl<'a> Infer<'a> {
                     .into_iter()
                     .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
                 TyInfo::Assoc(inner, _, _) => x == inner || self.occurs_in_inner(x, inner, seen),
+                TyInfo::Effect(_, ys, out) => ys
+                    .into_iter()
+                    .any(|y| x == y || self.occurs_in_inner(x, y, seen)) || self.occurs_in_inner(x, out, seen) ,
             };
 
             seen.pop();
@@ -406,7 +420,7 @@ impl<'a> Infer<'a> {
                 i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
-                xs.len() == ys.len() => {
+                xs.len() == ys.len() /* TODO: Assert this! */ => {
                 // TODO: Unnecessarily conservative, variance of data type generics should be determined
                 let co_error = make_flow_many(self, xs.iter().copied(), ys.iter().copied()).err();
                 let contra_error = make_flow_many(self, ys, xs).err().map(|(a, b)| (b, a));
@@ -421,6 +435,17 @@ impl<'a> Infer<'a> {
                     let contra_error = self.make_flow_inner(y, x).err().map(|(a, b)| (b, a));
                     co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
                 },
+            (TyInfo::Effect(x_eff, xs, x_out), TyInfo::Effect(y_eff, ys, y_out)) if x_eff == y_eff &&
+                xs.len() == ys.len() /* TODO: Assert this! */ => {
+                // TODO: Unnecessarily conservative, variance of effect generics should be determined
+                let co_error = make_flow_many(self, xs.iter().copied(), ys.iter().copied()).err();
+                let contra_error = make_flow_many(self, ys, xs).err().map(|(a, b)| (b, a));
+                let out_error = self.make_flow_inner(x_out, y_out).err();
+                co_error
+                    .or(contra_error)
+                    .or(out_error)
+                    .map(Err).unwrap_or(Ok(()))
+            },
             (_, _) => Err((x, y)),
         }
     }
@@ -470,6 +495,14 @@ impl<'a> Infer<'a> {
             TyInfo::Assoc(inner, class_id, assoc) => {
                 let inner = self.try_reinstantiate(span, inner);
                 self.insert(self.span(ty), TyInfo::Assoc(inner, class_id, assoc))
+            },
+            TyInfo::Effect(eff, args, out) => {
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.try_reinstantiate(span, arg))
+                    .collect();
+                let out = self.try_reinstantiate(span, out);
+                self.insert(self.span(ty), TyInfo::Effect(eff, args, out))
             },
         }
     }
@@ -811,6 +844,10 @@ impl<'a> Infer<'a> {
                 .all(|(x, y)| self.covers_var(x, y)),
             (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, class_y, assoc_y))
                 if class_x == class_y && assoc_x == assoc_y => self.covers_var(x, y),
+            (TyInfo::Effect(x, xs, x_out), Ty::Effect(y, ys, y_out)) if x == y && xs.len() == ys.len() => xs
+                .into_iter()
+                .zip(ys.into_iter())
+                .all(|(x, y)| self.covers_var(x, y)) && self.covers_var(x_out, y_out),
             _ => false,
         }
     }
@@ -840,6 +877,13 @@ impl<'a> Infer<'a> {
             (Ty::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
                 if class_x == class_y && assoc_x == assoc_y => self.derive_links(x, y, link_gen),
             (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
+            (Ty::Effect(_, xs, x_out), TyInfo::Effect(_, ys, y_out)) => {
+                xs
+                    .into_iter()
+                    .zip(ys.into_iter())
+                    .for_each(|(x, y)| self.derive_links(x, y, link_gen));
+                self.derive_links(x_out, y_out, link_gen);
+            },
             _ => {}, // Only type constructors and generic types generate obligations
         }
     }
@@ -1050,6 +1094,10 @@ impl<'a> Checked<'a> {
                 TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
                 TyInfo::SelfType => Ty::SelfType,
                 TyInfo::Assoc(inner, class_id, assoc) => Ty::Assoc(self.reify_inner(inner), class_id, assoc),
+                TyInfo::Effect(eff, args, out) => Ty::Effect(eff, args
+                    .into_iter()
+                    .map(|arg| self.reify_inner(arg))
+                    .collect(), self.reify_inner(out)),
             };
             self.infer.ctx.tys.insert(self.infer.span(var), ty)
         }

@@ -205,7 +205,7 @@ impl Classes {
                                         .collect::<Vec<_>>()
                                         .join(", "))
                                 },
-                                hir.tys.display(&hir.datas, c.member),
+                                hir.tys.display(&hir.datas, &hir.effects, c.member),
                                 **self.get(class).name,
                                 gen_scope.span.src(),
                             )

@@ -20,6 +20,7 @@ pub enum Error {
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
     NoSuchClassItem(SrcNode<Ident>, SrcNode<Ident>),
+    NoSuchEffect(SrcNode<Ident>),
     AmbiguousClassItem(SrcNode<Ident>, Vec<ClassId>),
     MissingClassItem(Span, SrcNode<Ident>, SrcNode<Ident>),
     RecursiveAlias(AliasId, TyId, Span),
@@ -28,6 +29,7 @@ pub enum Error {
     DuplicateConsName(Ident, Span, Span),
     DuplicateGenName(Ident, Span, Span),
     DuplicateClassName(Ident, Span, Span),
+    DuplicateEffectName(Ident, Span, Span),
     DuplicateClassItem(Ident, Span, Span),
     DuplicateMemberItem(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
@@ -48,7 +50,7 @@ impl Error {
     pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, main_src: SrcId, writer: impl Write) {
         use ariadne::{Report, ReportKind, Label, Color, Fmt, Span, Config};
 
-        let display = |id| ctx.tys.display(&ctx.datas, id);
+        let display = |id| ctx.tys.display(&ctx.datas, &ctx.effects, id);
 
         let (msg, spans, notes) = match self {
             Error::CannotCoerce(x, y, inner, info) => {
@@ -214,6 +216,11 @@ impl Error {
                 ],
                 vec![format!("Consider adding the item like {}", format!("=> {} = ...", *item).fg(Color::Blue))],
             ),
+            Error::NoSuchEffect(a) => (
+                format!("No such effect {}", (*a).fg(Color::Red)),
+                vec![(a.span(), format!("Does not exist"), Color::Red)],
+                vec![],
+            ),
             Error::RecursiveAlias(alias, ty, span) => (
                 format!("Recursive type alias"),
                 vec![
@@ -265,6 +272,14 @@ impl Error {
                 vec![
                     (old, format!("Previous type class"), Color::Yellow),
                     (new, format!("Conflicting type class"), Color::Red),
+                ],
+                vec![],
+            ),
+            Error::DuplicateEffectName(name, old, new) => (
+                format!("Effect {} declared multiple times", name.fg(Color::Red)),
+                vec![
+                    (old, format!("Previous effect"), Color::Yellow),
+                    (new, format!("Conflicting effect"), Color::Red),
                 ],
                 vec![],
             ),
