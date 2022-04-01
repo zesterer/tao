@@ -6,6 +6,13 @@ use std::{
 use im::{Vector, vector};
 
 #[derive(Clone, Debug)]
+pub struct Effect {
+    addr: Addr,
+    captures: Vector<Value>,
+    handlers: Vector<(EffectId, Value)>,
+}
+
+#[derive(Clone, Debug)]
 pub enum Value {
     Int(i64),
     Real(f64),
@@ -15,7 +22,7 @@ pub enum Value {
     Func(Addr, Vector<Self>),
     Sum(usize, Rc<Self>),
     Universe(u64),
-    Effect(Addr, Vector<Self>),
+    Effect(Rc<Effect>),
 }
 
 impl Value {
@@ -27,7 +34,7 @@ impl Value {
     pub fn func(self) -> (Addr, Vector<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
     pub fn sum(self) -> (usize, Rc<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
     pub fn universe(self) -> u64 { if let Value::Universe(x) = self { x } else { panic!("{}", self) } }
-    pub fn eff(self) -> (Addr, Vector<Self>) { if let Value::Effect(e_addr, captures) = self { (e_addr, captures) } else { panic!("{}", self) } }
+    pub fn eff(self) -> Rc<Effect> { if let Value::Effect(eff) = self { eff } else { panic!("{}", self) } }
 }
 
 impl fmt::Display for Value {
@@ -56,11 +63,11 @@ impl fmt::Display for Value {
             ),
             Value::Sum(variant, inner) => write!(f, "#{} {}", variant, inner),
             Value::Universe(x) => write!(f, "Universe({})", x),
-            Value::Effect(addr, captures) => write!(
+            Value::Effect(eff) => write!(
                 f,
                 "Effect(addr = 0x{:03X}, captures = {})",
-                addr.0,
-                captures.len(),
+                eff.addr.0,
+                eff.captures.len(),
             ),
         }
     }
@@ -77,6 +84,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
     } else {
         Vec::new()
     };
+    let mut handlers = Vector::new();
 
     let mut tick = 0u64;
     loop {
@@ -104,10 +112,11 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 stack.push(x);
             },
             Instr::Call(n) => {
-                funcs.push(next_addr);
+                funcs.push((next_addr, handlers.len()));
                 next_addr = addr.jump(n);
             },
-            Instr::Ret => if let Some(addr) = funcs.pop() {
+            Instr::Ret => if let Some((addr, handler_count)) = funcs.pop() {
+                handlers.truncate(handler_count);
                 next_addr = addr;
             } else {
                 assert_eq!(locals.len(), 0, "Local stack still has values, this is probably a bug");
@@ -129,7 +138,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::ApplyFunc => {
                 let (f_addr, mut captures) = stack.pop().unwrap().func();
 
-                funcs.push(next_addr);
+                funcs.push((next_addr, handlers.len()));
                 next_addr = f_addr;
 
                 locals.extend(captures.into_iter());
@@ -294,19 +303,40 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 ]));
             },
             Instr::MakeEffect(i, n) => {
-                let f_addr = addr.jump(i);
-                let func = Value::Effect(f_addr, stack.split_off(stack.len().saturating_sub(n)).into());
+                let addr = addr.jump(i);
+                let func = Value::Effect(Rc::new(Effect {
+                    addr,
+                    captures: stack.split_off(stack.len().saturating_sub(n)).into(),
+                    handlers: handlers.clone(),
+                }));
                 stack.push(func);
             },
             Instr::Propagate => {
-                let (e_addr, mut captures) = stack.pop().unwrap().eff();
+                let mut eff = stack.pop().unwrap().eff();
 
-                funcs.push(next_addr);
-                next_addr = e_addr;
+                funcs.push((next_addr, handlers.len()));
+                next_addr = eff.addr;
+
+                handlers.extend(eff.handlers.iter().cloned());
+
+                locals.extend(eff.captures.iter().cloned());
+            },
+            Instr::Suspend(eff) => {
+                let (f_addr, mut captures) = handlers
+                    .iter()
+                    .rev()
+                    .find(|(e, _)| *e == eff)
+                    .unwrap().1.clone().func();
+
+                funcs.push((next_addr, handlers.len()));
+                next_addr = f_addr;
 
                 locals.extend(captures.into_iter());
             },
-            Instr::Suspend(eff) => todo!(),
+            Instr::Register(eff) => {
+                let handler = stack.pop().unwrap();
+                handlers.push_back((eff, handler));
+            },
         }
 
         tick += 1;

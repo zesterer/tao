@@ -62,6 +62,7 @@ pub enum Instr {
     MakeEffect(isize, usize),
     Propagate,
     Suspend(EffectId),
+    Register(EffectId),
 }
 
 impl Instr {
@@ -165,6 +166,7 @@ impl Program {
                 Instr::MakeEffect(_, n) => -(n as isize),
                 Instr::Propagate => -1,
                 Instr::Suspend(_) => 0,
+                Instr::Register(_) => -1,
             };
 
             let instr_display = match instr {
@@ -214,6 +216,7 @@ impl Program {
                 Instr::MakeEffect(i, n) => format!("eff.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
                 Instr::Propagate => format!("eff.propagate"),
                 Instr::Suspend(eff) => format!("eff.suspend {:?}", eff),
+                Instr::Register(eff) => format!("eff.register {:?}", eff),
             };
 
             writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();
