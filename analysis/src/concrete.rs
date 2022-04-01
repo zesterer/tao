@@ -471,10 +471,40 @@ impl ConContext {
                 .iter()
                 .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))
                 .collect()),
-            hir::Expr::Basin(_, _) => todo!(),
+            hir::Expr::Basin(eff, inner) => hir::Expr::Basin(
+                self.lower_effect(hir, *eff, ty_insts),
+                self.lower_expr(hir, inner, ty_insts),
+            ),
+            hir::Expr::Handle { expr, eff, send, recv } => hir::Expr::Handle {
+                expr: self.lower_expr(hir, expr, ty_insts),
+                eff: self.lower_effect(hir, *eff, ty_insts),
+                send: self.lower_binding(hir, send, ty_insts),
+                recv: self.lower_expr(hir, recv, ty_insts),
+            },
         };
 
         ConNode::new(expr, self.lower_ty(hir, ty_expr.meta().1, ty_insts))
+    }
+
+    pub fn lower_effect(&mut self, hir: &Context, eff: EffectId, ty_insts: &TyInsts) -> ConEffectId {
+        let (decl, args) = match hir.tys.get_effect(eff) {
+            Effect::Error => panic!("Error effect should not exist during concretization"),
+            Effect::Known(decl, args) => (decl, args
+                .into_iter()
+                .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                .collect::<Vec<_>>()),
+        };
+        let id = Intern::new((decl, args.clone()));
+        if !self.effects.contains_key(&id) {
+            let decl = hir.effects.get_decl(decl);
+            let ty_insts = TyInsts { self_ty: None, gen: &args };
+            let eff = ConEffect {
+                send: self.lower_ty(hir, decl.send.unwrap(), &ty_insts),
+                recv: self.lower_ty(hir, decl.recv.unwrap(), &ty_insts),
+            };
+            self.effects.insert(id, eff);
+        }
+        id
     }
 
     pub fn display<'a>(&'a self, hir: &'a Context, ty: ConTyId) -> ConTyDisplay<'a> {

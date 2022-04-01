@@ -78,14 +78,14 @@ fn enforce_generic_obligations(
     infer: &mut Infer,
     gen_scope: GenScopeId,
     params: &[TyVar],
-    span: Span,
+    use_span: Span,
     item_span: Span,
 ) -> Result<(), ()> {
     let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope);
 
     if gen_scope.len() != params.len() {
         let err = Error::WrongNumberOfGenerics(
-            span,
+            use_span,
             params.len(),
             if gen_scope.len() == 0 {
                 item_span
@@ -110,7 +110,7 @@ fn enforce_generic_obligations(
             }
         }
         for (idx, class, span) in obls {
-            infer.make_impl(params[idx], class, span, Vec::new());
+            infer.make_impl(params[idx], class, use_span, Vec::new(), span);
         }
         Ok(())
     }
@@ -433,7 +433,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
             .to_vec()
         {
             match &*obl {
-                Obligation::MemberOf(class) => infer.make_impl(*ty, *class, obl.span(), Vec::new()),
+                Obligation::MemberOf(class) => infer.make_impl(*ty, *class, obl.span(), Vec::new(), inst_span),
             }
         }
     }
@@ -974,6 +974,49 @@ impl ToHir for ast::Expr {
                     });
 
                 (TyInfo::Effect(eff, last_meta.1), hir::Expr::Basin(eff, chain))
+            },
+            ast::Expr::Handle { expr, eff_name, eff_args, send, recv } => {
+                let expr = expr.to_hir(infer, &scope);
+                let send = send.to_hir(infer, &scope);
+                let recv = recv.to_hir(infer, &scope.with_many(&send.get_binding_tys()));
+
+                let eff_args = eff_args
+                    .iter()
+                    .map(|arg| arg.to_hir(infer, scope).meta().1)
+                    .collect::<Vec<_>>();
+
+                let out_ty = infer.unknown(self.span());
+
+                if let Some(eff_id) = infer.ctx().effects.lookup(**eff_name) {
+                    let eff = infer.ctx().effects.get_decl(eff_id);
+                    let eff_gen_scope = eff.gen_scope;
+                    let eff_span = eff.name.span();
+                    match enforce_generic_obligations(
+                        infer,
+                        eff_gen_scope,
+                        &eff_args,
+                        self.span(),
+                        eff_span,
+                    ) {
+                        Ok(()) => {
+                            let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, eff_args));
+                            infer.make_effect_send_recv(eff, send.meta().1, recv.meta().1, eff_name.span());
+                            let eff_obj_ty = infer.insert(expr.meta().0, TyInfo::Effect(eff, out_ty));
+                            infer.make_flow(expr.meta().1, eff_obj_ty, EqInfo::from(self.span()));
+
+                            (TyInfo::Ref(out_ty), hir::Expr::Handle {
+                                expr,
+                                eff,
+                                send,
+                                recv,
+                            })
+                        },
+                        Err(()) => (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error),
+                    }
+                } else {
+                    infer.ctx_mut().emit(Error::NoSuchEffect(eff_name.clone()));
+                    (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error) // TODO: Can we avoid making this entire node an error?
+                }
             },
         };
 

@@ -391,6 +391,7 @@ impl Context {
                 mir_record.into_inner()
             },
             hir::Expr::Basin(_, _) => todo!(),
+            hir::Expr::Handle { .. } => todo!(),
         };
 
         MirNode::new(expr, self.lower_ty(hir, con, *con_expr.meta()))

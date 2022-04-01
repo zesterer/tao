@@ -105,6 +105,12 @@ impl Reify for hir::Expr<InferMeta> {
                 .map(|(name, field)| (name, field.reify(infer)))
                 .collect()),
             hir::Expr::Basin(eff, inner) => hir::Expr::Basin(infer.reify_effect(eff), inner.reify(infer)),
+            hir::Expr::Handle { expr, eff, send, recv } => hir::Expr::Handle {
+                expr: expr.reify(infer),
+                eff: infer.reify_effect(eff),
+                send: send.reify(infer),
+                recv: recv.reify(infer),
+            },
         };
 
         TyNode::new(expr, (span, infer.reify(ty)))

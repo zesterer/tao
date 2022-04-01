@@ -276,7 +276,7 @@ impl Context {
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
             for obl in infer.ctx().classes.get(*class_id).obligations.clone().expect("Obligations must be known") {
                 match obl.inner() {
-                    Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span(), Vec::new()),
+                    Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span(), Vec::new(), member_ty.meta().0),
                 }
             }
 

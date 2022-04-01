@@ -16,7 +16,7 @@ pub enum Error {
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyId, Span),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyId, Span, TyId, Span),
     // (obligation, type, obligation_origin, generic_definition
-    TypeDoesNotFulfil(ClassId, TyId, Span, Option<Span>),
+    TypeDoesNotFulfil(ClassId, TyId, Span, Option<Span>, Span),
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
@@ -171,16 +171,17 @@ impl Error {
                     _ => vec![],
                 },
             ),
-            Error::TypeDoesNotFulfil(class, ty, span, gen_span) => (
-                format!("Type {} does not fulfil {} obligation", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Red)),
+            Error::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => (
+                format!("Type {} is not a member of {}", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Red)),
                 {
                     let mut labels = vec![
-                        (span, format!("Obligation is required here"), Color::Yellow),
+                        (use_span, format!("Because it is used here"), Color::Yellow),
                         (ctx.tys.get_span(ty), format!(
                             "{} must be a member of {}",
                             display(ty).fg(Color::Red),
                             (*ctx.classes.get(class).name).fg(Color::Red),
                         ), Color::Red),
+                        (obl_span, format!("Membership of {} is required here", (*ctx.classes.get(class).name).fg(Color::Cyan)), Color::Cyan),
                     ];
                     if let Some(gen_span) = gen_span {
                         labels.push((gen_span, format!(

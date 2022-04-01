@@ -800,16 +800,40 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 }, span)
             } else {
                 expr
-            });
+            })
+            .boxed();
 
         let cons = type_ident_parser()
             .map_with_span(SrcNode::new)
-            .then(expr.map_with_span(SrcNode::new))
+            .then(expr.clone().map_with_span(SrcNode::new))
             .map(|(cons, expr)| ast::Expr::Cons(cons, expr))
             .map_with_span(SrcNode::new)
-            .or(with);
+            .or(with)
+            .boxed();
 
-        cons
+        let handle = cons.then(just(Token::Handle)
+                .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
+                .then(type_parser()
+                    .map_with_span(SrcNode::new)
+                    .repeated())
+                .then_ignore(just(Token::With))
+                .then(binding_parser().map_with_span(SrcNode::new))
+                .then_ignore(just(Token::Op(Op::RFlow)))
+                .then(expr.clone().map_with_span(SrcNode::new))
+                .or_not())
+            .map_with_span(|(expr, handle), span| if let Some((((eff_name, eff_args), send), recv)) = handle {
+                SrcNode::new(ast::Expr::Handle {
+                    expr,
+                    eff_name,
+                    eff_args,
+                    send,
+                    recv,
+                }, span)
+            } else {
+                expr
+            });
+
+        handle
             .map(|b| b.into_inner())
     })
         .labelled("expression")

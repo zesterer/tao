@@ -215,6 +215,13 @@ pub enum Expr {
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Update(SrcNode<Self>, Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Block(Vec<SrcNode<Self>>, SrcNode<Self>),
+    Handle {
+        expr: SrcNode<Self>,
+        eff_name: SrcNode<Ident>,
+        eff_args: Vec<SrcNode<Type>>,
+        send: SrcNode<Binding>,
+        recv: SrcNode<Self>
+    },
 }
 
 #[derive(Debug, PartialEq)]

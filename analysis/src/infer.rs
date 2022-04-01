@@ -58,7 +58,8 @@ pub enum InferError {
     NoSuchField(TyVar, Span, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
-    TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>),
+    // (_, _, obligation span, _, usage span)
+    TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>, Span),
     RecursiveAlias(AliasId, TyVar, Span),
     PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
     AmbiguousClassItem(SrcNode<Ident>, Vec<ClassId>),
@@ -70,7 +71,7 @@ enum Constraint {
     Access(TyVar, SrcNode<Ident>, TyVar),
     Update(TyVar, SrcNode<Ident>, TyVar),
     Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
-    Impl(TyVar, ClassId, Span, Vec<(SrcNode<Ident>, TyVar)>),
+    Impl(TyVar, ClassId, Span, Vec<(SrcNode<Ident>, TyVar)>, Span),
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     EffectSendRecv(EffectVar, TyVar, TyVar, Span),
@@ -88,6 +89,14 @@ pub struct EffectVar(usize);
 pub struct Infer<'a> {
     ctx: &'a mut Context,
     gen_scope: Option<GenScopeId>,
+    // TODO: Add EffectSet to each type var, like
+    // enum EffectSet {
+    //     Unknown,
+    //     // Effect set can grow through inference
+    //     Open(Vec<EffectVar>),
+    //     // Effect set cannot grow through inference and instead just generates check constraints
+    //     Closed(Vec<EffectVar>),
+    // }
     vars: Vec<(Span, TyInfo, Result<(), ()>)>,
     class_vars: Vec<(Span, Option<ClassId>)>,
     effect_vars: Vec<(Span, EffectInfo)>,
@@ -264,7 +273,7 @@ impl<'a> Infer<'a> {
                 let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
                 let inner = self.instantiate(inner, span, f, self_ty);
                 let assoc_ty = self.unknown(span);
-                self.make_impl(inner, class_id, span, vec![(assoc, assoc_ty)]);
+                self.make_impl(inner, class_id, span, vec![(assoc, assoc_ty)], span);
                 TyInfo::Ref(assoc_ty)
             },
             Ty::Effect(eff, out) => match self.ctx.tys.get_effect(eff) {
@@ -302,8 +311,8 @@ impl<'a> Infer<'a> {
     }
 
     // `unchecked_assoc` allows unification of type variables with an instance's associated type
-    pub fn make_impl(&mut self, ty: TyVar, class: ClassId, span: Span, unchecked_assoc: Vec<(SrcNode<Ident>, TyVar)>) {
-        self.constraints.push_back(Constraint::Impl(ty, class, span, unchecked_assoc));
+    pub fn make_impl(&mut self, ty: TyVar, class: ClassId, obl_span: Span, unchecked_assoc: Vec<(SrcNode<Ident>, TyVar)>, use_span: Span) {
+        self.constraints.push_back(Constraint::Impl(ty, class, obl_span, unchecked_assoc, use_span));
     }
 
     pub fn make_class_field_known(&mut self, ty: TyVar, field_name: SrcNode<Ident>, class_id: Option<ClassId>, field_ty: TyVar, span: Span) -> ClassVar {
@@ -723,7 +732,7 @@ impl<'a> Infer<'a> {
                     let result_ty = self.insert(self.span(output), info);
                     self.make_flow(result_ty, output, self.span(output));
                 })),
-            Constraint::Impl(ty, obligation, span, unchecked_assoc) => self.resolve_obligation(ty, obligation, span).map(|res| match res {
+            Constraint::Impl(ty, obligation, obl_span, unchecked_assoc, use_span) => self.resolve_obligation(ty, obligation, obl_span, use_span).map(|res| match res {
                     Ok(member) => {
                         for (assoc, assoc_ty) in unchecked_assoc {
                             match member {
@@ -734,9 +743,9 @@ impl<'a> Infer<'a> {
                                     self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
 
                                     if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
-                                        let assoc_ty_inst = self.instantiate(member_assoc_ty, Some(span), &|idx, gen_scope, ctx| links[&idx], Some(ty));
+                                        let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
                                         // TODO: Check ordering for soundness
-                                        self.make_flow(assoc_ty_inst, assoc_ty, span);
+                                        self.make_flow(assoc_ty_inst, assoc_ty, obl_span);
                                     }
                                 },
                                 Err(true) => {
@@ -744,9 +753,9 @@ impl<'a> Infer<'a> {
                                     self.set_error(assoc_ty);
                                 },
                                 Err(false) => {
-                                    let assoc_info = self.insert(span, TyInfo::Assoc(ty, obligation, assoc.clone()));
+                                    let assoc_info = self.insert(obl_span, TyInfo::Assoc(ty, obligation, assoc.clone()));
                                     // TODO: Check ordering for soundness
-                                    self.make_flow(assoc_info, assoc_ty, span);
+                                    self.make_flow(assoc_info, assoc_ty, obl_span);
                                 },
                             }
                         }
@@ -779,7 +788,9 @@ impl<'a> Infer<'a> {
                         &|idx, _gen_scope, _ctx| args[idx],
                         None,
                     );
-                    self.make_flow(recv_ty, recv, span);
+                    // TODO: The variance here is a bit fucked, this needs to swap when we're
+                    // inferring flow into (from a handler) vs flow out of (via a propagation)
+                    self.make_flow(recv, recv_ty, span);
                     Some(Ok(()))
                 },
             },
@@ -806,7 +817,7 @@ impl<'a> Infer<'a> {
                 // Require an implementation to exist
                 self.make_impl(ty, class_id, span, vec![
                     (assoc, assoc_ty),
-                ]);
+                ], span);
 
                 Some(Ok(()))
             },
@@ -834,7 +845,7 @@ impl<'a> Infer<'a> {
             1 => {
                 let class_id = possible_classes.into_iter().next().unwrap();
                 self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
-                self.make_impl(ty, class_id, span, Vec::new());
+                self.make_impl(ty, class_id, span, Vec::new(), span);
                 let field_ty_id = **self.ctx.classes
                     .get(class_id)
                     .field(*field)
@@ -1013,7 +1024,7 @@ impl<'a> Infer<'a> {
     /// Resolve a class obligation for a type, returning the ID of the type's membership. If no member can be provided
     /// (because, for example, the membership is implied by a generic bound) then `Err(false)` is returned instead. If
     /// resolution failed due to an existing error, `Err(true)` is returned.
-    fn resolve_obligation(&mut self, ty: TyVar, obligation: ClassId, span: Span) -> Option<Result<Result<MemberId, bool>, InferError>> {
+    fn resolve_obligation(&mut self, ty: TyVar, obligation: ClassId, obl_span: Span, use_span: Span) -> Option<Result<Result<MemberId, bool>, InferError>> {
         // TODO: Resolve possible infinite loop when resolving by having an obligation cache
         match self.follow_info(ty) {
             TyInfo::Error(_) => {
@@ -1053,7 +1064,7 @@ impl<'a> Infer<'a> {
                         for obl in scope.get(gen_idx).obligations.as_ref().unwrap() {
                             match &**obl {
                                 Obligation::MemberOf(class) => {
-                                    self.constraints.push_back(Constraint::Impl(ty, *class, span, Vec::new()));
+                                    self.constraints.push_back(Constraint::Impl(ty, *class, obl_span, Vec::new(), use_span));
                                 },
                             }
                         }
@@ -1064,12 +1075,13 @@ impl<'a> Infer<'a> {
                     Some(Err(InferError::TypeDoesNotFulfil(
                         obligation,
                         ty,
-                        span,
+                        obl_span,
                         if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
                             Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
                         } else {
                             None
                         },
+                        use_span,
                     )))
                 }
             },
@@ -1110,8 +1122,8 @@ impl<'a> Infer<'a> {
                 Constraint::Binary(op, a, b, _output) => {
                     InferError::InvalidBinaryOp(op.clone(), a, b)
                 },
-                Constraint::Impl(ty, obligation, span, _) => {
-                    InferError::TypeDoesNotFulfil(obligation, ty, span, None)
+                Constraint::Impl(ty, obligation, obl_span, _, use_span) => {
+                    InferError::TypeDoesNotFulfil(obligation, ty, obl_span, None, use_span)
                 },
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
                     InferError::AmbiguousClassItem(field, Vec::new())
@@ -1168,7 +1180,7 @@ impl<'a> Infer<'a> {
                 InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
-                InferError::TypeDoesNotFulfil(class, ty, span, gen_span) => Error::TypeDoesNotFulfil(class, checked.reify(ty), span, gen_span),
+                InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => Error::TypeDoesNotFulfil(class, checked.reify(ty), obl_span, gen_span, use_span),
                 InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),
                 InferError::PatternNotSupported(lhs, op, rhs, span) => Error::PatternNotSupported(checked.reify(lhs), op, checked.reify(rhs), span),
                 InferError::AmbiguousClassItem(field, candidate_classes) => Error::AmbiguousClassItem(field, candidate_classes),
