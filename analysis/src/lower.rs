@@ -17,6 +17,7 @@ pub enum Scope<'a> {
     Recursive(SrcNode<Ident>, TyVar, DefId, Vec<(Span, TyVar)>),
     Binding(&'a Scope<'a>, SrcNode<Ident>, TyVar),
     Many(&'a Scope<'a>, &'a [(SrcNode<Ident>, TyVar)]),
+    Basin(&'a Scope<'a>, EffectVar),
 }
 
 impl<'a> Scope<'a> {
@@ -28,6 +29,10 @@ impl<'a> Scope<'a> {
 
     fn with_many<'b>(&'b self, many: &'b [(SrcNode<Ident>, TyVar)]) -> Scope<'b> {
         Scope::Many(self, many)
+    }
+
+    fn with_basin<'b>(&'b self, basin: EffectVar) -> Scope<'b> {
+        Scope::Basin(self, basin)
     }
 
     // bool = is_local
@@ -46,6 +51,17 @@ impl<'a> Scope<'a> {
             } else {
                 parent.find(infer, span, name)
             },
+            Self::Basin(parent, _) => parent.find(infer, span, name),
+        }
+    }
+
+    fn last_basin(&self) -> Option<EffectVar> {
+        match self {
+            Self::Empty => None,
+            Self::Recursive(_, _, _, _) => None,
+            Self::Binding(parent, _, _) => parent.last_basin(),
+            Self::Many(parent, _) => parent.last_basin(),
+            Self::Basin(_, eff) => Some(*eff),
         }
     }
 }
@@ -203,7 +219,7 @@ impl ToHir for ast::Type {
                 let out = out.to_hir(infer, scope).meta().1;
 
                 if let Some(eff_id) = infer.ctx().effects.lookup(**name) {
-                    let eff = infer.ctx().effects.get(eff_id);
+                    let eff = infer.ctx().effects.get_decl(eff_id);
                     let eff_gen_scope = eff.gen_scope;
                     let eff_span = eff.name.span();
                     match enforce_generic_obligations(
@@ -213,7 +229,10 @@ impl ToHir for ast::Type {
                         self.span(),
                         eff_span,
                     ) {
-                        Ok(()) => TyInfo::Effect(eff_id, params, out),
+                        Ok(()) => {
+                            let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, params));
+                            TyInfo::Effect(eff, out)
+                        },
                         Err(()) => TyInfo::Error(ErrorReason::Unknown),
                     }
                 } else {
@@ -533,8 +552,20 @@ impl ToHir for ast::Expr {
                 (TyInfo::Ref(field_ty), hir::Expr::Access(record, field.clone()))
             },
             ast::Expr::Unary(op, a) => if let ast::UnaryOp::Propagate = &**op {
-                infer.ctx_mut().errors.push(Error::Unsupported(self.span(), "effects"));
-                (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
+                let a = a.to_hir(infer, scope);
+                let out_ty = infer.unknown(self.span());
+
+                let eff = if let Some(eff) = scope.last_basin() {
+                    eff
+                } else {
+                    infer.ctx_mut().errors.push(Error::NoBasin(op.span()));
+                    infer.unknown_effect(a.meta().0)
+                };
+
+                let eff_obj_ty = infer.insert(a.meta().0, TyInfo::Effect(eff, out_ty));
+                infer.make_flow(a.meta().1, eff_obj_ty, EqInfo::from(op.span()));
+
+                (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Suspend, op.span()), vec![a]))
             } else {
                 let a = a.to_hir(infer, scope);
                 let output_ty = infer.unknown(self.span());
@@ -588,7 +619,7 @@ impl ToHir for ast::Expr {
                         Some((binding, val)) => {
                             let binding = binding.to_hir(infer, scope);
                             let val = val.to_hir(infer, scope);
-                            infer.make_flow(val.meta().1, binding.meta().1, binding.meta().0);
+                            infer.make_flow(val.meta().1, binding.meta().1, val.meta().0);
                             let then = fold(then, bindings, infer, &scope.with_many(&binding.get_binding_tys()));
                             let span = binding.meta().0;
                             let ty = then.meta().1; // TODO: Make a TyInfo::Ref?
@@ -890,6 +921,13 @@ impl ToHir for ast::Expr {
                         infer.make_flow(args[1].meta().1, nat, EqInfo::from(name.span()));
                         (TyInfo::Ref(list), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TrimList, name.span()), args))
                     },
+                    "make_eff" if args.len() == 1 => {
+                        let a = &args[0];
+                        let out = infer.unknown(self.span());
+                        let eff = infer.unknown_effect(self.span());
+                        infer.make_effect_send_recv(eff, a.meta().1, out, self.span());
+                        (TyInfo::Effect(eff, out), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::MakeEff, name.span()), args))
+                    },
                     _ => {
                         infer.ctx_mut().emit(Error::InvalidIntrinsic(name.clone()));
                         (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
@@ -910,7 +948,32 @@ impl ToHir for ast::Expr {
                 (TyInfo::Ref(record.meta().1), hir::Expr::Update(record, fields))
             },
             ast::Expr::Block(init, last) => {
-                todo!()
+                let eff = infer.unknown_effect(self.span());
+
+                // Collect effects into this basin
+                let scope = scope.with_basin(eff);
+                let init = init
+                    .iter()
+                    .map(|stmt| stmt.to_hir(infer, &scope))
+                    .collect::<Vec<_>>();
+                let last = last.to_hir(infer, &scope);
+
+                let last_meta = *last.meta();
+                let chain = init
+                    .into_iter()
+                    .rev()
+                    .fold(last, |then, before| {
+                        let before_meta = *before.meta();
+                        let then_meta = *then.meta();
+                        InferNode::new(hir::Expr::Match(false, before, vec![
+                            (InferNode::new(hir::Binding {
+                                pat: SrcNode::new(hir::Pat::Wildcard, before_meta.0),
+                                name: None,
+                            }, before_meta), then),
+                        ]), then_meta)
+                    });
+
+                (TyInfo::Effect(eff, last_meta.1), hir::Expr::Basin(eff, chain))
             },
         };
 

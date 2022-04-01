@@ -1,6 +1,6 @@
 use super::*;
 
-pub struct Effect {
+pub struct EffectDecl {
     pub name: SrcNode<Ident>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
@@ -9,38 +9,38 @@ pub struct Effect {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct EffectId(usize);
+pub struct EffectDeclId(usize);
 
 #[derive(Default)]
 pub struct Lang {
-    // pub not: Option<EffectId>,
+    // pub not: Option<EffectDeclId>,
 }
 
 #[derive(Default)]
 pub struct Effects {
-    lut: HashMap<Ident, (Span, EffectId)>,
-    effects: Vec<Effect>,
+    lut: HashMap<Ident, (Span, EffectDeclId)>,
+    effect_decls: Vec<EffectDecl>,
     pub lang: Lang,
 }
 
 impl Effects {
-    pub fn get(&self, eff: EffectId) -> &Effect {
-        &self.effects[eff.0]
+    pub fn get_decl(&self, eff: EffectDeclId) -> &EffectDecl {
+        &self.effect_decls[eff.0]
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
-        self.effects.iter().enumerate().map(|(i, eff)| (EffectId(i), eff))
-    }
+    // pub fn iter(&self) -> impl Iterator<Item = (EffectDeclId, &EffectDecl)> {
+    //     self.effect_names.iter().enumerate().map(|(i, eff)| (EffectDeclId(i), eff))
+    // }
 
-    pub fn lookup(&self, name: Ident) -> Option<EffectId> {
+    pub fn lookup(&self, name: Ident) -> Option<EffectDeclId> {
         self.lut.get(&name).map(|(_, id)| *id)
     }
 
-    pub fn declare(&mut self, eff: Effect) -> Result<EffectId, Error> {
-        let id = EffectId(self.effects.len());
+    pub fn declare(&mut self, eff: EffectDecl) -> Result<EffectDeclId, Error> {
+        let id = EffectDeclId(self.effect_decls.len());
         let span = eff.name.span();
         if let Err(old) = self.lut.try_insert(*eff.name, (span, id)) {
-            Err(Error::DuplicateEffectName(*eff.name, old.entry.get().0, span))
+            Err(Error::DuplicateEffectDecl(*eff.name, old.entry.get().0, span))
         } else {
             if let Some(lang) = eff.attr
                 .iter()
@@ -52,7 +52,7 @@ impl Effects {
                 // }
             }
 
-            self.effects.push(eff);
+            self.effect_decls.push(eff);
             Ok(id)
         }
     }
@@ -65,8 +65,8 @@ impl Effects {
         errors
     }
 
-    pub fn define_send_recv(&mut self, id: EffectId, send: TyId, recv: TyId) {
-        self.effects[id.0].send = Some(send);
-        self.effects[id.0].recv = Some(recv);
+    pub fn define_send_recv(&mut self, id: EffectDeclId, send: TyId, recv: TyId) {
+        self.effect_decls[id.0].send = Some(send);
+        self.effect_decls[id.0].recv = Some(recv);
     }
 }

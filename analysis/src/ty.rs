@@ -46,15 +46,25 @@ pub enum Ty {
     Gen(usize, GenScopeId),
     SelfType,
     Assoc(TyId, ClassId, SrcNode<Ident>),
-    Effect(EffectId, Vec<TyId>, TyId),
+    Effect(EffectId, TyId),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TyId(usize);
 
+#[derive(Clone, Debug)]
+pub enum Effect {
+    Error,
+    Known(EffectDeclId, Vec<TyId>),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EffectId(usize);
+
 #[derive(Default)]
 pub struct Types {
     tys: Vec<(Span, Ty)>,
+    effects: Vec<(Span, Effect)>,
     scopes: Vec<GenScope>,
 }
 
@@ -117,10 +127,16 @@ impl Types {
             (Ty::Assoc(x_ty, x_class, x_name), Ty::Assoc(y_ty, y_class, y_name)) => self.is_eq(x_ty, y_ty)
                 && x_class == y_class
                 && *x_name == *y_name,
-            (Ty::Effect(x, xs, x_out), Ty::Effect(y, ys, y_out)) => x == y && xs.len() == ys.len() && xs
-                .into_iter()
-                .zip(ys)
-                .all(|(x, y)| self.is_eq(x, y)) && self.is_eq(x_out, y_out),
+            (Ty::Effect(x, x_out), Ty::Effect(y, y_out)) =>
+                x == y &&
+                match (self.get_effect(x), self.get_effect(y)) {
+                    (Effect::Error, _) => true,
+                    (_, Effect::Error) => true,
+                    (Effect::Known(x, xs), Effect::Known(y, ys)) => x == y && xs.len() == ys.len() && xs
+                        .into_iter()
+                        .zip(ys)
+                        .all(|(x, y)| self.is_eq(x, y)),
+                },
             _ => false,
         }
     }
@@ -148,7 +164,7 @@ impl Types {
             Ty::SelfType => true,
             Ty::Assoc(_, _, _) => true,
             // An effect is always an inhabited object until propagated, even if the output type is not inhabited
-            Ty::Effect(_, _, _) => true,
+            Ty::Effect(_, _) => true,
         }
     }
 
@@ -161,6 +177,20 @@ impl Types {
             lhs_exposed: false,
             substitutes: Vec::new(),
         }
+    }
+
+    pub fn get_effect(&self, eff: EffectId) -> Effect {
+        self.effects[eff.0].1.clone()
+    }
+
+    pub fn get_effect_span(&self, eff: EffectId) -> Span {
+        self.tys[eff.0].0
+    }
+
+    pub fn insert_effect(&mut self, span: Span, eff: Effect) -> EffectId {
+        let id = EffectId(self.effects.len());
+        self.effects.push((span, eff));
+        id
     }
 }
 
@@ -224,14 +254,20 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             // TODO: Include class_id?
             Ty::Assoc(inner, _class_id, assoc) => write!(f, "{}.{}", self.with_ty(inner, true), *assoc),
             Ty::SelfType => write!(f, "Self"),
-            Ty::Effect(eff, params, out) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{} ~ {})", *self.effects.get(eff).name, params
-                .iter()
-                .map(|param| format!(" {}", self.with_ty(*param, true)))
-                .collect::<String>(), self.with_ty(out, true)),
-            Ty::Effect(eff, params, out) => write!(f, "{}{} ~ {}", *self.effects.get(eff).name, params
-                .iter()
-                .map(|param| format!(" {}", self.with_ty(*param, true)))
-                .collect::<String>(), self.with_ty(out, true)),
+            Ty::Effect(eff, out) => {
+                let eff = match self.types.get_effect(eff) {
+                    Effect::Error => "!".to_string(),
+                    Effect::Known(decl, args) => format!("{}{}", *self.effects.get_decl(decl).name, args
+                        .iter()
+                        .map(|arg| format!(" {}", self.with_ty(*arg, true)))
+                        .collect::<String>()),
+                };
+                if self.lhs_exposed {
+                    write!(f, "({} ~ {})", eff, self.with_ty(out, true))
+                } else {
+                    write!(f, "{} ~ {}", eff, self.with_ty(out, true))
+                }
+            },
         }
     }
 }

@@ -7,6 +7,7 @@ pub trait Meta {
     type Data: fmt::Debug;
     type Class;
     type Global;
+    type Effect;
 }
 
 impl Meta for InferMeta {
@@ -14,6 +15,7 @@ impl Meta for InferMeta {
     type Data = SrcNode<DataId>;
     type Class = ClassVar;
     type Global = (DefId, Vec<Self>);
+    type Effect = EffectVar;
 }
 
 impl Meta for TyMeta {
@@ -21,6 +23,7 @@ impl Meta for TyMeta {
     type Data = SrcNode<DataId>;
     type Class = Option<ClassId>; // Required because we don't have proper error classes yet
     type Global = (DefId, Vec<Self>);
+    type Effect = EffectId;
 }
 
 impl Meta for ConMeta {
@@ -28,6 +31,7 @@ impl Meta for ConMeta {
     type Data = ConDataId;
     type Class = !;
     type Global = ConProcId;
+    type Effect = ConEffectId;
 }
 
 #[derive(Debug)]
@@ -116,6 +120,8 @@ pub enum Intrinsic {
     LenList,
     SkipList,
     TrimList,
+    Suspend,
+    MakeEff,
 }
 
 #[derive(Debug)]
@@ -141,6 +147,10 @@ pub enum Expr<M: Meta> {
 
     Intrinsic(SrcNode<Intrinsic>, Vec<Node<Self, M>>),
     Update(Node<Self, M>, Vec<(SrcNode<Ident>, Node<Self, M>)>),
+
+    // Blocks propagation of effects, collecting them
+    // i.e: `@{ foo?; bar?; x }` gets type `foo + bar ~ X`
+    Basin(M::Effect, Node<Self, M>),
 }
 
 pub type InferExpr = InferNode<Expr<InferMeta>>;
@@ -206,6 +216,7 @@ impl Expr<ConMeta> {
                     .iter()
                     .for_each(|(_, field)| field.required_locals_inner(stack, required));
             },
+            Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
         }
     }
 

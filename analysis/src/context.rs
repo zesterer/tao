@@ -59,7 +59,7 @@ impl Context {
             let (gen_scope, mut errs) = GenScope::from_ast(&eff.generics);
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            match this.effects.declare(Effect {
+            match this.effects.declare(EffectDecl {
                 name: eff.name.clone(),
                 attr: attr.to_vec(),
                 gen_scope,
@@ -122,6 +122,29 @@ impl Context {
         let mut gen_scope_errors = this.tys.check_gen_scopes(&this.classes);
         this.errors.append(&mut gen_scope_errors);
 
+        // Derive class obligations
+        for (attr, class, class_id, gen_scope) in &classes {
+            this.classes.define_obligations(
+                *class_id,
+                class
+                    .obligation
+                    .iter()
+                    .filter_map(|obl| {
+                        if !obl.params.is_empty() {
+                            errors.push(Error::Unsupported(obl.span(), "type parameters on classes"));
+                        }
+                        match this.classes.lookup(*obl.name) {
+                            Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
+                            None => {
+                                errors.push(Error::NoSuchClass(obl.name.clone()));
+                                None
+                            },
+                        }
+                    })
+                    .collect(),
+            );
+        }
+
         // Alias definition must go before members and defs because they might have type hints that make use of type
         // aliases
         for (attr, alias) in aliases {
@@ -149,28 +172,21 @@ impl Context {
             );
         }
 
-        // Derive class obligations
-        for (attr, class, class_id, gen_scope) in &classes {
-            this.classes.define_obligations(
-                *class_id,
-                class
-                    .obligation
-                    .iter()
-                    .filter_map(|obl| {
-                        if !obl.params.is_empty() {
-                            errors.push(Error::Unsupported(obl.span(), "type parameters on classes"));
-                        }
-                        match this.classes.lookup(*obl.name) {
-                            Some(class) => Some(SrcNode::new(Obligation::MemberOf(class), obl.span())),
-                            None => {
-                                errors.push(Error::NoSuchClass(obl.name.clone()));
-                                None
-                            },
-                        }
-                    })
-                    .collect(),
-            );
+        for (attr, eff, eff_id, gen_scope) in effects {
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
+
+            let send = eff.send.to_hir(&mut infer, &Scope::Empty);
+            let recv = eff.recv.to_hir(&mut infer, &Scope::Empty);
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let send = checked.reify(send.meta().1);
+            let recv = checked.reify(recv.meta().1);
+
+            this.effects.define_send_recv(eff_id, send, recv);
         }
+
         // Class associated types
         for (attr, class, class_id, gen_scope) in &classes {
             let mut existing_tys = HashMap::new();

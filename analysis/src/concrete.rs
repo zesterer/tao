@@ -21,6 +21,12 @@ impl ConTyId {
     pub fn id(&self) -> u64 { self.0 as u64 }
 }
 
+#[derive(Debug)]
+pub struct ConEffect {
+    send: ConTyId,
+    recv: ConTyId,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ConProc {
     Def(DefId, Vec<ConTyId>),
@@ -40,7 +46,7 @@ pub type ConProcId = Intern<ConProc>;
 
 pub type ConDataId = Intern<(DataId, Vec<ConTyId>)>;
 
-pub type ConEffectId = Intern<(EffectId, Vec<ConTyId>)>;
+pub type ConEffectId = Intern<(EffectDeclId, Vec<ConTyId>)>;
 
 pub struct TyInsts<'a> {
     self_ty: Option<ConTyId>,
@@ -54,6 +60,7 @@ pub struct ConData {
 
 pub struct ConContext {
     datas: HashMap<ConDataId, Result<ConData, bool>>,
+    effects: HashMap<ConEffectId, ConEffect>,
     tys: Vec<ConTy>,
     ty_lookup: HashMap<ConTy, ConTyId>,
     procs: HashMap<ConProcId, Option<ConExpr>>,
@@ -64,6 +71,7 @@ impl ConContext {
     pub fn from_ctx(hir: &Context) -> (Self, Vec<Error>) {
         let mut this = Self {
             datas: HashMap::default(),
+            effects: HashMap::default(),
             tys: Vec::new(),
             ty_lookup: HashMap::default(),
             procs: HashMap::default(),
@@ -129,6 +137,10 @@ impl ConContext {
         self.datas[&data].as_ref().expect("Data should be fully defined")
     }
 
+    pub fn get_effect(&self, eff: ConEffectId) -> &ConEffect {
+        &self.effects[&eff]
+    }
+
     pub fn insert_ty(&mut self, ty: ConTy) -> ConTyId {
         *self.ty_lookup
             .entry(ty.clone())
@@ -160,13 +172,21 @@ impl ConContext {
                 .into_iter()
                 .zip(y.1.iter())
                 .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
-            (Ty::Effect(_, xs, x_out), ConTy::Effect(y, y_out)) => {
-                xs
-                    .into_iter()
-                    .zip(y.1.iter())
-                    .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen));
+            (Ty::Effect(x, x_out), ConTy::Effect(y, y_out)) => {
+                self.derive_links_effect(hir, x, *y, link_gen);
                 self.derive_links(hir, x_out, *y_out, link_gen);
             },
+            (x, y) => todo!("{:?}", (x, y)),
+        }
+    }
+
+    fn derive_links_effect(&self, hir: &Context, member: EffectId, eff: ConEffectId, link_gen: &mut impl FnMut(usize, ConTyId)) {
+        // TODO: link gen for effects when polymorphic effects are added
+        match (hir.tys.get_effect(member), self.get_effect(eff)) {
+            (Effect::Known(_, xs), _) => xs
+                .into_iter()
+                .zip(eff.1.iter())
+                .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
             (x, y) => todo!("{:?}", (x, y)),
         }
     }
@@ -250,13 +270,16 @@ impl ConContext {
                     gen: &gen,
                 });
             },
-            Ty::Effect(eff, args, out) => {
-                let args = args
-                    .into_iter()
-                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
-                    .collect::<Vec<_>>();
-                let out = self.lower_ty(hir, out, ty_insts);
-                ConTy::Effect(Intern::new((eff, args.to_vec())), out)
+            Ty::Effect(eff, out) => match hir.tys.get_effect(eff) {
+                Effect::Error => panic!("Concretizable effect cannot be an error"),
+                Effect::Known(decl, args) => {
+                    let args = args
+                        .into_iter()
+                        .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                        .collect::<Vec<_>>();
+                    let out = self.lower_ty(hir, out, ty_insts);
+                    ConTy::Effect(Intern::new((decl, args.to_vec())), out)
+                },
             },
         };
 
@@ -448,6 +471,7 @@ impl ConContext {
                 .iter()
                 .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))
                 .collect()),
+            hir::Expr::Basin(_, _) => todo!(),
         };
 
         ConNode::new(expr, self.lower_ty(hir, ty_expr.meta().1, ty_insts))
@@ -504,7 +528,7 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            ConTy::Effect(eff_id, out) => write!(f, "{}{} ~ {}", *self.effects.get(eff_id.0).name, eff_id.1
+            ConTy::Effect(eff_id, out) => write!(f, "{}{} ~ {}", *self.effects.get_decl(eff_id.0).name, eff_id.1
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>(), self.with_ty(out, true)),

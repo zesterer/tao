@@ -19,7 +19,14 @@ pub enum TyInfo {
     SelfType,
     // An opaque associated type that *cannot* be determined due to lack of information
     Assoc(TyVar, ClassId, SrcNode<Ident>),
-    Effect(EffectId, Vec<TyVar>, TyVar),
+    Effect(EffectVar, TyVar),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum EffectInfo {
+    Unknown,
+    Ref(EffectVar),
+    Known(EffectDeclId, Vec<TyVar>),
 }
 
 #[derive(Clone, Default, Debug)]
@@ -44,6 +51,7 @@ impl EqInfo {
 pub enum InferError {
     CannotCoerce(TyVar, TyVar, Option<(TyVar, TyVar)>, EqInfo),
     CannotInfer(TyVar, Option<Span>), // With optional instantiation origin
+    CannotInferEffect(EffectVar),
     // Type, recursive element
     Recursive(TyVar, TyVar),
     NoSuchItem(TyVar, Span, SrcNode<Ident>),
@@ -65,6 +73,7 @@ enum Constraint {
     Impl(TyVar, ClassId, Span, Vec<(SrcNode<Ident>, TyVar)>),
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
+    EffectSendRecv(EffectVar, TyVar, TyVar, Span),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -73,11 +82,15 @@ pub struct TyVar(usize);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClassVar(usize);
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EffectVar(usize);
+
 pub struct Infer<'a> {
     ctx: &'a mut Context,
     gen_scope: Option<GenScopeId>,
     vars: Vec<(Span, TyInfo, Result<(), ()>)>,
     class_vars: Vec<(Span, Option<ClassId>)>,
+    effect_vars: Vec<(Span, EffectInfo)>,
     constraints: VecDeque<Constraint>,
     errors: Vec<InferError>,
     self_type: Option<TyVar>,
@@ -91,6 +104,7 @@ impl<'a> Infer<'a> {
             gen_scope,
             vars: Vec::new(),
             class_vars: Vec::new(),
+            effect_vars: Vec::new(),
             constraints: VecDeque::new(),
             errors: Vec::new(),
             self_type: None,
@@ -175,10 +189,8 @@ impl<'a> Infer<'a> {
                 // Type is projected, so error does not propagate backwards
                 // TODO: Should it?
                 TyInfo::Assoc(_, _, _) => {},
-                TyInfo::Effect(_, args, out) => {
-                    args
-                        .into_iter()
-                        .for_each(|arg| self.set_error(arg));
+                TyInfo::Effect(_eff, out) => {
+                    // TODO: Set error for eff
                     self.set_error(out);
                 },
             }
@@ -255,10 +267,20 @@ impl<'a> Infer<'a> {
                 self.make_impl(inner, class_id, span, vec![(assoc, assoc_ty)]);
                 TyInfo::Ref(assoc_ty)
             },
-            Ty::Effect(eff, params, out) => TyInfo::Effect(eff, params
-                .into_iter()
-                .map(|param| self.instantiate(param, span, f, self_ty))
-                .collect(), self.instantiate(out, span, f, self_ty)),
+            Ty::Effect(eff, out) => match self.ctx.tys.get_effect(eff) {
+                Effect::Error => TyInfo::Error(ErrorReason::Invalid),
+                Effect::Known(decl, args) => {
+                    let args = args
+                        .into_iter()
+                        .map(|param| self.instantiate(param, span, f, self_ty))
+                        .collect();
+                    let eff = self.insert_effect(
+                        span.unwrap_or_else(|| self.ctx.tys.get_span(ty)),
+                        EffectInfo::Known(decl, args),
+                    );
+                    TyInfo::Effect(eff, self.instantiate(out, span, f, self_ty))
+                },
+            },
         };
         self.insert(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), info)
     }
@@ -305,6 +327,36 @@ impl<'a> Infer<'a> {
         class
     }
 
+    fn effect_span(&self, eff: EffectVar) -> Span {
+        self.effect_vars[eff.0].0
+    }
+
+    fn iter_effects(&self) -> impl Iterator<Item = (EffectVar, EffectInfo)> + '_ {
+        (0..self.effect_vars.len())
+            .map(|i| (EffectVar(i), self.effect_vars[i].1.clone()))
+    }
+
+    fn follow_effect(&self, eff: EffectVar) -> EffectInfo {
+        match &self.effect_vars[eff.0].1 {
+            EffectInfo::Ref(eff) => self.follow_effect(*eff),
+            info => info.clone(),
+        }
+    }
+
+    pub fn insert_effect(&mut self, span: Span, eff: EffectInfo) -> EffectVar {
+        let id = EffectVar(self.effect_vars.len());
+        self.effect_vars.push((span, eff));
+        id
+    }
+
+    pub fn unknown_effect(&mut self, span: Span) -> EffectVar {
+        self.insert_effect(span, EffectInfo::Unknown)
+    }
+
+    pub fn make_effect_send_recv(&mut self, eff: EffectVar, send: TyVar, recv: TyVar, span: Span) {
+        self.constraints.push_back(Constraint::EffectSendRecv(eff, send, recv, span));
+    }
+
     pub fn emit(&mut self, err: InferError) {
         self.errors.push(err);
     }
@@ -334,9 +386,13 @@ impl<'a> Infer<'a> {
                     .into_iter()
                     .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
                 TyInfo::Assoc(inner, _, _) => x == inner || self.occurs_in_inner(x, inner, seen),
-                TyInfo::Effect(_, ys, out) => ys
-                    .into_iter()
-                    .any(|y| x == y || self.occurs_in_inner(x, y, seen)) || self.occurs_in_inner(x, out, seen) ,
+                TyInfo::Effect(eff, out) => self.occurs_in_inner(x, out, seen) || match self.follow_effect(eff) {
+                    EffectInfo::Unknown => false,
+                    EffectInfo::Ref(_) => unreachable!(),
+                    EffectInfo::Known(_, params) => params
+                        .into_iter()
+                        .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+                },
             };
 
             seen.pop();
@@ -372,6 +428,29 @@ impl<'a> Infer<'a> {
                 .zip(ys.into_iter())
                 .fold(None, |err, (x, y)| err.or(infer.make_flow_inner(x, y).err()))
                 .map(Err).unwrap_or(Ok(()))
+        }
+
+        // TODO: Allow errors that mention effects instead of types
+        fn make_flow_effect(
+            infer: &mut Infer,
+            (x, x_ty): (EffectVar, TyVar),
+            (y, y_ty): (EffectVar, TyVar),
+        ) -> Result<(), (TyVar, TyVar)> {
+            match (infer.follow_effect(x), infer.follow_effect(y)) {
+                // TODO: These shouldn't be reachable?
+                (EffectInfo::Ref(x), _) => make_flow_effect(infer, (x, x_ty), (y, y_ty)),
+                (_, EffectInfo::Ref(y)) => make_flow_effect(infer, (x, x_ty), (y, y_ty)),
+
+                (EffectInfo::Unknown, _) => Ok(infer.effect_vars[x.0].1 = EffectInfo::Ref(y)),
+                (_, EffectInfo::Unknown) => Ok(infer.effect_vars[y.0].1 = EffectInfo::Ref(x)),
+                (EffectInfo::Known(x, xs), EffectInfo::Known(y, ys)) if x == y => {
+                    // TODO: Unnecessarily conservative, variance of effect generics should be determined
+                    let co_error = make_flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
+                    let contra_error = make_flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
+                    co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
+                },
+                (_, _) => Err((x_ty, y_ty)),
+            }
         }
 
         if x == y { return Ok(()) } // If the vars are equal, we have no need to check flow
@@ -435,16 +514,10 @@ impl<'a> Infer<'a> {
                     let contra_error = self.make_flow_inner(y, x).err().map(|(a, b)| (b, a));
                     co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
                 },
-            (TyInfo::Effect(x_eff, xs, x_out), TyInfo::Effect(y_eff, ys, y_out)) if x_eff == y_eff &&
-                xs.len() == ys.len() /* TODO: Assert this! */ => {
-                // TODO: Unnecessarily conservative, variance of effect generics should be determined
-                let co_error = make_flow_many(self, xs.iter().copied(), ys.iter().copied()).err();
-                let contra_error = make_flow_many(self, ys, xs).err().map(|(a, b)| (b, a));
-                let out_error = self.make_flow_inner(x_out, y_out).err();
-                co_error
-                    .or(contra_error)
-                    .or(out_error)
-                    .map(Err).unwrap_or(Ok(()))
+            (TyInfo::Effect(x_eff, x_out), TyInfo::Effect(y_eff, y_out)) => {
+                let eff_err = make_flow_effect(self, (x_eff, x), (y_eff, y)).err();
+                let o_err = self.make_flow_inner(x_out, y_out).err();
+                o_err.or(eff_err).map(Err).unwrap_or(Ok(()))
             },
             (_, _) => Err((x, y)),
         }
@@ -496,13 +569,20 @@ impl<'a> Infer<'a> {
                 let inner = self.try_reinstantiate(span, inner);
                 self.insert(self.span(ty), TyInfo::Assoc(inner, class_id, assoc))
             },
-            TyInfo::Effect(eff, args, out) => {
-                let args = args
-                    .into_iter()
-                    .map(|arg| self.try_reinstantiate(span, arg))
-                    .collect();
+            TyInfo::Effect(eff, out) => {
+                let eff = match self.follow_effect(eff) {
+                    EffectInfo::Unknown => eff,
+                    EffectInfo::Ref(_) => unreachable!(), // `follow_effect` shouldn't ever return Ref
+                    EffectInfo::Known(eff, args) => {
+                        let args = args
+                            .into_iter()
+                            .map(|arg| self.try_reinstantiate(span, arg))
+                            .collect();
+                        self.insert_effect(self.span(ty), EffectInfo::Known(eff, args))
+                    },
+                };
                 let out = self.try_reinstantiate(span, out);
-                self.insert(self.span(ty), TyInfo::Effect(eff, args, out))
+                self.insert(self.span(ty), TyInfo::Effect(eff, out))
             },
         }
     }
@@ -682,6 +762,27 @@ impl<'a> Infer<'a> {
                 }),
             Constraint::ClassField(ty, class, field, field_ty, span) => self.try_resolve_class_from_field(ty, class, field.clone(), field_ty, span),
             Constraint::ClassAssoc(ty, class, assoc, assoc_ty, span) => self.try_resolve_class_from_assoc(ty, class, assoc.clone(), assoc_ty, span),
+            Constraint::EffectSendRecv(eff, send, recv, span) => match self.follow_effect(eff) {
+                EffectInfo::Unknown => None,
+                EffectInfo::Ref(_) => unreachable!(),
+                EffectInfo::Known(decl, args) => {
+                    let send_ty = self.instantiate(
+                        self.ctx.effects.get_decl(decl).send.expect("Send must be init"),
+                        span,
+                        &|idx, _gen_scope, _ctx| args[idx],
+                        None,
+                    );
+                    self.make_flow(send, send_ty, span);
+                    let recv_ty = self.instantiate(
+                        self.ctx.effects.get_decl(decl).recv.expect("Recv must be init"),
+                        span,
+                        &|idx, _gen_scope, _ctx| args[idx],
+                        None,
+                    );
+                    self.make_flow(recv_ty, recv, span);
+                    Some(Ok(()))
+                },
+            },
         }
     }
 
@@ -844,16 +945,22 @@ impl<'a> Infer<'a> {
                 .all(|(x, y)| self.covers_var(x, y)),
             (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, class_y, assoc_y))
                 if class_x == class_y && assoc_x == assoc_y => self.covers_var(x, y),
-            (TyInfo::Effect(x, xs, x_out), Ty::Effect(y, ys, y_out)) if x == y && xs.len() == ys.len() => xs
-                .into_iter()
-                .zip(ys.into_iter())
-                .all(|(x, y)| self.covers_var(x, y)) && self.covers_var(x_out, y_out),
+            (TyInfo::Effect(x, x_out), Ty::Effect(y, y_out)) => self.covers_var(x_out, y_out) &&
+                match (self.follow_effect(x), self.ctx.tys.get_effect(y)) {
+                    (EffectInfo::Ref(_), _) => unreachable!(),
+                    (EffectInfo::Known(_, xs), Effect::Known(_, ys)) => xs
+                        .into_iter()
+                        .zip(ys.into_iter())
+                        .all(|(x, y)| self.covers_var(x, y)),
+                    (_, _) => false,
+                },
             _ => false,
         }
     }
 
     // Link the generic types of a class member with type variables in the current scope so obligations
     // can be generated
+    // TODO: Derive links for effects
     fn derive_links(&self, member: TyId, ty: TyVar, link_gen: &mut impl FnMut(usize, TyVar)) {
         match (self.ctx.tys.get(member), self.follow_info(ty)) {
             (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
@@ -877,11 +984,15 @@ impl<'a> Infer<'a> {
             (Ty::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
                 if class_x == class_y && assoc_x == assoc_y => self.derive_links(x, y, link_gen),
             (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
-            (Ty::Effect(_, xs, x_out), TyInfo::Effect(_, ys, y_out)) => {
-                xs
-                    .into_iter()
-                    .zip(ys.into_iter())
-                    .for_each(|(x, y)| self.derive_links(x, y, link_gen));
+            (Ty::Effect(x, x_out), TyInfo::Effect(y, y_out)) => {
+                match (self.ctx.tys.get_effect(x), self.follow_effect(y)) {
+                    (_, EffectInfo::Ref(_)) => unreachable!(),
+                    (Effect::Known(_, xs), EffectInfo::Known(_, ys)) => xs
+                        .into_iter()
+                        .zip(ys.into_iter())
+                        .for_each(|(x, y)| self.derive_links(x, y, link_gen)),
+                    (_, _) => {},
+                }
                 self.derive_links(x_out, y_out, link_gen);
             },
             _ => {}, // Only type constructors and generic types generate obligations
@@ -1008,6 +1119,7 @@ impl<'a> Infer<'a> {
                 Constraint::ClassAssoc(_ty, _class, assoc, _assoc_ty, _span) => {
                     InferError::AmbiguousClassItem(assoc, Vec::new())
                 },
+                Constraint::EffectSendRecv(eff, send, recv, span) => InferError::CannotInferEffect(eff),
             });
         }
     }
@@ -1028,8 +1140,17 @@ impl<'a> Infer<'a> {
             }
         }
 
+        // Report errors for effects that cannot be inferred
+        let effects = self.iter_effects().collect::<Vec<_>>();
+        for (eff, info) in effects {
+            if let EffectInfo::Unknown = info {
+                errors.push(InferError::CannotInferEffect(eff));
+            }
+        }
+
         let mut checked = Checked {
-            cache: HashMap::default(),
+            ty_cache: HashMap::default(),
+            eff_cache: HashMap::default(),
             infer: self,
         };
 
@@ -1041,6 +1162,7 @@ impl<'a> Infer<'a> {
                     Error::CannotCoerce(checked.reify(x), checked.reify(y), inner, info)
                 },
                 InferError::CannotInfer(a, origin) => Error::CannotInfer(checked.reify(a), origin),
+                InferError::CannotInferEffect(eff) => Error::CannotInferEffect(checked.reify_effect(eff)),
                 InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
                 InferError::NoSuchItem(a, record_span, field) => Error::NoSuchItem(checked.reify(a), record_span, field),
                 InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
@@ -1058,7 +1180,8 @@ impl<'a> Infer<'a> {
 }
 
 pub struct Checked<'a> {
-    cache: HashMap<TyVar, TyId>,
+    ty_cache: HashMap<TyVar, TyId>,
+    eff_cache: HashMap<EffectVar, EffectId>,
     infer: Infer<'a>,
 }
 
@@ -1067,7 +1190,7 @@ impl<'a> Checked<'a> {
     pub fn ctx_mut(&mut self) -> &mut Context { &mut self.infer.ctx }
 
     fn reify_inner(&mut self, var: TyVar) -> TyId {
-        if let Some(ty) = self.cache.get(&var) {
+        if let Some(ty) = self.ty_cache.get(&var) {
             *ty
         } else {
             let ty = match self.infer.info(var) {
@@ -1094,10 +1217,7 @@ impl<'a> Checked<'a> {
                 TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
                 TyInfo::SelfType => Ty::SelfType,
                 TyInfo::Assoc(inner, class_id, assoc) => Ty::Assoc(self.reify_inner(inner), class_id, assoc),
-                TyInfo::Effect(eff, args, out) => Ty::Effect(eff, args
-                    .into_iter()
-                    .map(|arg| self.reify_inner(arg))
-                    .collect(), self.reify_inner(out)),
+                TyInfo::Effect(eff, out) => Ty::Effect(self.reify_effect(eff), self.reify_inner(out)),
             };
             self.infer.ctx.tys.insert(self.infer.span(var), ty)
         }
@@ -1105,8 +1225,26 @@ impl<'a> Checked<'a> {
 
     pub fn reify(&mut self, var: TyVar) -> TyId {
         let ty = self.reify_inner(var);
-        self.cache.insert(var, ty);
+        self.ty_cache.insert(var, ty);
         ty
+    }
+
+    pub fn reify_effect(&mut self, var: EffectVar) -> EffectId {
+        let eff = if let Some(eff) = self.eff_cache.get(&var) {
+            *eff
+        } else {
+            let eff = match self.infer.follow_effect(var) {
+                EffectInfo::Unknown => Effect::Error,
+                EffectInfo::Ref(_) => unreachable!(),
+                EffectInfo::Known(eff, args) => Effect::Known(eff, args
+                    .into_iter()
+                    .map(|arg| self.reify_inner(arg))
+                    .collect()),
+            };
+            self.infer.ctx.tys.insert_effect(self.infer.effect_span(var), eff)
+        };
+        self.eff_cache.insert(var, eff);
+        eff
     }
 
     pub fn reify_class(&mut self, class: ClassVar) -> Option<ClassId> {

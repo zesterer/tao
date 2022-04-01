@@ -2,8 +2,12 @@ import "lib/std.tao"
 
 effect yield A = A => ()
 
-def yield_nat : yield Nat ~ () = yield_nat
-def yield_str : yield Str ~ () = yield_nat
+fn yield A : A -> yield A ~ () =
+    x => @make_eff(x)
+
+def yield_nat : yield Nat ~ () = @{
+    yield(5)?
+}
 
 # def yield_five : yield Nat ~ () = @{
 #     yield(5)?;
@@ -12,6 +16,12 @@ def yield_str : yield Str ~ () = yield_nat
 
 effect print = Str => ()
 effect input = () => Str
+
+fn say : Str -> print ~ () = s => @{
+    say("Hello!")?;
+    yield_nat?;
+    ()
+}
 
 # def eff_main = do {
 #     print("Hello, world!")?;

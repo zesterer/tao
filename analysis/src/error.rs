@@ -6,6 +6,7 @@ pub enum Error {
     // Outer type, inner type
     CannotCoerce(TyId, TyId, Option<(TyId, TyId)>, EqInfo),
     CannotInfer(TyId, Option<Span>),
+    CannotInferEffect(EffectId),
     Recursive(TyId, Span, Span),
     NoSuchItem(TyId, Span, SrcNode<Ident>),
     NoSuchField(TyId, Span, SrcNode<Ident>),
@@ -29,7 +30,7 @@ pub enum Error {
     DuplicateConsName(Ident, Span, Span),
     DuplicateGenName(Ident, Span, Span),
     DuplicateClassName(Ident, Span, Span),
-    DuplicateEffectName(Ident, Span, Span),
+    DuplicateEffectDecl(Ident, Span, Span),
     DuplicateClassItem(Ident, Span, Span),
     DuplicateMemberItem(Ident, Span, Span),
     PatternNotSupported(TyId, SrcNode<ast::BinaryOp>, TyId, Span),
@@ -44,6 +45,7 @@ pub enum Error {
     InvalidIntrinsic(SrcNode<Ident>),
     Unsupported(Span, &'static str),
     MissingLangItem(&'static str),
+    NoBasin(Span),
 }
 
 impl Error {
@@ -68,7 +70,7 @@ impl Error {
                             (ctx.tys.get_span(dst), format!("Type {} is required here", display(dst).fg(Color::Yellow)), Color::Yellow),
                         ];
                         if let Some(at) = info.at {
-                            labels.push((at, format!("Coercion is required here"), Color::Yellow));
+                            labels.push((at, format!("Coercion is required here"), Color::Cyan));
                         }
                         labels
                     },
@@ -88,6 +90,11 @@ impl Error {
                     ],
                     None => vec![(ctx.tys.get_span(a), format!("{}", display(a)), Color::Red)],
                 },
+                vec![],
+            ),
+            Error::CannotInferEffect(a) => (
+                format!("Cannot infer effect"),
+                vec![(ctx.tys.get_effect_span(a), format!("Cannot be inferred"), Color::Red)],
                 vec![],
             ),
             Error::Recursive(a, span, part) => (
@@ -275,7 +282,7 @@ impl Error {
                 ],
                 vec![],
             ),
-            Error::DuplicateEffectName(name, old, new) => (
+            Error::DuplicateEffectDecl(name, old, new) => (
                 format!("Effect {} declared multiple times", name.fg(Color::Red)),
                 vec![
                     (old, format!("Previous effect"), Color::Yellow),
@@ -394,6 +401,13 @@ impl Error {
                 format!("Lang item {} is missing", name.fg(Color::Yellow)),
                 Vec::new(),
                 vec![format!("All lang items must be defined")],
+            ),
+            Error::NoBasin(span) => (
+                format!("Effect propagated, but no handler exists to catch it"/*, display(eff_ty).fg(Color::Yellow)*/),
+                vec![
+                    (span, format!("Nothing catches this propagation"), Color::Red),
+                ],
+                vec![format!("Place this expression within a {} block", "@{ ... }".fg(Color::Blue))],
             ),
         };
 

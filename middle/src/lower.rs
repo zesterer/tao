@@ -342,6 +342,8 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
+                    hir::Intrinsic::Suspend => todo!(),
+                    hir::Intrinsic::MakeEff => todo!(),
                 }
             },
             hir::Expr::Update(record, fields) => {
@@ -388,6 +390,7 @@ impl Context {
 
                 mir_record.into_inner()
             },
+            hir::Expr::Basin(_, _) => todo!(),
         };
 
         MirNode::new(expr, self.lower_ty(hir, con, *con_expr.meta()))

@@ -16,18 +16,18 @@ pub mod ty;
 
 pub use crate::{
     class::{ClassId, Class, Classes, ClassItem, Member, MemberId, MemberItem},
-    concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConProc, ConProcId, ConDataId},
+    concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConProc, ConProcId, ConDataId, ConEffectId},
     context::Context,
     data::{Datas, Data, DataId, Alias, AliasId},
     def::{Defs, Def, DefId},
-    effect::{Effects, Effect, EffectId},
+    effect::{Effects, EffectDecl, EffectDeclId},
     error::Error,
     exhaustivity::{exhaustivity, ExamplePat},
     hir::{InferExpr, InferBinding, TyExpr, TyBinding, ConBinding, ConExpr, Intrinsic},
-    infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo, ClassVar},
+    infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo, ClassVar, EffectVar, EffectInfo},
     lower::{Scope, ToHir},
     reify::Reify,
-    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, Obligation},
+    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, Obligation, Effect, EffectId},
 };
 pub use tao_syntax::ast::Ident;
 
