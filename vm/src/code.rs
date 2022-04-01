@@ -9,7 +9,8 @@ pub enum Instr {
 
     Call(isize),
     Ret,
-    MakeFunc(isize, usize), // Make a function using the relative offset and by capturing the last N items on the stack
+    // Make a function using the relative offset and by capturing the last N items on the stack
+    MakeFunc(isize, usize),
     ApplyFunc,
 
     MakeList(usize), // T * N => [T]
@@ -56,6 +57,11 @@ pub enum Instr {
 
     Print,
     Input,
+
+    // Make an effect object using the relative offset and by capturing the last N items on the stack
+    MakeEffect(isize, usize),
+    Propagate,
+    Suspend(EffectId),
 }
 
 impl Instr {
@@ -156,6 +162,9 @@ impl Program {
                 | Instr::AndBool => -1,
                 Instr::Print => -1,
                 Instr::Input => 0,
+                Instr::MakeEffect(_, n) => -(n as isize),
+                Instr::Propagate => -1,
+                Instr::Suspend(_) => 0,
             };
 
             let instr_display = match instr {
@@ -202,6 +211,9 @@ impl Program {
                 Instr::AndBool => format!("bool.and"),
                 Instr::Print => format!("io.print"),
                 Instr::Input => format!("io.input"),
+                Instr::MakeEffect(i, n) => format!("eff.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
+                Instr::Propagate => format!("eff.propagate"),
+                Instr::Suspend(eff) => format!("eff.suspend {:?}", eff),
             };
 
             writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();

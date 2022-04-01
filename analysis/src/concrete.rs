@@ -475,10 +475,14 @@ impl ConContext {
                 self.lower_effect(hir, *eff, ty_insts),
                 self.lower_expr(hir, inner, ty_insts),
             ),
+            hir::Expr::Suspend(eff, inner) => hir::Expr::Suspend(
+                self.lower_effect(hir, *eff, ty_insts),
+                self.lower_expr(hir, inner, ty_insts),
+            ),
             hir::Expr::Handle { expr, eff, send, recv } => hir::Expr::Handle {
                 expr: self.lower_expr(hir, expr, ty_insts),
                 eff: self.lower_effect(hir, *eff, ty_insts),
-                send: self.lower_binding(hir, send, ty_insts),
+                send: ConNode::new(**send, self.lower_ty(hir, send.meta().1, ty_insts)),
                 recv: self.lower_expr(hir, recv, ty_insts),
             },
         };

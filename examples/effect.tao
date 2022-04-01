@@ -1,9 +1,9 @@
 import "lib/std.tao"
 
 fn yield A : A -> yield A ~ () =
-    x => @make_eff(x)
+    x => @{ @suspend(x) }
 fn do_print : Str -> print ~ () =
-    s => @make_eff(s)
+    s => @{ @suspend(s) }
 
 effect yield A = A => ()
 
@@ -19,13 +19,13 @@ fn count_from : Nat -> yield Nat ~ () =
 # Prints the natural numbers to the console
 def print_nats : print ~ () = @{
     count_from(0)
-        handle yield Nat with n => do_print(n:show)?
+        handle yield Nat with n => do_print(""#(n:show)#)?
 }
 
 effect get_name = () => Str
 
 # This will be implicit later
-def get_name : get_name ~ Str = @make_eff(())
+def get_name : get_name ~ Str = @{ @suspend(()) }
 
 def hello : get_name ~ Str = @{
     let name = get_name? in
@@ -37,13 +37,6 @@ fn hello_to : Str -> Str =
         handle get_name with () => name
 
 def hello_to_you = hello_to("you")
-
-effect input = () => Str
-
-fn say : Str -> print ~ () = s => @{
-    say("Hello!")?;
-    ()
-}
 
 # def eff_main = do {
 #     print("Hello, world!")?;
@@ -63,4 +56,4 @@ fn say : Str -> print ~ () = s => @{
 # def main : @ -> @ =
 #     handle_effects(eff_main)
 
-def main = print("Hello, world!")
+def main = print(hello_to_you)

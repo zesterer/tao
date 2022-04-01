@@ -90,7 +90,7 @@ impl Context {
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 Repr::Tuple(fields.into_iter().map(|(_, ty)| ty).collect())
             },
-            ConTy::Effect(_, _) => todo!(),
+            ConTy::Effect(eff, out) => Repr::Effect(*eff, Box::new(self.lower_ty(hir, con, *out))),
         }
     }
 
@@ -342,8 +342,9 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
-                    hir::Intrinsic::Suspend => todo!(),
-                    hir::Intrinsic::MakeEff => todo!(),
+                    hir::Intrinsic::Propagate => mir::Expr::Intrinsic(mir::Intrinsic::Propagate, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                    ]),
                 }
             },
             hir::Expr::Update(record, fields) => {
@@ -390,8 +391,24 @@ impl Context {
 
                 mir_record.into_inner()
             },
-            hir::Expr::Basin(_, _) => todo!(),
-            hir::Expr::Handle { .. } => todo!(),
+            hir::Expr::Basin(eff, inner) => mir::Expr::Basin(*eff, self.lower_expr(hir, con, inner, stack)),
+            hir::Expr::Handle { expr, eff, send, recv } => {
+                let send_local = Local::new();;
+                mir::Expr::Handle {
+                    expr: self.lower_expr(hir, con, expr, stack),
+                    eff: *eff,
+                    send: MirNode::new(send_local, self.lower_ty(hir, con, *send.meta())),
+                    recv: {
+                        stack.push((**send, send_local));
+                        let recv = self.lower_expr(hir, con, recv, stack);
+                        stack.pop();
+                        recv
+                    },
+                }
+            },
+            hir::Expr::Suspend(eff, inner) => mir::Expr::Intrinsic(mir::Intrinsic::Suspend(*eff), vec![
+                self.lower_expr(hir, con, inner, stack),
+            ]),
         };
 
         MirNode::new(expr, self.lower_ty(hir, con, *con_expr.meta()))

@@ -120,8 +120,7 @@ pub enum Intrinsic {
     LenList,
     SkipList,
     TrimList,
-    Suspend,
-    MakeEff,
+    Propagate,
 }
 
 #[derive(Debug)]
@@ -151,10 +150,11 @@ pub enum Expr<M: Meta> {
     // Blocks propagation of effects, collecting them
     // i.e: `@{ foo?; bar?; x }` gets type `foo + bar ~ X`
     Basin(M::Effect, Node<Self, M>),
+    Suspend(M::Effect, Node<Self, M>),
     Handle {
         expr: Node<Self, M>,
         eff: M::Effect,
-        send: Node<Binding<M>, M>,
+        send: Node<Ident, M>,
         recv: Node<Self, M>,
     },
 }
@@ -223,13 +223,13 @@ impl Expr<ConMeta> {
                     .for_each(|(_, field)| field.required_locals_inner(stack, required));
             },
             Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
+            Expr::Suspend(_, inner) => inner.required_locals_inner(stack, required),
             Expr::Handle { expr, send, recv, .. } => {
                 expr.required_locals_inner(stack, required);
 
-                let old_stack = stack.len();
-                send.visit_bindings_inner(&mut |name, _| stack.push(**name));
+                stack.push(**send);
                 recv.required_locals_inner(stack, required);
-                stack.truncate(old_stack);
+                stack.pop();
             },
         }
     }

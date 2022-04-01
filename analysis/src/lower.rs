@@ -565,7 +565,7 @@ impl ToHir for ast::Expr {
                 let eff_obj_ty = infer.insert(a.meta().0, TyInfo::Effect(eff, out_ty));
                 infer.make_flow(a.meta().1, eff_obj_ty, EqInfo::from(op.span()));
 
-                (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Suspend, op.span()), vec![a]))
+                (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))
             } else {
                 let a = a.to_hir(infer, scope);
                 let output_ty = infer.unknown(self.span());
@@ -817,7 +817,7 @@ impl ToHir for ast::Expr {
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },
             ast::Expr::Intrinsic(name, args) => {
-                let args = args
+                let mut args = args
                     .iter()
                     .map(|arg| arg.to_hir(infer, scope))
                     .collect::<Vec<_>>();
@@ -921,12 +921,19 @@ impl ToHir for ast::Expr {
                         infer.make_flow(args[1].meta().1, nat, EqInfo::from(name.span()));
                         (TyInfo::Ref(list), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::TrimList, name.span()), args))
                     },
-                    "make_eff" if args.len() == 1 => {
+                    "suspend" if args.len() == 1 => {
                         let a = &args[0];
                         let out = infer.unknown(self.span());
-                        let eff = infer.unknown_effect(self.span());
+
+                        let eff = if let Some(eff) = scope.last_basin() {
+                            eff
+                        } else {
+                            infer.ctx_mut().errors.push(Error::NoBasin(name.span()));
+                            infer.unknown_effect(a.meta().0)
+                        };
+
                         infer.make_effect_send_recv(eff, a.meta().1, out, self.span());
-                        (TyInfo::Effect(eff, out), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::MakeEff, name.span()), args))
+                        (TyInfo::Ref(out), hir::Expr::Suspend(eff, args.remove(0)))
                     },
                     _ => {
                         infer.ctx_mut().emit(Error::InvalidIntrinsic(name.clone()));
@@ -1004,11 +1011,16 @@ impl ToHir for ast::Expr {
                             let eff_obj_ty = infer.insert(expr.meta().0, TyInfo::Effect(eff, out_ty));
                             infer.make_flow(expr.meta().1, eff_obj_ty, EqInfo::from(self.span()));
 
+                            let recv_meta = *recv.meta();
                             (TyInfo::Ref(out_ty), hir::Expr::Handle {
                                 expr,
                                 eff,
-                                send,
-                                recv,
+                                send: InferNode::new(Ident::new("send"), *send.meta()),
+                                recv: InferNode::new(hir::Expr::Match(
+                                    false,
+                                    InferNode::new(hir::Expr::Local(Ident::new("send")), *send.meta()),
+                                    vec![(send, recv)],
+                                ), recv_meta),
                             })
                         },
                         Err(()) => (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error),

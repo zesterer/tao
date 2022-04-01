@@ -6,6 +6,8 @@ use std::{
     fmt,
 };
 
+pub type EffectId = ConEffectId;
+
 pub type MirMeta = Repr;
 pub type MirNode<T> = Node<T, MirMeta>;
 
@@ -174,6 +176,8 @@ pub enum Intrinsic {
     LenList,
     SkipList,
     TrimList,
+    Suspend(EffectId),
+    Propagate,
 }
 
 #[derive(Clone, Debug)]
@@ -355,6 +359,14 @@ pub enum Expr {
     AccessVariant(MirNode<Self>, usize), // Unsafely assume the value is a specific variant
     Data(ConDataId, MirNode<Self>),
     AccessData(MirNode<Self>, ConDataId),
+
+    Basin(EffectId, MirNode<Self>),
+    Handle {
+        expr: MirNode<Self>,
+        eff: EffectId,
+        send: MirNode<Local>,
+        recv: MirNode<Self>,
+    },
 }
 
 impl Expr {
@@ -412,6 +424,15 @@ impl Expr {
                 stack.pop();
                 **next = new_init;
             },
+            Expr::Handle { expr, eff, send, recv } => {
+                expr.refresh_locals_inner(stack);
+
+                let new_send = Local::new();
+                stack.push((**send, new_send));
+                recv.refresh_locals_inner(stack);
+                stack.pop();
+                **send = new_send;
+            },
             _ => self.for_children_mut(|expr| expr.refresh_locals_inner(stack)),
         }
     }
@@ -466,6 +487,13 @@ impl Expr {
             Expr::AccessVariant(inner, _) => inner.required_locals_inner(stack, required),
             Expr::Data(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessData(inner, _) => inner.required_locals_inner(stack, required),
+            Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
+            Expr::Handle { expr, eff, send, recv } => {
+                expr.required_locals_inner(stack, required);
+                stack.push(**send);
+                recv.required_locals_inner(stack, required);
+                stack.pop();
+            },
         }
     }
 

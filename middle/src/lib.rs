@@ -40,7 +40,10 @@ use tao_analysis::{
     ConTy,
     ConTyId,
     ConDataId,
+    ConEffectId,
 };
 use hashbrown::{HashMap, HashSet};
 use internment::Intern;
 use std::collections::{BTreeMap, BTreeSet};
+
+pub type EffectId = ConEffectId;

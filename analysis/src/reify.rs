@@ -90,7 +90,10 @@ impl Reify for hir::Expr<InferMeta> {
 
                 hir::Expr::Match(hidden_outer, pred, arms)
             },
-            hir::Expr::Func(param, body) => hir::Expr::Func(TyNode::new(*param, (param.meta().0, infer.reify(param.meta().1))), body.reify(infer)),
+            hir::Expr::Func(param, body) => hir::Expr::Func(
+                TyNode::new(*param, (param.meta().0, infer.reify(param.meta().1))),
+                body.reify(infer),
+            ),
             hir::Expr::Apply(f, param) => hir::Expr::Apply(f.reify(infer), param.reify(infer)),
             hir::Expr::Cons(name, variant, a) => hir::Expr::Cons(name, variant, a.reify(infer)),
             hir::Expr::ClassAccess((ty_span, ty), class, field) => {
@@ -105,10 +108,11 @@ impl Reify for hir::Expr<InferMeta> {
                 .map(|(name, field)| (name, field.reify(infer)))
                 .collect()),
             hir::Expr::Basin(eff, inner) => hir::Expr::Basin(infer.reify_effect(eff), inner.reify(infer)),
+            hir::Expr::Suspend(eff, inner) => hir::Expr::Suspend(infer.reify_effect(eff), inner.reify(infer)),
             hir::Expr::Handle { expr, eff, send, recv } => hir::Expr::Handle {
                 expr: expr.reify(infer),
                 eff: infer.reify_effect(eff),
-                send: send.reify(infer),
+                send: TyNode::new(*send, (send.meta().0, infer.reify(send.meta().1))),
                 recv: recv.reify(infer),
             },
         };

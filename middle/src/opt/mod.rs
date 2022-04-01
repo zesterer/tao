@@ -230,6 +230,11 @@ impl Expr {
             Expr::AccessVariant(inner, _) => f(inner),
             Expr::Data(_, inner) => f(inner),
             Expr::AccessData(inner, _) => f(inner),
+            Expr::Basin(_, inner) => f(inner),
+            Expr::Handle { expr, eff, send, recv } => {
+                f(expr);
+                f(recv);
+            },
         }
     }
 
@@ -265,6 +270,11 @@ impl Expr {
             Expr::AccessVariant(inner, _) => f(inner),
             Expr::Data(_, inner) => f(inner),
             Expr::AccessData(inner, _) => f(inner),
+            Expr::Basin(_, inner) => f(inner),
+            Expr::Handle { expr, eff, send, recv } => {
+                f(expr);
+                f(recv);
+            },
         }
     }
 
@@ -282,6 +292,12 @@ impl Expr {
             Expr::Func(arg, body) => {
                 if **arg != name {
                     body.inline_local(name, local_expr);
+                }
+            },
+            Expr::Handle { expr, eff, send, recv } => {
+                expr.inline_local(name, local_expr);
+                if **send != name {
+                    recv.inline_local(name, local_expr);
                 }
             },
             _ => self.for_children_mut(|expr| expr.inline_local(name, local_expr)),

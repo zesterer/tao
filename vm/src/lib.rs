@@ -13,5 +13,6 @@ use tao_middle::{
     ProcId,
     repr,
     Ident,
+    EffectId,
 };
 use hashbrown::HashMap;

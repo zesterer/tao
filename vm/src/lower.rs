@@ -281,6 +281,8 @@ impl Program {
                     Intrinsic::LenList => { self.push(Instr::LenList); },
                     Intrinsic::SkipList => { self.push(Instr::SkipList); },
                     Intrinsic::TrimList => { self.push(Instr::TrimList); },
+                    Intrinsic::Suspend(eff) => { self.push(Instr::Suspend(*eff)); },
+                    Intrinsic::Propagate => { self.push(Instr::Propagate); },
                 };
             },
             mir::Expr::Tuple(fields) => {
@@ -431,6 +433,51 @@ impl Program {
             },
             mir::Expr::AccessData(inner, _) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
+            },
+            mir::Expr::Basin(eff, inner) => {
+                let captures = inner.required_locals(None);
+
+                let old_stack = stack.len();
+
+                let jump_over = self.push(Instr::Jump(0)); // Fixed by #5
+
+                let f_addr = self.next_addr();
+
+                let mut f_stack = Vec::new();
+                f_stack.append(&mut captures.clone());
+
+                // An effect with an undefined inner doesn't need to be compiled!
+                if !matches!(&**inner, mir::Expr::Undefined) {
+                    self.compile_expr(mir, inner, &mut f_stack, proc_fixups);
+                    self.push(Instr::PopLocal(captures.len()));
+                    self.push(Instr::Ret);
+                }
+
+                self.fixup(jump_over, self.next_addr(), Instr::Jump); // Fixes #5
+
+                for &capture in captures.iter() {
+                    let idx = stack
+                        .iter()
+                        .rev()
+                        .enumerate()
+                        .find(|(_, name)| **name == capture)
+                        .unwrap_or_else(|| unreachable!("${}", capture.0))
+                        .0;
+                    self.push(Instr::GetLocal(idx));
+                }
+
+                self.push(Instr::MakeEffect(self.next_addr().jump_to(f_addr), captures.len()));
+
+                stack.truncate(old_stack);
+            },
+            mir::Expr::Handle { expr, eff, send, recv } => {
+                // TODO:
+                // - Generate handler
+                // - Register handler
+                todo!();
+
+                self.compile_expr(mir, expr, stack, proc_fixups);
+                self.push(Instr::Propagate);
             },
         }
     }

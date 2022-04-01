@@ -20,7 +20,7 @@ pub enum Repr {
     Sum(Vec<Repr>),
     Data(ConDataId),
     Func(Box<Repr>, Box<Repr>),
-    Union(Vec<Repr>),
+    Effect(EffectId, Box<Repr>),
 }
 
 pub struct Data {
@@ -74,9 +74,7 @@ impl Reprs {
                 .any(|v| self.has_inhabitants(v)),
             Repr::Data(data) => self.has_inhabitants(&self.get(*data).repr),
             Repr::Func(_, _) => true,
-            Repr::Union(variants) => variants
-                .iter()
-                .any(|v| self.has_inhabitants(v)),
+            Repr::Effect(_, _) => true, // Effect objects always have inhabitants
         }
     }
 }
