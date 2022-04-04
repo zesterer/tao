@@ -209,7 +209,6 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         just('*').to(Op::Mul),
         just('/').to(Op::Div),
         just('%').to(Op::Rem),
-        just('=').to(Op::Eq),
     ))
         .map(Token::Op);
 
