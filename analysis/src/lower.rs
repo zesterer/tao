@@ -231,7 +231,10 @@ impl ToHir for ast::Type {
                     ) {
                         Ok(()) => {
                             let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, params));
-                            TyInfo::Effect(eff, out)
+                            // TODO: Use `unknown` instead of `Opaque` here, but don't generate type errors for free
+                            // opaque type variables, because not knowing them *is the point*
+                            let opaque = infer.opaque(self.span());
+                            TyInfo::Effect(eff, out, opaque)
                         },
                         Err(()) => TyInfo::Error(ErrorReason::Unknown),
                     }
@@ -562,7 +565,8 @@ impl ToHir for ast::Expr {
                     infer.unknown_effect(a.meta().0)
                 };
 
-                let eff_obj_ty = infer.insert(a.meta().0, TyInfo::Effect(eff, out_ty));
+                let opaque = infer.unknown(a.meta().0);
+                let eff_obj_ty = infer.insert(a.meta().0, TyInfo::Effect(eff, out_ty, opaque));
                 infer.make_flow(a.meta().1, eff_obj_ty, EqInfo::from(op.span()));
 
                 (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))
@@ -980,7 +984,8 @@ impl ToHir for ast::Expr {
                         ]), then_meta)
                     });
 
-                (TyInfo::Effect(eff, last_meta.1), hir::Expr::Basin(eff, chain))
+                let opaque = infer.unknown(self.span());
+                (TyInfo::Effect(eff, last_meta.1, opaque), hir::Expr::Basin(eff, chain))
             },
             ast::Expr::Handle { expr, eff_name, eff_args, send, recv } => {
                 let expr = expr.to_hir(infer, &scope);
@@ -1008,7 +1013,10 @@ impl ToHir for ast::Expr {
                         Ok(()) => {
                             let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, eff_args));
                             infer.make_effect_send_recv(eff, send.meta().1, recv.meta().1, eff_name.span());
-                            let eff_obj_ty = infer.insert(expr.meta().0, TyInfo::Effect(eff, out_ty));
+
+                            let opaque = infer.unknown(expr.meta().0);
+                            let eff_obj_ty = infer.insert(expr.meta().0, TyInfo::Effect(eff, out_ty, opaque));
+
                             infer.make_flow(expr.meta().1, eff_obj_ty, EqInfo::from(self.span()));
 
                             let recv_meta = *recv.meta();

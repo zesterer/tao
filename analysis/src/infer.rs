@@ -19,7 +19,9 @@ pub enum TyInfo {
     SelfType,
     // An opaque associated type that *cannot* be determined due to lack of information
     Assoc(TyVar, ClassId, SrcNode<Ident>),
-    Effect(EffectVar, TyVar),
+    // Effect, output type, opaque type variable for tracking
+    Effect(EffectVar, TyVar, TyVar),
+    Opaque(usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,6 +102,7 @@ pub struct Infer<'a> {
     vars: Vec<(Span, TyInfo, Result<(), ()>)>,
     class_vars: Vec<(Span, Option<ClassId>)>,
     effect_vars: Vec<(Span, EffectInfo)>,
+    opaque_id: usize,
     constraints: VecDeque<Constraint>,
     errors: Vec<InferError>,
     self_type: Option<TyVar>,
@@ -114,6 +117,7 @@ impl<'a> Infer<'a> {
             vars: Vec::new(),
             class_vars: Vec::new(),
             effect_vars: Vec::new(),
+            opaque_id: 0,
             constraints: VecDeque::new(),
             errors: Vec::new(),
             self_type: None,
@@ -180,6 +184,7 @@ impl<'a> Infer<'a> {
                 | TyInfo::Unknown(_)
                 | TyInfo::Prim(_)
                 | TyInfo::Gen(..)
+                | TyInfo::Opaque(_)
                 | TyInfo::SelfType => {},
                 TyInfo::List(item) => self.set_error(item),
                 TyInfo::Tuple(fields) => fields
@@ -198,9 +203,10 @@ impl<'a> Infer<'a> {
                 // Type is projected, so error does not propagate backwards
                 // TODO: Should it?
                 TyInfo::Assoc(_, _, _) => {},
-                TyInfo::Effect(_eff, out) => {
+                TyInfo::Effect(_eff, out, opaque) => {
                     // TODO: Set error for eff
                     self.set_error(out);
+                    self.set_error(opaque);
                 },
             }
         }
@@ -287,7 +293,8 @@ impl<'a> Infer<'a> {
                         span.unwrap_or_else(|| self.ctx.tys.get_span(ty)),
                         EffectInfo::Known(decl, args),
                     );
-                    TyInfo::Effect(eff, self.instantiate(out, span, f, self_ty))
+                    let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)));
+                    TyInfo::Effect(eff, self.instantiate(out, span, f, self_ty), opaque)
                 },
             },
         };
@@ -296,6 +303,12 @@ impl<'a> Infer<'a> {
 
     pub fn unknown(&mut self, span: Span) -> TyVar {
         self.insert(span, TyInfo::Unknown(None))
+    }
+
+    pub fn opaque(&mut self, span: Span) -> TyVar {
+        let ty = self.insert(span, TyInfo::Opaque(self.opaque_id));
+        self.opaque_id += 1;
+        ty
     }
 
     pub fn make_access(&mut self, record: TyVar, field_name: SrcNode<Ident>, field: TyVar) {
@@ -381,6 +394,7 @@ impl<'a> Infer<'a> {
                 | TyInfo::Error(_)
                 | TyInfo::Prim(_)
                 | TyInfo::SelfType
+                | TyInfo::Opaque(_)
                 | TyInfo::Gen(_, _, _) => false,
                 TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
                 TyInfo::List(item) => x == item || self.occurs_in_inner(x, item, seen),
@@ -395,7 +409,8 @@ impl<'a> Infer<'a> {
                     .into_iter()
                     .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
                 TyInfo::Assoc(inner, _, _) => x == inner || self.occurs_in_inner(x, inner, seen),
-                TyInfo::Effect(eff, out) => self.occurs_in_inner(x, out, seen) || match self.follow_effect(eff) {
+                // Opaque type is not checked, it's always opaque... hopefully
+                TyInfo::Effect(eff, out, _opaque) => self.occurs_in_inner(x, out, seen) || match self.follow_effect(eff) {
                     EffectInfo::Unknown => false,
                     EffectInfo::Ref(_) => unreachable!(),
                     EffectInfo::Known(_, params) => params
@@ -523,11 +538,13 @@ impl<'a> Infer<'a> {
                     let contra_error = self.make_flow_inner(y, x).err().map(|(a, b)| (b, a));
                     co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
                 },
-            (TyInfo::Effect(x_eff, x_out), TyInfo::Effect(y_eff, y_out)) => {
+            (TyInfo::Effect(x_eff, x_out, x_opaque), TyInfo::Effect(y_eff, y_out, y_opaque)) => {
                 let eff_err = make_flow_effect(self, (x_eff, x), (y_eff, y)).err();
                 let o_err = self.make_flow_inner(x_out, y_out).err();
-                o_err.or(eff_err).map(Err).unwrap_or(Ok(()))
+                let opaque_err = self.make_flow_inner(x_opaque, y_opaque).err().map(|_| (x, y));
+                o_err.or(eff_err).or(opaque_err).map(Err).unwrap_or(Ok(()))
             },
+            (TyInfo::Opaque(x_id), TyInfo::Opaque(y_id)) if x_id == y_id => Ok(()),
             (_, _) => Err((x, y)),
         }
     }
@@ -539,6 +556,7 @@ impl<'a> Infer<'a> {
         match self.info(ty) {
             TyInfo::Ref(x) => self.try_reinstantiate(span, x),
             TyInfo::Error(reason) => self.insert(self.span(ty), TyInfo::Error(reason)),
+            TyInfo::Opaque(_) => self.opaque(span),
             TyInfo::Unknown(_) | TyInfo::Prim(_) => ty,
             TyInfo::List(item) => {
                 let item = self.try_reinstantiate(span, item);
@@ -551,7 +569,7 @@ impl<'a> Infer<'a> {
             },
             // TODO: Reinstantiate type parameters with fresh type variables, but without creating inference problems
             // TODO: Is this even correct?
-            TyInfo::Gen(x, _, origin) => ty,//self.insert(span, TyInfo::Unknown(Some(origin))),
+            TyInfo::Gen(x, _, origin) => self.insert(span, TyInfo::Unknown(Some(origin))), //ty,
             TyInfo::Tuple(fields) => {
                 let fields = fields
                     .into_iter()
@@ -578,7 +596,7 @@ impl<'a> Infer<'a> {
                 let inner = self.try_reinstantiate(span, inner);
                 self.insert(self.span(ty), TyInfo::Assoc(inner, class_id, assoc))
             },
-            TyInfo::Effect(eff, out) => {
+            TyInfo::Effect(eff, out, opaque) => {
                 let eff = match self.follow_effect(eff) {
                     EffectInfo::Unknown => eff,
                     EffectInfo::Ref(_) => unreachable!(), // `follow_effect` shouldn't ever return Ref
@@ -591,7 +609,8 @@ impl<'a> Infer<'a> {
                     },
                 };
                 let out = self.try_reinstantiate(span, out);
-                self.insert(self.span(ty), TyInfo::Effect(eff, out))
+                let opaque = self.try_reinstantiate(span, opaque);
+                self.insert(self.span(ty), TyInfo::Effect(eff, out, opaque))
             },
         }
     }
@@ -956,6 +975,8 @@ impl<'a> Infer<'a> {
                 .all(|(x, y)| self.covers_var(x, y)),
             (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, class_y, assoc_y))
                 if class_x == class_y && assoc_x == assoc_y => self.covers_var(x, y),
+            /*
+            // Effect types are opaque, and hence never cover. Is this fine?
             (TyInfo::Effect(x, x_out), Ty::Effect(y, y_out)) => self.covers_var(x_out, y_out) &&
                 match (self.follow_effect(x), self.ctx.tys.get_effect(y)) {
                     (EffectInfo::Ref(_), _) => unreachable!(),
@@ -965,6 +986,7 @@ impl<'a> Infer<'a> {
                         .all(|(x, y)| self.covers_var(x, y)),
                     (_, _) => false,
                 },
+            */
             _ => false,
         }
     }
@@ -995,6 +1017,8 @@ impl<'a> Infer<'a> {
             (Ty::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
                 if class_x == class_y && assoc_x == assoc_y => self.derive_links(x, y, link_gen),
             (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
+            /*
+            // Effect types are opaque, so no links are derived
             (Ty::Effect(x, x_out), TyInfo::Effect(y, y_out)) => {
                 match (self.ctx.tys.get_effect(x), self.follow_effect(y)) {
                     (_, EffectInfo::Ref(_)) => unreachable!(),
@@ -1006,6 +1030,7 @@ impl<'a> Infer<'a> {
                 }
                 self.derive_links(x_out, y_out, link_gen);
             },
+            */
             _ => {}, // Only type constructors and generic types generate obligations
         }
     }
@@ -1210,6 +1235,8 @@ impl<'a> Checked<'a> {
                 TyInfo::Ref(x) => return self.reify_inner(x),
                 // Unknown types are treated as errors from here on out
                 TyInfo::Unknown(_) => Ty::Error(ErrorReason::Unknown),
+                // TODO: Not actual an error, but shouldn't appear in an actual type signature
+                TyInfo::Opaque(_) => Ty::Error(ErrorReason::Unknown),
                 TyInfo::Error(reason) => Ty::Error(reason),
                 TyInfo::Prim(prim) => Ty::Prim(prim),
                 TyInfo::List(item) => Ty::List(self.reify_inner(item)),
@@ -1229,7 +1256,7 @@ impl<'a> Checked<'a> {
                 TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
                 TyInfo::SelfType => Ty::SelfType,
                 TyInfo::Assoc(inner, class_id, assoc) => Ty::Assoc(self.reify_inner(inner), class_id, assoc),
-                TyInfo::Effect(eff, out) => Ty::Effect(self.reify_effect(eff), self.reify_inner(out)),
+                TyInfo::Effect(eff, out, _opaque) => Ty::Effect(self.reify_effect(eff), self.reify_inner(out)),
             };
             self.infer.ctx.tys.insert(self.infer.span(var), ty)
         }
