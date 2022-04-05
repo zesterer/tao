@@ -60,7 +60,7 @@ pub enum InferError {
     NoSuchField(TyVar, Span, SrcNode<Ident>),
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
-    // (_, _, obligation span, _, usage span)
+    // (_, _, obligation span, span of original generic, usage span)
     TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>, Span),
     RecursiveAlias(AliasId, TyVar, Span),
     PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
@@ -1144,17 +1144,19 @@ impl<'a> Infer<'a> {
                 } {
                     Some(Ok(Err(false)))
                 } else {
-                    Some(Err(InferError::TypeDoesNotFulfil(
-                        obligation,
-                        ty,
-                        obl_span,
-                        if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
-                            Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
-                        } else {
-                            None
-                        },
-                        use_span,
-                    )))
+                    // The lack of impls *might* be because we just don't have enough information yet!
+                    None
+                    // Some(Err(InferError::TypeDoesNotFulfil(
+                    //     obligation,
+                    //     ty,
+                    //     obl_span,
+                    //     if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
+                    //         Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
+                    //     } else {
+                    //         None
+                    //     },
+                    //     use_span,
+                    // )))
                 }
             },
         }
@@ -1195,7 +1197,12 @@ impl<'a> Infer<'a> {
                     InferError::InvalidBinaryOp(op.clone(), a, b)
                 },
                 Constraint::Impl(ty, obligation, obl_span, _, use_span) => {
-                    InferError::TypeDoesNotFulfil(obligation, ty, obl_span, None, use_span)
+                    let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
+                        Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
+                    } else {
+                        None
+                    };
+                    InferError::TypeDoesNotFulfil(obligation, ty, obl_span, gen_span, use_span)
                 },
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
                     InferError::AmbiguousClassItem(field, Vec::new())

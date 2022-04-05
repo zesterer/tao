@@ -12,12 +12,15 @@ member Natural of Eq =
 
 fn show_negative A : A -> Str where
     A < Neg,
-    A.Output < Show,
+    A.Output < Neg,
+    A.Output.Output < Neg,
+    A.Output.Output.Output < Neg,
+    A.Output.Output.Output.Output < Show,
 =
-    a => (-a):show
+    a => (----a):show
 
 
-def main = show_negative(5)
+def main = show_negative(5i)
 
 # def main : IO () =
 #     print("hello")
