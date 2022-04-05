@@ -40,7 +40,7 @@ impl<'a> Scope<'a> {
         match self {
             Self::Empty => None,
             Self::Recursive(def, ty, def_id, tys) => if &**def == name {
-                Some((infer.try_reinstantiate(span, *ty), Some((*def_id, tys.clone()))))
+                Some((infer.reinstantiate(span, *ty), Some((*def_id, tys.clone()))))
             } else {
                 None
             },
@@ -90,7 +90,7 @@ fn enforce_generic_obligations(
             if gen_scope.len() == 0 {
                 item_span
             } else {
-                gen_scope.span
+                gen_scope.get(0).name.span()
             },
             gen_scope.len(),
         );
@@ -98,19 +98,10 @@ fn enforce_generic_obligations(
         Err(())
     } else {
         // Enforce obligations from data type
-        let mut obls = Vec::new();
-        for idx in 0..gen_scope.len() {
-            for obl in gen_scope
-                .get(idx)
-                .obligations()
-            {
-                match &**obl {
-                    Obligation::MemberOf(class) => obls.push((idx, *class, obl.span())),
-                }
-            }
-        }
-        for (idx, class, span) in obls {
-            infer.make_impl(params[idx], class, use_span, Vec::new(), span);
+        for member in gen_scope.implied_members.as_ref().unwrap().clone() {
+            let member_ty_span = infer.ctx().tys.get_span(member.member);
+            let member_ty = infer.instantiate(member.member, member_ty_span, &|idx, _, _| params[idx], None);
+            infer.make_impl(member_ty, *member.class, use_span, Vec::new(), item_span);
         }
         Ok(())
     }
@@ -164,7 +155,11 @@ impl ToHir for ast::Type {
                                 let err = Error::WrongNumberOfGenerics(
                                     self.span(),
                                     params.len(),
-                                    alias_gen_scope.span,
+                                    if alias_gen_scope.len() == 0 {
+                                        infer.ctx().datas.get_alias_span(alias_id)
+                                    } else {
+                                        alias_gen_scope.get(0).name.span()
+                                    },
                                     alias_gen_scope.len(),
                                 );
                                 infer.ctx_mut().emit(err);
@@ -428,17 +423,11 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
         .collect::<Vec<_>>();
 
     // Enforce class obligations
-    for (idx, (span, ty)) in generic_tys.iter().enumerate() {
-        let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
-        for obl in scope
-            .get(idx)
-            .obligations()
-            .to_vec()
-        {
-            match &*obl {
-                Obligation::MemberOf(class) => infer.make_impl(*ty, *class, obl.span(), Vec::new(), inst_span),
-            }
-        }
+    let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
+    for member in gen_scope.implied_members.as_ref().unwrap().clone() {
+        let member_ty_span = infer.ctx().tys.get_span(member.member);
+        let member_ty = infer.instantiate(member.member, member_ty_span, &|idx, _, _| generic_tys[idx].1, None);
+        infer.make_impl(member_ty, *member.class, inst_span, Vec::new(), span);
     }
 
     // Recreate type in context
@@ -578,7 +567,7 @@ impl ToHir for ast::Expr {
 
                 let (class, field) = match &**op {
                     ast::UnaryOp::Not => (infer.ctx().classes.lang.not, SrcNode::new(Ident::new("not"), self.span())),
-                    ast::UnaryOp::Neg => (infer.ctx().classes.lang.neg, SrcNode::new(Ident::new("neg"), op.span())),
+                    ast::UnaryOp::Neg => (infer.ctx().classes.lang.neg, SrcNode::new(Ident::new("neg"), self.span())),
                     ast::UnaryOp::Propagate => unreachable!(), // handled above
                 };
                 let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, self.span());

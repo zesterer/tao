@@ -224,35 +224,59 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, PartialEq)]
-pub struct GenericTy {
-    pub name: SrcNode<Ident>,
-    pub obligations: Vec<SrcNode<ClassInst>>,
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImpliedMember {
+    pub member: SrcNode<Type>,
+    pub class: SrcNode<ClassInst>,
 }
 
 #[derive(Debug, PartialEq)]
+pub struct GenericTy {
+    pub name: SrcNode<Ident>,
+}
+
+#[derive(Debug, PartialEq, Default)]
 pub struct Generics {
     pub tys: Vec<GenericTy>,
+    pub implied_members: Vec<SrcNode<ImpliedMember>>,
+}
+
+impl Generics {
+    pub fn from_tys_and_implied(
+        tys: Vec<(ast::GenericTy, Vec<SrcNode<ast::ImpliedMember>>)>,
+        mut implied_members: Vec<SrcNode<ast::ImpliedMember>>,
+    ) -> Self {
+        Self {
+            tys: tys
+                .into_iter()
+                .map(|(ty, mut implied)| {
+                    implied_members.append(&mut implied);
+                    ty
+                })
+                .collect(),
+            implied_members,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Data {
     pub name: SrcNode<Ident>,
-    pub generics: SrcNode<Generics>,
+    pub generics: Generics,
     pub variants: Vec<(SrcNode<Ident>, SrcNode<Type>)>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Alias {
     pub name: SrcNode<Ident>,
-    pub generics: SrcNode<Generics>,
+    pub generics: Generics,
     pub ty: SrcNode<Type>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Def {
     pub name: SrcNode<Ident>,
-    pub generics: SrcNode<Generics>,
+    pub generics: Generics,
     pub ty_hint: SrcNode<Type>,
     pub body: SrcNode<Expr>,
 }
@@ -272,8 +296,7 @@ pub enum ClassItem {
 #[derive(Debug, PartialEq)]
 pub struct Class {
     pub name: SrcNode<Ident>,
-    pub obligation: Vec<SrcNode<ClassInst>>,
-    pub generics: SrcNode<Generics>,
+    pub generics: Generics,
     pub items: Vec<ClassItem>,
 }
 
@@ -291,7 +314,7 @@ pub enum MemberItem {
 
 #[derive(Debug, PartialEq)]
 pub struct Member {
-    pub generics: SrcNode<Generics>,
+    pub generics: Generics,
     pub member: SrcNode<Type>,
     pub class: SrcNode<ClassInst>,
     pub items: Vec<MemberItem>,
@@ -300,7 +323,7 @@ pub struct Member {
 #[derive(Debug, PartialEq)]
 pub struct Effect {
     pub name: SrcNode<Ident>,
-    pub generics: SrcNode<Generics>,
+    pub generics: Generics,
     pub send: SrcNode<Type>,
     pub recv: SrcNode<Type>,
 }

@@ -10,11 +10,11 @@ data Map K, V =
 for K, V member Map K V of Default =
     => default = MEmpty
 
-for K < Debug, V < Debug member Map K V of Debug =
-    => debug = fn
-        | MEmpty => "{}"
-        | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
-        \ MBranch (_, a, b) => a:debug ++ ", " ++ b:debug
+# for K < Debug, V < Debug member Map K V of Debug =
+#     => debug = fn
+#         | MEmpty => "{}"
+#         | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
+#         \ MBranch (_, a, b) => a:debug ++ ", " ++ b:debug
 
 fn insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
     | k, v, MEmpty => MLeaf (k, v)

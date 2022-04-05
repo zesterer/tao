@@ -88,7 +88,7 @@ fn eq A < Eq : A -> A -> Bool = x, y => A.eq(x, y)
 
 # Ord
 
-class Ord =
+class Ord < Eq =
     => cmp : Self -> Self -> Ordering
 
 data Ordering =
@@ -104,16 +104,12 @@ member Nat of Ord =
         else Equal
 
 class OrdExt < Ord =
-    => eq : Self -> Self -> Bool
     => less : Self -> Self -> Bool
     => less_eq : Self -> Self -> Bool
     => greater : Self -> Self -> Bool
     => greater_eq : Self -> Self -> Bool
 
 for A < Ord member A of OrdExt =
-    => eq = fn x, y => match A.cmp(x, y) in
-        | Equal => True
-        \ _ => False
     => less = fn x, y => match A.cmp(x, y) in
         | Less => True
         \ _ => False

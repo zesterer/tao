@@ -10,6 +10,12 @@ member Natural of Eq =
         | Succ x, Succ y => x = y
         \ _, _ => False
 
+fn show_negative A : A -> Str where
+    A < Neg,
+    A.Output < Show,
+=
+    a => (-a):show
+
 def true = -[1, 2]# = [1, 2, 3]
 
 def main = true

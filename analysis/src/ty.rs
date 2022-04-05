@@ -73,23 +73,18 @@ impl Types {
         &self.scopes[scope.0]
     }
 
+    pub fn get_gen_scope_mut(&mut self, scope: GenScopeId) -> &mut GenScope {
+        &mut self.scopes[scope.0]
+    }
+
     pub fn insert_gen_scope(&mut self, gen_scope: GenScope) -> GenScopeId {
         let id = GenScopeId(self.scopes.len());
         self.scopes.push(gen_scope);
         id
     }
 
-    pub fn check_gen_scopes(&mut self, classes: &Classes) -> Vec<Error> {
-        let mut errors = Vec::new();
-        for scope in &mut self.scopes {
-            scope.check(classes, &mut errors);
-        }
-        assert!(self.scopes
-            .iter()
-            .all(|s| s.types
-                .iter()
-                .all(|t| t.obligations.is_some())), "All generic scope obligations must be checked");
-        errors
+    pub fn gen_scope_ids(&self) -> impl Iterator<Item = GenScopeId> {
+        (0..self.scopes.len()).map(GenScopeId)
     }
 
     pub fn get(&self, ty: TyId) -> Ty {
@@ -273,35 +268,31 @@ impl<'a> fmt::Display for TyDisplay<'a> {
 }
 
 #[derive(Clone)]
-pub enum Obligation {
-    MemberOf(ClassId),
+pub struct ImpliedMember<M: Meta> {
+    pub member: M::Ty,
+    pub class: SrcNode<ClassId>,
 }
+
+pub type TyImpliedMember = ImpliedMember<TyMeta>;
+pub type InferImpliedMember = ImpliedMember<InferMeta>;
 
 pub struct GenTy {
     pub name: SrcNode<Ident>,
-    // TODO: Don't store this here, it's silly
-    pub ast_obligations: Vec<SrcNode<ast::ClassInst>>,
-    pub obligations: Option<Vec<SrcNode<Obligation>>>,
-}
-
-impl GenTy {
-    pub fn obligations(&self) -> &[SrcNode<Obligation>] {
-        self.obligations
-            .as_ref()
-            .expect("Lookup on unchecked gen scope")
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GenScopeId(usize);
 
 pub struct GenScope {
-    pub span: Span,
+    pub item_span: Span,
     types: Vec<GenTy>,
+    // TODO: Don't store this here, it's silly
+    pub ast_implied_members: Vec<SrcNode<ast::ImpliedMember>>,
+    pub implied_members: Option<Vec<SrcNode<TyImpliedMember>>>,
 }
 
 impl GenScope {
-    pub fn from_ast(generics: &SrcNode<ast::Generics>) -> (Self, Vec<Error>) {
+    pub fn from_ast(generics: &ast::Generics, item_span: Span) -> (Self, Vec<Error>) {
         let mut existing = HashMap::new();
 
         let mut errors = Vec::new();
@@ -312,15 +303,15 @@ impl GenScope {
         }
 
         (Self {
-            span: generics.span(),
+            item_span,
             types: generics.tys
                 .iter()
                 .map(|gen_ty| GenTy {
                     name: gen_ty.name.clone(),
-                    ast_obligations: gen_ty.obligations.clone(),
-                    obligations: None,
                 })
                 .collect(),
+            ast_implied_members: generics.implied_members.clone(),
+            implied_members: None,
         }, errors)
     }
 
@@ -332,21 +323,5 @@ impl GenScope {
 
     pub fn find(&self, name: Ident) -> Option<(usize, &GenTy)> {
         self.types.iter().enumerate().find(|(_, ty)| &*ty.name == &name)
-    }
-
-    fn check(&mut self, classes: &Classes, errors: &mut Vec<Error>) {
-        for ty in &mut self.types {
-            let obligations = ty
-                .ast_obligations
-                .iter()
-                .filter_map(|obl| if let Some(class) = classes.lookup(*obl.name) {
-                    Some(SrcNode::new(Obligation::MemberOf(class), obl.name.span()))
-                } else {
-                    errors.push(Error::NoSuchClass(obl.name.clone()));
-                    None
-                })
-                .collect();
-            ty.obligations = Some(obligations);
-        }
     }
 }

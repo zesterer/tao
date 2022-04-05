@@ -111,7 +111,7 @@ impl ConContext {
                 this.lower_proc(hir, main_def);
                 this.entry = Some(main_def);
             } else {
-                errors.push(Error::GenericEntryPoint(main.name.clone(), gen_scope.span));
+                errors.push(Error::GenericEntryPoint(main.name.clone(), gen_scope.get(0).name.span()));
             }
         } else {
             errors.push(Error::NoEntryPoint(hir.root_span));

@@ -15,7 +15,7 @@ pub mod reify;
 pub mod ty;
 
 pub use crate::{
-    class::{ClassId, Class, Classes, ClassItem, Member, MemberId, MemberItem},
+    class::{ClassId, Class, Classes, ClassAssoc, ClassField, Member, MemberId, MemberItem},
     concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConProc, ConProcId, ConDataId, ConEffectId},
     context::Context,
     data::{Datas, Data, DataId, Alias, AliasId},
@@ -23,11 +23,11 @@ pub use crate::{
     effect::{Effects, EffectDecl, EffectDeclId},
     error::Error,
     exhaustivity::{exhaustivity, ExamplePat},
-    hir::{InferExpr, InferBinding, TyExpr, TyBinding, ConBinding, ConExpr, Intrinsic},
+    hir::{InferExpr, InferBinding, TyExpr, TyBinding, ConBinding, ConExpr, Intrinsic, Meta},
     infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo, ClassVar, EffectVar, EffectInfo},
     lower::{Scope, ToHir},
     reify::Reify,
-    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, Obligation, Effect, EffectId},
+    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, TyImpliedMember, InferImpliedMember, Effect, EffectId},
 };
 pub use tao_syntax::ast::Ident;
 

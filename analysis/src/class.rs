@@ -1,23 +1,20 @@
 use super::*;
 
-// TODO: Remove this
-pub enum ClassItem {
-    Value {
-        name: SrcNode<Ident>,
-        ty: SrcNode<TyId>,
-    },
-    Type {
-        name: SrcNode<Ident>,
-    },
+pub struct ClassAssoc {
+    pub name: SrcNode<Ident>,
+}
+
+pub struct ClassField {
+    pub name: SrcNode<Ident>,
+    pub ty: SrcNode<TyId>,
 }
 
 pub struct Class {
     pub name: SrcNode<Ident>,
-    pub obligations: Option<Vec<SrcNode<Obligation>>>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
-    pub assoc: Option<Vec<ClassItem>>,
-    pub fields: Option<Vec<ClassItem>>,
+    pub assoc: Option<Vec<ClassAssoc>>,
+    pub fields: Option<Vec<ClassField>>,
 }
 
 impl Class {
@@ -26,9 +23,10 @@ impl Class {
             .as_ref()
             .expect("Class associated types must be known here")
             .iter()
-            .find_map(|item| match item {
-                ClassItem::Type { name } if **name == assoc => Some(()),
-                _ => None,
+            .find_map(|a| if *a.name == assoc {
+                Some(())
+            } else {
+                None
             })
     }
 
@@ -37,9 +35,10 @@ impl Class {
             .as_ref()
             .expect("Class fields must be known here")
             .iter()
-            .find_map(|item| match item {
-                ClassItem::Value { name, ty } if **name == field => Some(ty),
-                _ => None,
+            .find_map(|f| if *f.name == field {
+                Some(&f.ty)
+            } else {
+                None
             })
     }
 }
@@ -116,15 +115,11 @@ impl Classes {
         errors
     }
 
-    pub fn define_obligations(&mut self, id: ClassId, obligations: Vec<SrcNode<Obligation>>) {
-        self.classes[id.0].obligations = Some(obligations);
-    }
-
-    pub fn define_assoc(&mut self, id: ClassId, assoc: Vec<ClassItem>) {
+    pub fn define_assoc(&mut self, id: ClassId, assoc: Vec<ClassAssoc>) {
         self.classes[id.0].assoc = Some(assoc);
     }
 
-    pub fn define_fields(&mut self, id: ClassId, fields: Vec<ClassItem>) {
+    pub fn define_fields(&mut self, id: ClassId, fields: Vec<ClassField>) {
         self.classes[id.0].fields = Some(fields);
     }
 
@@ -207,7 +202,7 @@ impl Classes {
                                 },
                                 hir.tys.display(&hir.datas, &hir.effects, c.member),
                                 **self.get(class).name,
-                                gen_scope.span.src(),
+                                hir.tys.get_span(c.member).src(),
                             )
                         })
                         .collect::<Vec<_>>()
