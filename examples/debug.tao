@@ -10,7 +10,6 @@ member Natural of Eq =
         | Succ x, Succ y => x = y
         \ _, _ => False
 
-
 fn show_negative A : A -> Str where
     A < Neg,
     A.Output < Show,

@@ -172,16 +172,15 @@ impl Error {
                 },
             ),
             Error::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => (
-                format!("Type {} is not a member of {}", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Red)),
+                format!("Type {} is not a member of {}", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Cyan)),
                 {
                     let mut labels = vec![
                         (use_span, format!("Because it is used here"), Color::Yellow),
                         (ctx.tys.get_span(ty), format!(
-                            "{} must be a member of {}",
+                            "This is of type {}",
                             display(ty).fg(Color::Red),
-                            (*ctx.classes.get(class).name).fg(Color::Red),
                         ), Color::Red),
-                        (obl_span, format!("Membership of {} is required here", (*ctx.classes.get(class).name).fg(Color::Cyan)), Color::Cyan),
+                        (obl_span, format!("{} is required to be a member of {} here", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Cyan)), Color::Cyan),
                     ];
                     if let Some(gen_span) = gen_span {
                         labels.push((gen_span, format!(
@@ -244,7 +243,7 @@ impl Error {
                 },
             ),
             Error::DuplicateTypeName(name, old, new) => (
-                format!("Type {} declared multiple times", name.fg(Color::Red)),
+                format!("Type {} cannot be declared multiple times", name.fg(Color::Red)),
                 vec![
                     (old, format!("Previous declaration"), Color::Yellow),
                     (new, format!("Conflicting declaration"), Color::Red),
@@ -252,18 +251,20 @@ impl Error {
                 vec![],
             ),
             Error::DuplicateDefName(name, old, new) => (
-                format!("Definition {} declared multiple times", name.fg(Color::Red)),
+                format!("Definition {} cannot be declared multiple times", name.fg(Color::Red)),
                 vec![
                     (old, format!("Previous declaration"), Color::Yellow),
                     (new, format!("Conflicting declaration"), Color::Red),
+                    (new, format!("Consider renaming this, perhaps to {}?", format!("{}2", name).fg(Color::Cyan)), Color::Cyan),
                 ],
                 vec![],
             ),
             Error::DuplicateConsName(name, old, new) => (
-                format!("Constructor {} declared multiple times", name.fg(Color::Red)),
+                format!("Constructor {} cannot be declared multiple times", name.fg(Color::Red)),
                 vec![
                     (old, format!("Previous declaration"), Color::Yellow),
                     (new, format!("Conflicting declaration"), Color::Red),
+                    (new, format!("Consider renaming this, perhaps to {}?", format!("{}2", name).fg(Color::Cyan)), Color::Cyan),
                 ],
                 vec![],
             ),
@@ -272,6 +273,7 @@ impl Error {
                 vec![
                     (old, format!("Previous type parameter"), Color::Yellow),
                     (new, format!("Conflicting type parameter"), Color::Red),
+                    (new, format!("Consider renaming this, perhaps to {}?", format!("{}2", name).fg(Color::Cyan)), Color::Cyan),
                 ],
                 vec![],
             ),
