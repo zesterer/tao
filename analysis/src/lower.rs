@@ -427,7 +427,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     for member in gen_scope.implied_members.as_ref().unwrap().clone() {
         let member_ty_span = infer.ctx().tys.get_span(member.member);
         let member_ty = infer.instantiate(member.member, member_ty_span, &|idx, _, _| generic_tys[idx].1, None);
-        infer.make_impl(member_ty, *member.class, inst_span, Vec::new(), span);
+        infer.make_impl(member_ty, *member.class, member.class.span(), Vec::new(), inst_span);
     }
 
     // Recreate type in context
