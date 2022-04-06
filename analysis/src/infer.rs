@@ -65,6 +65,7 @@ pub enum InferError {
     RecursiveAlias(AliasId, TyVar, Span),
     PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
     AmbiguousClassItem(SrcNode<Ident>, Vec<ClassId>),
+    CycleWhenResolving(TyVar, ClassId, Span),
 }
 
 #[derive(Clone, Debug)]
@@ -140,10 +141,9 @@ impl<'a> Infer<'a> {
                 .expect("Implied members must be known")
                 .clone()
             {
-                let member_span = self.ctx.tys.get_span(member.member);
-                let member_ty = self.instantiate_local(member.member, member_span);
+                let member_ty = self.instantiate_local(*member.member, member.member.span());
                 self.implied_members.push(InferImpliedMember {
-                    member: member_ty,
+                    member: SrcNode::new(member_ty, member.member.span()),
                     class: member.class.clone(),
                 });
             }
@@ -164,7 +164,7 @@ impl<'a> Infer<'a> {
 
     pub fn self_type(&self) -> Option<TyVar> { self.self_type }
 
-    pub fn add_implied_member(&mut self, member: TyVar, class: SrcNode<ClassId>) {
+    pub fn add_implied_member(&mut self, member: SrcNode<TyVar>, class: SrcNode<ClassId>) {
         self.implied_members.push(InferImpliedMember {
             member,
             class,
@@ -307,7 +307,13 @@ impl<'a> Infer<'a> {
                 .map(|param| self.instantiate(param, span, f, self_ty))
                 .collect()),
             Ty::Gen(index, scope) => TyInfo::Ref(f(index, scope, self.ctx)), // TODO: Check scope is valid for recursive scopes
-            Ty::SelfType => TyInfo::Ref(self_ty.expect("Found self type during instantiation but no self type is available to substitute")),
+            Ty::SelfType => if let Some(self_ty) = self_ty {
+                TyInfo::Ref(self_ty)
+            } else {
+                let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
+                self.ctx.emit(Error::SelfNotValidHere(span));
+                TyInfo::Error(ErrorReason::Invalid)
+            },
             Ty::Assoc(inner, class_id, assoc) => {
                 let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
                 let inner = self.instantiate(inner, span, f, self_ty);
@@ -925,7 +931,7 @@ impl<'a> Infer<'a> {
             _ => {
                 let mut implied = HashSet::default();
                 for member in &self.implied_members {
-                    match self.implied_covers_var(ty, member.member) {
+                    match self.implied_covers_var(ty, *member.member) {
                         Some(false) => {}, // Implied member isn't relevant to us
                         Some(true) => self.walk_implied_obligations(&mut implied, *member.class),
                         // Part of the implied member was unknown, so don't consider it to be a candidate
@@ -1071,7 +1077,7 @@ impl<'a> Infer<'a> {
                 .as_ref()
                 .expect("Implied members must be known here")
             {
-                match self.ctx.tys.get(member.member) {
+                match self.ctx.tys.get(*member.member) {
                     Ty::SelfType => self.walk_implied_obligations(classes, *member.class),
                     _ => {},
                 }
@@ -1082,7 +1088,7 @@ impl<'a> Infer<'a> {
     /// Resolve a class obligation for a type, returning the ID of the type's membership. If no member can be provided
     /// (because, for example, the membership is implied by a generic bound) then `Err(false)` is returned instead. If
     /// resolution failed due to an existing error, `Err(true)` is returned.
-    fn resolve_obligation(&mut self, proof_stack: &mut Vec<(TyVar, ClassId)>, ty: TyVar, obligation: ClassId, obl_span: Span, use_span: Span) -> Option<Result<Result<MemberId, bool>, InferError>> {
+    fn resolve_obligation(&mut self, proof_stack: &mut Vec<(TyId, ClassId)>, ty: TyVar, obligation: ClassId, obl_span: Span, use_span: Span) -> Option<Result<Result<MemberId, bool>, InferError>> {
         // TODO: Resolve possible infinite loop when resolving by having an obligation cache
         match self.follow_info(ty) {
             TyInfo::Error(_) => {
@@ -1098,7 +1104,7 @@ impl<'a> Infer<'a> {
                     // TODO: >1 being returned is a problem, it means incoherence occured!
                     .find(|(_, member)| Self::covers_var(self, ty, member.member));
 
-                if let (Some((covering_member_id, covering_member)), false) = (covering_member, proof_stack.contains(&(ty, obligation))) {
+                if let Some((covering_member_id, covering_member)) = covering_member {
                     let gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
 
                     let mut links = HashMap::new();
@@ -1106,19 +1112,21 @@ impl<'a> Infer<'a> {
 
                     let mut err_so_far = None;
                     for member in gen_scope.implied_members.as_ref().unwrap().clone() {
-                        let member_ty_span = self.ctx().tys.get_span(member.member);
-                        let member_ty = self.instantiate(member.member, member_ty_span, &|idx, _, _| *links.get(&idx).unwrap(), None);
+                        let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None);
 
-                        proof_stack.push((ty, obligation));
-                        match self.resolve_obligation(proof_stack, member_ty, *member.class, member.class.span(), use_span) {
-                            Some(Ok(Ok(_))) => {},
-                            Some(Ok(Err(true))) => return Some(Ok(Err(true))),
-                            Some(Ok(Err(false))) => {},
-                            Some(Err(err)) => err_so_far = Some(err),
-                            None => return None,
+                        if proof_stack.contains(&(*member.member, obligation)) {
+                            err_so_far = Some(InferError::CycleWhenResolving(ty, obligation, member.span()));
+                        } else {
+                            proof_stack.push((*member.member, obligation));
+                            match self.resolve_obligation(proof_stack, member_ty, *member.class, member.class.span(), use_span) {
+                                Some(Ok(Ok(_))) => {},
+                                Some(Ok(Err(true))) => return Some(Ok(Err(true))),
+                                Some(Ok(Err(false))) => {},
+                                Some(Err(err)) => err_so_far = Some(err),
+                                None => return None,
+                            }
+                            proof_stack.pop();
                         }
-                        proof_stack.pop();
-                        // self.constraints.push_back(Constraint::Impl(ty, *member.class, member.class.span(), Vec::new(), use_span));
                     }
 
                     if let Some(err) = err_so_far {
@@ -1132,7 +1140,7 @@ impl<'a> Infer<'a> {
                 if {
                     let mut implied = HashSet::default();
                     for member in &self.implied_members {
-                        match self.implied_covers_var(ty, member.member) {
+                        match self.implied_covers_var(ty, *member.member) {
                             Some(false) => {}, // Implied member isn't relevant to us
                             Some(true) => self.walk_implied_obligations(&mut implied, *member.class),
                             // Part of the implied member was unknown, so don't consider it to be a candidate
@@ -1263,6 +1271,7 @@ impl<'a> Infer<'a> {
                 InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),
                 InferError::PatternNotSupported(lhs, op, rhs, span) => Error::PatternNotSupported(checked.reify(lhs), op, checked.reify(rhs), span),
                 InferError::AmbiguousClassItem(field, candidate_classes) => Error::AmbiguousClassItem(field, candidate_classes),
+                InferError::CycleWhenResolving(ty, class, cycle_span) => Error::CycleWhenResolving(checked.reify(ty), class, cycle_span),
             })
             .collect();
 

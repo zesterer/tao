@@ -269,7 +269,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
 
 #[derive(Clone)]
 pub struct ImpliedMember<M: Meta> {
-    pub member: M::Ty,
+    pub member: SrcNode<M::Ty>,
     pub class: SrcNode<ClassId>,
 }
 

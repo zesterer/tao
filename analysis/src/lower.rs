@@ -99,8 +99,7 @@ fn enforce_generic_obligations(
     } else {
         // Enforce obligations from data type
         for member in gen_scope.implied_members.as_ref().unwrap().clone() {
-            let member_ty_span = infer.ctx().tys.get_span(member.member);
-            let member_ty = infer.instantiate(member.member, member_ty_span, &|idx, _, _| params[idx], None);
+            let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params[idx], None);
             infer.make_impl(member_ty, *member.class, use_span, Vec::new(), item_span);
         }
         Ok(())
@@ -425,8 +424,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     // Enforce class obligations
     let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
     for member in gen_scope.implied_members.as_ref().unwrap().clone() {
-        let member_ty_span = infer.ctx().tys.get_span(member.member);
-        let member_ty = infer.instantiate(member.member, member_ty_span, &|idx, _, _| generic_tys[idx].1, None);
+        let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| generic_tys[idx].1, None);
         infer.make_impl(member_ty, *member.class, member.class.span(), Vec::new(), inst_span);
     }
 
@@ -806,7 +804,7 @@ impl ToHir for ast::Expr {
             ast::Expr::ClassAccess(ty, field) => {
                 let ty = ty.to_hir(infer, scope);
                 let field_ty = infer.unknown(field.span());
-                let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, ty.meta().0);
+                let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, self.span());
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },
             ast::Expr::Intrinsic(name, args) => {

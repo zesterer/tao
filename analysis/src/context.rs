@@ -232,7 +232,7 @@ impl Context {
                     ast::ClassItem::Value { name, ty } => {
                         let mut infer = Infer::new(&mut this, Some(*gen_scope));
                         let self_ty = infer.set_self_unknown(class.name.span());
-                        infer.add_implied_member(self_ty, SrcNode::new(*class_id, class.name.span()));
+                        infer.add_implied_member(SrcNode::new(self_ty, class.name.span()), SrcNode::new(*class_id, class.name.span()));
                         let mut infer = infer.with_gen_scope_implied();
 
                         let ty = ty.to_hir(&mut infer, &Scope::Empty);
@@ -264,7 +264,7 @@ impl Context {
                 .with_gen_scope_implied();
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
-            infer.add_implied_member(member_ty.meta().1, SrcNode::new(class_id, member.class.span()));
+            infer.add_implied_member(SrcNode::new(member_ty.meta().1, member_ty.meta().0), SrcNode::new(class_id, member.class.span()));
             // for obl in infer.ctx().classes.get(class_id).obligations.clone().expect("Obligations must be known") {
             //     match obl.inner() {
             //         Obligation::MemberOf(class) => infer.make_impl(member_ty.meta().1, *class, obl.span(), Vec::new()),
@@ -292,7 +292,10 @@ impl Context {
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
 
-            infer.add_implied_member(member_ty.meta().1, SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()));
+            infer.add_implied_member(
+                SrcNode::new(member_ty.meta().1, member_ty.meta().0),
+                SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
+            );
 
             for member in infer
                 .ctx()
@@ -302,8 +305,7 @@ impl Context {
                 .clone()
                 .expect("Implied members must be known")
             {
-                let member_ty_span = infer.ctx().tys.get_span(member.member);
-                let implied_member = infer.instantiate_local(member.member, member_ty_span);
+                let implied_member = infer.instantiate_local(*member.member, member.member.span());
                 infer.make_impl(implied_member, *member.class, member.class.span(), Vec::new(), member.class.span());
             }
 
@@ -318,7 +320,10 @@ impl Context {
                     let member_ty = this.classes.get_member(*member_id).member;
                     let mut infer = Infer::new(&mut this, Some(*gen_scope))
                         .with_self_type(member_ty, member.member.span());
-                    infer.add_implied_member(infer.self_type().unwrap(), SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()));
+                    infer.add_implied_member(
+                        SrcNode::new(infer.self_type().unwrap(), member.member.span()),
+                        SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
+                    );
                     let mut infer = infer.with_gen_scope_implied();
 
                     let class = infer.ctx().classes.get(*class_id);
@@ -448,7 +453,10 @@ impl Context {
                         .with_self_type(member_ty, member.member.span())
                         .with_gen_scope_implied();
 
-                    infer.add_implied_member(infer.self_type().unwrap(), SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()));
+                    infer.add_implied_member(
+                        SrcNode::new(infer.self_type().unwrap(), member.member.span()),
+                        SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
+                    );
 
                     let class = infer.ctx().classes.get(*class_id);
 
@@ -594,6 +602,7 @@ impl Context {
                 .clone();
             let self_span = gen_scope.item_span;
 
+            // TODO: Not all gen scopes have a self!
             infer.set_self_unknown(self_span);
 
             let infer_members = ast_implied_members
@@ -608,7 +617,7 @@ impl Context {
                         return None;
                     };
 
-                    infer.add_implied_member(ty.meta().1, class.clone());
+                    infer.add_implied_member(SrcNode::new(ty.meta().1, ty.meta().0), class.clone());
 
                     Some((ty, class, member.span()))
                 })
@@ -621,7 +630,7 @@ impl Context {
                 .into_iter()
                 .map(|(ty, class, span)| {
                     SrcNode::new(TyImpliedMember {
-                        member: checked.reify(ty.meta().1),
+                        member: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
                         class,
                     }, span)
                 })

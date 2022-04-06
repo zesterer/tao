@@ -1081,9 +1081,7 @@ pub fn member_parser() -> impl Parser<ast::Member> {
         .ignore_then(value.or(assoc_type));
 
     just(Token::For)
-        .ignore_then(generics_parser()
-            .then(where_parser())
-            .map(|(tys, implied)| ast::Generics::from_tys_and_implied(tys, implied)))
+        .ignore_then(generics_parser())
         .or_not()
         .then(just(Token::Member)
             .ignore_then(type_parser()
@@ -1091,11 +1089,15 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             .then_ignore(just(Token::Of))
             .then(class_inst_parser()
                 .map_with_span(SrcNode::new))
+            .then(where_parser())
             .then(just(Token::Op(Op::Eq))
                 .ignore_then(item.repeated())
                 .or_not()))
-        .map(|(generics, ((member, class), items))| ast::Member {
-            generics: generics.unwrap_or_default(),
+        .map(|(generic_tys, (((member, class), implied), items))| ast::Member {
+            generics: ast::Generics::from_tys_and_implied(
+                generic_tys.unwrap_or_default(),
+                implied,
+            ),
             member,
             class,
             items: items.unwrap_or_default(),

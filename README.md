@@ -46,9 +46,12 @@ have a few goals for the language itself:
 - [x] Algebraic data types
     - [x] Sum types
     - [x] Record types
-    - [x] Type generic
+    - [x] Generic data types
     - [x] Nominal aliases (i.e: `data Metres = Real`)
 - [x] Type alises
+- [x] Type polymorphism via generics
+    - [x] Class constraints, including on arbitrary types
+    - [x] `where` clauses
 - [x] Pattern matching
     - [x] Destructuring and binding
     - [x] ADT patterns
@@ -60,7 +63,6 @@ have a few goals for the language itself:
 - [x] First-class functions
     - [x] Functions support pattern-matching
     - [x] Currying
-- [x] Type polymorphism (for both types and values)
 - [x] Typeclasses
     - [x] Associated types
 - [x] Built-in lists

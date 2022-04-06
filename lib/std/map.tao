@@ -10,13 +10,16 @@ data Map K, V =
 for K, V member Map K V of Default =
     => default = MEmpty
 
-# for K < Debug, V < Debug member Map K V of Debug =
-#     => debug = fn
-#         | MEmpty => "{}"
-#         | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
-#         \ MBranch (_, a, b) => a:debug ++ ", " ++ b:debug
+for K, V member Map K V of Debug where
+    K < Debug,
+    V < Debug,
+=
+    => debug = fn
+        | MEmpty => "{}"
+        | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
+        \ MBranch (_, a, b) => a:debug ++ ", " ++ b:debug
 
-fn insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
+fn insert K < Ord, V : K -> V -> Map K V -> Map K V =
     | k, v, MEmpty => MLeaf (k, v)
     | k, v, MLeaf (k_old, v_old) => match K.cmp(k, k_old) in
         | Less => MBranch (k_old, MLeaf (k, v), MLeaf (k_old, v_old))
@@ -26,7 +29,7 @@ fn insert K < OrdExt, V : K -> V -> Map K V -> Map K V =
         then MBranch (k_ref, a:insert(k, v), b)
         else MBranch (k_ref, a, b:insert(k, v))
 
-fn get K < OrdExt, V : K -> Map K V -> Maybe V =
+fn get K < Ord, V : K -> Map K V -> Maybe V =
     | _, MEmpty => None
     | k, MLeaf (k_old, v) => if K.eq(k, k_old)
         then Just v
@@ -35,10 +38,10 @@ fn get K < OrdExt, V : K -> Map K V -> Maybe V =
         then a:get(k)
         else b:get(k)
 
-fn contains K < OrdExt, V : K -> Map K V -> Bool =
+fn contains K < Ord, V : K -> Map K V -> Bool =
     k, m => match m:get(k) in
         | Just _ => True
         \ None => False
 
-def from_list K < OrdExt, V : [(K, V)] -> Map K V =
+def from_list K < Ord, V : [(K, V)] -> Map K V =
     fold(default, fn m, (k, v) => m:insert(k, v))

@@ -17,6 +17,7 @@ pub enum Error {
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyId, Span, TyId, Span),
     // (obligation, type, obligation_origin, generic_definition
     TypeDoesNotFulfil(ClassId, TyId, Span, Option<Span>, Span),
+    CycleWhenResolving(TyId, ClassId, Span),
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
@@ -190,6 +191,17 @@ impl Error {
                     }
                     labels
                 },
+                vec![format!("Types must fulfil their class obligations")],
+            ),
+            Error::CycleWhenResolving(ty, class, cycle_span) => (
+                format!("Proving that type {} is a member of {} leads to cyclical reasoning", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Cyan)),
+                vec![
+                    (cycle_span, format!("This bound causes cyclical reasoning"), Color::Red),
+                    (ctx.tys.get_span(ty), format!(
+                        "This is of type {}",
+                        display(ty).fg(Color::Red),
+                    ), Color::Red),
+                ],
                 vec![format!("Types must fulfil their class obligations")],
             ),
             Error::NoSuchData(a) => (
