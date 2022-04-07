@@ -21,11 +21,14 @@ fn show_negative A : A -> Str where
 
 def main = show_negative(5i)
 
-class Foo where Self.Item < Show =
-    => Item
+class Foo where Self.Bar < Show =
+    => Bar
 
-member () of Foo =
-    => Item = Nat
+for A member A of Foo where A < Show =
+    => Bar = Str
+
+type FooItem A < Foo = A.Bar
+type ProjectedStr = FooItem Str
 
 # def main : IO () =
 #     print("hello")

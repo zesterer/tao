@@ -202,6 +202,28 @@ impl Context {
             );
         }
 
+        let mut members = Vec::new();
+        for (attr, member, class_id, gen_scope) in members_init {
+            let mut infer = Infer::new(&mut this, Some(gen_scope))
+                .with_gen_scope_implied();
+
+            let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let member_ty = checked.reify(member_ty.meta().1);
+
+            let member_id = this.classes.declare_member(class_id, Member {
+                gen_scope,
+                attr: attr.to_vec(),
+                member: member_ty,
+                fields: None,
+                assoc: None,
+            });
+            members.push((member, class_id, member_id, gen_scope));
+        }
+
         for (attr, eff, eff_id, gen_scope) in effects {
             let mut infer = Infer::new(&mut this, Some(gen_scope))
                 .with_gen_scope_implied();
@@ -279,28 +301,6 @@ impl Context {
                 })
                 .collect::<Vec<_>>();
             this.classes.define_fields(*class_id, fields);
-        }
-
-        let mut members = Vec::new();
-        for (attr, member, class_id, gen_scope) in members_init {
-            let mut infer = Infer::new(&mut this, Some(gen_scope))
-                .with_gen_scope_implied();
-
-            let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
-
-            let (mut checked, mut errs) = infer.into_checked();
-            errors.append(&mut errs);
-
-            let member_ty = checked.reify(member_ty.meta().1);
-
-            let member_id = this.classes.declare_member(class_id, Member {
-                gen_scope,
-                attr: attr.to_vec(),
-                member: member_ty,
-                fields: None,
-                assoc: None,
-            });
-            members.push((member, class_id, member_id, gen_scope));
         }
         // Member associated types
         for (member, class_id, member_id, gen_scope) in &members {

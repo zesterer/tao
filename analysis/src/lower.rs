@@ -146,35 +146,45 @@ impl ToHir for ast::Type {
                         .gen_scope()
                         .and_then(|scope| Some((scope, infer.ctx().tys.get_gen_scope(scope).find(**name)?)))
                     {
-                        TyInfo::Gen(gen_idx, scope, gen_ty.name.span())
+                        if params.is_empty() {
+                            TyInfo::Gen(gen_idx, scope, gen_ty.name.span())
+                        } else {
+                            infer.ctx_mut().emit(Error::Unsupported(self.span(), "higher kinded types"));
+                            TyInfo::Error(ErrorReason::Invalid)
+                        }
                     } else if let Some(alias_id) = infer.ctx().datas.lookup_alias(**name) {
                         if let Some(alias) = infer.ctx().datas.get_alias(alias_id) {
-                            let alias_gen_scope = infer.ctx().tys.get_gen_scope(alias.gen_scope);
-                            if alias_gen_scope.len() != params.len() {
-                                let err = Error::WrongNumberOfGenerics(
-                                    self.span(),
-                                    params.len(),
-                                    if alias_gen_scope.len() == 0 {
-                                        infer.ctx().datas.get_alias_span(alias_id)
-                                    } else {
-                                        alias_gen_scope.get(0).name.span()
-                                    },
-                                    alias_gen_scope.len(),
-                                );
-                                infer.ctx_mut().emit(err);
-                                TyInfo::Error(ErrorReason::Unknown)
-                            } else {
-                                let (alias_ty, alias_gen_scope) = (alias.ty, alias.gen_scope);
-                                let get_gen = |index, scope, ctx: &Context| {
-                                    params[index]
-                                };
 
-                                // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-                                let inner_ty_actual = infer.instantiate(alias_ty, self.span(), &get_gen, None);
-                                let inner_ty = infer.unknown(self.span());
-                                infer.make_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
+                            let alias_ty = alias.ty;
+                            let alias_gen_scope = alias.gen_scope;
+                            let get_gen = |index, scope, ctx: &Context| {
+                                params[index]
+                            };
 
-                                TyInfo::Ref(inner_ty)
+                            let res = enforce_generic_obligations(
+                                infer,
+                                alias.gen_scope,
+                                &params,
+                                self.span(),
+                                infer.ctx().datas.get_alias_span(alias_id),
+                            );
+                            match res {
+                                Err(()) => {
+                                    let alias_gen_scope = infer.ctx().tys.get_gen_scope(alias_gen_scope);
+                                    let err = Error::WrongNumberOfGenerics(
+                                        self.span(),
+                                        params.len(),
+                                        if alias_gen_scope.len() == 0 {
+                                            infer.ctx().datas.get_alias_span(alias_id)
+                                        } else {
+                                            alias_gen_scope.get(0).name.span()
+                                        },
+                                        alias_gen_scope.len(),
+                                    );
+                                    infer.ctx_mut().emit(err);
+                                    TyInfo::Error(ErrorReason::Unknown)
+                                },
+                                Ok(()) => TyInfo::Ref(infer.instantiate(alias_ty, self.span(), &get_gen, None)),
                             }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error(ErrorReason::Unknown));

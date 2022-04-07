@@ -1210,12 +1210,16 @@ impl<'a> Infer<'a> {
                 Constraint::Binary(op, a, b, _output) => {
                     self.errors.push(InferError::InvalidBinaryOp(op.clone(), a, b))
                 },
-                Constraint::Impl(ty, obligation, obl_span, _, use_span) => {
+                Constraint::Impl(ty, obligation, obl_span, assoc, use_span) => {
                     let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
                         Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
                     } else {
                         None
                     };
+                    // Propagate errors to associated types to avoid spurious errors
+                    for (_, ty) in assoc {
+                        self.set_error(ty);
+                    }
                     self.errors.push(InferError::TypeDoesNotFulfil(obligation, ty, obl_span, gen_span, use_span))
                 },
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
