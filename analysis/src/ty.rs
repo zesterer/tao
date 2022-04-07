@@ -271,6 +271,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
 pub struct ImpliedMember<M: Meta> {
     pub member: SrcNode<M::Ty>,
     pub class: SrcNode<ClassId>,
+    pub real_member: Option<MemberId>,
 }
 
 pub type TyImpliedMember = ImpliedMember<TyMeta>;

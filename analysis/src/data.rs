@@ -14,7 +14,7 @@ pub struct DataId(usize);
 pub struct AliasId(usize);
 
 pub struct Alias {
-    pub name: Ident,
+    pub name: SrcNode<Ident>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
     pub ty: TyId,
@@ -31,12 +31,28 @@ pub struct Datas {
     name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>, GenScopeId)>,
     cons_lut: HashMap<Ident, (Span, DataId)>,
     alias_lut: HashMap<Ident, Alias>,
-    datas: Vec<(Span, Option<Data>)>,
-    aliases: Vec<(Span, Option<Alias>)>,
+    datas: Vec<(Span, Option<Data>, GenScopeId)>,
+    aliases: Vec<(Span, Option<Alias>, GenScopeId)>,
     pub lang: Lang,
 }
 
 impl Datas {
+    pub fn iter_datas(&self) -> impl Iterator<Item = DataId> {
+        (0..self.datas.len()).map(|i| DataId(i))
+    }
+
+    pub fn iter_aliases(&self) -> impl Iterator<Item = AliasId> {
+        (0..self.aliases.len()).map(|i| AliasId(i))
+    }
+
+    pub fn data_gen_scope(&self, data: DataId) -> GenScopeId {
+        self.datas[data.0].2
+    }
+
+    pub fn alias_gen_scope(&self, alias: AliasId) -> GenScopeId {
+        self.aliases[alias.0].2
+    }
+
     pub fn name_gen_scope(&self, name: Ident) -> GenScopeId {
         self.name_lut[&name].2
     }
@@ -95,7 +111,7 @@ impl Datas {
                 }
             }
 
-            self.datas.push((name.span(), None));
+            self.datas.push((name.span(), None, gen_scope));
             Ok(id)
         }
     }
@@ -113,7 +129,7 @@ impl Datas {
         if let Err(old) = self.name_lut.try_insert(name, (span, Err(id), gen_scope)) {
             Err(Error::DuplicateTypeName(name, old.entry.get().0, span))
         } else {
-            self.aliases.push((span, None));
+            self.aliases.push((span, None, gen_scope));
             Ok(id)
         }
     }

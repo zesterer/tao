@@ -250,7 +250,7 @@ impl Error {
                     let alias = ctx.datas.get_alias(alias).unwrap();
                     vec![format!(
                         "Type aliases expand eagerly. Consider using a data type like {} instead",
-                        format!("data {} = {}", alias.name, display(alias.ty).substitute(ty, |f| write!(f, "{}", alias.name))).fg(Color::Blue),
+                        format!("data {} = {}", *alias.name, display(alias.ty).substitute(ty, |f| write!(f, "{}", *alias.name))).fg(Color::Blue),
                     )]
                 },
             ),

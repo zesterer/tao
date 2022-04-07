@@ -98,9 +98,9 @@ fn enforce_generic_obligations(
         Err(())
     } else {
         // Enforce obligations from data type
-        for member in gen_scope.implied_members.as_ref().unwrap().clone() {
+        for member in gen_scope.implied_members.as_ref().expect("Implied members must be available").clone() {
             let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params[idx], None);
-            infer.make_impl(member_ty, *member.class, use_span, Vec::new(), item_span);
+            infer.make_impl(member_ty, *member.class, member.class.span(), Vec::new(), use_span);
         }
         Ok(())
     }

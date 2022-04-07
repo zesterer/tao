@@ -28,6 +28,10 @@ impl Effects {
         &self.effect_decls[eff.0]
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (EffectDeclId, &EffectDecl)> {
+        self.effect_decls.iter().enumerate().map(|(i, eff)| (EffectDeclId(i), eff))
+    }
+
     // pub fn iter(&self) -> impl Iterator<Item = (EffectDeclId, &EffectDecl)> {
     //     self.effect_names.iter().enumerate().map(|(i, eff)| (EffectDeclId(i), eff))
     // }

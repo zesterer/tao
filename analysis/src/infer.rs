@@ -145,6 +145,7 @@ impl<'a> Infer<'a> {
                 self.implied_members.push(InferImpliedMember {
                     member: SrcNode::new(member_ty, member.member.span()),
                     class: member.class.clone(),
+                    real_member: None,
                 });
             }
         }
@@ -164,11 +165,8 @@ impl<'a> Infer<'a> {
 
     pub fn self_type(&self) -> Option<TyVar> { self.self_type }
 
-    pub fn add_implied_member(&mut self, member: SrcNode<TyVar>, class: SrcNode<ClassId>) {
-        self.implied_members.push(InferImpliedMember {
-            member,
-            class,
-        });
+    pub fn add_implied_member(&mut self, member: InferImpliedMember) {
+        self.implied_members.push(member);
     }
 
     pub fn ctx(&self) -> &Context { self.ctx }
@@ -1071,12 +1069,20 @@ impl<'a> Infer<'a> {
     fn walk_implied_obligations(&self, classes: &mut HashSet<ClassId>, class: ClassId) {
         // TODO: This is bad
         if classes.insert(class) {
-            for member in self.ctx.tys
+            let Some(implied_members) = self.ctx.tys
                 .get_gen_scope(self.ctx.classes.get(class).gen_scope)
                 .implied_members
                 .as_ref()
-                .expect("Implied members must be known here")
-            {
+            else {
+                // If implied members were not found, it's probably because we're trying to solve this
+                // *very* early in the compilation process so we don't know much about the target class.
+                // For now, we just early exit and fail to infer.
+                // TODO: This is inconsistent and will result in different behaviour when reordering classes. Instead,
+                // always bail out if we're before class implied member inference has entirely finished.
+                return;
+            };
+
+            for member in implied_members {
                 match self.ctx.tys.get(*member.member) {
                     Ty::SelfType => self.walk_implied_obligations(classes, *member.class),
                     _ => {},
@@ -1111,7 +1117,7 @@ impl<'a> Infer<'a> {
                     self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
 
                     let mut err_so_far = None;
-                    for member in gen_scope.implied_members.as_ref().unwrap().clone() {
+                    for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
                         let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None);
 
                         if proof_stack.contains(&(*member.member, obligation)) {
@@ -1194,15 +1200,15 @@ impl<'a> Infer<'a> {
 
         // Generate errors for all remaining constraints
         for c in std::mem::take(&mut self.constraints) {
-            self.errors.push(match c {
+            match c {
                 Constraint::Access(record, field_name, _field) => {
-                    InferError::NoSuchItem(record, self.span(record), field_name.clone())
+                    self.errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
                 },
                 Constraint::Update(record, field_name, _field) => {
-                    InferError::NoSuchItem(record, self.span(record), field_name.clone())
+                    self.errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
                 },
                 Constraint::Binary(op, a, b, _output) => {
-                    InferError::InvalidBinaryOp(op.clone(), a, b)
+                    self.errors.push(InferError::InvalidBinaryOp(op.clone(), a, b))
                 },
                 Constraint::Impl(ty, obligation, obl_span, _, use_span) => {
                     let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
@@ -1210,16 +1216,16 @@ impl<'a> Infer<'a> {
                     } else {
                         None
                     };
-                    InferError::TypeDoesNotFulfil(obligation, ty, obl_span, gen_span, use_span)
+                    self.errors.push(InferError::TypeDoesNotFulfil(obligation, ty, obl_span, gen_span, use_span))
                 },
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
-                    InferError::AmbiguousClassItem(field, Vec::new())
+                    self.errors.push(InferError::AmbiguousClassItem(field, Vec::new()))
                 },
                 Constraint::ClassAssoc(_ty, _class, assoc, _assoc_ty, _span) => {
-                    InferError::AmbiguousClassItem(assoc, Vec::new())
+                    self.errors.push(InferError::AmbiguousClassItem(assoc, Vec::new()))
                 },
-                Constraint::EffectSendRecv(eff, send, recv, span) => InferError::CannotInferEffect(eff),
-            });
+                Constraint::EffectSendRecv(eff, send, recv, span) => self.errors.push(InferError::CannotInferEffect(eff)),
+            }
         }
     }
 

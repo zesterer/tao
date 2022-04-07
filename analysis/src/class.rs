@@ -74,6 +74,10 @@ impl Classes {
         self.classes.iter().enumerate().map(|(i, class)| (ClassId(i), class))
     }
 
+    pub fn iter_members(&self) -> impl Iterator<Item = (MemberId, &Member)> {
+        self.members.iter().enumerate().map(|(i, member)| (MemberId(i), member))
+    }
+
     pub fn lookup(&self, name: Ident) -> Option<ClassId> {
         self.lut.get(&name).map(|(_, id)| *id)
     }

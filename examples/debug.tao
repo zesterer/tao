@@ -19,8 +19,13 @@ fn show_negative A : A -> Str where
 =
     a => (----a):show
 
-
 def main = show_negative(5i)
+
+class Foo where Self.Item < Show =
+    => Item
+
+member () of Foo =
+    => Item = Nat
 
 # def main : IO () =
 #     print("hello")

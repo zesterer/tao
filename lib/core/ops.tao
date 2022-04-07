@@ -22,7 +22,7 @@ for A < Not member [A] of Not =
 # Not
 
 $[lang(neg)]
-class Neg =
+class Neg where =
     => Output
     => neg : Self -> Self.Output
 
