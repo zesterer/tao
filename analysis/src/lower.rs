@@ -3,12 +3,12 @@ use super::*;
 // TODO: use `ToHir`?
 fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
     match litr {
-        ast::Literal::Nat(_) => TyInfo::Prim(ty::Prim::Nat),
-        ast::Literal::Int(_) => TyInfo::Prim(ty::Prim::Int),
-        ast::Literal::Real(x) => TyInfo::Prim(ty::Prim::Real),
-        ast::Literal::Bool(_) => TyInfo::Prim(ty::Prim::Bool),
-        ast::Literal::Char(_) => TyInfo::Prim(ty::Prim::Char),
-        ast::Literal::Str(_) => TyInfo::List(infer.insert(span, TyInfo::Prim(ty::Prim::Char))),
+        ast::Literal::Nat(_) => TyInfo::Prim(Prim::Nat),
+        ast::Literal::Int(_) => TyInfo::Prim(Prim::Int),
+        ast::Literal::Real(x) => TyInfo::Prim(Prim::Real),
+        ast::Literal::Bool(_) => TyInfo::Prim(Prim::Bool),
+        ast::Literal::Char(_) => TyInfo::Prim(Prim::Char),
+        ast::Literal::Str(_) => TyInfo::List(infer.insert(span, TyInfo::Prim(Prim::Char))),
     }
 }
 
@@ -163,7 +163,7 @@ impl ToHir for ast::Type {
 
                             let res = enforce_generic_obligations(
                                 infer,
-                                alias.gen_scope,
+                                alias_gen_scope,
                                 &params,
                                 self.span(),
                                 infer.ctx().datas.get_alias_span(alias_id),

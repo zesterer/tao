@@ -927,11 +927,11 @@ impl<'a> Infer<'a> {
             }
             TyInfo::Unknown(_) => return None, // We don't know what the type is yet, so how can we possibly determine what classes it is a member of?
             _ => {
-                let mut implied = HashSet::default();
+                let mut implied = HashMap::default();
                 for member in &self.implied_members {
                     match self.implied_covers_var(ty, *member.member) {
                         Some(false) => {}, // Implied member isn't relevant to us
-                        Some(true) => self.walk_implied_obligations(&mut implied, *member.class),
+                        Some(true) => self.walk_implied_obligations(&mut implied, *member.class, member.real_member),
                         // Part of the implied member was unknown, so don't consider it to be a candidate
                         // TODO: Is this correct?
                         None => {},
@@ -940,11 +940,12 @@ impl<'a> Infer<'a> {
 
                 implied
                     .into_iter()
-                    .filter(|class_id| if assoc_ty {
+                    .filter(|(class_id, _)| if assoc_ty {
                         self.ctx.classes.get(*class_id).assoc_ty(*item).is_some()
                     } else {
                         self.ctx.classes.get(*class_id).field(*item).is_some()
                     })
+                    .map(|(class_id, _)| class_id)
                     .collect::<Vec<_>>()
             },
         };
@@ -1066,9 +1067,9 @@ impl<'a> Infer<'a> {
     }
 
     // Extract a list of all classes that the type is a member of
-    fn walk_implied_obligations(&self, classes: &mut HashSet<ClassId>, class: ClassId) {
+    fn walk_implied_obligations(&self, classes: &mut HashMap<ClassId, Option<MemberId>>, class: ClassId, member_id: Option<MemberId>) {
         // TODO: This is bad
-        if classes.insert(class) {
+        if classes.insert(class, member_id).is_none() {
             let Some(implied_members) = self.ctx.tys
                 .get_gen_scope(self.ctx.classes.get(class).gen_scope)
                 .implied_members
@@ -1084,7 +1085,7 @@ impl<'a> Infer<'a> {
 
             for member in implied_members {
                 match self.ctx.tys.get(*member.member) {
-                    Ty::SelfType => self.walk_implied_obligations(classes, *member.class),
+                    Ty::SelfType => self.walk_implied_obligations(classes, *member.class, member.real_member),
                     _ => {},
                 }
             }
@@ -1104,60 +1105,64 @@ impl<'a> Infer<'a> {
             TyInfo::Unknown(_) => None, // No idea if it implements the trait yet
             // First, search through real members to resolve the obligation
             info => {
-                // Find a class member declaration that covers our type
-                let covering_member = self.ctx.classes
-                    .members_of(obligation)
-                    // TODO: >1 being returned is a problem, it means incoherence occured!
-                    .find(|(_, member)| Self::covers_var(self, ty, member.member));
-
-                if let Some((covering_member_id, covering_member)) = covering_member {
-                    let gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
-
-                    let mut links = HashMap::new();
-                    self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
-
-                    let mut err_so_far = None;
-                    for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
-                        let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None);
-
-                        if proof_stack.contains(&(*member.member, obligation)) {
-                            err_so_far = Some(InferError::CycleWhenResolving(ty, obligation, member.span()));
-                        } else {
-                            proof_stack.push((*member.member, obligation));
-                            match self.resolve_obligation(proof_stack, member_ty, *member.class, member.class.span(), use_span) {
-                                Some(Ok(Ok(_))) => {},
-                                Some(Ok(Err(true))) => return Some(Ok(Err(true))),
-                                Some(Ok(Err(false))) => {},
-                                Some(Err(err)) => err_so_far = Some(err),
-                                None => return None,
-                            }
-                            proof_stack.pop();
-                        }
-                    }
-
-                    if let Some(err) = err_so_far {
-                        //
-                    } else {
-                        return Some(Ok(Ok(covering_member_id)));
-                    }
-                }
-
                 // If searching through real obligations failed, search through implied obligations
-                if {
-                    let mut implied = HashSet::default();
+                if let Some(member_id) = {
+                    let mut implied = HashMap::default();
                     for member in &self.implied_members {
                         match self.implied_covers_var(ty, *member.member) {
                             Some(false) => {}, // Implied member isn't relevant to us
-                            Some(true) => self.walk_implied_obligations(&mut implied, *member.class),
+                            Some(true) => self.walk_implied_obligations(&mut implied, *member.class, member.real_member),
                             // Part of the implied member was unknown, so don't consider it to be a candidate
                             // TODO: Is this correct?
                             None => {},
                         }
                     }
-                    implied.contains(&obligation)
+                    implied.get(&obligation).copied()
                 } {
-                    Some(Ok(Err(false)))
+                    if let Some(member_id) = member_id {
+                        Some(Ok(Ok(member_id)))
+                    } else {
+                        Some(Ok(Err(false)))
+                    }
                 } else {
+                    // Find a class member declaration that covers our type
+                    let covering_member = self.ctx.classes
+                        .members_of(obligation)
+                        // TODO: >1 being returned is a problem, it means incoherence occured!
+                        .find(|(_, member)| Self::covers_var(self, ty, member.member));
+
+                    if let Some((covering_member_id, covering_member)) = covering_member {
+                        let gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
+
+                        let mut links = HashMap::new();
+                        self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+
+                        let mut err_so_far = None;
+                        for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
+                            let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None);
+
+                            if proof_stack.contains(&(*member.member, obligation)) {
+                                err_so_far = Some(InferError::CycleWhenResolving(ty, obligation, member.span()));
+                            } else {
+                                proof_stack.push((*member.member, obligation));
+                                match self.resolve_obligation(proof_stack, member_ty, *member.class, member.class.span(), use_span) {
+                                    Some(Ok(Ok(_))) => {},
+                                    Some(Ok(Err(true))) => return Some(Ok(Err(true))),
+                                    Some(Ok(Err(false))) => {},
+                                    Some(Err(err)) => err_so_far = Some(err),
+                                    None => return None,
+                                }
+                                proof_stack.pop();
+                            }
+                        }
+
+                        if let Some(err) = err_so_far {
+                            //
+                        } else {
+                            return Some(Ok(Ok(covering_member_id)));
+                        }
+                    }
+
                     // The lack of impls *might* be because we just don't have enough information yet!
                     None
                     // Some(Err(InferError::TypeDoesNotFulfil(

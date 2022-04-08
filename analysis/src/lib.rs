@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types, option_zip, bool_to_option, never_type, let_else, drain_filter)]
+#![feature(arbitrary_self_types, option_zip, bool_to_option, never_type, let_else, drain_filter, generic_associated_types)]
 
 pub mod class;
 pub mod concrete;
@@ -30,6 +30,7 @@ pub use crate::{
     ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, ImpliedMember, TyImpliedMember, InferImpliedMember, Effect, EffectId},
 };
 pub use tao_syntax::ast::Ident;
+pub use tao_util::index::{Id, Index};
 
 use tao_syntax::{
     Node,
@@ -40,5 +41,8 @@ use tao_syntax::{
 };
 use hashbrown::{HashMap, HashSet};
 use internment::Intern;
-use std::collections::BTreeMap;
-use std::fmt;
+use std::{
+    fmt,
+    marker::PhantomData,
+    collections::BTreeMap,
+};

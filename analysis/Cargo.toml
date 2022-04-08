@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+tao_util = { path = "../util" }
 tao_syntax = { path = "../syntax" }
 #ariadne = "0.1"
 ariadne = { git = "https://github.com/zesterer/ariadne.git" }

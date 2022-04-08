@@ -489,7 +489,7 @@ impl Context {
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
-                        real_member: None,
+                        real_member: Some(*member_id),
                     });
 
                     let class = infer.ctx().classes.get(*class_id);

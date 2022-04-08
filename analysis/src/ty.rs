@@ -49,8 +49,7 @@ pub enum Ty {
     Effect(EffectId, TyId),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TyId(usize);
+pub type TyId = Id<(Span, Ty)>;
 
 #[derive(Clone, Debug)]
 pub enum Effect {
@@ -58,13 +57,12 @@ pub enum Effect {
     Known(EffectDeclId, Vec<TyId>),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EffectId(usize);
+pub type EffectId = Id<(Span, Effect)>;
 
 #[derive(Default)]
 pub struct Types {
-    tys: Vec<(Span, Ty)>,
-    effects: Vec<(Span, Effect)>,
+    tys: Index<(Span, Ty)>,
+    effects: Index<(Span, Effect)>,
     scopes: Vec<GenScope>,
 }
 
@@ -88,17 +86,15 @@ impl Types {
     }
 
     pub fn get(&self, ty: TyId) -> Ty {
-        self.tys[ty.0].1.clone()
+        self.tys[ty].1.clone()
     }
 
     pub fn get_span(&self, ty: TyId) -> Span {
-        self.tys[ty.0].0
+        self.tys[ty].0
     }
 
     pub fn insert(&mut self, span: Span, ty: Ty) -> TyId {
-        let id = TyId(self.tys.len());
-        self.tys.push((span, ty));
-        id
+        self.tys.add((span, ty))
     }
 
     // Ignores gen_scope
@@ -175,17 +171,15 @@ impl Types {
     }
 
     pub fn get_effect(&self, eff: EffectId) -> Effect {
-        self.effects[eff.0].1.clone()
+        self.effects[eff].1.clone()
     }
 
     pub fn get_effect_span(&self, eff: EffectId) -> Span {
-        self.tys[eff.0].0
+        self.effects[eff].0
     }
 
     pub fn insert_effect(&mut self, span: Span, eff: Effect) -> EffectId {
-        let id = EffectId(self.effects.len());
-        self.effects.push((span, eff));
-        id
+        self.effects.add((span, eff))
     }
 }
 

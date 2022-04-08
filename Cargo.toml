@@ -5,6 +5,7 @@ members = [
     "analysis",
     "middle",
     "vm",
+    "util",
 ]
 
 [profile.dev]

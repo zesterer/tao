@@ -27,8 +27,8 @@ class Foo where Self.Bar < Show =
 for A member A of Foo where A < Show =
     => Bar = Str
 
-type FooItem A < Foo = A.Bar
-type ProjectedStr = FooItem Str
+data FooItem A < Foo = A.Bar
+data ProjectedStr = FooItem Str
 
 # def main : IO () =
 #     print("hello")
