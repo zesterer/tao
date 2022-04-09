@@ -30,14 +30,22 @@ pub struct ConEffect {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ConProc {
     Def(DefId, Vec<ConTyId>),
-    Field(ConTyId, MemberId, Ident),
+    Field(ConTyId, MemberId, Vec<ConTyId>, Ident),
 }
 
 impl fmt::Display for ConProc {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ConProc::Def(def, params) => write!(f, "{}<{}>", def.0, params.iter().map(|ty| ty.0.to_string()).collect::<Vec<_>>().join(", ")),
-            ConProc::Field(ty, member, field) => write!(f, "<{} in {}>.{}", ty.0, member.0, field),
+            ConProc::Def(def, params) => write!(f, "{}<{}>",
+                def.0,
+                params.iter().map(|ty| ty.0.to_string()).collect::<Vec<_>>().join(", "),
+            ),
+            ConProc::Field(ty, member, args, field) => write!(f, "<{} in {}{}>.{}",
+                ty.0,
+                member.0,
+                args.iter().map(|ty| format!(" {}", ty.0.to_string())).collect::<String>(),
+                field,
+            ),
         }
     }
 }
@@ -255,13 +263,17 @@ impl ConContext {
                     .map(|arg| self.lower_ty(hir, arg, ty_insts))
                     .collect::<Vec<_>>();
                 let member = hir.classes
-                    .lookup_member(hir, self, self_ty, (class_id, args))
+                    .lookup_member(hir, self, self_ty, (class_id, args.clone()))
                     .map(|m| hir.classes.get_member(m))
                     .expect("Could not select member candidate");
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
                 let mut links = HashMap::new();
                 self.derive_links(hir, member.member, self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                assert_eq!(args.len(), member.args.len(), "Member and instance args must be the same length");
+                for (member_arg, arg) in member.args.iter().zip(args.iter()) {
+                    self.derive_links(hir, *member_arg, *arg, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                }
                 let gen = (0..member_gen_scope.len())
                     .map(|idx| *links.get(&idx).expect("Generic type not mentioned in member"))
                     .collect::<Vec<_>>();
@@ -334,12 +346,16 @@ impl ConContext {
                         .unwrap(),
                     &TyInsts { self_ty: None, gen },
                 ),
-                ConProc::Field(self_ty, member_id, field) => {
+                ConProc::Field(self_ty, member_id, args, field) => {
                     let member = hir.classes.get_member(*member_id);
                     let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
                     let mut links = HashMap::new();
                     self.derive_links(hir, member.member, *self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                    assert_eq!(args.len(), member.args.len(), "Member and instance args must be the same length");
+                    for (member_arg, arg) in member.args.iter().zip(args.iter()) {
+                        self.derive_links(hir, *member_arg, *arg, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
+                    }
                     let gen = (0..member_gen_scope.len())
                         .map(|idx| *links.get(&idx).expect("Generic type not mentioned in member"))
                         .collect::<Vec<_>>();
@@ -465,10 +481,10 @@ impl ConContext {
                     .map(|arg| self.lower_ty(hir, *arg, ty_insts))
                     .collect::<Vec<_>>();
                 let member_id = hir.classes
-                    .lookup_member(hir, self, self_ty, (*class_id, args))
+                    .lookup_member(hir, self, self_ty, (*class_id, args.clone()))
                     .expect("Could not select member candidate");
 
-                let id = Intern::new(ConProc::Field(self_ty, member_id, **field));
+                let id = Intern::new(ConProc::Field(self_ty, member_id, args, **field));
                 self.lower_proc(hir, id);
                 hir::Expr::Global(id)
             },

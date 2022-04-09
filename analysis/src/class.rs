@@ -210,7 +210,7 @@ impl Classes {
                             let c = self.get_member(**c);
                             let gen_scope = hir.tys.get_gen_scope(c.gen_scope);
                             format!(
-                                "- {}member {} of {} (in {})\n",
+                                "- {}member {} of {}{} (in {})\n",
                                 if gen_scope.len() == 0 {
                                     String::new()
                                 } else {
@@ -221,6 +221,10 @@ impl Classes {
                                 },
                                 hir.tys.display(hir, c.member),
                                 **self.get(class).name,
+                                {
+                                    let gen_scope = hir.tys.get_gen_scope(self.get(class).gen_scope);
+                                    (0..gen_scope.len()).map(|i| format!(" {}", *gen_scope.get(i).name)).collect::<String>()
+                                },
                                 hir.tys.get_span(c.member).src(),
                             )
                         })

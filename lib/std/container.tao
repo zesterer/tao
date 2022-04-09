@@ -1,0 +1,8 @@
+#! Utilities for manipulating and traversing containers.
+
+class Map B =
+    => A
+    => Output
+    => map : (Self.A -> B) -> Self -> Self.Output
+
+def map V < Map B, B : (V.A -> B) -> V -> V.Output = V.map

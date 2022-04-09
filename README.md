@@ -50,8 +50,9 @@ have a few goals for the language itself:
     - [x] Nominal aliases (i.e: `data Metres = Real`)
 - [x] Type alises
 - [x] Type polymorphism via generics
-    - [x] Class constraints, including on arbitrary types
-    - [x] `where` clauses
+    - [x] Class constraints
+    - [x] Associated type equality constraints
+    - [x] Arbitrary `where` clauses
 - [x] Pattern matching
     - [x] Destructuring and binding
     - [x] ADT patterns

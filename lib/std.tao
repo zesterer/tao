@@ -1,6 +1,7 @@
 import "lib/core.tao"
 
 import "lib/std/btree.tao"
+import "lib/std/container.tao"
 import "lib/std/error.tao"
 import "lib/std/fmt.tao"
 import "lib/std/func.tao"

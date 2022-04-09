@@ -2,10 +2,18 @@
 
 import "lib/core/ops.tao"
 import "lib/std/value.tao"
+import "lib/std/container.tao"
 
-fn map A, B : (A -> B) -> [A] -> [B] =
-    | _, [] => []
-    \ f, [x .. xs] => [x:f .. xs:map(f)]
+for A, B member [A] of Map B =
+    => A = A
+    => Output = [B]
+    => map = fn
+        | _, [] => []
+        \ f, [x .. xs] => [x:f .. xs:Self.map(f)]
+
+# fn map A, B : (A -> B) -> [A] -> [B] =
+#     | _, [] => []
+#     \ f, [x .. xs] => [x:f .. xs:map(f)]
 
 fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
