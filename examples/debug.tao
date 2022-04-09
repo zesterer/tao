@@ -19,20 +19,23 @@ fn show_negative A : A -> Str where
 =
     a => (----a):show
 
-def main = show_negative(5i)
+# def main = show_negative(5i)
 
-def main2 = do_add(4, 5)
+class VecData A =
+    => Proj
 
-class Add2 Rhs =
-    => Output
-    => add : Self -> Rhs -> Self.Output
+data Three
 
-member Nat of Add2 Nat =
-    => Output = Nat
-    => add = fn x, y => x + y
+for A member Three of VecData A =
+    => Proj = { x : A, y : A, z : A }
 
-fn do_add A < Add2 B, B : A -> B -> A.Output =
-    a, b => A.add(a, b)
+data Vec A, N < VecData A = N.Proj
 
-# def main : IO () =
-#     print("hello")
+def v3 : Vec Nat Three = Vec {
+    x : 4,
+    y : 5,
+    z : "hi",
+}
+
+def main : IO () =
+    print("hello")

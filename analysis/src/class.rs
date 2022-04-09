@@ -54,6 +54,7 @@ pub struct Lang {
     pub not: Option<ClassId>,
     pub neg: Option<ClassId>,
     pub eq: Option<ClassId>,
+    pub add: Option<ClassId>,
 }
 
 #[derive(Default)]
@@ -106,6 +107,9 @@ impl Classes {
                 if lang.iter().find(|a| &**a.name == "eq").is_some() {
                     self.lang.eq = Some(id);
                 }
+                if lang.iter().find(|a| &**a.name == "add").is_some() {
+                    self.lang.add = Some(id);
+                }
             }
 
             self.classes.push(class);
@@ -119,6 +123,7 @@ impl Classes {
         if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
         if self.lang.neg.is_none() { errors.push(Error::MissingLangItem("neg")); }
         if self.lang.eq.is_none() { errors.push(Error::MissingLangItem("eq")); }
+        if self.lang.add.is_none() { errors.push(Error::MissingLangItem("add")); }
 
         errors
     }
@@ -214,7 +219,7 @@ impl Classes {
                                         .collect::<Vec<_>>()
                                         .join(", "))
                                 },
-                                hir.tys.display(&hir.datas, &hir.effects, c.member),
+                                hir.tys.display(hir, c.member),
                                 **self.get(class).name,
                                 hir.tys.get_span(c.member).src(),
                             )

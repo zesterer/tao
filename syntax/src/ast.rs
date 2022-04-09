@@ -128,7 +128,7 @@ pub enum Type {
     Func(SrcNode<Self>, SrcNode<Self>),
     // TODO: Replace name with `Item` when ready
     Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
-    Assoc(SrcNode<Self>, SrcNode<Ident>),
+    Assoc(SrcNode<Self>, Option<SrcNode<ClassInst>>, SrcNode<Ident>),
     Effect(SrcNode<Ident>, Vec<SrcNode<Self>>, SrcNode<Self>),
 }
 
@@ -148,7 +148,7 @@ impl Type {
             Self::Data(_, args) => args
                 .iter()
                 .all(|arg| arg.is_fully_specified()),
-            Self::Assoc(inner, _) => inner.is_fully_specified(),
+            Self::Assoc(inner, _, _) => inner.is_fully_specified(),
             Self::Effect(_, args, out) => args
                 .iter()
                 .all(|arg| arg.is_fully_specified()) && out.is_fully_specified(),

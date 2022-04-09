@@ -630,6 +630,16 @@ impl Context {
             this.defs.define_body(id, body);
         }
 
+        /*
+        for data in this.datas.iter_datas() {
+            let data = this.datas.get_data(data);
+            println!("data {} ={}", *data.name, data.cons
+                .iter()
+                .map(|(name, ty)| format!("\n    | {} {}", **name, this.tys.display(&this, *ty)))
+                .collect::<String>());
+        }
+        */
+
         errors.append(&mut this.errors);
 
         (this, errors)

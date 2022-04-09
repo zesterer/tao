@@ -112,11 +112,20 @@ pub fn type_parser() -> impl Parser<ast::Type> {
 
         let assoc = atom
             .then(just(Token::Op(Op::Dot))
-                .ignore_then(type_ident_parser().map_with_span(SrcNode::new))
+                .ignore_then(type_ident_parser().map_with_span(SrcNode::new)
+                    .then(ty.clone().map_with_span(SrcNode::new).repeated())
+                    .delimited_by(just(Token::Op(Op::Less)), just(Token::Op(Op::More))))
+                .map_with_span(SrcNode::new)
+                .or_not()
+                .then(just(Token::Op(Op::Dot)).ignore_then(type_ident_parser().map_with_span(SrcNode::new)))
                 .repeated())
-            .foldl(|inner, assoc| {
+            .foldl(|inner, (class, assoc)| {
+                let class = class.map(|class| class.map(|(name, params)| ast::ClassInst {
+                    name,
+                    params,
+                }));
                 let span = inner.span().union(assoc.span());
-                SrcNode::new(ast::Type::Assoc(inner, assoc), span)
+                SrcNode::new(ast::Type::Assoc(inner, class, assoc), span)
             });
 
         let data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready

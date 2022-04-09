@@ -53,7 +53,7 @@ impl Error {
     pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, main_src: SrcId, writer: impl Write) {
         use ariadne::{Report, ReportKind, Label, Color, Fmt, Span, Config};
 
-        let display = |id| ctx.tys.display(&ctx.datas, &ctx.effects, id);
+        let display = |id| ctx.tys.display(ctx, id);
 
         let display_class = |class_id, args: &[_]| format!(
             "{} {}",
@@ -459,7 +459,7 @@ impl Error {
 
         report
             .with_config(Config::default()
-                .with_compact(false))
+                .with_compact(true))
             .finish()
             .write(cache, writer)
             .unwrap();

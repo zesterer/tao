@@ -313,6 +313,10 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
+                    hir::Intrinsic::AddNat => mir::Expr::Intrinsic(mir::Intrinsic::AddNat, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                        self.lower_expr(hir, con, &args[1], stack),
+                    ]),
                     hir::Intrinsic::Go => {
                         let next_local = Local::new();
                         let func = self.lower_expr(hir, con, &args[0], stack);

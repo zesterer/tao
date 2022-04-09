@@ -46,11 +46,14 @@ for A < Neg member [A] of Neg =
 
 # Add
 
+$[lang(add)]
 class Add A =
-    => add: Self -> A -> Self
+    => Output
+    => add : Self -> A -> Self.Output
 
 member Nat of Add Nat =
-    => add = fn x, y => x + y
+    => Output = Nat
+    => add = fn x, y => @add_nat(x, y)
 
 # Mul
 

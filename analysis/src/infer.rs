@@ -354,7 +354,11 @@ impl<'a> Infer<'a> {
              // TODO: Check scope is valid for recursive scopes
             Ty::Gen(index, scope) => match f(index, scope, self.ctx) {
                 Some(ty) => TyInfo::Ref(ty),
-                None => TyInfo::Error(ErrorReason::Invalid),
+                None => {
+                    panic!();
+                    // TODO: Can only occur if there's a mismatch in generic parameters, for which we already report an error
+                    TyInfo::Error(ErrorReason::Invalid)
+                },
             },
             Ty::SelfType => if let Some(self_ty) = self_ty {
                 TyInfo::Ref(self_ty)
@@ -931,7 +935,7 @@ impl<'a> Infer<'a> {
                 })),
             Constraint::Impl(ty, class, obl_span, unchecked_assoc, use_span) => {
                 if let ClassInfo::Known(class_id, args) = self.follow_class(class) {
-                    self.resolve_obligation(&mut Vec::new(), ty, (class_id, args), obl_span, use_span)
+                    self.resolve_obligation(&mut Vec::new(), ty, (class_id, args.clone()), obl_span, use_span)
                         .map(|res| match res {
                             Ok(member) => {
                                 for (assoc, assoc_ty) in unchecked_assoc {
@@ -941,6 +945,9 @@ impl<'a> Infer<'a> {
 
                                             let mut links = HashMap::new();
                                             self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                                            for (member_arg, arg) in member.args.iter().zip(args.iter()) {
+                                                self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                                            }
 
                                             if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
                                                 let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &|idx, gen_scope, ctx| links.get(&idx).copied(), Some(ty));

@@ -163,11 +163,9 @@ impl Types {
         }
     }
 
-    pub fn display<'a>(&'a self, datas: &'a Datas, effects: &'a Effects, ty: TyId) -> TyDisplay<'a> {
+    pub fn display<'a>(&'a self, ctx: &'a Context, ty: TyId) -> TyDisplay<'a> {
         TyDisplay {
-            types: self,
-            datas,
-            effects,
+            ctx,
             ty,
             lhs_exposed: false,
             substitutes: Vec::new(),
@@ -189,9 +187,7 @@ impl Types {
 
 #[derive(Clone)]
 pub struct TyDisplay<'a> {
-    types: &'a Types,
-    datas: &'a Datas,
-    effects: &'a Effects,
+    ctx: &'a Context,
     ty: TyId,
     lhs_exposed: bool,
     substitutes: Vec<(TyId, Rc<dyn Fn(&mut fmt::Formatter) -> fmt::Result + 'a>)>,
@@ -217,7 +213,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             return sub(f);
         }
 
-        match self.types.get(self.ty) {
+        match self.ctx.tys.get(self.ty) {
             Ty::Error(ErrorReason::Unknown) => write!(f, "?"),
             Ty::Error(ErrorReason::Recursive) => write!(f, "..."),
             Ty::Error(ErrorReason::Invalid) => write!(f, "!"),
@@ -235,22 +231,28 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 .join(", ")),
             Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
             Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-            Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", *self.datas.get_data(name).name, params
+            Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", *self.ctx.datas.get_data(name).name, params
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            Ty::Data(name, params) => write!(f, "{}{}", *self.datas.get_data(name).name, params
+            Ty::Data(name, params) => write!(f, "{}{}", *self.ctx.datas.get_data(name).name, params
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            Ty::Gen(index, scope) => write!(f, "{}", **self.types.get_gen_scope(scope).get(index).name),
+            Ty::Gen(index, scope) => write!(f, "{}", **self.ctx.tys.get_gen_scope(scope).get(index).name),
             // TODO: Include class_id?
-            Ty::Assoc(inner, (_class_id, _args), assoc) => write!(f, "{}.{}", self.with_ty(inner, true), *assoc),
+            Ty::Assoc(inner, (class_id, args), assoc) => {
+                let class = format!("{}{}", *self.ctx.classes.get(class_id).name, args
+                    .iter()
+                    .map(|arg| format!(" {}", self.with_ty(*arg, true)))
+                    .collect::<String>());
+                write!(f, "<{} as {}>.{}", self.with_ty(inner, true), class, *assoc)
+            },
             Ty::SelfType => write!(f, "Self"),
             Ty::Effect(eff, out) => {
-                let eff = match self.types.get_effect(eff) {
+                let eff = match self.ctx.tys.get_effect(eff) {
                     Effect::Error => "!".to_string(),
-                    Effect::Known(decl, args) => format!("{}{}", *self.effects.get_decl(decl).name, args
+                    Effect::Known(decl, args) => format!("{}{}", *self.ctx.effects.get_decl(decl).name, args
                         .iter()
                         .map(|arg| format!(" {}", self.with_ty(*arg, true)))
                         .collect::<String>()),
