@@ -46,10 +46,10 @@ for A < Neg member [A] of Neg =
 
 # Add
 
-class Add =
-    => add: Self -> Self -> Self
+class Add A =
+    => add: Self -> A -> Self
 
-member Nat of Add =
+member Nat of Add Nat =
     => add = fn x, y => x + y
 
 # Mul

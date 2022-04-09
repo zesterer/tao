@@ -189,10 +189,10 @@ impl<'a> Infer<'a> {
             .clone()
         {
             if !searched.contains(&*new_member.class) {
-                let member_ty = self.instantiate(*new_member.member, new_member.member.span(), &|idx, _, _| member.args[idx], Some(*member.member));
+                let member_ty = self.instantiate(*new_member.member, new_member.member.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member));
                 let member_args = new_member.args
                     .iter()
-                    .map(|arg| self.instantiate(*arg, new_member.member.span(), &|idx, _, _| member.args[idx], Some(*member.member)))
+                    .map(|arg| self.instantiate(*arg, new_member.member.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member)))
                     .collect();
 
                 self.add_implied_member_inner(searched, InferImpliedMember {
@@ -329,10 +329,10 @@ impl<'a> Infer<'a> {
                     })
                     .collect::<Vec<_>>()
             });
-        self.instantiate(ty, span, &|idx, gen_scope, ctx| gens.as_ref().expect("No gen scope")[idx], self.self_type)
+        self.instantiate(ty, span, &|idx, gen_scope, ctx| gens.as_ref().expect("No gen scope").get(idx).copied(), self.self_type)
     }
 
-    pub fn instantiate(&mut self, ty: TyId, span: impl Into<Option<Span>>, f: &impl Fn(usize, GenScopeId, &Context) -> TyVar, self_ty: Option<TyVar>) -> TyVar {
+    pub fn instantiate(&mut self, ty: TyId, span: impl Into<Option<Span>>, f: &impl Fn(usize, GenScopeId, &Context) -> Option<TyVar>, self_ty: Option<TyVar>) -> TyVar {
         let span = span.into();
         let info = match self.ctx.tys.get(ty) {
             Ty::Error(reason) => TyInfo::Error(reason),
@@ -351,7 +351,11 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .map(|param| self.instantiate(param, span, f, self_ty))
                 .collect()),
-            Ty::Gen(index, scope) => TyInfo::Ref(f(index, scope, self.ctx)), // TODO: Check scope is valid for recursive scopes
+             // TODO: Check scope is valid for recursive scopes
+            Ty::Gen(index, scope) => match f(index, scope, self.ctx) {
+                Some(ty) => TyInfo::Ref(ty),
+                None => TyInfo::Error(ErrorReason::Invalid),
+            },
             Ty::SelfType => if let Some(self_ty) = self_ty {
                 TyInfo::Ref(self_ty)
             } else {
@@ -813,7 +817,7 @@ impl<'a> Infer<'a> {
                 if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
                     if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
                         if let Some(field_ty) = fields.get(&field_name) {
-                            let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params[index], None);
+                            let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params.get(index).copied(), None);
                             if flow_out {
                                 self.make_flow(field_ty, field, field_name.span());
                             } else {
@@ -939,7 +943,7 @@ impl<'a> Infer<'a> {
                                             self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
 
                                             if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
-                                                let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
+                                                let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &|idx, gen_scope, ctx| links.get(&idx).copied(), Some(ty));
                                                 // TODO: Check ordering for soundness
                                                 self.make_flow(assoc_ty_inst, assoc_ty, obl_span);
                                             }
@@ -978,14 +982,14 @@ impl<'a> Infer<'a> {
                     let send_ty = self.instantiate(
                         self.ctx.effects.get_decl(decl).send.expect("Send must be init"),
                         span,
-                        &|idx, _gen_scope, _ctx| args[idx],
+                        &|idx, _gen_scope, _ctx| args.get(idx).copied(),
                         None,
                     );
                     self.make_flow(send, send_ty, span);
                     let recv_ty = self.instantiate(
                         self.ctx.effects.get_decl(decl).recv.expect("Recv must be init"),
                         span,
-                        &|idx, _gen_scope, _ctx| args[idx],
+                        &|idx, _gen_scope, _ctx| args.get(idx).copied(),
                         None,
                     );
                     // TODO: The variance here is a bit fucked, this needs to swap when we're
@@ -1028,7 +1032,7 @@ impl<'a> Infer<'a> {
             .get(class_id)
             .field(*field)
             .unwrap();
-        let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|idx, _, _| args[idx], Some(ty));
+        let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|idx, _, _| args.get(idx).copied(), Some(ty));
 
         // TODO: Check soundness of flow relationship
         self.make_flow(inst_field_ty, field_ty, field.span());
@@ -1309,10 +1313,10 @@ impl<'a> Infer<'a> {
 
                         let mut err_so_far = None;
                         for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
-                            let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None);
+                            let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None);
                             let member_args = member.args
                                 .iter()
-                                .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None))
+                                .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None))
                                 .collect();
 
                             if proof_stack.contains(&(*member.member, *member.class, member.args.clone())) {

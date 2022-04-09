@@ -218,6 +218,18 @@ impl Context {
                 .map(|arg| arg.to_hir(&mut infer, &Scope::Empty))
                 .collect::<Vec<_>>();
 
+            let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(class_id).gen_scope);
+            if class_gen_scope.len() != args.len() {
+                let item_span = class_gen_scope.item_span;
+                let class_gen_scope_len = class_gen_scope.len();
+                infer.ctx_mut().emit(Error::WrongNumberOfGenerics(
+                    member.class.span(),
+                    args.len(),
+                    item_span,
+                    class_gen_scope_len,
+                ));
+            }
+
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
 
@@ -428,7 +440,12 @@ impl Context {
                 .clone()
                 .expect("Implied members must be known")
             {
-                let member_ty = infer.instantiate(*member_obl.member, member_obl.member.span(), &|idx, _, _| member_args[idx], Some(member_ty.meta().1));
+                let member_ty = infer.instantiate(
+                    *member_obl.member,
+                    member_obl.member.span(),
+                    &|idx, _, _| member_args.get(idx).copied(),
+                    Some(member_ty.meta().1),
+                );
                 infer.make_impl(member_ty, (*member_obl.class, member_args.clone()), member_obl.class.span(), Vec::new(), member.class.span());
             }
 
@@ -541,7 +558,7 @@ impl Context {
                                 let val_ty = infer.instantiate(
                                     *field_ty,
                                     Some(name.span()),
-                                    &|idx, _, _| args[idx],
+                                    &|idx, _, _| args.get(idx).copied(),
                                     Some(self_ty),
                                 );
                                 infer.make_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
@@ -670,8 +687,8 @@ impl Context {
         let infer_members = ast_implied_members
             .into_iter()
             .filter_map(|member| {
-                let class = if let Some(class) = infer.ctx_mut().classes.lookup(*member.class.name) {
-                    SrcNode::new(class, member.class.span())
+                let class = if let Some(class_id) = infer.ctx_mut().classes.lookup(*member.class.name) {
+                    SrcNode::new(class_id, member.class.span())
                 } else {
                     infer.ctx_mut().errors.push(Error::NoSuchClass(member.class.name.clone()));
                     return None;
@@ -682,6 +699,18 @@ impl Context {
                     .iter()
                     .map(|arg| arg.to_hir(&mut infer, &Scope::Empty).meta().1)
                     .collect::<Vec<_>>();
+
+                let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class).gen_scope);
+                if gen_scope.len() != args.len() {
+                    let item_span = gen_scope.item_span;
+                    let gen_scope_len = gen_scope.len();
+                    infer.ctx_mut().emit(Error::WrongNumberOfGenerics(
+                        member.span(),
+                        args.len(),
+                        item_span,
+                        gen_scope_len,
+                    ));
+                }
 
                 infer.add_implied_member_single(ImpliedMember {
                     member: SrcNode::new(ty.meta().1, ty.meta().0),

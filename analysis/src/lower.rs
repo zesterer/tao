@@ -100,10 +100,10 @@ pub fn enforce_generic_obligations(
     } else {
         // Enforce obligations from data type
         for member in gen_scope.implied_members.as_ref().expect("Implied members must be available").clone() {
-            let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params[idx], self_ty);
+            let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty);
             let args = member.args
                 .iter()
-                .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| params[idx], None))
+                .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| params.get(idx).copied(), None))
                 .collect();
             infer.make_impl(member_ty, (*member.class, args), member.class.span(), Vec::new(), use_span);
         }
@@ -163,7 +163,7 @@ impl ToHir for ast::Type {
                             let alias_ty = alias.ty;
                             let alias_gen_scope = alias.gen_scope;
                             let get_gen = |index, scope, ctx: &Context| {
-                                params[index]
+                                params.get(index).copied()
                             };
 
                             let res = enforce_generic_obligations(
@@ -396,7 +396,7 @@ impl ToHir for ast::Binding {
                 let inner_ty = {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
-                    let get_gen = |index, _, ctx: &Context| generic_tys[index];
+                    let get_gen = |index, _, ctx: &Context| generic_tys.get(index).copied();
 
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                     let inner_ty_actual = infer.instantiate(inner_ty, inner.span(), &get_gen, None);
@@ -444,10 +444,10 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     // Enforce class obligations
     let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
     for member in gen_scope.implied_members.as_ref().unwrap().clone() {
-        let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| generic_tys[idx].1, None);
+        let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| generic_tys.get(idx).map(|(_, ty)| *ty), None);
         let args = member.args
             .iter()
-            .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| generic_tys[idx].1, None))
+            .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| generic_tys.get(idx).map(|(_, ty)| *ty), None))
             .collect();
         infer.make_impl(member_ty, (*member.class, args), member.class.span(), Vec::new(), inst_span);
     }
@@ -456,7 +456,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     let def = infer.ctx().defs.get(def_id);
     let def_gen_scope = def.gen_scope;
     let def_name = def.name.clone();
-    let get_gen = |index: usize, _, ctx: &Context| generic_tys[index].1;
+    let get_gen = |index: usize, _, ctx: &Context| generic_tys.get(index).map(|(_, ty)| *ty);
     let ty = if let Some(body_ty) = def.ty_hint
         .or_else(|| def.body
             .as_ref()
@@ -817,7 +817,7 @@ impl ToHir for ast::Expr {
                 let inner_ty = {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
-                    let get_gen = |index, _, ctx: &Context| generic_tys[index];
+                    let get_gen = |index, _, ctx: &Context| generic_tys.get(index).copied();
 
                     // Bit messy, makes sure that we don't accidentally infer a bad type backwards
                     let inner_ty_actual = infer.instantiate(inner_ty, name.span(), &get_gen, None);

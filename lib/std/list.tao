@@ -42,7 +42,7 @@ fn sort A < OrdExt : [A] -> [A] =
             ++
         xs:filter(fn x => A.greater_eq(x, mid)):sort
 
-def sum A < Zero + Add : [A] -> A =
+def sum A < Zero + Add A : [A] -> A =
     fold(A.zero, fn x, y => A.add(x, y))
 
 def product A < One + Mul : [A] -> A =
