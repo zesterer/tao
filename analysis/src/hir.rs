@@ -21,7 +21,7 @@ impl Meta for InferMeta {
 impl Meta for TyMeta {
     type Ty = TyId;
     type Data = SrcNode<DataId>;
-    type Class = Option<ClassId>; // Required because we don't have proper error classes yet
+    type Class = Option<(ClassId, Vec<TyId>)>; // Required because we don't have proper error classes yet
     type Global = (DefId, Vec<Self>);
     type Effect = EffectId;
 }

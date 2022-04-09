@@ -16,8 +16,8 @@ pub enum Error {
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyId, Span),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyId, Span, TyId, Span),
     // (obligation, type, obligation_origin, generic_definition
-    TypeDoesNotFulfil(ClassId, TyId, Span, Option<Span>, Span),
-    CycleWhenResolving(TyId, ClassId, Span),
+    TypeDoesNotFulfil(Option<(ClassId, Vec<TyId>)>, TyId, Span, Option<Span>, Span),
+    CycleWhenResolving(TyId, (ClassId, Vec<TyId>), Span),
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
@@ -54,6 +54,12 @@ impl Error {
         use ariadne::{Report, ReportKind, Label, Color, Fmt, Span, Config};
 
         let display = |id| ctx.tys.display(&ctx.datas, &ctx.effects, id);
+
+        let display_class = |class_id, args: &[_]| format!(
+            "{} {}",
+            *ctx.classes.get(class_id).name,
+            args.iter().map(|arg| format!("{}", display(*arg))).collect::<Vec<_>>().join(" "),
+        );
 
         let (msg, spans, notes) = match self {
             Error::CannotCoerce(x, y, inner, info) => {
@@ -172,29 +178,36 @@ impl Error {
                     _ => vec![],
                 },
             ),
-            Error::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => (
-                format!("Type {} is not a member of {}", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Cyan)),
-                {
-                    let mut labels = vec![
-                        (use_span, format!("Because it is used here"), Color::Yellow),
-                        (ctx.tys.get_span(ty), format!(
-                            "This is of type {}",
-                            display(ty).fg(Color::Red),
-                        ), Color::Red),
-                        (obl_span, format!("{} is required to be a member of {} here", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Cyan)), Color::Cyan),
-                    ];
-                    if let Some(gen_span) = gen_span {
-                        labels.push((gen_span, format!(
-                            "Consider adding a class constraint like {}",
-                            format!("{} < {}", display(ty), *ctx.classes.get(class).name).fg(Color::Blue),
-                        ), Color::Blue));
-                    }
-                    labels
-                },
-                vec![format!("Types must fulfil their class obligations")],
-            ),
-            Error::CycleWhenResolving(ty, class, cycle_span) => (
-                format!("Proving that type {} is a member of {} leads to cyclical reasoning", display(ty).fg(Color::Red), (*ctx.classes.get(class).name).fg(Color::Cyan)),
+            Error::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => {
+                let class = if let Some((class_id, args)) = class {
+                    display_class(class_id, &args)
+                } else {
+                    format!("?")
+                };
+                (
+                    format!("Type {} is not a member of {}", display(ty).fg(Color::Red), (&class).fg(Color::Cyan)),
+                    {
+                        let mut labels = vec![
+                            (use_span, format!("Because it is used here"), Color::Yellow),
+                            (ctx.tys.get_span(ty), format!(
+                                "This is of type {}",
+                                display(ty).fg(Color::Red),
+                            ), Color::Red),
+                            (obl_span, format!("{} is required to be a member of {} here", display(ty).fg(Color::Red), (&class).fg(Color::Cyan)), Color::Cyan),
+                        ];
+                        if let Some(gen_span) = gen_span {
+                            labels.push((gen_span, format!(
+                                "Consider adding a class constraint like {}",
+                                format!("{} < {}", display(ty), class).fg(Color::Blue),
+                            ), Color::Blue));
+                        }
+                        labels
+                    },
+                    vec![format!("Types must fulfil their class obligations")],
+                )
+            },
+            Error::CycleWhenResolving(ty, (class_id, args), cycle_span) => (
+                format!("Proving that type {} is a member of {} leads to cyclical reasoning", display(ty).fg(Color::Red), display_class(class_id, &args).fg(Color::Cyan)),
                 vec![
                     (cycle_span, format!("This bound causes cyclical reasoning"), Color::Red),
                     (ctx.tys.get_span(ty), format!(

@@ -18,7 +18,7 @@ pub enum TyInfo {
     Gen(usize, GenScopeId, Span),
     SelfType,
     // An opaque associated type that *cannot* be determined due to lack of information
-    Assoc(TyVar, ClassId, SrcNode<Ident>),
+    Assoc(TyVar, ClassVar, SrcNode<Ident>),
     // Effect, output type, opaque type variable for tracking
     Effect(EffectVar, TyVar, TyVar),
     Opaque(usize),
@@ -29,6 +29,13 @@ pub enum EffectInfo {
     Unknown,
     Ref(EffectVar),
     Known(EffectDeclId, Vec<TyVar>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ClassInfo {
+    Unknown,
+    Ref(ClassVar),
+    Known(ClassId, Vec<TyVar>),
 }
 
 #[derive(Clone, Default, Debug)]
@@ -61,11 +68,11 @@ pub enum InferError {
     InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
     InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
     // (_, _, obligation span, span of original generic, usage span)
-    TypeDoesNotFulfil(ClassId, TyVar, Span, Option<Span>, Span),
+    TypeDoesNotFulfil(ClassVar, TyVar, Span, Option<Span>, Span),
     RecursiveAlias(AliasId, TyVar, Span),
     PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
     AmbiguousClassItem(SrcNode<Ident>, Vec<ClassId>),
-    CycleWhenResolving(TyVar, ClassId, Span),
+    CycleWhenResolving(TyVar, (ClassId, Vec<TyVar>), Span),
 }
 
 #[derive(Clone, Debug)]
@@ -74,7 +81,7 @@ enum Constraint {
     Access(TyVar, SrcNode<Ident>, TyVar),
     Update(TyVar, SrcNode<Ident>, TyVar),
     Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
-    Impl(TyVar, ClassId, Span, Vec<(SrcNode<Ident>, TyVar)>, Span),
+    Impl(TyVar, ClassVar, Span, Vec<(SrcNode<Ident>, TyVar)>, Span),
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     EffectSendRecv(EffectVar, TyVar, TyVar, Span),
@@ -101,7 +108,7 @@ pub struct Infer<'a> {
     //     Closed(Vec<EffectVar>),
     // }
     vars: Vec<(Span, TyInfo, Result<(), ()>)>,
-    class_vars: Vec<(Span, Option<ClassId>)>,
+    class_vars: Vec<(Span, ClassInfo)>,
     effect_vars: Vec<(Span, EffectInfo)>,
     opaque_id: usize,
     constraints: VecDeque<Constraint>,
@@ -142,8 +149,13 @@ impl<'a> Infer<'a> {
                 .clone()
             {
                 let member_ty = self.instantiate_local(*member.member, member.member.span());
-                self.implied_members.push(InferImpliedMember {
+                let args = member.args
+                    .iter()
+                    .map(|arg| self.instantiate_local(*arg, member.member.span()))
+                    .collect();
+                self.add_implied_member(InferImpliedMember {
                     member: SrcNode::new(member_ty, member.member.span()),
+                    args,
                     class: member.class.clone(),
                     real_member: None,
                 });
@@ -165,7 +177,42 @@ impl<'a> Infer<'a> {
 
     pub fn self_type(&self) -> Option<TyVar> { self.self_type }
 
+    fn add_implied_member_inner(&mut self, searched: &mut HashSet<ClassId>, member: InferImpliedMember) {
+        searched.insert(*member.class);
+        // Recursively search for member implied by the class
+        let gen_scope_id = self.ctx.classes.get(*member.class).gen_scope;
+        for new_member in self.ctx.tys
+            .get_gen_scope(gen_scope_id)
+            .implied_members
+            .as_ref()
+            .expect("Implied members must be known!")
+            .clone()
+        {
+            if !searched.contains(&*new_member.class) {
+                let member_ty = self.instantiate(*new_member.member, new_member.member.span(), &|idx, _, _| member.args[idx], Some(*member.member));
+                let member_args = new_member.args
+                    .iter()
+                    .map(|arg| self.instantiate(*arg, new_member.member.span(), &|idx, _, _| member.args[idx], Some(*member.member)))
+                    .collect();
+
+                self.add_implied_member_inner(searched, InferImpliedMember {
+                    member: SrcNode::new(member_ty, member.member.span()),
+                    class: new_member.class.clone(),
+                    args: member_args,
+                    real_member: None,
+                });
+            }
+        }
+
+        self.implied_members.push(member);
+    }
+
     pub fn add_implied_member(&mut self, member: InferImpliedMember) {
+        self.add_implied_member_inner(&mut HashSet::new(), member);
+    }
+
+    // Add an implied member, but don't recurse to find more (because implied members on classes might not be derived yet)
+    pub fn add_implied_member_single(&mut self, member: InferImpliedMember) {
         self.implied_members.push(member);
     }
 
@@ -312,11 +359,15 @@ impl<'a> Infer<'a> {
                 self.ctx.emit(Error::SelfNotValidHere(span));
                 TyInfo::Error(ErrorReason::Invalid)
             },
-            Ty::Assoc(inner, class_id, assoc) => {
+            Ty::Assoc(inner, (class_id, args), assoc) => {
                 let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
                 let inner = self.instantiate(inner, span, f, self_ty);
+                let args = args
+                    .iter()
+                    .map(|arg| self.instantiate(*arg, span, f, self_ty))
+                    .collect();
                 let assoc_ty = self.unknown(span);
-                self.make_impl(inner, class_id, span, vec![(assoc, assoc_ty)], span);
+                self.make_impl(inner, (class_id, args), span, vec![(assoc, assoc_ty)], span);
                 TyInfo::Ref(assoc_ty)
             },
             Ty::Effect(eff, out) => match self.ctx.tys.get_effect(eff) {
@@ -361,29 +412,66 @@ impl<'a> Infer<'a> {
     }
 
     // `unchecked_assoc` allows unification of type variables with an instance's associated type
-    pub fn make_impl(&mut self, ty: TyVar, class: ClassId, obl_span: Span, unchecked_assoc: Vec<(SrcNode<Ident>, TyVar)>, use_span: Span) {
+    pub fn make_impl(&mut self, ty: TyVar, (class_id, args): (ClassId, Vec<TyVar>), obl_span: Span, unchecked_assoc: Vec<(SrcNode<Ident>, TyVar)>, use_span: Span) {
+        let class = ClassVar(self.class_vars.len());
+        self.class_vars.push((use_span, ClassInfo::Known(class_id, args)));
         self.constraints.push_back(Constraint::Impl(ty, class, obl_span, unchecked_assoc, use_span));
     }
 
-    pub fn make_class_field_known(&mut self, ty: TyVar, field_name: SrcNode<Ident>, class_id: Option<ClassId>, field_ty: TyVar, span: Span) -> ClassVar {
-        let class = ClassVar(self.class_vars.len());
-        self.class_vars.push((span, class_id));
+    fn instantiate_class(&mut self, class_id: ClassId, inst_span: Span, self_ty: Option<TyVar>) -> Vec<TyVar> {
+        let gen_scope_id = self.ctx.classes.class_gen_scope(class_id);
+        let gen_scope = self.ctx.tys.get_gen_scope(gen_scope_id);
+        let generic_tys = (0..gen_scope.len())
+            .map(|i| gen_scope.get(i).name.span())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|origin| self.insert(inst_span, TyInfo::Unknown(Some(origin))))
+            .collect::<Vec<_>>();
+
+        // TODO: Move this function?
+        lower::enforce_generic_obligations(
+            self,
+            gen_scope_id,
+            &generic_tys,
+            inst_span,
+            self.ctx.classes.get(class_id).name.span(),
+            self_ty,
+        ).expect("Wrong number of generic params");
+
+        generic_tys
+    }
+
+    pub fn insert_class(&mut self, span: Span, class: ClassInfo) -> ClassVar {
+        let id = ClassVar(self.class_vars.len());
+        self.class_vars.push((span, class));
+        id
+    }
+
+    pub fn make_class_field_known(&mut self, ty: TyVar, field_name: SrcNode<Ident>, (class_id, args): (ClassId, Vec<TyVar>), field_ty: TyVar, span: Span) -> ClassVar {
+        let class = self.insert_class(span, ClassInfo::Known(class_id, args));
         self.constraints.push_back(Constraint::ClassField(ty, class, field_name, field_ty, span));
         class
     }
 
     pub fn make_class_field(&mut self, ty: TyVar, field_name: SrcNode<Ident>, field_ty: TyVar, span: Span) -> ClassVar {
-        let class = ClassVar(self.class_vars.len());
-        self.class_vars.push((span, None));
+        let class = self.class_var_unknown(span);
         self.constraints.push_back(Constraint::ClassField(ty, class, field_name, field_ty, span));
         class
     }
 
-    pub fn make_class_assoc(&mut self, ty: TyVar, assoc_name: SrcNode<Ident>, assoc_ty: TyVar, span: Span) -> ClassVar {
-        let class = ClassVar(self.class_vars.len());
-        self.class_vars.push((span, None));
+    pub fn class_var_unknown(&mut self, span: Span) -> ClassVar {
+        self.insert_class(span, ClassInfo::Unknown)
+    }
+
+    pub fn make_class_assoc(&mut self, ty: TyVar, assoc_name: SrcNode<Ident>, class: ClassVar, assoc_ty: TyVar, span: Span) {
         self.constraints.push_back(Constraint::ClassAssoc(ty, class, assoc_name, assoc_ty, span));
-        class
+    }
+
+    fn follow_class(&self, class: ClassVar) -> ClassInfo {
+        match &self.class_vars[class.0].1 {
+            ClassInfo::Ref(class) => self.follow_class(*class),
+            info => info.clone(),
+        }
     }
 
     fn effect_span(&self, eff: EffectVar) -> Span {
@@ -445,7 +533,15 @@ impl<'a> Infer<'a> {
                 TyInfo::Data(_, ys) => ys
                     .into_iter()
                     .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
-                TyInfo::Assoc(inner, _, _) => x == inner || self.occurs_in_inner(x, inner, seen),
+                TyInfo::Assoc(inner, class, _) => x == inner
+                    || self.occurs_in_inner(x, inner, seen)
+                    || match self.follow_class(class) {
+                        ClassInfo::Ref(_) => unreachable!(),
+                        ClassInfo::Unknown => false,
+                        ClassInfo::Known(_, args) => args
+                            .into_iter()
+                            .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
+                    },
                 // Opaque type is not checked, it's always opaque... hopefully
                 TyInfo::Effect(eff, out, _opaque) => self.occurs_in_inner(x, out, seen) || match self.follow_effect(eff) {
                     EffectInfo::Unknown => false,
@@ -514,6 +610,29 @@ impl<'a> Infer<'a> {
             }
         }
 
+        // TODO: Allow errors that mention classes instead of types
+        fn make_flow_class(
+            infer: &mut Infer,
+            (x, x_ty): (ClassVar, TyVar),
+            (y, y_ty): (ClassVar, TyVar),
+        ) -> Result<(), (TyVar, TyVar)> {
+            match (infer.follow_class(x), infer.follow_class(y)) {
+                // TODO: These shouldn't be reachable?
+                (ClassInfo::Ref(x), _) => make_flow_class(infer, (x, x_ty), (y, y_ty)),
+                (_, ClassInfo::Ref(y)) => make_flow_class(infer, (x, x_ty), (y, y_ty)),
+
+                (ClassInfo::Unknown, _) => Ok(infer.class_vars[x.0].1 = ClassInfo::Ref(y)),
+                (_, ClassInfo::Unknown) => Ok(infer.class_vars[y.0].1 = ClassInfo::Ref(x)),
+                (ClassInfo::Known(class_id_x, xs), ClassInfo::Known(class_id_y, ys)) if class_id_x == class_id_y => {
+                    // Class generics are always invariant
+                    let co_error = make_flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
+                    let contra_error = make_flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
+                    co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
+                },
+                (_, _) => Err((x_ty, y_ty)),
+            }
+        }
+
         if x == y { return Ok(()) } // If the vars are equal, we have no need to check flow
         match (self.info(x), self.info(y)) {
             // Follow references
@@ -569,11 +688,18 @@ impl<'a> Infer<'a> {
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
             (TyInfo::SelfType, TyInfo::SelfType) => Ok(()),
             (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
-                if class_x == class_y && assoc_x == assoc_y => {
+                if assoc_x == assoc_y => {
                     // associated types are invariant
                     let co_error = self.make_flow_inner(x, y).err();
                     let contra_error = self.make_flow_inner(y, x).err().map(|(a, b)| (b, a));
-                    co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
+
+                    let class_err = make_flow_class(self, (class_x, x), (class_y, y)).err();
+
+                    co_error
+                        .or(contra_error)
+                        .or(class_err)
+                        .map(Err)
+                        .unwrap_or(Ok(()))
                 },
             (TyInfo::Effect(x_eff, x_out, x_opaque), TyInfo::Effect(y_eff, y_out, y_opaque)) => {
                 let eff_err = make_flow_effect(self, (x_eff, x), (y_eff, y)).err();
@@ -629,9 +755,20 @@ impl<'a> Infer<'a> {
                 self.insert(self.span(ty), TyInfo::Data(data, args))
             },
             TyInfo::SelfType => todo!(), // ???
-            TyInfo::Assoc(inner, class_id, assoc) => {
+            TyInfo::Assoc(inner, class, assoc) => {
+                let class = match self.follow_class(class) {
+                    ClassInfo::Unknown => class,
+                    ClassInfo::Ref(_) => unreachable!(),
+                    ClassInfo::Known(class_id, args) => {
+                        let args = args
+                            .into_iter()
+                            .map(|arg| self.reinstantiate(span, arg))
+                            .collect();
+                        self.insert_class(self.span(ty), ClassInfo::Known(class_id, args))
+                    },
+                };
                 let inner = self.reinstantiate(span, inner);
-                self.insert(self.span(ty), TyInfo::Assoc(inner, class_id, assoc))
+                self.insert(self.span(ty), TyInfo::Assoc(inner, class, assoc))
             },
             TyInfo::Effect(eff, out, opaque) => {
                 let eff = match self.follow_effect(eff) {
@@ -788,43 +925,50 @@ impl<'a> Infer<'a> {
                     let result_ty = self.insert(self.span(output), info);
                     self.make_flow(result_ty, output, self.span(output));
                 })),
-            Constraint::Impl(ty, obligation, obl_span, unchecked_assoc, use_span) => self.resolve_obligation(&mut Vec::new(), ty, obligation, obl_span, use_span).map(|res| match res {
-                    Ok(member) => {
-                        for (assoc, assoc_ty) in unchecked_assoc {
-                            match member {
-                                Ok(member) => {
-                                    let member = self.ctx.classes.get_member(member);
+            Constraint::Impl(ty, class, obl_span, unchecked_assoc, use_span) => {
+                if let ClassInfo::Known(class_id, args) = self.follow_class(class) {
+                    self.resolve_obligation(&mut Vec::new(), ty, (class_id, args), obl_span, use_span)
+                        .map(|res| match res {
+                            Ok(member) => {
+                                for (assoc, assoc_ty) in unchecked_assoc {
+                                    match member {
+                                        Ok(member) => {
+                                            let member = self.ctx.classes.get_member(member);
 
-                                    let mut links = HashMap::new();
-                                    self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                                            let mut links = HashMap::new();
+                                            self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
 
-                                    if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
-                                        let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
-                                        // TODO: Check ordering for soundness
-                                        self.make_flow(assoc_ty_inst, assoc_ty, obl_span);
+                                            if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
+                                                let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &|idx, gen_scope, ctx| links[&idx], Some(ty));
+                                                // TODO: Check ordering for soundness
+                                                self.make_flow(assoc_ty_inst, assoc_ty, obl_span);
+                                            }
+                                        },
+                                        Err(true) => {
+                                            // Errors propagate through projected associated types
+                                            self.set_error(assoc_ty);
+                                        },
+                                        Err(false) => {
+                                            let assoc_info = self.insert(obl_span, TyInfo::Assoc(ty, class, assoc.clone()));
+                                            // TODO: Check ordering for soundness
+                                            self.make_flow(assoc_info, assoc_ty, obl_span);
+                                        },
                                     }
-                                },
-                                Err(true) => {
-                                    // Errors propagate through projected associated types
+                                }
+                                Ok(())
+                            },
+                            Err(err) => {
+                                // The obligation produced an error, so propagate the error to associated type variables
+                                for (_, assoc_ty) in unchecked_assoc {
                                     self.set_error(assoc_ty);
-                                },
-                                Err(false) => {
-                                    let assoc_info = self.insert(obl_span, TyInfo::Assoc(ty, obligation, assoc.clone()));
-                                    // TODO: Check ordering for soundness
-                                    self.make_flow(assoc_info, assoc_ty, obl_span);
-                                },
-                            }
-                        }
-                        Ok(())
-                    },
-                    Err(err) => {
-                        // The obligation produced an error, so propagate the error to associated type variables
-                        for (_, assoc_ty) in unchecked_assoc {
-                            self.set_error(assoc_ty);
-                        }
-                        Err(err)
-                    },
-                }),
+                                }
+                                Err(err)
+                            },
+                        })
+                } else {
+                    None
+                }
+            },
             Constraint::ClassField(ty, class, field, field_ty, span) => self.try_resolve_class_from_field(ty, class, field.clone(), field_ty, span),
             Constraint::ClassAssoc(ty, class, assoc, assoc_ty, span) => self.try_resolve_class_from_assoc(ty, class, assoc.clone(), assoc_ty, span),
             Constraint::EffectSendRecv(eff, send, recv, span) => match self.follow_effect(eff) {
@@ -854,112 +998,110 @@ impl<'a> Infer<'a> {
     }
 
     fn try_resolve_class_from_assoc(&mut self, ty: TyVar, class_var: ClassVar, assoc: SrcNode<Ident>, assoc_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
-        let possible_classes = if let Some(class) = self.class_vars[class_var.0].1 {
-            std::iter::once(class).collect()
-        } else {
-            let Some(candidates) = self.find_class_candidates_from_item(ty, assoc.clone(), assoc_ty, true)
-                else { return None }; // Resolving an error type always succeeds;
-            candidates
+        let (class_id, args) = match self.select_member_from_item(ty, class_var, assoc.clone(), assoc_ty, span, true) {
+            Some(Ok((class_id, args))) => (class_id, args),
+            Some(Err(err)) => return Some(Err(err)),
+            None => return None,
         };
-        match possible_classes.len() {
-            0 => {
-                self.set_error(assoc_ty);
-                None//Some(Err(InferError::NoSuchItem(ty, span, assoc)))
-            },
-            1 => {
-                let class_id = possible_classes.into_iter().next().unwrap();
-                self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
 
-                // Require an implementation to exist
-                self.make_impl(ty, class_id, span, vec![
-                    (assoc, assoc_ty),
-                ], span);
+        self.class_vars[class_var.0].1 = ClassInfo::Known(class_id, args.clone());
 
-                Some(Ok(()))
-            },
-            _ => {
-                self.set_error(assoc_ty);
-                // TODO: Return `None` here instead, wait for more inference info
-                Some(Err(InferError::AmbiguousClassItem(assoc, possible_classes.into_iter().collect())))
-            },
-        }
+        // Require an implementation to exist
+        self.make_impl(ty, (class_id, args), span, vec![
+            (assoc, assoc_ty),
+        ], span);
+
+        Some(Ok(()))
     }
 
     fn try_resolve_class_from_field(&mut self, ty: TyVar, class_var: ClassVar, field: SrcNode<Ident>, field_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
-        let possible_classes = if let Some(class) = self.class_vars[class_var.0].1 {
-            std::iter::once(class).collect()
-        } else {
-            let Some(candidates) = self.find_class_candidates_from_item(ty, field.clone(), field_ty, false)
-                else { return None }; // Resolving an error type always succeeds;
-            candidates
+        let (class_id, args) = match self.select_member_from_item(ty, class_var, field.clone(), field_ty, span, false) {
+            Some(Ok((class_id, args))) => (class_id, args),
+            Some(Err(err)) => return Some(Err(err)),
+            None => return None,
         };
-        match possible_classes.len() {
-            0 => {
-                self.set_error(field_ty);
-                None//Some(Err(InferError::NoSuchItem(ty, span, field)))
-            },
-            1 => {
-                let class_id = possible_classes.into_iter().next().unwrap();
-                self.class_vars[class_var.0].1 = Some(class_id); // Can't fail
-                self.make_impl(ty, class_id, span, Vec::new(), span);
-                let field_ty_id = **self.ctx.classes
-                    .get(class_id)
-                    .field(*field)
-                    .unwrap();
-                let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|_, _, _| panic!("Tried to substitute generic type for non-generic class"), Some(ty));
-                // TODO: Check soundness of flow relationship
-                self.make_flow(inst_field_ty, field_ty, field.span());
-                Some(Ok(()))
-            },
-            _ => {
-                self.set_error(field_ty);
-                Some(Err(InferError::AmbiguousClassItem(field, possible_classes.into_iter().collect())))
-            },
+
+        self.class_vars[class_var.0].1 = ClassInfo::Known(class_id, args.clone());
+
+        self.make_impl(ty, (class_id, args.clone()), span, Vec::new(), span);
+        let field_ty_id = **self.ctx.classes
+            .get(class_id)
+            .field(*field)
+            .unwrap();
+        let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|idx, _, _| args[idx], Some(ty));
+
+        // TODO: Check soundness of flow relationship
+        self.make_flow(inst_field_ty, field_ty, field.span());
+        Some(Ok(()))
+    }
+
+    fn select_member_from_item(&mut self, ty: TyVar, class_var: ClassVar, item: SrcNode<Ident>, item_ty: TyVar, span: Span, is_assoc: bool) -> Option<Result<(ClassId, Vec<TyVar>), InferError>> {
+        if let ClassInfo::Known(class_id, args) = self.follow_class(class_var) {
+            Some(Ok((class_id, args)))
+        } else {
+            let Some((implied_candidates, external_candidates)) = self.find_class_candidates_from_item(ty, item.clone(), item_ty, is_assoc)
+                else { return None }; // Resolving an error type always succeeds;
+
+            match (implied_candidates.len(), external_candidates.len()) {
+                // Easy case: we found exactly 1 candidate implied by the gen scope, so we know it much be the one we're looking for.
+                (1, _) => {
+                    // Can't fail
+                    let member = implied_candidates.into_iter().next().unwrap();
+                    Some(Ok((*member.class, member.args)))
+                },
+                // Exactly one external candidate was found, so instantiate it
+                (0, 1) => {
+                    // Can't fail
+                    let class_id = external_candidates.into_iter().next().unwrap();
+                    // TODO: Should we make use of member information? external_candidates should probably be HashSet<MemberId>
+                    Some(Ok((class_id, self.instantiate_class(class_id, item.span(), Some(ty)))))
+                },
+                // No implied or external candidates were found, so we can't resolve the member
+                (0, 0) => {
+                    // No external candidates match either, so bail
+                    // TODO: Should this really generate an error? It might be that we just need more info
+                    self.set_error(item_ty);
+                    Some(Err(InferError::NoSuchItem(ty, span, item)))
+                },
+                (_, _) => {
+                    self.set_error(item_ty);
+                    let possible_classes = implied_candidates
+                        .into_iter()
+                        .map(|member| *member.class)
+                        .chain(external_candidates
+                            .into_iter())
+                        .collect();
+                    Some(Err(InferError::AmbiguousClassItem(item, possible_classes)))
+                },
+            }
         }
     }
 
-    fn find_class_candidates_from_item(&mut self, ty: TyVar, item: SrcNode<Ident>, item_ty: TyVar, assoc_ty: bool) -> Option<HashSet<ClassId>> {
-        let implied_candidates = match self.follow_info(ty) {
-            TyInfo::Error(_) => {
-                self.set_error(ty);
-                self.set_error(item_ty);
-                return None
+    fn find_class_candidates_from_item(&mut self, ty: TyVar, item: SrcNode<Ident>, item_ty: TyVar, is_assoc: bool) -> Option<(Vec<InferImpliedMember>, HashSet<ClassId>)> {
+        let mut implied_candidates = HashMap::new();
+        for member in self.implied_members
+            .iter()
+            .filter(|member| if is_assoc {
+                self.ctx.classes.get(*member.class).assoc_ty(*item).is_some()
+            } else {
+                self.ctx.classes.get(*member.class).field(*item).is_some()
+            })
+        {
+            if self.var_covers_var(ty, *member.member)? {
+                // TODO: Only replace if the new member has 'better' information than the previous one
+                implied_candidates.insert(*member.class, member);
             }
-            TyInfo::Unknown(_) => return None, // We don't know what the type is yet, so how can we possibly determine what classes it is a member of?
-            _ => {
-                let mut implied = HashMap::default();
-                for member in &self.implied_members {
-                    match self.implied_covers_var(ty, *member.member) {
-                        Some(false) => {}, // Implied member isn't relevant to us
-                        Some(true) => self.walk_implied_obligations(&mut implied, *member.class, member.real_member),
-                        // Part of the implied member was unknown, so don't consider it to be a candidate
-                        // TODO: Is this correct?
-                        None => {},
-                    }
-                }
-
-                implied
-                    .into_iter()
-                    .filter(|(class_id, _)| if assoc_ty {
-                        self.ctx.classes.get(*class_id).assoc_ty(*item).is_some()
-                    } else {
-                        self.ctx.classes.get(*class_id).field(*item).is_some()
-                    })
-                    .map(|(class_id, _)| class_id)
-                    .collect::<Vec<_>>()
-            },
-        };
+        }
+        let implied_candidates = implied_candidates
+            .values()
+            .cloned()
+            .cloned()
+            .collect();
 
         let external_candidates = self.ctx.classes
             .iter()
-            // Only consider classes for which there exist members that could feasibly cover out type
-            .filter(|(class_id, _)| self.ctx.classes
-                .members_of(*class_id)
-                // TODO: >1 being returned is a problem, it means incoherence occured!
-                .find(|(_, member)| Self::covers_var(self, ty, member.member))
-                .is_some())
             // Filter by classes that contain the given field
-            .filter(|(_, class)| if assoc_ty {
+            .filter(|(_, class)| if is_assoc {
                 class.assoc_ty(*item).is_some()
             } else {
                 class.field(*item).is_some()
@@ -969,42 +1111,54 @@ impl<'a> Infer<'a> {
                 .members_of(*class_id)
                 .find(|(_, member)| Self::covers_var(self, ty, member.member))
                 .is_some())
-            .map(|(class_id, _)| class_id);
+            .map(|(class_id, _)| class_id)
+            .collect();
 
-        Some(implied_candidates
-            .into_iter()
-            .chain(external_candidates)
-            .collect())
+        Some((implied_candidates, external_candidates))
     }
 
     // Returns true if ty covers var (i.e: var is a structural subset of ty)
     // Return None if we don't yet have information to determine whether covering occurs
     // TODO: Flip arg order
-    fn implied_covers_var(&self, var: TyVar, ty: TyVar) -> Option<bool> {
+    fn var_covers_var(&self, var: TyVar, ty: TyVar) -> Option<bool> {
         match (self.follow_info(var), self.follow_info(ty)) {
-            (TyInfo::Unknown(_), _) | (_, TyInfo::Unknown(_)) => None,
+            (TyInfo::Unknown(_), _) => None,
+            (_, TyInfo::Unknown(_)) => Some(false),
             (TyInfo::Gen(x, _, _), TyInfo::Gen(y, _, _)) if x == y => Some(true),
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Some(true),
-            (TyInfo::List(x), TyInfo::List(y)) => self.implied_covers_var(x, y),
+            (TyInfo::List(x), TyInfo::List(y)) => self.var_covers_var(x, y),
             (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(Some(true), |a, (x, y)| Some(a? && self.implied_covers_var(x, y)?)),
+                .fold(Some(true), |a, (x, y)| Some(a? && self.var_covers_var(x, y)?)),
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(Some(true), |a, (x, y)| Some(a? && self.implied_covers_var(x.1, y.1)?)),
+                .fold(Some(true), |a, (x, y)| Some(a? && self.var_covers_var(x.1, y.1)?)),
             (TyInfo::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                Some(self.implied_covers_var(x_i, y_i)? && self.implied_covers_var(x_o, y_o)?)
+                Some(self.var_covers_var(x_i, y_i)? && self.var_covers_var(x_o, y_o)?)
             },
             (TyInfo::Data(x, xs), TyInfo::Data(y, ys)) if x == y && xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(Some(true), |a, (x, y)| Some(a? && self.implied_covers_var(x, y)?)),
+                .fold(Some(true), |a, (x, y)| Some(a? && self.var_covers_var(x, y)?)),
             (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
-                if class_x == class_y && assoc_x == assoc_y => self.implied_covers_var(x, y),
+                if assoc_x == assoc_y => Some(self.var_covers_var(x, y)? && self.class_covers_class(class_x, class_y)?),
             (TyInfo::SelfType, TyInfo::SelfType) => Some(true),
-            _ => Some(false),
+            (_, _) => Some(false),
+        }
+    }
+
+    fn class_covers_class(&self, x: ClassVar, y: ClassVar) -> Option<bool> {
+        match (self.follow_class(x), self.follow_class(y)) {
+            (ClassInfo::Unknown, _) => Some(false),
+            (_, ClassInfo::Unknown) => None,
+            (ClassInfo::Ref(_), _) | (_, ClassInfo::Ref(_)) => unreachable!(),
+            (ClassInfo::Known(class_id_x, args_x), ClassInfo::Known(class_id_y, args_y)) if class_id_x == class_id_y => args_x
+                .into_iter()
+                .zip(args_y.into_iter())
+                .fold(Some(true), |a, (x, y)| Some(a? && self.var_covers_var(x, y)?)),
+            (_, _) => Some(false),
         }
     }
 
@@ -1030,8 +1184,15 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .zip(ys.into_iter())
                 .all(|(x, y)| self.covers_var(x, y)),
-            (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, class_y, assoc_y))
-                if class_x == class_y && assoc_x == assoc_y => self.covers_var(x, y),
+            (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, (class_id_y, args_y), assoc_y))
+                if assoc_x == assoc_y => self.covers_var(x, y) && match self.follow_class(class_x) {
+                    ClassInfo::Ref(_) => unreachable!(),
+                    ClassInfo::Unknown => false, // TODO: correct?
+                    ClassInfo::Known(class_id_x, args_x) => class_id_x == class_id_y && args_x
+                        .into_iter()
+                        .zip(args_y.into_iter())
+                        .all(|(x, y)| self.covers_var(x, y)),
+                },
             _ => false,
         }
     }
@@ -1059,67 +1220,68 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .zip(ys.into_iter())
                 .for_each(|(x, y)| self.derive_links(x, y, link_gen)),
-            (Ty::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
-                if class_x == class_y && assoc_x == assoc_y => self.derive_links(x, y, link_gen),
+            (Ty::Assoc(x, (class_id_x, args_x), assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
+                if assoc_x == assoc_y => {
+                    self.derive_links(x, y, link_gen);
+                    match self.follow_class(class_y) {
+                        ClassInfo::Unknown => panic!("Deriving links for unknown class!"),
+                        ClassInfo::Ref(_) => unreachable!(),
+                        ClassInfo::Known(class_id_y, args_y) => {
+                            assert!(class_id_x == class_id_y);
+                            args_x
+                                .into_iter()
+                                .zip(args_y.into_iter())
+                                .for_each(|(x, y)| self.derive_links(x, y, link_gen));
+                        },
+                    }
+                },
             (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
             _ => {}, // Only type constructors and generic types generate obligations
-        }
-    }
-
-    // Extract a list of all classes that the type is a member of
-    fn walk_implied_obligations(&self, classes: &mut HashMap<ClassId, Option<MemberId>>, class: ClassId, member_id: Option<MemberId>) {
-        // TODO: This is bad
-        if classes.insert(class, member_id).is_none() {
-            let Some(implied_members) = self.ctx.tys
-                .get_gen_scope(self.ctx.classes.get(class).gen_scope)
-                .implied_members
-                .as_ref()
-            else {
-                // If implied members were not found, it's probably because we're trying to solve this
-                // *very* early in the compilation process so we don't know much about the target class.
-                // For now, we just early exit and fail to infer.
-                // TODO: This is inconsistent and will result in different behaviour when reordering classes. Instead,
-                // always bail out if we're before class implied member inference has entirely finished.
-                return;
-            };
-
-            for member in implied_members {
-                match self.ctx.tys.get(*member.member) {
-                    Ty::SelfType => self.walk_implied_obligations(classes, *member.class, member.real_member),
-                    _ => {},
-                }
-            }
         }
     }
 
     /// Resolve a class obligation for a type, returning the ID of the type's membership. If no member can be provided
     /// (because, for example, the membership is implied by a generic bound) then `Err(false)` is returned instead. If
     /// resolution failed due to an existing error, `Err(true)` is returned.
-    fn resolve_obligation(&mut self, proof_stack: &mut Vec<(TyId, ClassId)>, ty: TyVar, obligation: ClassId, obl_span: Span, use_span: Span) -> Option<Result<Result<MemberId, bool>, InferError>> {
+    fn resolve_obligation(
+        &mut self,
+        proof_stack: &mut Vec<(TyId, ClassId, Vec<TyId>)>,
+        ty: TyVar,
+        (class_id, class_args): (ClassId, Vec<TyVar>),
+        obl_span: Span,
+        use_span: Span,
+    ) -> Option<Result<Result<MemberId, bool>, InferError>> {
         // TODO: Resolve possible infinite loop when resolving by having an obligation cache
         match self.follow_info(ty) {
             TyInfo::Error(_) => {
                 self.set_error(ty);
                 return Some(Ok(Err(true))); // Resolving an error type always succeeds
             },
-            TyInfo::Unknown(_) => None, // No idea if it implements the trait yet
             // First, search through real members to resolve the obligation
             info => {
                 // If searching through real obligations failed, search through implied obligations
-                if let Some(member_id) = {
-                    let mut implied = HashMap::default();
-                    for member in &self.implied_members {
-                        match self.implied_covers_var(ty, *member.member) {
-                            Some(false) => {}, // Implied member isn't relevant to us
-                            Some(true) => self.walk_implied_obligations(&mut implied, *member.class, member.real_member),
-                            // Part of the implied member was unknown, so don't consider it to be a candidate
-                            // TODO: Is this correct?
-                            None => {},
+                if let Some(member) = {
+                    let mut selected = None;
+                    for member in self.implied_members.iter() {
+                        if class_id == *member.class
+                            && self.var_covers_var(ty, *member.member)?
+                            && class_args.iter()
+                                .zip(member.args.iter())
+                                .fold(Some(true), |a, (ty, arg)| Some(a? && Self::var_covers_var(self, *ty, *arg)?))?
+                        {
+                            // Try to select an implied member where the real member is known
+                            selected = Some(selected
+                                .zip_with(Some(member), |s: &InferImpliedMember, m| if s.real_member.is_some() {
+                                    s
+                                } else {
+                                    m
+                                })
+                                .unwrap_or(member));
                         }
                     }
-                    implied.get(&obligation).copied()
+                    selected
                 } {
-                    if let Some(member_id) = member_id {
+                    if let Some(member_id) = member.real_member {
                         Some(Ok(Ok(member_id)))
                     } else {
                         Some(Ok(Err(false)))
@@ -1127,25 +1289,37 @@ impl<'a> Infer<'a> {
                 } else {
                     // Find a class member declaration that covers our type
                     let covering_member = self.ctx.classes
-                        .members_of(obligation)
+                        .members_of(class_id)
                         // TODO: >1 being returned is a problem, it means incoherence occured!
-                        .find(|(_, member)| Self::covers_var(self, ty, member.member));
+                        .find(|(_, member)| {
+                            Self::covers_var(self, ty, member.member)
+                            && class_args.iter()
+                                .zip(member.args.iter())
+                                .all(|(ty, arg)| Self::covers_var(self, *ty, *arg))
+                        });
 
                     if let Some((covering_member_id, covering_member)) = covering_member {
                         let gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
 
                         let mut links = HashMap::new();
                         self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                        for (member_arg, arg) in covering_member.args.iter().zip(class_args.iter()) {
+                            self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                        }
 
                         let mut err_so_far = None;
                         for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
                             let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None);
+                            let member_args = member.args
+                                .iter()
+                                .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| *links.get(&idx).unwrap(), None))
+                                .collect();
 
-                            if proof_stack.contains(&(*member.member, obligation)) {
-                                err_so_far = Some(InferError::CycleWhenResolving(ty, obligation, member.span()));
+                            if proof_stack.contains(&(*member.member, *member.class, member.args.clone())) {
+                                err_so_far = Some(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span()));
                             } else {
-                                proof_stack.push((*member.member, obligation));
-                                match self.resolve_obligation(proof_stack, member_ty, *member.class, member.class.span(), use_span) {
+                                proof_stack.push((*member.member, *member.class, member.args.clone()));
+                                match self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args), member.class.span(), use_span) {
                                     Some(Ok(Ok(_))) => {},
                                     Some(Ok(Err(true))) => return Some(Ok(Err(true))),
                                     Some(Ok(Err(false))) => {},
@@ -1166,7 +1340,7 @@ impl<'a> Infer<'a> {
                     // The lack of impls *might* be because we just don't have enough information yet!
                     None
                     // Some(Err(InferError::TypeDoesNotFulfil(
-                    //     obligation,
+                    //     class_id,
                     //     ty,
                     //     obl_span,
                     //     if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
@@ -1215,7 +1389,7 @@ impl<'a> Infer<'a> {
                 Constraint::Binary(op, a, b, _output) => {
                     self.errors.push(InferError::InvalidBinaryOp(op.clone(), a, b))
                 },
-                Constraint::Impl(ty, obligation, obl_span, assoc, use_span) => {
+                Constraint::Impl(ty, class, obl_span, assoc, use_span) => {
                     let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
                         Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
                     } else {
@@ -1225,7 +1399,7 @@ impl<'a> Infer<'a> {
                     for (_, ty) in assoc {
                         self.set_error(ty);
                     }
-                    self.errors.push(InferError::TypeDoesNotFulfil(obligation, ty, obl_span, gen_span, use_span))
+                    self.errors.push(InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span))
                 },
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
                     self.errors.push(InferError::AmbiguousClassItem(field, Vec::new()))
@@ -1282,11 +1456,24 @@ impl<'a> Infer<'a> {
                 InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
                 InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
                 InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
-                InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => Error::TypeDoesNotFulfil(class, checked.reify(ty), obl_span, gen_span, use_span),
+                InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => {
+                    let class = match checked.infer.follow_class(class) {
+                        ClassInfo::Unknown => None,
+                        ClassInfo::Ref(_) => unreachable!(),
+                        ClassInfo::Known(class_id, args) => Some((class_id, args
+                            .iter()
+                            .map(|arg| checked.reify(*arg))
+                            .collect())),
+                    };
+                    Error::TypeDoesNotFulfil(class, checked.reify(ty), obl_span, gen_span, use_span)
+                },
                 InferError::RecursiveAlias(alias, a, span) => Error::RecursiveAlias(alias, checked.reify(a), span),
                 InferError::PatternNotSupported(lhs, op, rhs, span) => Error::PatternNotSupported(checked.reify(lhs), op, checked.reify(rhs), span),
                 InferError::AmbiguousClassItem(field, candidate_classes) => Error::AmbiguousClassItem(field, candidate_classes),
-                InferError::CycleWhenResolving(ty, class, cycle_span) => Error::CycleWhenResolving(checked.reify(ty), class, cycle_span),
+                InferError::CycleWhenResolving(ty, (class_id, args), cycle_span) => Error::CycleWhenResolving(checked.reify(ty), (class_id, args
+                    .iter()
+                    .map(|arg| checked.reify(*arg))
+                    .collect()), cycle_span),
             })
             .collect();
 
@@ -1333,7 +1520,14 @@ impl<'a> Checked<'a> {
                     .collect()),
                 TyInfo::Gen(name, scope, _) => Ty::Gen(name, scope),
                 TyInfo::SelfType => Ty::SelfType,
-                TyInfo::Assoc(inner, class_id, assoc) => Ty::Assoc(self.reify_inner(inner), class_id, assoc),
+                TyInfo::Assoc(inner, class, assoc) => match self.infer.follow_class(class) {
+                    ClassInfo::Unknown => Ty::Error(ErrorReason::Unknown),
+                    ClassInfo::Ref(_) => unreachable!(),
+                    ClassInfo::Known(class_id, args) => Ty::Assoc(self.reify_inner(inner), (class_id, args
+                        .into_iter()
+                        .map(|arg| self.reify_inner(arg))
+                        .collect()), assoc),
+                },
                 TyInfo::Effect(eff, out, _opaque) => Ty::Effect(self.reify_effect(eff), self.reify_inner(out)),
             };
             self.infer.ctx.tys.insert(self.infer.span(var), ty)
@@ -1364,7 +1558,14 @@ impl<'a> Checked<'a> {
         eff
     }
 
-    pub fn reify_class(&mut self, class: ClassVar) -> Option<ClassId> {
-        self.infer.class_vars[class.0].1
+    pub fn reify_class(&mut self, class: ClassVar) -> Option<(ClassId, Vec<TyId>)> {
+        match self.infer.follow_class(class) {
+            ClassInfo::Unknown => None,
+            ClassInfo::Ref(_) => unreachable!(),
+            ClassInfo::Known(class_id, args) => Some((class_id, args
+                .into_iter()
+                .map(|arg| self.reify_inner(arg))
+                .collect())),
+        }
     }
 }

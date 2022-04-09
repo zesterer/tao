@@ -78,6 +78,10 @@ impl Classes {
         self.members.iter().enumerate().map(|(i, member)| (MemberId(i), member))
     }
 
+    pub fn class_gen_scope(&self, class: ClassId) -> GenScopeId {
+        self.classes[class.0].gen_scope
+    }
+
     pub fn lookup(&self, name: Ident) -> Option<ClassId> {
         self.lut.get(&name).map(|(_, id)| *id)
     }
@@ -148,7 +152,7 @@ impl Classes {
         self.members[id.0].fields = Some(fields);
     }
 
-    pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, class: ClassId) -> Option<MemberId> {
+    pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, (class, args): (ClassId, Vec<ConTyId>)) -> Option<MemberId> {
         // Returns true if member covers ty
         fn covers(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
@@ -179,7 +183,13 @@ impl Classes {
             .and_then(|xs| {
                 let candidates = xs
                     .iter()
-                    .filter(|m| covers(hir, ctx, self.get_member(**m).member, ty))
+                    .filter(|m| {
+                        let member = self.get_member(**m);
+                        covers(hir, ctx, member.member, ty)
+                        && member.args.iter()
+                            .zip(args.iter())
+                            .all(|(member_arg, arg)| covers(hir, ctx, *member_arg, *arg))
+                    })
                     .collect::<Vec<_>>();
 
                 assert!(
@@ -242,6 +252,7 @@ pub struct Member {
     pub gen_scope: GenScopeId,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub member: TyId,
+    pub args: Vec<TyId>,
     pub assoc: Option<HashMap<Ident, TyId>>,
     pub fields: Option<HashMap<Ident, TyExpr>>,
 }

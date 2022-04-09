@@ -33,10 +33,6 @@ impl Context {
         // Declare items before declaration
         for (attr, class) in module.classes() {
             let (gen_scope, mut errs) = GenScope::from_ast(&class.generics, class.name.span());
-            if gen_scope.len() != 0 {
-                errors.push(Error::Unsupported(gen_scope.get(0).name.span(), "type parameters on classes"));
-                continue;
-            }
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             match this.classes.declare(class.name.clone(), Class {
@@ -126,13 +122,21 @@ impl Context {
         // Now that we have declarations for all classes and data types, we can check generic scope constraints
 
         for (_, class, class_id, _) in &classes {
+            let gen_scope = this.classes.get(*class_id).gen_scope;
             this.reify_gen_scope(
-                this.classes.get(*class_id).gen_scope,
+                gen_scope,
                 |infer| {
                     let self_ty = infer.set_self_unknown(class.name.span());
-                    infer.add_implied_member(ImpliedMember {
+                    let args = (0..infer.ctx().tys.get_gen_scope(gen_scope).len())
+                        .map(|idx| {
+                            let span = infer.ctx().tys.get_gen_scope(gen_scope).get(idx).name.span();
+                            infer.insert(span, TyInfo::Gen(idx, gen_scope, span))
+                        })
+                        .collect::<Vec<_>>();
+                    infer.add_implied_member_single(ImpliedMember {
                         member: SrcNode::new(self_ty, class.name.span()),
                         class: SrcNode::new(*class_id, class.name.span()),
+                        args,
                         real_member: None,
                     });
                 },
@@ -179,8 +183,9 @@ impl Context {
         for (attr, alias, _) in aliases {
             let gen_scope = this.datas.name_gen_scope(*alias.name);
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope))
-                .with_gen_scope_implied();
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
+                // TODO: Enforce these?
+                //.with_gen_scope_implied();
 
             let ty = alias.ty.to_hir(&mut infer, &Scope::Empty);
 
@@ -208,16 +213,25 @@ impl Context {
                 .with_gen_scope_implied();
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
+            let args = member.class.params
+                .iter()
+                .map(|arg| arg.to_hir(&mut infer, &Scope::Empty))
+                .collect::<Vec<_>>();
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
 
             let member_ty = checked.reify(member_ty.meta().1);
+            let args = args
+                .iter()
+                .map(|arg| checked.reify(arg.meta().1))
+                .collect::<Vec<_>>();
 
             let member_id = this.classes.declare_member(class_id, Member {
                 gen_scope,
                 attr: attr.to_vec(),
                 member: member_ty,
+                args,
                 fields: None,
                 assoc: None,
             });
@@ -273,9 +287,16 @@ impl Context {
                     ast::ClassItem::Value { name, ty } => {
                         let mut infer = Infer::new(&mut this, Some(*gen_scope));
                         let self_ty = infer.set_self_unknown(class.name.span());
+                        let args = (0..infer.ctx().tys.get_gen_scope(*gen_scope).len())
+                            .map(|idx| {
+                                let span = infer.ctx().tys.get_gen_scope(*gen_scope).get(idx).name.span();
+                                infer.insert(span, TyInfo::Gen(idx, *gen_scope, span))
+                            })
+                            .collect::<Vec<_>>();
                         infer.add_implied_member(ImpliedMember {
                             member: SrcNode::new(self_ty, class.name.span()),
                             class: SrcNode::new(*class_id, class.name.span()),
+                            args,
                             real_member: None,
                         });
                         let mut infer = infer.with_gen_scope_implied();
@@ -310,9 +331,14 @@ impl Context {
                     let member_ty = this.classes.get_member(*member_id).member;
                     let mut infer = Infer::new(&mut this, Some(*gen_scope))
                         .with_self_type(member_ty, member.member.span());
+                    let args = member.class.params
+                        .iter()
+                        .map(|ty| ty.to_hir(&mut infer, &Scope::Empty).meta().1)
+                        .collect();
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
+                        args,
                         real_member: None,
                     });
                     let mut infer = infer.with_gen_scope_implied();
@@ -369,6 +395,11 @@ impl Context {
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
 
+            let member_args = member.class.params
+                .iter()
+                .map(|arg| member.member.to_hir(&mut infer, &Scope::Empty).meta().1)
+                .collect::<Vec<_>>();
+
             // infer.add_implied_member(ImpliedMember {
             //     member: SrcNode::new(member_ty.meta().1, member_ty.meta().0),
             //     class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
@@ -397,8 +428,8 @@ impl Context {
                 .clone()
                 .expect("Implied members must be known")
             {
-                let member_ty = infer.instantiate(*member_obl.member, member_obl.member.span(), &|idx, _, _| todo!("Type parameters on classes"), Some(member_ty.meta().1));
-                infer.make_impl(member_ty, *member_obl.class, member_obl.class.span(), Vec::new(), member.class.span());
+                let member_ty = infer.instantiate(*member_obl.member, member_obl.member.span(), &|idx, _, _| member_args[idx], Some(member_ty.meta().1));
+                infer.make_impl(member_ty, (*member_obl.class, member_args.clone()), member_obl.class.span(), Vec::new(), member.class.span());
             }
 
             let (mut checked, mut errs) = infer.into_checked();
@@ -485,10 +516,15 @@ impl Context {
                     let mut infer = Infer::new(&mut this, Some(*gen_scope))
                         .with_self_type(member_ty, member.member.span())
                         .with_gen_scope_implied();
-
+                    let self_ty = infer.self_type().unwrap();
+                    let args = member.class.params
+                        .iter()
+                        .map(|ty| ty.to_hir(&mut infer, &Scope::Empty).meta().1)
+                        .collect::<Vec<_>>();
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
+                        args: args.clone(),
                         real_member: Some(*member_id),
                     });
 
@@ -502,11 +538,10 @@ impl Context {
                             let val = val.to_hir(&mut infer, &Scope::Empty);
                             let class = infer.ctx().classes.get(*class_id);
                             if let Some(field_ty) = class.field(**name).cloned() {
-                                let self_ty = member.member.to_hir(&mut infer, &Scope::Empty).meta().1;
                                 let val_ty = infer.instantiate(
                                     *field_ty,
-                                    None,//Some(field_ty.span()),
-                                    &|_, _, _| panic!("Generics not yet supported on classes"),
+                                    Some(name.span()),
+                                    &|idx, _, _| args[idx],
                                     Some(self_ty),
                                 );
                                 infer.make_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
@@ -622,6 +657,8 @@ impl Context {
     pub fn reify_gen_scope(&mut self, gen_scope_id: GenScopeId, f: impl FnOnce(&mut Infer)) {
         let mut infer = Infer::new(self, Some(gen_scope_id));
 
+        f(&mut infer);
+
         let gen_scope = infer
             .ctx()
             .tys
@@ -629,18 +666,10 @@ impl Context {
         let ast_implied_members = gen_scope
             .ast_implied_members
             .clone();
-        // let self_span = gen_scope.item_span;
-
-        f(&mut infer);
-
-        // TODO: Not all gen scopes have a self!
-        // infer.set_self_unknown(self_span);
 
         let infer_members = ast_implied_members
             .into_iter()
             .filter_map(|member| {
-                let ty = member.member.to_hir(&mut infer, &Scope::Empty);
-
                 let class = if let Some(class) = infer.ctx_mut().classes.lookup(*member.class.name) {
                     SrcNode::new(class, member.class.span())
                 } else {
@@ -648,13 +677,20 @@ impl Context {
                     return None;
                 };
 
-                infer.add_implied_member(ImpliedMember {
+                let ty = member.member.to_hir(&mut infer, &Scope::Empty);
+                let args = member.class.params
+                    .iter()
+                    .map(|arg| arg.to_hir(&mut infer, &Scope::Empty).meta().1)
+                    .collect::<Vec<_>>();
+
+                infer.add_implied_member_single(ImpliedMember {
                     member: SrcNode::new(ty.meta().1, ty.meta().0),
                     class: class.clone(),
+                    args: args.clone(),
                     real_member: None,
                 });
 
-                Some((ty, class, member.span()))
+                Some((ty, class, args, member.span()))
             })
             .collect::<Vec<_>>();
 
@@ -663,9 +699,13 @@ impl Context {
 
         let implied_members = infer_members
             .into_iter()
-            .map(|(ty, class, span)| {
+            .map(|(ty, class, args, span)| {
                 SrcNode::new(TyImpliedMember {
                     member: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
+                    args: args
+                        .iter()
+                        .map(|arg| checked.reify(*arg))
+                        .collect(),
                     class,
                     real_member: None,
                 }, span)

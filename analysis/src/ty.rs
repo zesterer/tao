@@ -45,7 +45,7 @@ pub enum Ty {
     Data(DataId, Vec<TyId>),
     Gen(usize, GenScopeId),
     SelfType,
-    Assoc(TyId, ClassId, SrcNode<Ident>),
+    Assoc(TyId, (ClassId, Vec<TyId>), SrcNode<Ident>),
     Effect(EffectId, TyId),
 }
 
@@ -115,9 +115,13 @@ impl Types {
                 .all(|(x, y)| self.is_eq(x, y)),
             (Ty::Gen(x, x_scope), Ty::Gen(y, y_scope)) => x == y && x_scope == y_scope,
             (Ty::SelfType, Ty::SelfType) => true,
-            (Ty::Assoc(x_ty, x_class, x_name), Ty::Assoc(y_ty, y_class, y_name)) => self.is_eq(x_ty, y_ty)
-                && x_class == y_class
-                && *x_name == *y_name,
+            (Ty::Assoc(x_ty, (x_class_id, x_args), x_name), Ty::Assoc(y_ty, (y_class_id, y_args), y_name)) => self.is_eq(x_ty, y_ty)
+                && x_class_id == y_class_id
+                && *x_name == *y_name
+                && x_args
+                    .into_iter()
+                    .zip(y_args)
+                    .all(|(x, y)| self.is_eq(x, y)),
             (Ty::Effect(x, x_out), Ty::Effect(y, y_out)) =>
                 x == y &&
                 match (self.get_effect(x), self.get_effect(y)) {
@@ -241,7 +245,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 .collect::<String>()),
             Ty::Gen(index, scope) => write!(f, "{}", **self.types.get_gen_scope(scope).get(index).name),
             // TODO: Include class_id?
-            Ty::Assoc(inner, _class_id, assoc) => write!(f, "{}.{}", self.with_ty(inner, true), *assoc),
+            Ty::Assoc(inner, (_class_id, _args), assoc) => write!(f, "{}.{}", self.with_ty(inner, true), *assoc),
             Ty::SelfType => write!(f, "Self"),
             Ty::Effect(eff, out) => {
                 let eff = match self.types.get_effect(eff) {
@@ -265,6 +269,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
 pub struct ImpliedMember<M: Meta> {
     pub member: SrcNode<M::Ty>,
     pub class: SrcNode<ClassId>,
+    pub args: Vec<M::Ty>,
     pub real_member: Option<MemberId>,
 }
 

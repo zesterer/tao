@@ -74,12 +74,13 @@ pub trait ToHir: Sized {
 
 // Enforce the obligations of a kind's generics
 // Fails if the number of parameters doesn't match the number of generic types in the scope
-fn enforce_generic_obligations(
+pub fn enforce_generic_obligations(
     infer: &mut Infer,
     gen_scope: GenScopeId,
     params: &[TyVar],
     use_span: Span,
     item_span: Span,
+    self_ty: Option<TyVar>,
 ) -> Result<(), ()> {
     let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope);
 
@@ -99,8 +100,12 @@ fn enforce_generic_obligations(
     } else {
         // Enforce obligations from data type
         for member in gen_scope.implied_members.as_ref().expect("Implied members must be available").clone() {
-            let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params[idx], None);
-            infer.make_impl(member_ty, *member.class, member.class.span(), Vec::new(), use_span);
+            let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params[idx], self_ty);
+            let args = member.args
+                .iter()
+                .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| params[idx], None))
+                .collect();
+            infer.make_impl(member_ty, (*member.class, args), member.class.span(), Vec::new(), use_span);
         }
         Ok(())
     }
@@ -167,6 +172,7 @@ impl ToHir for ast::Type {
                                 &params,
                                 self.span(),
                                 infer.ctx().datas.get_alias_span(alias_id),
+                                None,
                             );
                             match res {
                                 Err(()) => {
@@ -198,6 +204,7 @@ impl ToHir for ast::Type {
                             &params,
                             self.span(),
                             infer.ctx().datas.get_data_span(data),
+                            None,
                         ) {
                             Ok(()) => TyInfo::Data(data, params),
                             Err(()) => TyInfo::Error(ErrorReason::Unknown),
@@ -211,7 +218,8 @@ impl ToHir for ast::Type {
             ast::Type::Assoc(inner, assoc) => {
                 let inner = inner.to_hir(infer, scope);
                 let assoc_ty = infer.unknown(self.span());
-                infer.make_class_assoc(inner.meta().1, assoc.clone(), assoc_ty, self.span());
+                let class = infer.class_var_unknown(self.span());
+                infer.make_class_assoc(inner.meta().1, assoc.clone(), class, assoc_ty, self.span());
                 TyInfo::Ref(assoc_ty)
             },
             ast::Type::Effect(name, params, out) => {
@@ -232,6 +240,7 @@ impl ToHir for ast::Type {
                         &params,
                         self.span(),
                         eff_span,
+                        None,
                     ) {
                         Ok(()) => {
                             let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, params));
@@ -367,6 +376,7 @@ impl ToHir for ast::Binding {
                     &generic_tys,
                     self.span(),
                     infer.ctx().datas.get_data_span(data),
+                    None,
                 ) {
                     // Only fails if generic count doesn't match, but they're from the same source of truth!
                     unreachable!();
@@ -435,7 +445,11 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
     for member in gen_scope.implied_members.as_ref().unwrap().clone() {
         let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| generic_tys[idx].1, None);
-        infer.make_impl(member_ty, *member.class, member.class.span(), Vec::new(), inst_span);
+        let args = member.args
+            .iter()
+            .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| generic_tys[idx].1, None))
+            .collect();
+        infer.make_impl(member_ty, (*member.class, args), member.class.span(), Vec::new(), inst_span);
     }
 
     // Recreate type in context
@@ -573,14 +587,19 @@ impl ToHir for ast::Expr {
 
                 let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, output_ty));
 
-                let (class, field) = match &**op {
+                let (class_id, field) = match &**op {
                     ast::UnaryOp::Not => (infer.ctx().classes.lang.not, SrcNode::new(Ident::new("not"), self.span())),
                     ast::UnaryOp::Neg => (infer.ctx().classes.lang.neg, SrcNode::new(Ident::new("neg"), self.span())),
                     ast::UnaryOp::Propagate => unreachable!(), // handled above
                 };
-                let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, self.span());
 
-                (TyInfo::Ref(output_ty), hir::Expr::Apply(InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)), a))
+                if let Some(class_id) = class_id {
+                    let class = infer.make_class_field_known(a.meta().1, field.clone(), (class_id, vec![]), func, self.span());
+
+                    (TyInfo::Ref(output_ty), hir::Expr::Apply(InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)), a))
+                } else {
+                    (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
+                }
             },
             ast::Expr::Binary(op, a, b) => {
                 let a = a.to_hir(infer, scope);
@@ -592,23 +611,28 @@ impl ToHir for ast::Expr {
                     _ => None,
                 };
 
-                if let Some((class, field)) = lang_op {
-                    let func2 = infer.insert(op.span(), TyInfo::Func(b.meta().1, output_ty));
-                    let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, func2));
-                    infer.make_flow(a.meta().1, b.meta().1, EqInfo::from(self.span()));
-                    infer.make_flow(b.meta().1, a.meta().1, EqInfo::from(self.span()));
+                if let Some((class_id, field)) = lang_op {
+                    if let Some(class_id) = class_id {
+                        let func2 = infer.insert(op.span(), TyInfo::Func(b.meta().1, output_ty));
+                        let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, func2));
+                        infer.make_flow(a.meta().1, b.meta().1, EqInfo::from(self.span()));
+                        infer.make_flow(b.meta().1, a.meta().1, EqInfo::from(self.span()));
 
-                    let class = infer.make_class_field_known(a.meta().1, field.clone(), class, func, self.span());
+                        // TODO: Pass second arg to class
+                        let class = infer.make_class_field_known(a.meta().1, field.clone(), (class_id, vec![]), func, self.span());
 
-                    let expr = hir::Expr::Apply(
-                        InferNode::new(hir::Expr::Apply(
-                            InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)),
-                            a,
-                        ), (self.span(), func)),
-                        b,
-                    );
+                        let expr = hir::Expr::Apply(
+                            InferNode::new(hir::Expr::Apply(
+                                InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)),
+                                a,
+                            ), (self.span(), func)),
+                            b,
+                        );
 
-                    (TyInfo::Ref(output_ty), expr)
+                        (TyInfo::Ref(output_ty), expr)
+                    } else {
+                        (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
+                    }
                 } else {
                     infer.make_binary(op.clone(), a.meta().1, b.meta().1, output_ty);
                     (TyInfo::Ref(output_ty), hir::Expr::Binary(op.clone(), a, b))
@@ -773,6 +797,7 @@ impl ToHir for ast::Expr {
                     &generic_tys,
                     self.span(),
                     infer.ctx().datas.get_data_span(data),
+                    None,
                 ) {
                     // Only fails if generic count doesn't match, but they're from the same source of truth!
                     unreachable!();
@@ -1006,6 +1031,7 @@ impl ToHir for ast::Expr {
                         &eff_args,
                         self.span(),
                         eff_span,
+                        None,
                     ) {
                         Ok(()) => {
                             let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, eff_args));

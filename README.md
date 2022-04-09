@@ -64,6 +64,7 @@ have a few goals for the language itself:
     - [x] Functions support pattern-matching
     - [x] Currying
 - [x] Typeclasses
+    - [x] Type parameters
     - [x] Associated types
 - [x] Built-in lists
     - [x] Dedicated list construction syntax (`[a, b, c]`, `[a, b .. c, d]`, etc.)
@@ -84,8 +85,7 @@ have a few goals for the language itself:
 - [ ] Pattern exhaustivity checking (sound, but unnecessarily conservative)
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
 - [ ] Typeclasses
-    - [ ] Type parameters
-    - [ ] More expressive bounds (`where` clauses)
+    - [ ] Associated type equality on class bounds
     - [ ] Coherence checker
 - [ ] MIR optimiser
     - [ ] Unboxing

@@ -15,10 +15,9 @@ class IntoStream =
     => Stream
     => into : Self -> Self.Stream
 
-# TODO: Make blanket impls work
-# for S < Stream member S of IntoStream =
-#     => Stream = S
-#     => into = identity
+for S < Stream member S of IntoStream =
+    => Stream = S
+    => into = identity
 
 for A member [A] of IntoStream =
     => Stream = List A

@@ -248,10 +248,14 @@ impl ConContext {
             },
             Ty::Gen(idx, _) => return ty_insts.gen[idx],
             Ty::SelfType => return ty_insts.self_ty.expect("Self type required during concretization but none was provided"),
-            Ty::Assoc(ty, class, assoc) => {
+            Ty::Assoc(ty, (class_id, args), assoc) => {
                 let self_ty = self.lower_ty(hir, ty, ty_insts);
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                    .collect::<Vec<_>>();
                 let member = hir.classes
-                    .lookup_member(hir, self, self_ty, class)
+                    .lookup_member(hir, self, self_ty, (class_id, args))
                     .map(|m| hir.classes.get_member(m))
                     .expect("Could not select member candidate");
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
@@ -455,8 +459,13 @@ impl ConContext {
             },
             hir::Expr::ClassAccess(ty, class, field) => {
                 let self_ty = self.lower_ty(hir, ty.1, ty_insts);
+                let (class_id, args) = class.as_ref().expect("Uninferred class during concretization");
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_ty(hir, *arg, ty_insts))
+                    .collect::<Vec<_>>();
                 let member_id = hir.classes
-                    .lookup_member(hir, self, self_ty, class.expect("Uninferred class during concretization"))
+                    .lookup_member(hir, self, self_ty, (*class_id, args))
                     .expect("Could not select member candidate");
 
                 let id = Intern::new(ConProc::Field(self_ty, member_id, **field));
