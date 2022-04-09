@@ -19,7 +19,7 @@ fn show_negative A : A -> Str where
 =
     a => (----a):show
 
-# def main = show_negative(5i)
+def main = [1, 2, 3, 4]:sum
 
 class VecData A =
     => Proj
@@ -34,8 +34,8 @@ data Vec A, N < VecData A = N.Proj
 def v3 : Vec Nat Three = Vec {
     x : 4,
     y : 5,
-    z : "hi",
+    z : 6,
 }
 
-def main : IO () =
-    print("hello")
+# def main : IO () =
+#     print("hello")

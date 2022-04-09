@@ -856,20 +856,41 @@ pub fn obligation_parser() -> impl Parser<Vec<SrcNode<ast::ClassInst>>> {
             .allow_leading())
 }
 
-pub fn generics_parser() -> impl Parser<Vec<(ast::GenericTy, Vec<SrcNode<ast::ImpliedMember>>)>> {
-    let obligations = obligation_parser();
+pub fn implied_member_parser() -> impl Parser<(SrcNode<ast::ClassInst>, Vec<(SrcNode<ast::Ident>, SrcNode<ast::Type>)>)> {
+    let assoc = nested_parser(
+        type_ident_parser()
+            .map_with_span(SrcNode::new)
+            .then_ignore(just(Token::Op(Op::Eq)))
+            .then(type_parser().map_with_span(SrcNode::new))
+            .separated_by(just(Token::Comma))
+            .allow_trailing(),
+        Delimiter::Brace,
+        |_| Vec::new(),
+    );
 
+    class_inst_parser()
+        .map_with_span(SrcNode::new)
+        .then(just(Token::With).ignore_then(assoc)
+            .or_not()
+            .map(|xs| xs.unwrap_or_default()))
+}
+
+pub fn generics_parser() -> impl Parser<Vec<(ast::GenericTy, Vec<SrcNode<ast::ImpliedMember>>)>> {
     type_ident_parser()
         .map_with_span(SrcNode::new)
-        .then(obligations.or_not())
+        .then(just(Token::Op(Op::Less)).ignore_then(implied_member_parser()
+            .separated_by(just(Token::Op(Op::Add)))
+            .allow_leading())
+            .or_not())
         .map_with_span(|(name, implied_members), span| (
             ast::GenericTy { name: name.clone() },
             implied_members
-                .unwrap_or_else(Vec::new)
+                .unwrap_or_default()
                 .into_iter()
-                .map(move |class| SrcNode::new(ast::ImpliedMember {
+                .map(move |(class, assoc)| SrcNode::new(ast::ImpliedMember {
                     member: SrcNode::new(ast::Type::Data(name.clone(), Vec::new()), name.span()),
                     class,
+                    assoc,
                 }, span))
                 .collect(),
         ))
@@ -881,8 +902,7 @@ pub fn where_parser() -> impl Parser<Vec<SrcNode<ast::ImpliedMember>>> {
     let clause = type_parser()
         .map_with_span(SrcNode::new)
         .then_ignore(just(Token::Op(Op::Less)))
-        .then(class_inst_parser()
-            .map_with_span(SrcNode::new)
+        .then(implied_member_parser()
             .separated_by(just(Token::Op(Op::Add)))
             .allow_leading())
         .map_with_span(SrcNode::new);
@@ -900,9 +920,10 @@ pub fn where_parser() -> impl Parser<Vec<SrcNode<ast::ImpliedMember>>> {
                 let (ty, classes) = clause.into_inner();
                 classes
                     .into_iter()
-                    .map(move |class| SrcNode::new(ast::ImpliedMember {
+                    .map(move |(class, assoc)| SrcNode::new(ast::ImpliedMember {
                         member: ty.clone(),
                         class,
+                        assoc,
                     }, span))
             })
             .collect())
@@ -1059,6 +1080,7 @@ pub fn class_parser() -> impl Parser<ast::Class> {
                         SrcNode::new(ast::ImpliedMember {
                             member: SrcNode::new(ast::Type::Data(SrcNode::new(ast::Ident::new("Self"), class_span), Vec::new()), name.span()),
                             class,
+                            assoc: Vec::new(),
                         }, class_span)
                     }));
                 generics

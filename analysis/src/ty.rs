@@ -268,11 +268,21 @@ impl<'a> fmt::Display for TyDisplay<'a> {
 }
 
 #[derive(Clone)]
+pub enum ImpliedItems<M: Meta> {
+    // Items are derived from a real member
+    Real(MemberId),
+    // Items are implied through equality constraints
+    Eq(Vec<(SrcNode<Ident>, M::Ty)>),
+}
+
+pub type InferImpliedItems = ImpliedItems<InferMeta>;
+
+#[derive(Clone)]
 pub struct ImpliedMember<M: Meta> {
     pub member: SrcNode<M::Ty>,
     pub class: SrcNode<ClassId>,
     pub args: Vec<M::Ty>,
-    pub real_member: Option<MemberId>,
+    pub items: ImpliedItems<M>,
 }
 
 pub type TyImpliedMember = ImpliedMember<TyMeta>;

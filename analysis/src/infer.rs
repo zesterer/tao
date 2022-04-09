@@ -153,11 +153,18 @@ impl<'a> Infer<'a> {
                     .iter()
                     .map(|arg| self.instantiate_local(*arg, member.member.span()))
                     .collect();
+                let items = match &member.items {
+                    ImpliedItems::Real(member) => ImpliedItems::Real(*member),
+                    ImpliedItems::Eq(assoc) => ImpliedItems::Eq(assoc
+                        .iter()
+                        .map(|(name, assoc)| (name.clone(), self.instantiate_local(*assoc, member.member.span())))
+                        .collect()),
+                };
                 self.add_implied_member(InferImpliedMember {
                     member: SrcNode::new(member_ty, member.member.span()),
                     args,
                     class: member.class.clone(),
-                    real_member: None,
+                    items,
                 });
             }
         }
@@ -194,12 +201,19 @@ impl<'a> Infer<'a> {
                     .iter()
                     .map(|arg| self.instantiate(*arg, new_member.member.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member)))
                     .collect();
+                let items = match &new_member.items {
+                    ImpliedItems::Real(member) => ImpliedItems::Real(*member),
+                    ImpliedItems::Eq(assoc) => ImpliedItems::Eq(assoc
+                        .iter()
+                        .map(|(name, assoc)| (name.clone(), self.instantiate(*assoc, name.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member))))
+                        .collect()),
+                };
 
                 self.add_implied_member_inner(searched, InferImpliedMember {
                     member: SrcNode::new(member_ty, member.member.span()),
                     class: new_member.class.clone(),
                     args: member_args,
-                    real_member: None,
+                    items,
                 });
             }
         }
@@ -940,7 +954,7 @@ impl<'a> Infer<'a> {
                             Ok(member) => {
                                 for (assoc, assoc_ty) in unchecked_assoc {
                                     match member {
-                                        Ok(member) => {
+                                        Ok(ImpliedItems::Real(member)) => {
                                             let member = self.ctx.classes.get_member(member);
 
                                             let mut links = HashMap::new();
@@ -955,14 +969,18 @@ impl<'a> Infer<'a> {
                                                 self.make_flow(assoc_ty_inst, assoc_ty, obl_span);
                                             }
                                         },
-                                        Err(true) => {
+                                        Ok(ImpliedItems::Eq(ref assoc_set)) => {
+                                            if let Some((_, ty)) = assoc_set.iter().find(|(name, _)| **name == *assoc) {
+                                                self.make_flow(*ty, assoc_ty, obl_span);
+                                            } else {
+                                                let assoc_info = self.insert(obl_span, TyInfo::Assoc(ty, class, assoc.clone()));
+                                                // TODO: Check ordering for soundness
+                                                self.make_flow(assoc_info, assoc_ty, obl_span);
+                                            }
+                                        },
+                                        Err(()) => {
                                             // Errors propagate through projected associated types
                                             self.set_error(assoc_ty);
-                                        },
-                                        Err(false) => {
-                                            let assoc_info = self.insert(obl_span, TyInfo::Assoc(ty, class, assoc.clone()));
-                                            // TODO: Check ordering for soundness
-                                            self.make_flow(assoc_info, assoc_ty, obl_span);
                                         },
                                     }
                                 }
@@ -1261,12 +1279,12 @@ impl<'a> Infer<'a> {
         (class_id, class_args): (ClassId, Vec<TyVar>),
         obl_span: Span,
         use_span: Span,
-    ) -> Option<Result<Result<MemberId, bool>, InferError>> {
+    ) -> Option<Result<Result<InferImpliedItems, ()>, InferError>> {
         // TODO: Resolve possible infinite loop when resolving by having an obligation cache
         match self.follow_info(ty) {
             TyInfo::Error(_) => {
                 self.set_error(ty);
-                return Some(Ok(Err(true))); // Resolving an error type always succeeds
+                return Some(Ok(Err(()))); // Resolving an error type always succeeds
             },
             // First, search through real members to resolve the obligation
             info => {
@@ -1282,7 +1300,7 @@ impl<'a> Infer<'a> {
                         {
                             // Try to select an implied member where the real member is known
                             selected = Some(selected
-                                .zip_with(Some(member), |s: &InferImpliedMember, m| if s.real_member.is_some() {
+                                .zip_with(Some(member), |s: &InferImpliedMember, m| if matches!(&s.items, ImpliedItems::Real(_)) {
                                     s
                                 } else {
                                     m
@@ -1292,11 +1310,7 @@ impl<'a> Infer<'a> {
                     }
                     selected
                 } {
-                    if let Some(member_id) = member.real_member {
-                        Some(Ok(Ok(member_id)))
-                    } else {
-                        Some(Ok(Err(false)))
-                    }
+                    Some(Ok(Ok(member.items.clone())))
                 } else {
                     // Find a class member declaration that covers our type
                     let covering_member = self.ctx.classes
@@ -1332,8 +1346,7 @@ impl<'a> Infer<'a> {
                                 proof_stack.push((*member.member, *member.class, member.args.clone()));
                                 match self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args), member.class.span(), use_span) {
                                     Some(Ok(Ok(_))) => {},
-                                    Some(Ok(Err(true))) => return Some(Ok(Err(true))),
-                                    Some(Ok(Err(false))) => {},
+                                    Some(Ok(Err(()))) => return Some(Ok(Err(()))),
                                     Some(Err(err)) => err_so_far = Some(err),
                                     None => return None,
                                 }
@@ -1344,7 +1357,7 @@ impl<'a> Infer<'a> {
                         if let Some(err) = err_so_far {
                             //
                         } else {
-                            return Some(Ok(Ok(covering_member_id)));
+                            return Some(Ok(Ok(ImpliedItems::Real(covering_member_id))));
                         }
                     }
 

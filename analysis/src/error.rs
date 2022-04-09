@@ -459,7 +459,7 @@ impl Error {
 
         report
             .with_config(Config::default()
-                .with_compact(true))
+                .with_compact(false))
             .finish()
             .write(cache, writer)
             .unwrap();

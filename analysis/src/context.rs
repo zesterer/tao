@@ -137,7 +137,7 @@ impl Context {
                         member: SrcNode::new(self_ty, class.name.span()),
                         class: SrcNode::new(*class_id, class.name.span()),
                         args,
-                        real_member: None,
+                        items: ImpliedItems::Eq(Vec::new()),
                     });
                 },
             );
@@ -309,7 +309,7 @@ impl Context {
                             member: SrcNode::new(self_ty, class.name.span()),
                             class: SrcNode::new(*class_id, class.name.span()),
                             args,
-                            real_member: None,
+                            items: ImpliedItems::Eq(Vec::new()),
                         });
                         let mut infer = infer.with_gen_scope_implied();
 
@@ -351,7 +351,7 @@ impl Context {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
                         args,
-                        real_member: None,
+                        items: ImpliedItems::Eq(Vec::new()),
                     });
                     let mut infer = infer.with_gen_scope_implied();
 
@@ -415,7 +415,7 @@ impl Context {
             // infer.add_implied_member(ImpliedMember {
             //     member: SrcNode::new(member_ty.meta().1, member_ty.meta().0),
             //     class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
-            //     real_member: None,
+            //     items: ImpliedItems::Eq(Vec::new()),
             // });
 
             // for member in infer
@@ -542,7 +542,7 @@ impl Context {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
                         args: args.clone(),
-                        real_member: Some(*member_id),
+                        items: ImpliedItems::Real(*member_id),
                     });
 
                     let class = infer.ctx().classes.get(*class_id);
@@ -709,6 +709,10 @@ impl Context {
                     .iter()
                     .map(|arg| arg.to_hir(&mut infer, &Scope::Empty).meta().1)
                     .collect::<Vec<_>>();
+                let items = member.assoc
+                    .iter()
+                    .map(|(name, assoc)| (name.clone(), assoc.to_hir(&mut infer, &Scope::Empty).meta().1))
+                    .collect::<Vec<_>>();
 
                 let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class).gen_scope);
                 if gen_scope.len() != args.len() {
@@ -726,10 +730,10 @@ impl Context {
                     member: SrcNode::new(ty.meta().1, ty.meta().0),
                     class: class.clone(),
                     args: args.clone(),
-                    real_member: None,
+                    items: ImpliedItems::Eq(items.clone()),
                 });
 
-                Some((ty, class, args, member.span()))
+                Some((ty, class, args, items, member.span()))
             })
             .collect::<Vec<_>>();
 
@@ -738,7 +742,7 @@ impl Context {
 
         let implied_members = infer_members
             .into_iter()
-            .map(|(ty, class, args, span)| {
+            .map(|(ty, class, args, items, span)| {
                 SrcNode::new(TyImpliedMember {
                     member: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
                     args: args
@@ -746,7 +750,10 @@ impl Context {
                         .map(|arg| checked.reify(*arg))
                         .collect(),
                     class,
-                    real_member: None,
+                    items: ImpliedItems::Eq(items
+                        .iter()
+                        .map(|(name, assoc)| (name.clone(), checked.reify(*assoc)))
+                        .collect()),
                 }, span)
             })
             .collect();

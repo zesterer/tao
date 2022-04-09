@@ -228,6 +228,7 @@ pub enum Expr {
 pub struct ImpliedMember {
     pub member: SrcNode<Type>,
     pub class: SrcNode<ClassInst>,
+    pub assoc: Vec<(SrcNode<Ident>, SrcNode<Type>)>,
 }
 
 #[derive(Debug, PartialEq)]

@@ -27,7 +27,7 @@ pub use crate::{
     infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo, ClassVar, ClassInfo, EffectVar, EffectInfo},
     lower::{Scope, ToHir},
     reify::Reify,
-    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, ImpliedMember, TyImpliedMember, InferImpliedMember, Effect, EffectId},
+    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, ImpliedMember, TyImpliedMember, InferImpliedMember, ImpliedItems, InferImpliedItems, Effect, EffectId},
 };
 pub use tao_syntax::ast::Ident;
 pub use tao_util::index::{Id, Index};
