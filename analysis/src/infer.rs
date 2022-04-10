@@ -1285,7 +1285,7 @@ impl<'a> Infer<'a> {
         match self.follow_info(ty) {
             TyInfo::Error(_) => {
                 self.set_error(ty);
-                return Some(Ok(Err(()))); // Resolving an error type always succeeds
+                Some(Ok(Err(()))) // Resolving an error type always succeeds
             },
             // First, search through real members to resolve the obligation
             info => {
@@ -1300,6 +1300,7 @@ impl<'a> Infer<'a> {
                                 .fold(Some(true), |a, (ty, arg)| Some(a? && Self::var_covers_var(self, *ty, *arg)?))?
                         {
                             // Try to select an implied member where the real member is known
+                            // TODO: Is multiple covering impls an error? Should coherence prevent this case?
                             selected = Some(selected
                                 .zip_with(Some(member), |s: &InferImpliedMember, m| if matches!(&s.items, ImpliedItems::Real(_)) {
                                     s
@@ -1314,63 +1315,72 @@ impl<'a> Infer<'a> {
                     Some(Ok(Ok(member.items.clone())))
                 } else {
                     // Find a class member declaration that covers our type
-                    let covering_member = self.ctx.classes
+                    let covering_members = self.ctx.classes
                         .members_of(class_id)
                         // TODO: >1 being returned is a problem, it means incoherence occured!
-                        .find(|(_, member)| {
-                            Self::covers_var(self, ty, member.member)
+                        .filter(|(_, member)| {
+                            println!("Checking coverage of {:?} by {} via member {}", self.follow_info(ty), *self.ctx.classes.get(class_id).name, self.ctx.tys.display(&self.ctx, member.member));
+                            let r = Self::covers_var(self, ty, member.member)
                             && class_args.iter()
                                 .zip(member.args.iter())
-                                .all(|(ty, arg)| Self::covers_var(self, *ty, *arg))
-                        });
+                                .all(|(ty, arg)| Self::covers_var(self, *ty, *arg));
+                            println!("Result = {}", r);
+                            r
+                        })
+                        .collect::<Vec<_>>();
 
-                    if let Some((covering_member_id, covering_member)) = covering_member {
-                        let gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
+                    match covering_members.len() {
+                        // No covering members (perhaps we need more information?
+                        0 => {
+                            println!(
+                                "Failed to solve {:?} as member of {}{}!",
+                                self.follow_info(ty),
+                                *self.ctx.classes.get(class_id).name,
+                                class_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
+                            );
+                            None
+                        },
+                        // Exactly one covering member: great, we know what to substitute!
+                        1 => {
+                            // Can't fail
+                            let (covering_member_id, covering_member) = covering_members.into_iter().next().unwrap();
 
-                        let mut links = HashMap::new();
-                        self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
-                        for (member_arg, arg) in covering_member.args.iter().zip(class_args.iter()) {
-                            self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
-                        }
+                            let gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
 
-                        // let mut err_so_far = None;
-                        for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
-                            let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None);
-                            let member_args = member.args
-                                .iter()
-                                .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None))
-                                .collect();
+                            let mut links = HashMap::new();
+                            self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                            for (member_arg, arg) in covering_member.args.iter().zip(class_args.iter()) {
+                                self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                            }
 
-                            if proof_stack.contains(&(ty, *member.class, class_args.clone())) {
-                                return Some(Err(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span())));
-                            } else {
-                                proof_stack.push((ty, *member.class, class_args.clone()));
-                                let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args), member.class.span(), use_span);
-                                proof_stack.pop();
-                                match res {
-                                    Some(Ok(Ok(_))) => {},
-                                    Some(Ok(Err(()))) => return Some(Ok(Err(()))),
-                                    Some(Err(err)) => return Some(Err(err)),
-                                    None => return None,
+                            for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
+                                let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None);
+                                let member_args = member.args
+                                    .iter()
+                                    .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None))
+                                    .collect();
+
+                                if proof_stack.contains(&(ty, *member.class, class_args.clone())) {
+                                    return Some(Err(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span())));
+                                } else {
+                                    proof_stack.push((ty, *member.class, class_args.clone()));
+                                    let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args), member.class.span(), use_span);
+                                    proof_stack.pop();
+                                    match res {
+                                        Some(Ok(Ok(_))) => {},
+                                        Some(Ok(Err(()))) => return Some(Ok(Err(()))),
+                                        Some(Err(err)) => return Some(Err(err)),
+                                        None => return None,
+                                    }
                                 }
                             }
-                        }
 
-                        Some(Ok(Ok(ImpliedItems::Real(covering_member_id))))
-                    } else {
-                        // The lack of impls *might* be because we just don't have enough information yet!
-                        None
-                        // Some(Err(InferError::TypeDoesNotFulfil(
-                        //     class_id,
-                        //     ty,
-                        //     obl_span,
-                        //     if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
-                        //         Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
-                        //     } else {
-                        //         None
-                        //     },
-                        //     use_span,
-                        // )))
+                            Some(Ok(Ok(ImpliedItems::Real(covering_member_id))))
+                        },
+                        // Multiple covering members: we don't know which one to pick!
+                        // TODO: Instead of bailing out, perhaps try each one in turn?
+                        // TODO: Should the coherence checker prevent this?
+                        _ => None,
                     }
                 }
             },

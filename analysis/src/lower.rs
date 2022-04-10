@@ -197,17 +197,33 @@ impl ToHir for ast::Type {
                             infer.emit(InferError::RecursiveAlias(alias_id, err_ty, name.span()));
                             TyInfo::Ref(err_ty)
                         }
-                    } else if let Some(data) = infer.ctx().datas.lookup_data(**name) {
+                    } else if let Some(data_id) = infer.ctx().datas.lookup_data(**name) {
+                        let data_gen_scope = infer.ctx().datas.data_gen_scope(data_id);
                         match enforce_generic_obligations(
                             infer,
-                            infer.ctx().datas.name_gen_scope(**name),
+                            data_gen_scope,
                             &params,
                             self.span(),
-                            infer.ctx().datas.get_data_span(data),
+                            infer.ctx().datas.get_data_span(data_id),
                             None,
                         ) {
-                            Ok(()) => TyInfo::Data(data, params),
-                            Err(()) => TyInfo::Error(ErrorReason::Unknown),
+                            Ok(()) => TyInfo::Data(data_id, params),
+                            Err(()) => {
+
+                                let data_gen_scope = infer.ctx().tys.get_gen_scope(data_gen_scope);
+                                let err = Error::WrongNumberOfGenerics(
+                                    self.span(),
+                                    params.len(),
+                                    if data_gen_scope.len() == 0 {
+                                        infer.ctx().datas.get_data_span(data_id)
+                                    } else {
+                                        data_gen_scope.get(0).name.span()
+                                    },
+                                    data_gen_scope.len(),
+                                );
+                                infer.ctx_mut().emit(err);
+                                TyInfo::Error(ErrorReason::Unknown)
+                            },
                         }
                     } else {
                         infer.ctx_mut().emit(Error::NoSuchData(name.clone()));

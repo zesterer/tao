@@ -208,8 +208,8 @@ impl Context {
         }
 
         let mut members = Vec::new();
-        for (attr, member, class_id, gen_scope) in members_init {
-            let mut infer = Infer::new(&mut this, Some(gen_scope))
+        for (attr, member, class_id, gen_scope) in &members_init {
+            let mut infer = Infer::new(&mut this, Some(*gen_scope))
                 .with_gen_scope_implied();
 
             let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
@@ -218,7 +218,7 @@ impl Context {
                 .map(|arg| arg.to_hir(&mut infer, &Scope::Empty))
                 .collect::<Vec<_>>();
 
-            let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(class_id).gen_scope);
+            let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class_id).gen_scope);
             if class_gen_scope.len() != args.len() {
                 let item_span = class_gen_scope.item_span;
                 let class_gen_scope_len = class_gen_scope.len();
@@ -239,16 +239,20 @@ impl Context {
                 .map(|arg| checked.reify(arg.meta().1))
                 .collect::<Vec<_>>();
 
-            let member_id = this.classes.declare_member(class_id, Member {
-                gen_scope,
+            let member_id = this.classes.declare_member(*class_id, Member {
+                gen_scope: *gen_scope,
                 attr: attr.to_vec(),
                 member: member_ty,
                 args,
                 fields: None,
                 assoc: None,
             });
-            members.push((member, class_id, member_id, gen_scope));
+            members.push((*member, *class_id, member_id, *gen_scope));
         }
+
+        // Check for lang items
+        this.errors.append(&mut this.classes.check_lang_items());
+        this.errors.append(&mut this.datas.check_lang_items());
 
         for (attr, eff, eff_id, gen_scope) in effects {
             let mut infer = Infer::new(&mut this, Some(gen_scope))
@@ -351,7 +355,7 @@ impl Context {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
                         args,
-                        items: ImpliedItems::Eq(Vec::new()),
+                        items: ImpliedItems::Real(*member_id),
                     });
                     let mut infer = infer.with_gen_scope_implied();
 
@@ -398,6 +402,42 @@ impl Context {
             }
 
             this.classes.define_member_assoc(*member_id, *class_id, assoc);
+        }
+
+        // Define datas
+        for (attr, data, data_id) in datas {
+            let gen_scope = this.datas.name_gen_scope(*data.name);
+
+            let mut infer = Infer::new(&mut this, Some(gen_scope))
+                .with_gen_scope_implied();
+            let variants = data.variants
+                .iter()
+                .map(|(name, ty)| {
+                    let ty = ty.to_hir(&mut infer, &Scope::Empty);
+                    (name.clone(), ty)
+                })
+                .collect::<Vec<_>>();
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let cons = variants
+                .into_iter()
+                .map(|(name, ty)| (name, checked.reify(ty.meta().1)))
+                .collect();
+
+            if let Err(mut errs) = this.datas.define_data(
+                data_id,
+                data.name.span(),
+                Data {
+                    name: data.name.clone(),
+                    attr: attr.to_vec(),
+                    gen_scope,
+                    cons,
+                },
+            ) {
+                errors.append(&mut errs);
+            }
         }
 
         // Enforce member obligations
@@ -485,45 +525,8 @@ impl Context {
         }
 
         // Check for lang items
-        this.errors.append(&mut this.classes.check_lang_items());
-        this.errors.append(&mut this.datas.check_lang_items());
         this.errors.append(&mut this.defs.check_lang_items());
 
-        // Define datas
-        for (attr, data, data_id) in datas {
-            let gen_scope = this.datas.name_gen_scope(*data.name);
-
-            let mut infer = Infer::new(&mut this, Some(gen_scope))
-                .with_gen_scope_implied();
-            let variants = data.variants
-                .iter()
-                .map(|(name, ty)| {
-                    let ty = ty.to_hir(&mut infer, &Scope::Empty);
-                    (name.clone(), ty)
-                })
-                .collect::<Vec<_>>();
-
-            let (mut checked, mut errs) = infer.into_checked();
-            errors.append(&mut errs);
-
-            let cons = variants
-                .into_iter()
-                .map(|(name, ty)| (name, checked.reify(ty.meta().1)))
-                .collect();
-
-            if let Err(mut errs) = this.datas.define_data(
-                data_id,
-                data.name.span(),
-                Data {
-                    name: data.name.clone(),
-                    attr: attr.to_vec(),
-                    gen_scope,
-                    cons,
-                },
-            ) {
-                errors.append(&mut errs);
-            }
-        }
         // Member fields
         for (member, class_id, member_id, gen_scope) in &members {
             let fields = member.items
@@ -599,6 +602,7 @@ impl Context {
 
             this.classes.define_member_fields(*member_id, *class_id, fields);
         }
+        // Def impls
         for (attr, def) in defs {
             let id = this.defs
                 .lookup(*def.name)

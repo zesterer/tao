@@ -1,8 +1,22 @@
 import "lib/std.tao"
 
-data Zero
+# Natural numbers
 
+data Zero
 data Succ A
+
+type One = Succ Zero
+type Two = Succ One
+type Three = Succ Two
+type Four = Succ Three
+type Five = Succ Four
+type Six = Succ Five
+type Seven = Succ Six
+type Eight = Succ Seven
+type Nine = Succ Eight
+type Ten = Succ Nine
+
+# Utility that allows us to print the result of operations
 
 class Number =
     => as_nat : Nat
@@ -13,6 +27,8 @@ member Zero of Number =
 for A < Number member Succ A of Number =
     => as_nat = A.as_nat + 1
 
+# Addition
+
 class TAdd B =
     => Result
 
@@ -22,10 +38,25 @@ for B member Zero of TAdd B =
 for A < TAdd B, B member Succ A of TAdd B =
     => Result = Succ A.Result
 
-type One = Succ Zero
-type Two = Succ One
-type Three = Succ Two
-type Four = Succ Three
-type Five = Succ Four
+# Multiplication
 
-def main = <Five.<TAdd Three>.Result>.as_nat
+class TMul B =
+    => Result
+
+for B member Zero of TMul B =
+    => Result = Zero
+
+for A, B member Succ A of TMul B where
+    A < TMul B,
+    A.Result < TAdd B,
+=
+    => Result = A.Result.Result
+
+fn f A < TMul Zero : A -> () =
+    _ => ()
+
+def x = f(Zero)
+
+# Demo
+def main = <One.<TMul Zero>.Result>.as_nat
+
