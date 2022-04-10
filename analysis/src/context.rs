@@ -480,13 +480,34 @@ impl Context {
                 .clone()
                 .expect("Implied members must be known")
             {
-                let member_ty = infer.instantiate(
+                let obl_member_ty = infer.instantiate(
                     *member_obl.member,
                     member_obl.member.span(),
                     &|idx, _, _| member_args.get(idx).copied(),
                     Some(member_ty.meta().1),
                 );
-                infer.make_impl(member_ty, (*member_obl.class, member_args.clone()), member_obl.class.span(), Vec::new(), member.class.span());
+                let obl_member_args = member_obl.args
+                    .iter()
+                    .map(|arg| infer.instantiate(
+                        *arg,
+                        member_obl.member.span(),
+                        &|idx, _, _| member_args.get(idx).copied(),
+                        Some(member_ty.meta().1),
+                    ))
+                    .collect();
+                let obl_assoc = match &member_obl.items {
+                    ImpliedItems::Real(_) => Vec::new(),
+                    ImpliedItems::Eq(assoc) => assoc
+                        .iter()
+                        .map(|(name, assoc)| (name.clone(), infer.instantiate(
+                            *assoc,
+                            name.span(),
+                            &|idx, _, _| member_args.get(idx).copied(),
+                            Some(member_ty.meta().1),
+                        )))
+                        .collect(),
+                };
+                infer.make_impl(obl_member_ty, (*member_obl.class, obl_member_args), member_obl.class.span(), obl_assoc, member.class.span());
             }
 
             let (mut checked, mut errs) = infer.into_checked();

@@ -18,7 +18,15 @@ def one A < One : A = A.one
 member Nat of One =
     => one = 1
 
-class Num < Zero + One + Add Self + Mul Self
+class Num where
+    Self < Zero + One,
+    Self < Add Self with { Output = Self },
+    Self < Mul Self with { Output = Self },
+
+for A member A of Num where
+    A < Zero + One,
+    A < Add A with { Output = A },
+    A < Mul A with { Output = A },
 
 # A generic vector type
 
@@ -35,6 +43,13 @@ for A, N member Vector A N of Add (Vector A N) where
 =
     => Output = Self
     => add = fn Vector x, Vector y => Vector N.map2(x, y, fn x, y => x + y)
+
+for A, N member Vector A N of Mul (Vector A N) where
+    N < VectorData A,
+    A < Mul A with { Output = A },
+=
+    => Output = Self
+    => mul = fn Vector x, Vector y => Vector N.map2(x, y, fn x, y => x * y)
 
 data N2
 for A member N2 of VectorData A =
@@ -53,3 +68,11 @@ fn splat A, N < VectorData A : A -> Vector A N =
 
 for A < Zero, N < VectorData A member Vector A N of Zero =
     => zero = splat(A.zero)
+
+for A < One, N < VectorData A member Vector A N of One =
+    => one = splat(A.one)
+
+fn mul_add A < Num : A -> A -> A -> A =
+    x, y, z => x * y + z
+
+def mul_add_demo : Vector Nat N3 = mul_add(zero, one, one)

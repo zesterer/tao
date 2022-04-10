@@ -103,9 +103,15 @@ pub fn enforce_generic_obligations(
             let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty);
             let args = member.args
                 .iter()
-                .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| params.get(idx).copied(), None))
+                .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty))
                 .collect();
-            infer.make_impl(member_ty, (*member.class, args), member.class.span(), Vec::new(), use_span);
+            let assoc = match &member.items {
+                ImpliedItems::Eq(assoc) => assoc.iter()
+                    .map(|(name, assoc)| (name.clone(), infer.instantiate(*assoc, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty)))
+                    .collect(),
+                ImpliedItems::Real(_) => Vec::new(),
+            };
+            infer.make_impl(member_ty, (*member.class, args), member.class.span(), assoc, use_span);
         }
         Ok(())
     }

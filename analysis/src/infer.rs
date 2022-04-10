@@ -827,7 +827,7 @@ impl<'a> Infer<'a> {
                 if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
                     if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
                         if let Some(field_ty) = fields.get(&field_name) {
-                            let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params.get(index).copied(), None);
+                            let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params.get(index).copied(), Some(record));
                             if flow_out {
                                 self.make_flow(field_ty, field, field_name.span());
                             } else {
@@ -866,7 +866,7 @@ impl<'a> Infer<'a> {
                 }),
             Constraint::Impl(ty, class, obl_span, unchecked_assoc, use_span) => {
                 if let ClassInfo::Known(class_id, args) = self.follow_class(class) {
-                    self.resolve_obligation(&mut Vec::new(), ty, (class_id, args.clone()), obl_span, use_span)
+                    self.resolve_obligation(&mut Vec::new(), ty, (class_id, args.clone()), unchecked_assoc.clone(), obl_span, use_span)
                         .map(|res| match res {
                             Ok(member) => {
                                 for (assoc, assoc_ty) in unchecked_assoc {
@@ -887,8 +887,8 @@ impl<'a> Infer<'a> {
                                             }
                                         },
                                         Ok(ImpliedItems::Eq(ref assoc_set)) => {
-                                            if let Some((_, ty)) = assoc_set.iter().find(|(name, _)| **name == *assoc) {
-                                                self.make_flow(*ty, assoc_ty, obl_span);
+                                            if let Some((name, ty)) = assoc_set.iter().find(|(name, _)| **name == *assoc) {
+                                                self.make_flow(*ty, assoc_ty, name.span());
                                             } else {
                                                 let assoc_info = self.insert(obl_span, TyInfo::Assoc(ty, class, assoc.clone()));
                                                 // TODO: Check ordering for soundness
@@ -1202,6 +1202,7 @@ impl<'a> Infer<'a> {
         proof_stack: &mut Vec<(TyVar, ClassId, Vec<TyVar>)>,
         ty: TyVar,
         (class_id, class_args): (ClassId, Vec<TyVar>),
+        assoc: Vec<(SrcNode<Ident>, TyVar)>,
         obl_span: Span,
         use_span: Span,
     ) -> Option<Result<Result<InferImpliedItems, ()>, InferError>> {
@@ -1236,7 +1237,19 @@ impl<'a> Infer<'a> {
                     }
                     selected
                 } {
-                    Some(Ok(Ok(member.items.clone())))
+                    let items = member.items.clone();
+
+                    // Check constrained associated types
+                    let class = self.insert_class(obl_span, ClassInfo::Known(class_id, class_args.clone()));
+                    if let ImpliedItems::Eq(assoc_set) = &items {
+                        for (assoc, assoc_ty) in assoc {
+                            if let Some((name, ty)) = assoc_set.iter().find(|(name, _)| **name == *assoc) {
+                                self.make_flow(*ty, assoc_ty, name.span());
+                            }
+                        }
+                    }
+
+                    Some(Ok(Ok(items)))
                 } else {
                     // Find a class member declaration that covers our type
                     let mut covering_members = Vec::new();
@@ -1283,11 +1296,19 @@ impl<'a> Infer<'a> {
                             }
 
                             for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
-                                let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None);
+                                let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty));
                                 let member_args = member.args
                                     .iter()
-                                    .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None))
+                                    .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty)))
                                     .collect::<Vec<_>>();
+
+                                let member_assoc = match &member.items {
+                                    ImpliedItems::Eq(assoc) => assoc
+                                        .iter()
+                                        .map(|(name, assoc)| (name.clone(), self.instantiate(*assoc, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty))))
+                                        .collect::<Vec<_>>(),
+                                    ImpliedItems::Real(_) => Vec::new(),
+                                };
 
                                 if proof_stack.contains(&(member_ty, *member.class, class_args.clone())) {
                                     return Some(Err(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span())));
@@ -1299,7 +1320,7 @@ impl<'a> Infer<'a> {
                                     //     member_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
                                     // );
                                     proof_stack.push((member_ty, *member.class, class_args.clone()));
-                                    let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args.clone()), member.class.span(), use_span);
+                                    let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args.clone()), member_assoc, member.class.span(), use_span);
                                     // if matches!(res, Some(Ok(_))) {
                                     //     println!("Successfully proved!");
                                     // } else if matches!(res, Some(Err(_))) {
