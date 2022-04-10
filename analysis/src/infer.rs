@@ -1089,8 +1089,9 @@ impl<'a> Infer<'a> {
                 (0, 0) => {
                     // No external candidates match either, so bail
                     // TODO: Should this really generate an error? It might be that we just need more info
-                    self.set_error(item_ty);
-                    Some(Err(InferError::NoSuchItem(ty, span, item)))
+                    // self.set_error(item_ty);
+                    // Some(Err(InferError::NoSuchItem(ty, span, item)))
+                    None
                 },
                 (_, _) => {
                     self.set_error(item_ty);

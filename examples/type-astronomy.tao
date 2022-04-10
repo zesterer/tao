@@ -5,13 +5,13 @@ data Zero
 data Succ A
 
 class Number =
-    => nat : Nat
+    => as_nat : Nat
 
 member Zero of Number =
-    => nat = 0
+    => as_nat = 0
 
 for A < Number member Succ A of Number =
-    => nat = A.nat + 1
+    => as_nat = A.as_nat + 1
 
 class TAdd B =
     => Result
@@ -22,4 +22,10 @@ for B member Zero of TAdd B =
 for A < TAdd B, B member Succ A of TAdd B =
     => Result = Succ A.Result
 
-def main = <Succ (Succ Zero)>.nat
+type One = Succ Zero
+type Two = Succ One
+type Three = Succ Two
+type Four = Succ Three
+type Five = Succ Four
+
+def main = <Five.<TAdd Three>.Result>.as_nat
