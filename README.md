@@ -69,6 +69,7 @@ have a few goals for the language itself:
 - [x] Typeclasses
     - [x] Type parameters
     - [x] Associated types
+    - [x] Operators are implemented as typeclasses
 - [x] Built-in lists
     - [x] Dedicated list construction syntax (`[a, b, c]`, `[a, b .. c, d]`, etc.)
 - [x] Explicit tail call optimisation

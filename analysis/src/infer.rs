@@ -1006,9 +1006,9 @@ impl<'a> Infer<'a> {
                 (0, 0) => {
                     // No external candidates match either, so bail
                     // TODO: Should this really generate an error? It might be that we just need more info
-                    // self.set_error(item_ty);
-                    // Some(Err(InferError::NoSuchItem(ty, span, item)))
-                    None
+                    self.set_error(item_ty);
+                    Some(Err(InferError::NoSuchItem(ty, span, item)))
+                    // None
                 },
                 (_, _) => {
                     self.set_error(item_ty);
@@ -1261,7 +1261,12 @@ impl<'a> Infer<'a> {
                             //     *self.ctx.classes.get(class_id).name,
                             //     class_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
                             // );
-                            Some(Err(InferError::TypeDoesNotFulfil(self.insert_class(obl_span, ClassInfo::Known(class_id, class_args)), ty, obl_span, None, use_span)))
+                            let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
+                                Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
+                            } else {
+                                None
+                            };
+                            Some(Err(InferError::TypeDoesNotFulfil(self.insert_class(obl_span, ClassInfo::Known(class_id, class_args)), ty, obl_span, gen_span, use_span)))
                             // None
                         },
                         // Exactly one covering member: great, we know what to substitute!
@@ -1322,7 +1327,7 @@ impl<'a> Infer<'a> {
                         // TODO: Instead of bailing out, perhaps try each one in turn?
                         // TODO: Should the coherence checker prevent this?
                         _ => {
-                            println!("Incoherence! This is probably bad!");
+                            // println!("Incoherence! This is probably bad!");
                             None
                         },
                     }
@@ -1352,37 +1357,6 @@ impl<'a> Infer<'a> {
                 break
             }
         }
-
-        // Generate errors for all remaining constraints
-        for c in std::mem::take(&mut self.constraints) {
-            match c {
-                Constraint::Access(record, field_name, _field) => {
-                    self.errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
-                },
-                Constraint::Update(record, field_name, _field) => {
-                    self.errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
-                },
-                Constraint::Impl(ty, class, obl_span, assoc, use_span) => {
-                    let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
-                        Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
-                    } else {
-                        None
-                    };
-                    // Propagate errors to associated types to avoid spurious errors
-                    for (_, ty) in assoc {
-                        self.set_error(ty);
-                    }
-                    self.errors.push(InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span))
-                },
-                Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
-                    self.errors.push(InferError::AmbiguousClassItem(field, Vec::new()))
-                },
-                Constraint::ClassAssoc(_ty, _class, assoc, _assoc_ty, _span) => {
-                    self.errors.push(InferError::AmbiguousClassItem(assoc, Vec::new()))
-                },
-                Constraint::EffectSendRecv(eff, send, recv, span) => self.errors.push(InferError::CannotInferEffect(eff)),
-            }
-        }
     }
 
     pub fn into_checked(mut self) -> (Checked<'a>, Vec<Error>) {
@@ -1406,6 +1380,37 @@ impl<'a> Infer<'a> {
         for (eff, info) in effects {
             if let EffectInfo::Unknown = info {
                 errors.push(InferError::CannotInferEffect(eff));
+            }
+        }
+
+        // Generate errors for all remaining constraints
+        for c in std::mem::take(&mut self.constraints) {
+            match c {
+                Constraint::Access(record, field_name, _field) => {
+                    errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
+                },
+                Constraint::Update(record, field_name, _field) => {
+                    errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
+                },
+                Constraint::Impl(ty, class, obl_span, assoc, use_span) => {
+                    let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
+                        Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
+                    } else {
+                        None
+                    };
+                    // Propagate errors to associated types to avoid spurious errors
+                    for (_, ty) in assoc {
+                        self.set_error(ty);
+                    }
+                    errors.push(InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span));
+                },
+                Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
+                    errors.push(InferError::AmbiguousClassItem(field, Vec::new()))
+                },
+                Constraint::ClassAssoc(_ty, _class, assoc, _assoc_ty, _span) => {
+                    errors.push(InferError::AmbiguousClassItem(assoc, Vec::new()))
+                },
+                Constraint::EffectSendRecv(eff, send, recv, span) => errors.push(InferError::CannotInferEffect(eff)),
             }
         }
 
