@@ -58,5 +58,4 @@ fn f A < TMul Zero : A -> () =
 def x = f(Zero)
 
 # Demo
-def main = <One.<TMul Zero>.Result>.as_nat
-
+def main = <Six.<TMul Seven>.Result>.as_nat

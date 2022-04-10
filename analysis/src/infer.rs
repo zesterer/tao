@@ -1128,7 +1128,8 @@ impl<'a> Infer<'a> {
             .cloned()
             .collect();
 
-        let external_candidates = self.ctx.classes
+        let mut external_candidates = HashSet::new();
+        for (class_id, class) in self.ctx.classes
             .iter()
             // Filter by classes that contain the given field
             .filter(|(_, class)| if is_assoc {
@@ -1136,13 +1137,18 @@ impl<'a> Infer<'a> {
             } else {
                 class.field(*item).is_some()
             })
+        {
+            let mut covers = false;
             // Filter further by classes that have members that cover our type
-            .filter(|(class_id, _)| self.ctx.classes
-                .members_of(*class_id)
-                .find(|(_, member)| Self::covers_var(self, ty, member.member))
-                .is_some())
-            .map(|(class_id, _)| class_id)
-            .collect();
+            for (_, member) in self.ctx.classes.members_of(class_id) {
+                if Self::covers_var(self, ty, member.member)? {
+                    covers = true;
+                }
+            }
+            if covers {
+                external_candidates.insert(class_id);
+            }
+        }
 
         Some((implied_candidates, external_candidates))
     }
@@ -1194,36 +1200,37 @@ impl<'a> Infer<'a> {
 
     // Returns true if ty covers var (i.e: var is a structural subset of ty)
     // TODO: Flip arg order
-    fn covers_var(&self, var: TyVar, ty: TyId) -> bool {
+    fn covers_var(&self, var: TyVar, ty: TyId) -> Option<bool> {
         match (self.follow_info(var), self.ctx.tys.get(ty)) {
-            (_, Ty::Gen(_, _)) => true, // Blanket impls match everything
-            (TyInfo::Prim(x), Ty::Prim(y)) if x == y => true,
+            (TyInfo::Unknown(_), _) => None,
+            (_, Ty::Gen(_, _)) => Some(true), // Blanket impls match everything
+            (TyInfo::Prim(x), Ty::Prim(y)) if x == y => Some(true),
             (TyInfo::List(x), Ty::List(y)) => self.covers_var(x, y),
             (TyInfo::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .all(|(x, y)| self.covers_var(x, y)),
+                .fold(Some(true), |a, (x, y)| Some(a? && self.covers_var(x, y)?)),
             (TyInfo::Record(xs), Ty::Record(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .all(|((_, x), (_, y))| self.covers_var(x, y)),
+                .fold(Some(true), |a, ((_, x), (_, y))| Some(a? && self.covers_var(x, y)?)),
             (TyInfo::Func(x_i, x_o), Ty::Func(y_i, y_o)) => {
-                self.covers_var(x_i, y_i) && self.covers_var(x_o, y_o)
+                Some(self.covers_var(x_i, y_i)? && self.covers_var(x_o, y_o)?)
             },
             (TyInfo::Data(x, xs), Ty::Data(y, ys)) if x == y && xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .all(|(x, y)| self.covers_var(x, y)),
+                .fold(Some(true), |a, (x, y)| Some(a? && self.covers_var(x, y)?)),
             (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, (class_id_y, args_y), assoc_y))
-                if assoc_x == assoc_y => self.covers_var(x, y) && match self.follow_class(class_x) {
+                if assoc_x == assoc_y => Some(self.covers_var(x, y)? && match self.follow_class(class_x) {
                     ClassInfo::Ref(_) => unreachable!(),
-                    ClassInfo::Unknown => false, // TODO: correct?
+                    ClassInfo::Unknown => None?, // TODO: correct?
                     ClassInfo::Known(class_id_x, args_x) => class_id_x == class_id_y && args_x
                         .into_iter()
                         .zip(args_y.into_iter())
-                        .all(|(x, y)| self.covers_var(x, y)),
-                },
-            _ => false,
+                        .fold(Some(true), |a, (x, y)| Some(a? && self.covers_var(x, y)?))?,
+                }),
+            _ => Some(false),
         }
     }
 
@@ -1315,30 +1322,30 @@ impl<'a> Infer<'a> {
                     Some(Ok(Ok(member.items.clone())))
                 } else {
                     // Find a class member declaration that covers our type
-                    let covering_members = self.ctx.classes
-                        .members_of(class_id)
-                        // TODO: >1 being returned is a problem, it means incoherence occured!
-                        .filter(|(_, member)| {
-                            println!("Checking coverage of {:?} by {} via member {}", self.follow_info(ty), *self.ctx.classes.get(class_id).name, self.ctx.tys.display(&self.ctx, member.member));
-                            let r = Self::covers_var(self, ty, member.member)
-                            && class_args.iter()
-                                .zip(member.args.iter())
-                                .all(|(ty, arg)| Self::covers_var(self, *ty, *arg));
-                            println!("Result = {}", r);
-                            r
-                        })
-                        .collect::<Vec<_>>();
+                    let mut covering_members = Vec::new();
+                    for (member_id, member) in self.ctx.classes.members_of(class_id) {
+                        // println!("Checking coverage of {:?} by {} via member {}", self.follow_info(ty), *self.ctx.classes.get(class_id).name, self.ctx.tys.display(&self.ctx, member.member));
+                        let covers = Self::covers_var(self, ty, member.member)?
+                        && class_args.iter()
+                            .zip(member.args.iter())
+                            .fold(Some(true), |a, (ty, arg)| Some(a? && Self::covers_var(self, *ty, *arg)?))?;
+                        // println!("Result = {}", covers);
+                        if covers {
+                            covering_members.push((member_id, member));
+                        }
+                    }
 
                     match covering_members.len() {
                         // No covering members (perhaps we need more information?
                         0 => {
-                            println!(
-                                "Failed to solve {:?} as member of {}{}!",
-                                self.follow_info(ty),
-                                *self.ctx.classes.get(class_id).name,
-                                class_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
-                            );
-                            None
+                            // println!(
+                            //     "Failed to solve {:?} as member of {}{}!",
+                            //     self.follow_info(ty),
+                            //     *self.ctx.classes.get(class_id).name,
+                            //     class_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
+                            // );
+                            Some(Err(InferError::TypeDoesNotFulfil(self.insert_class(obl_span, ClassInfo::Known(class_id, class_args)), ty, obl_span, None, use_span)))
+                            // None
                         },
                         // Exactly one covering member: great, we know what to substitute!
                         1 => {
@@ -1358,19 +1365,36 @@ impl<'a> Infer<'a> {
                                 let member_args = member.args
                                     .iter()
                                     .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None))
-                                    .collect();
+                                    .collect::<Vec<_>>();
 
-                                if proof_stack.contains(&(ty, *member.class, class_args.clone())) {
+                                if proof_stack.contains(&(member_ty, *member.class, class_args.clone())) {
                                     return Some(Err(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span())));
                                 } else {
-                                    proof_stack.push((ty, *member.class, class_args.clone()));
-                                    let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args), member.class.span(), use_span);
+                                    // println!(
+                                    //     "Trying to prove that {:?} is a member of {}{}!",
+                                    //     self.follow_info(member_ty),
+                                    //     *self.ctx.classes.get(*member.class).name,
+                                    //     member_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
+                                    // );
+                                    proof_stack.push((member_ty, *member.class, class_args.clone()));
+                                    let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args.clone()), member.class.span(), use_span);
+                                    // if matches!(res, Some(Ok(_))) {
+                                    //     println!("Successfully proved!");
+                                    // } else if matches!(res, Some(Err(_))) {
+                                    //     println!("Failed to prove!");
+                                    // } else {
+                                    //     println!("Not enough information to prove...");
+                                    // }
                                     proof_stack.pop();
                                     match res {
                                         Some(Ok(Ok(_))) => {},
                                         Some(Ok(Err(()))) => return Some(Ok(Err(()))),
                                         Some(Err(err)) => return Some(Err(err)),
-                                        None => return None,
+                                        None => {
+                                            // Not enough information to resolve it yet? That's okay! Take it as a win
+                                            // for now, but require that this gets solved later!
+                                            self.make_impl(member_ty, (*member.class, member_args), member.class.span(), vec![], use_span);
+                                        },
                                     }
                                 }
                             }
@@ -1380,7 +1404,10 @@ impl<'a> Infer<'a> {
                         // Multiple covering members: we don't know which one to pick!
                         // TODO: Instead of bailing out, perhaps try each one in turn?
                         // TODO: Should the coherence checker prevent this?
-                        _ => None,
+                        _ => {
+                            println!("Incoherence! This is probably bad!");
+                            None
+                        },
                     }
                 }
             },
