@@ -1,8 +1,15 @@
 #! Utilities for manipulating and traversing containers.
 
 class Map B =
-    => A
+    => Item
     => Output
-    => map : (Self.A -> B) -> Self -> Self.Output
+    => map : (Self.Item -> B) -> Self -> Self.Output
 
-def map V < Map B, B : (V.A -> B) -> V -> V.Output = V.map
+def map V < Map B, B : (V.Item -> B) -> V -> V.Output = V.map
+
+
+class Fold A =
+    => Item
+    => fold : A -> (A -> Self.Item -> A) -> Self -> A
+
+def fold V < Fold A, A : A -> (A -> V.Item -> A) -> V -> A = V.fold

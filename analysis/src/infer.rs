@@ -1274,7 +1274,7 @@ impl<'a> Infer<'a> {
     /// resolution failed due to an existing error, `Err(true)` is returned.
     fn resolve_obligation(
         &mut self,
-        proof_stack: &mut Vec<(TyId, ClassId, Vec<TyId>)>,
+        proof_stack: &mut Vec<(TyVar, ClassId, Vec<TyVar>)>,
         ty: TyVar,
         (class_id, class_args): (ClassId, Vec<TyVar>),
         obl_span: Span,
@@ -1332,7 +1332,7 @@ impl<'a> Infer<'a> {
                             self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
                         }
 
-                        let mut err_so_far = None;
+                        // let mut err_so_far = None;
                         for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
                             let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None);
                             let member_args = member.args
@@ -1340,40 +1340,37 @@ impl<'a> Infer<'a> {
                                 .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), None))
                                 .collect();
 
-                            if proof_stack.contains(&(*member.member, *member.class, member.args.clone())) {
-                                err_so_far = Some(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span()));
+                            if proof_stack.contains(&(ty, *member.class, class_args.clone())) {
+                                return Some(Err(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span())));
                             } else {
-                                proof_stack.push((*member.member, *member.class, member.args.clone()));
-                                match self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args), member.class.span(), use_span) {
+                                proof_stack.push((ty, *member.class, class_args.clone()));
+                                let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args), member.class.span(), use_span);
+                                proof_stack.pop();
+                                match res {
                                     Some(Ok(Ok(_))) => {},
                                     Some(Ok(Err(()))) => return Some(Ok(Err(()))),
-                                    Some(Err(err)) => err_so_far = Some(err),
+                                    Some(Err(err)) => return Some(Err(err)),
                                     None => return None,
                                 }
-                                proof_stack.pop();
                             }
                         }
 
-                        if let Some(err) = err_so_far {
-                            //
-                        } else {
-                            return Some(Ok(Ok(ImpliedItems::Real(covering_member_id))));
-                        }
+                        Some(Ok(Ok(ImpliedItems::Real(covering_member_id))))
+                    } else {
+                        // The lack of impls *might* be because we just don't have enough information yet!
+                        None
+                        // Some(Err(InferError::TypeDoesNotFulfil(
+                        //     class_id,
+                        //     ty,
+                        //     obl_span,
+                        //     if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
+                        //         Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
+                        //     } else {
+                        //         None
+                        //     },
+                        //     use_span,
+                        // )))
                     }
-
-                    // The lack of impls *might* be because we just don't have enough information yet!
-                    None
-                    // Some(Err(InferError::TypeDoesNotFulfil(
-                    //     class_id,
-                    //     ty,
-                    //     obl_span,
-                    //     if let TyInfo::Gen(gen_idx, gen_scope, _) = info {
-                    //         Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
-                    //     } else {
-                    //         None
-                    //     },
-                    //     use_span,
-                    // )))
                 }
             },
         }
