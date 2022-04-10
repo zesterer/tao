@@ -57,5 +57,38 @@ fn f A < TMul Zero : A -> () =
 
 def x = f(Zero)
 
+# Truthiness
+
+data TTrue
+data TFalse
+
+class Truthy =
+    => as_bool : Bool
+
+member TTrue of Truthy =
+    => as_bool = True
+
+member TFalse of Truthy =
+    => as_bool = False
+
+class If A, B =
+    => Result
+
+for A, B member TTrue of If (A) B =
+    => Result = A
+
+for A, B member TFalse of If (A) B =
+    => Result = B
+
 # Demo
-def main = <Six.<TMul Seven>.Result>.as_nat
+def main =
+    <TTrue.<If
+        TTrue.<If
+            Six.<TMul Seven>.Result
+            Ten.<TMul Four>.Result
+        >.Result
+        TFalse.<If
+            Three.<TMul Two>.Result
+            Nine.<TMul Nine>.Result
+        >.Result
+    >.Result>.as_nat

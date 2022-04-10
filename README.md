@@ -53,7 +53,8 @@ have a few goals for the language itself:
     - [x] Class constraints
     - [x] Associated type equality constraints
     - [x] Arbitrary `where` clauses
-    - [x] Lazy associated item inference (`Foo.Bar.Baz.Biz` works by lazily inferring the class at each step!)
+    - [x] Lazy associated item inference (`Foo.Bar.Baz.Biz` lazily infers the class at each step!)
+    - [x] Type checker is Turing-complete (is this a feature? Probably not...)
 - [x] Pattern matching
     - [x] Destructuring and binding
     - [x] ADT patterns
