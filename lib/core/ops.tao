@@ -47,45 +47,91 @@ for A < Neg member [A] of Neg =
 # Add
 
 $[lang(add)]
-class Add A =
+class Add B =
     => Output
-    => add : Self -> A -> Self.Output
+    => add : Self -> B -> Self.Output
 
 member Nat of Add Nat =
     => Output = Nat
     => add = fn x, y => @add_nat(x, y)
 
+$[lang(sub)]
+class Sub B =
+    => Output
+    => sub : Self -> B -> Self.Output
+
 # Mul
 
-class Mul =
-    => mul: Self -> Self -> Self
+$[lang(mul)]
+class Mul B =
+    => Output
+    => mul : Self -> B -> Self.Output
 
-member Nat of Mul =
-    => mul = fn x, y => x * y
+member Nat of Mul Nat =
+    => Output = Nat
+    => mul = fn x, y => @mul_nat(x, y)
+
+# Div
+
+$[lang(div)]
+class Div B =
+    => Output
+    => div : Self -> B -> Self.Output
+
+# And
+
+$[lang(and_)]
+class And B =
+    => Output
+    => and_ : Self -> B -> Self.Output
+
+member Bool of And Bool =
+    => Output = Bool
+    => and_ = fn
+        | True, True => True
+        \ _, _ => False
+
+# Or
+
+$[lang(or_)]
+class Or B =
+    => Output
+    => or_ : Self -> B -> Self.Output
+
+member Bool of Or Bool =
+    => Output = Bool
+    => or_ = fn
+        | False, False => False
+        \ _, _ => True
 
 # Eq
 
 $[lang(eq)]
 class Eq =
     => eq : Self -> Self -> Bool
+    => ne : Self -> Self -> Bool
 
 member Nat of Eq =
     => eq = fn x, y => @eq_nat(x, y)
+    => ne = fn x, y => !Self.eq(x, y)
 
 member Char of Eq =
     => eq = fn x, y => @eq_char(x, y)
+    => ne = fn x, y => !Self.eq(x, y)
 
 for A < Eq member [A] of Eq =
     => eq = fn
         | [], [] => True
         | [x .. xs], [y .. ys] => x = y and xs = ys
         \ _, _ => False
+    => ne = fn x, y => !Self.eq(x, y)
 
 for A < Eq member [A] of Eq =
     => eq = fn
         | [], [] => True
         | [x .. xs], [y .. ys] => x:eq(y) and xs:eq(ys)
         \ _, _ => False
+    => ne = fn x, y => !Self.eq(x, y)
 
 fn eq A < Eq : A -> A -> Bool = x, y => A.eq(x, y)
 
@@ -96,32 +142,42 @@ class Ord < Eq =
 
 data Ordering =
     | Less
-    | Greater
+    | More
     \ Equal
 
 member Nat of Ord =
     => cmp = fn x, y => if x < y
         then Less
         else if x > y
-        then Greater
+        then More
         else Equal
 
+$[lang(ord_ext)]
 class OrdExt < Ord =
     => less : Self -> Self -> Bool
     => less_eq : Self -> Self -> Bool
-    => greater : Self -> Self -> Bool
-    => greater_eq : Self -> Self -> Bool
+    => more : Self -> Self -> Bool
+    => more_eq : Self -> Self -> Bool
 
 for A < Ord member A of OrdExt =
     => less = fn x, y => match A.cmp(x, y) in
         | Less => True
         \ _ => False
     => less_eq = fn x, y => match A.cmp(x, y) in
-        | Greater => False
+        | More => False
         \ _ => True
-    => greater = fn x, y => match A.cmp(x, y) in
-        | Greater => True
+    => more = fn x, y => match A.cmp(x, y) in
+        | More => True
         \ _ => False
-    => greater_eq = fn x, y => match A.cmp(x, y) in
+    => more_eq = fn x, y => match A.cmp(x, y) in
         | Less => False
         \ _ => True
+
+$[lang(join)]
+class Join =
+    => Output
+    => join : Self -> Self -> Self.Output
+
+for A member [A] of Join =
+    => Output = [A]
+    => join = fn xs, ys => @join_list(xs, ys)

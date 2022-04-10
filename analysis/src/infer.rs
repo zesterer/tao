@@ -65,8 +65,6 @@ pub enum InferError {
     Recursive(TyVar, TyVar),
     NoSuchItem(TyVar, Span, SrcNode<Ident>),
     NoSuchField(TyVar, Span, SrcNode<Ident>),
-    InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyVar),
-    InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyVar, TyVar),
     // (_, _, obligation span, span of original generic, usage span)
     TypeDoesNotFulfil(ClassVar, TyVar, Span, Option<Span>, Span),
     RecursiveAlias(AliasId, TyVar, Span),
@@ -80,7 +78,6 @@ enum Constraint {
     // (record, field_name, field)
     Access(TyVar, SrcNode<Ident>, TyVar),
     Update(TyVar, SrcNode<Ident>, TyVar),
-    Binary(SrcNode<ast::BinaryOp>, TyVar, TyVar, TyVar),
     Impl(TyVar, ClassVar, Span, Vec<(SrcNode<Ident>, TyVar)>, Span),
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
@@ -369,7 +366,6 @@ impl<'a> Infer<'a> {
             Ty::Gen(index, scope) => match f(index, scope, self.ctx) {
                 Some(ty) => TyInfo::Ref(ty),
                 None => {
-                    panic!();
                     // TODO: Can only occur if there's a mismatch in generic parameters, for which we already report an error
                     TyInfo::Error(ErrorReason::Invalid)
                 },
@@ -427,10 +423,6 @@ impl<'a> Infer<'a> {
 
     pub fn make_update(&mut self, record: TyVar, field_name: SrcNode<Ident>, field: TyVar) {
         self.constraints.push_back(Constraint::Update(record, field_name, field));
-    }
-
-    pub fn make_binary(&mut self, op: SrcNode<ast::BinaryOp>, a: TyVar, b: TyVar, output: TyVar) {
-        self.constraints.push_back(Constraint::Binary(op, a, b, output));
     }
 
     // `unchecked_assoc` allows unification of type variables with an instance's associated type
@@ -857,7 +849,6 @@ impl<'a> Infer<'a> {
     }
 
     fn resolve(&mut self, c: Constraint) -> Option<Result<(), InferError>> {
-        use ast::BinaryOp::*;
         match c {
             Constraint::Access(record, field_name, field) => self.resolve_access(record, &field_name, field, true)
                 .map(|success| if success {
@@ -873,80 +864,6 @@ impl<'a> Infer<'a> {
                     self.set_error(field);
                     Err(InferError::NoSuchField(record, self.span(record), field_name.clone()))
                 }),
-            Constraint::Binary(op, a, b, output) => match (&*op, self.follow_info(a), self.follow_info(b)) {
-                (_, _, TyInfo::Error(reason)) => Some(Ok(TyInfo::Error(reason))),
-                (_, TyInfo::Error(reason), _) => Some(Ok(TyInfo::Error(reason))),
-                (_, _, TyInfo::Unknown(_)) => None,
-                (_, TyInfo::Unknown(_), _) => None,
-                (Join, TyInfo::List(a), TyInfo::List(b)) => {
-                    let output_item = self.unknown(self.span(output));
-                    self.make_flow(a, output_item, EqInfo::new(op.span(), "The types of joined lists must be equal".to_string()));
-                    self.make_flow(b, output_item, EqInfo::new(op.span(), "The types of joined lists must be equal".to_string()));
-                    Some(Ok(TyInfo::List(output_item)))
-                },
-                (_, TyInfo::Prim(prim_a), TyInfo::Prim(prim_b)) => {
-                    use ty::Prim::*;
-                    lazy_static::lazy_static! {
-                        static ref PRIM_BINARY_IMPLS: HashMap<(ast::BinaryOp, ty::Prim, ty::Prim), ty::Prim> = [
-                            // Bool
-                            ((Eq, Bool, Bool), Bool),
-                            ((NotEq, Bool, Bool), Bool),
-                            ((And, Bool, Bool), Bool),
-                            ((Or, Bool, Bool), Bool),
-                            ((Xor, Bool, Bool), Bool),
-
-                            // Nat
-                            ((Add, Nat, Nat), Nat),
-                            ((Sub, Nat, Nat), Int),
-                            ((Mul, Nat, Nat), Nat),
-                            ((Rem, Nat, Nat), Nat),
-                            ((Div, Nat, Nat), Real),
-                            ((Eq, Nat, Nat), Bool),
-                            ((NotEq, Nat, Nat), Bool),
-                            ((Less, Nat, Nat), Bool),
-                            ((LessEq, Nat, Nat), Bool),
-                            ((More, Nat, Nat), Bool),
-                            ((MoreEq, Nat, Nat), Bool),
-
-                            // Int
-                            ((Add, Int, Int), Int),
-                            ((Sub, Int, Int), Int),
-                            ((Mul, Int, Int), Int),
-                            ((Div, Int, Int), Real),
-                            ((Eq, Int, Int), Bool),
-                            ((NotEq, Int, Int), Bool),
-                            ((Less, Int, Int), Bool),
-                            ((LessEq, Int, Int), Bool),
-                            ((More, Int, Int), Bool),
-                            ((MoreEq, Int, Int), Bool),
-
-                            // Char
-                            ((Eq, Char, Char), Bool),
-                            ((NotEq, Char, Char), Bool),
-
-                            // TODO: Others
-                        ]
-                            .into_iter()
-                            .collect();
-                    }
-
-                    if let Some(out) = PRIM_BINARY_IMPLS.get(&(*op, prim_a, prim_b)) {
-                        Some(Ok(TyInfo::Prim(*out)))
-                    } else {
-                        self.set_error(output);
-                        Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
-                    }
-                },
-                _ => {
-                    self.set_error(output);
-                    Some(Err(InferError::InvalidBinaryOp(op.clone(), a, b)))
-                },
-            }
-                .map(|info| info.map(|info| {
-                    // TODO: Use correct span
-                    let result_ty = self.insert(self.span(output), info);
-                    self.make_flow(result_ty, output, self.span(output));
-                })),
             Constraint::Impl(ty, class, obl_span, unchecked_assoc, use_span) => {
                 if let ClassInfo::Known(class_id, args) = self.follow_class(class) {
                     self.resolve_obligation(&mut Vec::new(), ty, (class_id, args.clone()), obl_span, use_span)
@@ -1445,9 +1362,6 @@ impl<'a> Infer<'a> {
                 Constraint::Update(record, field_name, _field) => {
                     self.errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
                 },
-                Constraint::Binary(op, a, b, _output) => {
-                    self.errors.push(InferError::InvalidBinaryOp(op.clone(), a, b))
-                },
                 Constraint::Impl(ty, class, obl_span, assoc, use_span) => {
                     let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
                         Some(self.ctx.tys.get_gen_scope(gen_scope).get(gen_idx).name.span())
@@ -1513,8 +1427,6 @@ impl<'a> Infer<'a> {
                 InferError::Recursive(a, part) => Error::Recursive(checked.reify(a), checked.infer.span(a), checked.infer.span(part)),
                 InferError::NoSuchItem(a, record_span, field) => Error::NoSuchItem(checked.reify(a), record_span, field),
                 InferError::NoSuchField(a, record_span, field) => Error::NoSuchField(checked.reify(a), record_span, field),
-                InferError::InvalidUnaryOp(op, a) => Error::InvalidUnaryOp(op, checked.reify(a), checked.infer.span(a)),
-                InferError::InvalidBinaryOp(op, a, b) => Error::InvalidBinaryOp(op, checked.reify(a), checked.infer.span(a), checked.reify(b), checked.infer.span(b)),
                 InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => {
                     let class = match checked.infer.follow_class(class) {
                         ClassInfo::Unknown => None,

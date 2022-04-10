@@ -50,17 +50,18 @@ fn nth A : Nat -> [A] -> Maybe A = n, xs => match @skip_list(xs, n) in
 fn sort A < OrdExt : [A] -> [A] =
     | [] => []
     \ [mid .. xs] =>
-        xs:filter(fn x => A.less(x, mid)):sort
+        xs:filter(fn x => x < mid):sort
             ++
         [mid]
             ++
-        xs:filter(fn x => A.greater_eq(x, mid)):sort
+        xs:filter(fn x => x >= mid):sort
 
 def sum A : [A] -> A where
-    A < Zero,
-    A < Add A with { Output = A },
+    A < Zero + Add A with { Output = A },
 =
     fold(A.zero, fn x, y => x + y)
 
-def product A < One + Mul : [A] -> A =
+def product A : [A] -> A where
+    A < One + Mul A with { Output = A }
+=
     fold(A.one, fn x, y => A.mul(x, y))

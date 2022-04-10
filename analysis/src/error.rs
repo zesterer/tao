@@ -13,8 +13,6 @@ pub enum Error {
     NoSuchLocal(SrcNode<Ident>),
     WrongNumberOfParams(Span, usize, Span, usize),
     NoBranches(Span),
-    InvalidUnaryOp(SrcNode<ast::UnaryOp>, TyId, Span),
-    InvalidBinaryOp(SrcNode<ast::BinaryOp>, TyId, Span, TyId, Span),
     // (obligation, type, obligation_origin, generic_definition
     TypeDoesNotFulfil(Option<(ClassId, Vec<TyId>)>, TyId, Span, Option<Span>, Span),
     CycleWhenResolving(TyId, (ClassId, Vec<TyId>), Span),
@@ -56,9 +54,9 @@ impl Error {
         let display = |id| ctx.tys.display(ctx, id);
 
         let display_class = |class_id, args: &[_]| format!(
-            "{} {}",
+            "{}{}",
             *ctx.classes.get(class_id).name,
-            args.iter().map(|arg| format!("{}", display(*arg))).collect::<Vec<_>>().join(" "),
+            args.iter().map(|arg| format!(" {}", display(*arg))).collect::<String>(),
         );
 
         let (msg, spans, notes) = match self {
@@ -148,35 +146,6 @@ impl Error {
                 format!("Pattern match must have at least one branch"),
                 vec![(span, format!("Must have a branch"), Color::Red)],
                 vec![],
-            ),
-            Error::InvalidUnaryOp(op, a, a_span) => (
-                format!("Cannot apply {} to {}", (*op).fg(Color::Red), display(a).fg(Color::Red)),
-                vec![
-                    (op.span(), format!("Operation {} applied here", (*op).fg(Color::Red)), Color::Red),
-                    (a_span, format!("{}", display(a).fg(Color::Yellow)), Color::Yellow),
-                ],
-                match ctx.tys.get(a) {
-                    Ty::Gen(_, _) => vec![format!(
-                        "Consider adding a class constraint like {}",
-                        format!("{} < {:?}", display(a), *op).fg(Color::Blue),
-                    )],
-                    _ => vec![],
-                },
-            ),
-            Error::InvalidBinaryOp(op, a, a_span, b, b_span) => (
-                format!("Invalid operation {} {} {}", display(a).fg(Color::Red), (*op).fg(Color::Red), display(b).fg(Color::Red)),
-                vec![
-                    (op.span(), format!("Operation {} applied here", (*op).fg(Color::Red)), Color::Red),
-                    (a_span, format!("{}", display(a).fg(Color::Yellow)), Color::Yellow),
-                    (b_span, format!("{}", display(b).fg(Color::Yellow)), Color::Yellow),
-                ],
-                match ctx.tys.get(a) {
-                    Ty::Gen(_, _) => vec![format!(
-                        "Consider adding a class constraint like {}",
-                        format!("{} < {:?} {}", display(a), *op, display(b)).fg(Color::Blue),
-                    )],
-                    _ => vec![],
-                },
             ),
             Error::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => {
                 let class = if let Some((class_id, args)) = class {

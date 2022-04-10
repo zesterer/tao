@@ -444,11 +444,6 @@ impl ConContext {
                 .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))
                 .collect()),
             hir::Expr::Access(record, field) => hir::Expr::Access(self.lower_expr(hir, record, ty_insts), field.clone()),
-            hir::Expr::Binary(op, a, b) => hir::Expr::Binary(
-                op.clone(),
-                self.lower_expr(hir, a, ty_insts),
-                self.lower_expr(hir, b, ty_insts),
-            ),
             hir::Expr::Match(hidden_outer, pred, arms) => hir::Expr::Match(
                 *hidden_outer,
                 self.lower_expr(hir, pred, ty_insts),

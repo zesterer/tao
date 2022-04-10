@@ -14,4 +14,4 @@ class One =
 member Nat of One =
     => one = 1
 
-class Num < Zero + One + Add Self + Mul
+class Num < Zero + One + Add Self + Mul Self

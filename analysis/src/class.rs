@@ -53,8 +53,15 @@ pub struct MemberId(pub usize);
 pub struct Lang {
     pub not: Option<ClassId>,
     pub neg: Option<ClassId>,
-    pub eq: Option<ClassId>,
     pub add: Option<ClassId>,
+    pub sub: Option<ClassId>,
+    pub mul: Option<ClassId>,
+    pub div: Option<ClassId>,
+    pub eq: Option<ClassId>,
+    pub ord_ext: Option<ClassId>,
+    pub and: Option<ClassId>,
+    pub or: Option<ClassId>,
+    pub join: Option<ClassId>,
 }
 
 #[derive(Default)]
@@ -98,18 +105,17 @@ impl Classes {
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
             {
-                if lang.iter().find(|a| &**a.name == "not").is_some() {
-                    self.lang.not = Some(id);
-                }
-                if lang.iter().find(|a| &**a.name == "neg").is_some() {
-                    self.lang.neg = Some(id);
-                }
-                if lang.iter().find(|a| &**a.name == "eq").is_some() {
-                    self.lang.eq = Some(id);
-                }
-                if lang.iter().find(|a| &**a.name == "add").is_some() {
-                    self.lang.add = Some(id);
-                }
+                if lang.iter().find(|a| &**a.name == "not").is_some() { self.lang.not = Some(id); }
+                if lang.iter().find(|a| &**a.name == "neg").is_some() { self.lang.neg = Some(id); }
+                if lang.iter().find(|a| &**a.name == "add").is_some() { self.lang.add = Some(id); }
+                if lang.iter().find(|a| &**a.name == "sub").is_some() { self.lang.sub = Some(id); }
+                if lang.iter().find(|a| &**a.name == "mul").is_some() { self.lang.mul = Some(id); }
+                if lang.iter().find(|a| &**a.name == "div").is_some() { self.lang.div = Some(id); }
+                if lang.iter().find(|a| &**a.name == "eq").is_some() { self.lang.eq = Some(id); }
+                if lang.iter().find(|a| &**a.name == "ord_ext").is_some() { self.lang.ord_ext = Some(id); }
+                if lang.iter().find(|a| &**a.name == "and_").is_some() { self.lang.and = Some(id); }
+                if lang.iter().find(|a| &**a.name == "or_").is_some() { self.lang.or = Some(id); }
+                if lang.iter().find(|a| &**a.name == "join").is_some() { self.lang.join = Some(id); }
             }
 
             self.classes.push(class);
@@ -122,8 +128,15 @@ impl Classes {
 
         if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
         if self.lang.neg.is_none() { errors.push(Error::MissingLangItem("neg")); }
-        if self.lang.eq.is_none() { errors.push(Error::MissingLangItem("eq")); }
         if self.lang.add.is_none() { errors.push(Error::MissingLangItem("add")); }
+        if self.lang.sub.is_none() { errors.push(Error::MissingLangItem("sub")); }
+        if self.lang.mul.is_none() { errors.push(Error::MissingLangItem("mul")); }
+        if self.lang.div.is_none() { errors.push(Error::MissingLangItem("div")); }
+        if self.lang.eq.is_none() { errors.push(Error::MissingLangItem("eq")); }
+        if self.lang.ord_ext.is_none() { errors.push(Error::MissingLangItem("ord_ext")); }
+        if self.lang.and.is_none() { errors.push(Error::MissingLangItem("and_")); }
+        if self.lang.or.is_none() { errors.push(Error::MissingLangItem("or_")); }
+        if self.lang.join.is_none() { errors.push(Error::MissingLangItem("join")); }
 
         errors
     }

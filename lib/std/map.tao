@@ -23,7 +23,7 @@ fn insert K < Ord, V : K -> V -> Map K V -> Map K V =
     | k, v, MEmpty => MLeaf (k, v)
     | k, v, MLeaf (k_old, v_old) => match K.cmp(k, k_old) in
         | Less => MBranch (k_old, MLeaf (k, v), MLeaf (k_old, v_old))
-        | Greater => MBranch (k, MLeaf (k_old, v_old), MLeaf (k, v))
+        | More => MBranch (k, MLeaf (k_old, v_old), MLeaf (k, v))
         \ Equal => MLeaf (k, v)
     \ k, v, MBranch (k_ref, a, b) => if K.less(k, k_ref)
         then MBranch (k_ref, a:insert(k, v), b)

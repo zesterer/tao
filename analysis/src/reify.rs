@@ -76,7 +76,6 @@ impl Reify for hir::Expr<InferMeta> {
                 .map(|(name, field)| (name, field.reify(infer)))
                 .collect()),
             hir::Expr::Access(record, field_name) => hir::Expr::Access(record.reify(infer), field_name),
-            hir::Expr::Binary(op, a, b) => hir::Expr::Binary(op, a.reify(infer), b.reify(infer)),
             hir::Expr::Match(hidden_outer, pred, arms) => {
                 let pred = pred.reify(infer);
                 let arms = arms

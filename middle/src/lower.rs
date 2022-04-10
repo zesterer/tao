@@ -165,37 +165,6 @@ impl Context {
                 .expect("No such local")
                 .1),
             hir::Expr::Global(proc) => mir::Expr::Global(self.lower_proc(hir, con, *proc), Default::default()),
-            hir::Expr::Binary(op, x, y) => {
-                use ast::BinaryOp::*;
-                use ty::Prim::*;
-                use ConTy::{Prim, List};
-                let intrinsic = match (**op, con.get_ty(*x.meta()), con.get_ty(*y.meta())) {
-                    (Add, Prim(Nat), Prim(Nat)) => mir::Intrinsic::AddNat,
-                    (Add, Prim(Int), Prim(Int)) => mir::Intrinsic::AddInt,
-                    (Sub, Prim(Nat), Prim(Nat)) => mir::Intrinsic::SubNat,
-                    (Sub, Prim(Int), Prim(Int)) => mir::Intrinsic::SubInt,
-                    (Mul, Prim(Nat), Prim(Nat)) => mir::Intrinsic::MulNat,
-                    (Mul, Prim(Int), Prim(Int)) => mir::Intrinsic::MulInt,
-                    (Eq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::EqNat,
-                    (Eq, Prim(Int), Prim(Int)) => mir::Intrinsic::EqInt,
-                    (NotEq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::NotEqNat,
-                    (NotEq, Prim(Int), Prim(Int)) => mir::Intrinsic::NotEqInt,
-                    (Less, Prim(Nat), Prim(Nat)) => mir::Intrinsic::LessNat,
-                    (Less, Prim(Int), Prim(Int)) => mir::Intrinsic::LessInt,
-                    (More, Prim(Nat), Prim(Nat)) => mir::Intrinsic::MoreNat,
-                    (More, Prim(Int), Prim(Int)) => mir::Intrinsic::MoreInt,
-                    (LessEq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::LessEqNat,
-                    (LessEq, Prim(Int), Prim(Int)) => mir::Intrinsic::LessEqInt,
-                    (MoreEq, Prim(Nat), Prim(Nat)) => mir::Intrinsic::MoreEqNat,
-                    (MoreEq, Prim(Int), Prim(Int)) => mir::Intrinsic::MoreEqInt,
-                    (Eq, Prim(Char), Prim(Char)) => mir::Intrinsic::EqChar,
-                    (NotEq, Prim(Char), Prim(Char)) => mir::Intrinsic::NotEqChar,
-                    (Join, List(x), List(y)) => mir::Intrinsic::Join(self.lower_ty(hir, con, *x)), // Assume x = y
-                    (And, Prim(Bool), Prim(Bool)) => mir::Intrinsic::AndBool,
-                    op => panic!("Invalid binary op in HIR: {:?}", op),
-                };
-                mir::Expr::Intrinsic(intrinsic, vec![self.lower_expr(hir, con, x, stack), self.lower_expr(hir, con, y, stack)])
-            },
             hir::Expr::Match(_, pred, arms) => {
                 let arms = arms
                     .iter()
@@ -317,6 +286,10 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
+                    hir::Intrinsic::MulNat => mir::Expr::Intrinsic(mir::Intrinsic::MulNat, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                        self.lower_expr(hir, con, &args[1], stack),
+                    ]),
                     hir::Intrinsic::Go => {
                         let next_local = Local::new();
                         let func = self.lower_expr(hir, con, &args[0], stack);
@@ -346,6 +319,14 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
+                    hir::Intrinsic::JoinList => {
+                        let Repr::List(item_repr) = self.lower_ty(hir, con, *args[0].meta())
+                            else { panic!("Joining non-lists!") };
+                        mir::Expr::Intrinsic(mir::Intrinsic::Join(*item_repr), vec![
+                            self.lower_expr(hir, con, &args[0], stack),
+                            self.lower_expr(hir, con, &args[1], stack),
+                        ])
+                    },
                     hir::Intrinsic::Propagate => mir::Expr::Intrinsic(mir::Intrinsic::Propagate, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                     ]),

@@ -106,7 +106,7 @@ impl<M: Meta> Binding<M> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Intrinsic {
     TypeName,
     NegNat,
@@ -115,12 +115,14 @@ pub enum Intrinsic {
     EqChar,
     EqNat,
     AddNat,
+    MulNat,
     Go,
     Print,
     Input,
     LenList,
     SkipList,
     TrimList,
+    JoinList,
     Propagate,
 }
 
@@ -135,7 +137,6 @@ pub enum Expr<M: Meta> {
     List(Vec<Node<Self, M>>, Vec<Node<Self, M>>),
     Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
     Access(Node<Self, M>, SrcNode<Ident>),
-    Binary(SrcNode<ast::BinaryOp>, Node<Self, M>, Node<Self, M>),
     // hidden_outer
     Match(bool, Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
     Func(Node<Ident, M>, Node<Self, M>),
@@ -194,10 +195,6 @@ impl Expr<ConMeta> {
             Expr::Apply(f, arg) => {
                 f.required_locals_inner(stack, required);
                 arg.required_locals_inner(stack, required);
-            },
-            Expr::Binary(_, x, y) => {
-                x.required_locals_inner(stack, required);
-                y.required_locals_inner(stack, required);
             },
             Expr::Tuple(fields) => fields
                 .iter()
