@@ -33,6 +33,7 @@ for A member A of Num where
 class VectorData A =
     => Data
     => splat : A -> Self.Data
+    => map : Self.Data -> (A -> A) -> Self.Data
     => map2 : Self.Data -> Self.Data -> (A -> A -> A) -> Self.Data
 
 data Vector A, N < VectorData A = N.Data
@@ -42,25 +43,34 @@ for A, N member Vector A N of Add (Vector A N) where
     A < Add A with { Output = A },
 =
     => Output = Self
-    => add = fn Vector x, Vector y => Vector N.map2(x, y, fn x, y => x + y)
+    => add = fn Vector xs, Vector ys => Vector N.map2(xs, ys, fn x, y => x + y)
+
+for A, N member Vector A N of Add A where
+    N < VectorData A,
+    A < Add A with { Output = A },
+=
+    => Output = Self
+    => add = fn Vector xs, y => Vector N.map(xs, fn x => x + y)
 
 for A, N member Vector A N of Mul (Vector A N) where
     N < VectorData A,
     A < Mul A with { Output = A },
 =
     => Output = Self
-    => mul = fn Vector x, Vector y => Vector N.map2(x, y, fn x, y => x * y)
+    => mul = fn Vector xs, Vector ys => Vector N.map2(xs, ys, fn x, y => x * y)
 
 data N2
 for A member N2 of VectorData A =
     => Data = { x : A, y : A }
     => splat = fn e => { x : e, y : e }
+    => map = fn xs, f => { x : f(xs.x), y : f(xs.y) }
     => map2 = fn xs, ys, f => { x : f(xs.x, ys.x), y : f(xs.y, ys.y) }
 
 data N3
 for A member N3 of VectorData A =
     => Data = { x : A, y : A, z : A }
     => splat = fn e => { x : e, y : e, z : e }
+    => map = fn xs, f => { x : f(xs.x), y : f(xs.y), z : f(xs.z) }
     => map2 = fn xs, ys, f => { x : f(xs.x, ys.x), y : f(xs.y, ys.y), z : f(xs.z, ys.z) }
 
 fn splat A, N < VectorData A : A -> Vector A N =

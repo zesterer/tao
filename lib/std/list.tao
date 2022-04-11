@@ -47,7 +47,7 @@ fn nth A : Nat -> [A] -> Maybe A = n, xs => match @skip_list(xs, n) in
     | [x ..] => Just x
     \ [] => None
 
-fn sort A < OrdExt : [A] -> [A] =
+fn sort A < Ord : [A] -> [A] =
     | [] => []
     \ [mid .. xs] =>
         xs:filter(fn x => x < mid):sort

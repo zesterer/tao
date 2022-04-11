@@ -98,7 +98,6 @@ pub fn enforce_generic_obligations(
         infer.ctx_mut().emit(err);
         Err(())
     } else {
-        // Enforce obligations from data type
         for member in gen_scope.implied_members.as_ref().expect("Implied members must be available").clone() {
             let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty);
             let args = member.args
@@ -433,12 +432,7 @@ impl ToHir for ast::Binding {
                     let data_gen_scope = data.gen_scope;
                     let get_gen = |index, _, ctx: &Context| generic_tys.get(index).copied();
 
-                    // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-                    let inner_ty_actual = infer.instantiate(inner_ty, inner.span(), &get_gen, None);
-                    let inner_ty = infer.unknown(self.span());
-                    infer.make_flow(inner_ty_actual, inner_ty, EqInfo::from(self.span()));
-
-                    inner_ty
+                    infer.instantiate(inner_ty, inner.span(), &get_gen, None)
                 };
 
                 let inner = inner.to_hir(infer, scope);
@@ -477,15 +471,14 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
         .collect::<Vec<_>>();
 
     // Enforce class obligations
-    let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
-    for member in gen_scope.implied_members.as_ref().unwrap().clone() {
-        let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| generic_tys.get(idx).map(|(_, ty)| *ty), None);
-        let args = member.args
-            .iter()
-            .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| generic_tys.get(idx).map(|(_, ty)| *ty), None))
-            .collect();
-        infer.make_impl(member_ty, (*member.class, args), member.class.span(), Vec::new(), inst_span);
-    }
+    enforce_generic_obligations(
+        infer,
+        infer.ctx().defs.get(def_id).gen_scope,
+        &generic_tys.iter().map(|(_, ty)| *ty).collect::<Vec<_>>(),
+        span,
+        infer.ctx().defs.get(def_id).name.span(),
+        None,
+    ).expect("not possible");
 
     // Recreate type in context
     let def = infer.ctx().defs.get(def_id);

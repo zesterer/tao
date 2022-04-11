@@ -56,6 +56,38 @@ impl EqInfo {
     }
 }
 
+trait FlowInfer<'a>: AsRef<Infer<'a>> {
+    fn set_info(&mut self, x: TyVar, info: TyInfo);
+    fn set_effect_info(&mut self, x: EffectVar, info: EffectInfo);
+    fn set_class_info(&mut self, x: ClassVar, info: ClassInfo);
+    fn set_error(&mut self, x: TyVar);
+    fn emit_error(&mut self, err: InferError);
+}
+
+struct CheckFlow<'a, 'b>(&'b Infer<'a>, bool);
+impl<'a, 'b> AsRef<Infer<'a>> for CheckFlow<'a, 'b> { fn as_ref(&self) -> &Infer<'a> { self.0 } }
+impl<'a, 'b> FlowInfer<'a> for CheckFlow<'a, 'b> {
+    fn set_info(&mut self, x: TyVar, info: TyInfo) {}
+    fn set_effect_info(&mut self, x: EffectVar, info: EffectInfo) {}
+    fn set_class_info(&mut self, x: ClassVar, info: ClassInfo) {}
+    fn set_error(&mut self, x: TyVar) { self.1 = true; }
+    fn emit_error(&mut self, err: InferError) { self.1 = true; }
+}
+
+struct MakeFlow<'a, 'b>(&'b mut Infer<'a>);
+impl<'a, 'b> AsRef<Infer<'a>> for MakeFlow<'a, 'b> { fn as_ref(&self) -> &Infer<'a> { self.0 } }
+impl<'a, 'b> FlowInfer<'a> for MakeFlow<'a, 'b> {
+    fn set_info(&mut self, x: TyVar, info: TyInfo) { self.0.set_info(x, info) }
+    fn set_effect_info(&mut self, x: EffectVar, info: EffectInfo) { self.0.effect_vars[x.0].1 = info; }
+    fn set_class_info(&mut self, x: ClassVar, info: ClassInfo) { self.0.class_vars[x.0].1 = info; }
+    fn set_error(&mut self, x: TyVar) {
+        self.0.set_error(x);
+    }
+    fn emit_error(&mut self, err: InferError) {
+        self.0.errors.push(err);
+    }
+}
+
 #[derive(Debug)]
 pub enum InferError {
     CannotCoerce(TyVar, TyVar, Option<(TyVar, TyVar)>, EqInfo),
@@ -192,6 +224,7 @@ impl<'a> Infer<'a> {
             .expect("Implied members must be known!")
             .clone()
         {
+            // TODO: Consider class args too when deciding to recurse!
             if !searched.contains(&*new_member.class) {
                 let member_ty = self.instantiate(*new_member.member, new_member.member.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member));
                 let member_args = new_member.args
@@ -366,6 +399,7 @@ impl<'a> Infer<'a> {
             Ty::Gen(index, scope) => match f(index, scope, self.ctx) {
                 Some(ty) => TyInfo::Ref(ty),
                 None => {
+                    println!("Generic length mismatch!");
                     // TODO: Can only occur if there's a mismatch in generic parameters, for which we already report an error
                     TyInfo::Error(ErrorReason::Invalid)
                 },
@@ -579,7 +613,7 @@ impl<'a> Infer<'a> {
 
     // Flow the type `x` into the type `y`
     pub fn make_flow(&mut self, x: TyVar, y: TyVar, info: impl Into<EqInfo>) {
-        if let Err((a, b)) = self.make_flow_inner(x, y) {
+        if let Err((a, b)) = Self::flow_inner(&mut MakeFlow(self), x, y) {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
@@ -588,36 +622,43 @@ impl<'a> Infer<'a> {
         }
     }
 
-    fn make_flow_inner(&mut self, x: TyVar, y: TyVar) -> Result<(), (TyVar, TyVar)> {
-        fn make_flow_many(
-            infer: &mut Infer,
+    // Check to see whether the type `x` may flow into the type `y`
+    pub fn check_flow(&self, x: TyVar, y: TyVar) -> bool {
+        let mut check = CheckFlow(self, false);
+        let res = Self::flow_inner(&mut check, x, y);
+        res.is_ok() && !check.1
+    }
+
+    fn flow_inner<I: FlowInfer<'a>>(infer: &mut I, x: TyVar, y: TyVar) -> Result<(), (TyVar, TyVar)> {
+        fn flow_many<'a, I: FlowInfer<'a>>(
+            infer: &mut I,
             xs: impl IntoIterator<Item = TyVar>,
             ys: impl IntoIterator<Item = TyVar>,
         ) -> Result<(), (TyVar, TyVar)> {
             xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(None, |err, (x, y)| err.or(infer.make_flow_inner(x, y).err()))
+                .fold(None, |err, (x, y)| err.or(Infer::flow_inner(infer, x, y).err()))
                 .map(Err).unwrap_or(Ok(()))
         }
 
         // TODO: Allow errors that mention effects instead of types
-        fn make_flow_effect(
-            infer: &mut Infer,
+        fn flow_effect<'a, I: FlowInfer<'a>>(
+            infer: &mut I,
             (x, x_ty): (EffectVar, TyVar),
             (y, y_ty): (EffectVar, TyVar),
         ) -> Result<(), (TyVar, TyVar)> {
-            match (infer.follow_effect(x), infer.follow_effect(y)) {
+            match (infer.as_ref().follow_effect(x), infer.as_ref().follow_effect(y)) {
                 // TODO: These shouldn't be reachable?
-                (EffectInfo::Ref(x), _) => make_flow_effect(infer, (x, x_ty), (y, y_ty)),
-                (_, EffectInfo::Ref(y)) => make_flow_effect(infer, (x, x_ty), (y, y_ty)),
+                (EffectInfo::Ref(x), _) => flow_effect(infer, (x, x_ty), (y, y_ty)),
+                (_, EffectInfo::Ref(y)) => flow_effect(infer, (x, x_ty), (y, y_ty)),
 
-                (EffectInfo::Unknown, _) => Ok(infer.effect_vars[x.0].1 = EffectInfo::Ref(y)),
-                (_, EffectInfo::Unknown) => Ok(infer.effect_vars[y.0].1 = EffectInfo::Ref(x)),
+                (EffectInfo::Unknown, _) => Ok(infer.set_effect_info(x, EffectInfo::Ref(y))),
+                (_, EffectInfo::Unknown) => Ok(infer.set_effect_info(y, EffectInfo::Ref(x))),
                 (EffectInfo::Known(x, xs), EffectInfo::Known(y, ys)) if x == y => {
                     // TODO: Unnecessarily conservative, variance of effect generics should be determined
-                    let co_error = make_flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
-                    let contra_error = make_flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
+                    let co_error = flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
+                    let contra_error = flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
                     co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
                 },
                 (_, _) => Err((x_ty, y_ty)),
@@ -625,22 +666,22 @@ impl<'a> Infer<'a> {
         }
 
         // TODO: Allow errors that mention classes instead of types
-        fn make_flow_class(
-            infer: &mut Infer,
+        fn flow_class<'a, I: FlowInfer<'a>>(
+            infer: &mut I,
             (x, x_ty): (ClassVar, TyVar),
             (y, y_ty): (ClassVar, TyVar),
         ) -> Result<(), (TyVar, TyVar)> {
-            match (infer.follow_class(x), infer.follow_class(y)) {
+            match (infer.as_ref().follow_class(x), infer.as_ref().follow_class(y)) {
                 // TODO: These shouldn't be reachable?
-                (ClassInfo::Ref(x), _) => make_flow_class(infer, (x, x_ty), (y, y_ty)),
-                (_, ClassInfo::Ref(y)) => make_flow_class(infer, (x, x_ty), (y, y_ty)),
+                (ClassInfo::Ref(x), _) => flow_class(infer, (x, x_ty), (y, y_ty)),
+                (_, ClassInfo::Ref(y)) => flow_class(infer, (x, x_ty), (y, y_ty)),
 
-                (ClassInfo::Unknown, _) => Ok(infer.class_vars[x.0].1 = ClassInfo::Ref(y)),
-                (_, ClassInfo::Unknown) => Ok(infer.class_vars[y.0].1 = ClassInfo::Ref(x)),
+                (ClassInfo::Unknown, _) => Ok(infer.set_class_info(x, ClassInfo::Ref(y))),
+                (_, ClassInfo::Unknown) => Ok(infer.set_class_info(y, ClassInfo::Ref(x))),
                 (ClassInfo::Known(class_id_x, xs), ClassInfo::Known(class_id_y, ys)) if class_id_x == class_id_y => {
                     // Class generics are always invariant
-                    let co_error = make_flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
-                    let contra_error = make_flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
+                    let co_error = flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
+                    let contra_error = flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
                     co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
                 },
                 (_, _) => Err((x_ty, y_ty)),
@@ -648,55 +689,55 @@ impl<'a> Infer<'a> {
         }
 
         if x == y { return Ok(()) } // If the vars are equal, we have no need to check flow
-        match (self.info(x), self.info(y)) {
+        match (infer.as_ref().info(x), infer.as_ref().info(y)) {
             // Follow references
-            (TyInfo::Ref(x), _) => self.make_flow_inner(x, y),
-            (_, TyInfo::Ref(y)) => self.make_flow_inner(x, y),
+            (TyInfo::Ref(x), _) => Self::flow_inner(infer, x, y),
+            (_, TyInfo::Ref(y)) => Self::flow_inner(infer, x, y),
 
             // Unify unknown or erronoeus types
-            (TyInfo::Unknown(_), y_info) => if self.occurs_in(x, y) {
-                self.errors.push(InferError::Recursive(y, self.follow(x)));
-                self.set_info(x, TyInfo::Error(ErrorReason::Recursive));
-                Ok(self.set_error(x)) // TODO: Not actually ok
+            (TyInfo::Unknown(_), y_info) => if infer.as_ref().occurs_in(x, y) {
+                infer.emit_error(InferError::Recursive(y, infer.as_ref().follow(x)));
+                infer.set_info(x, TyInfo::Error(ErrorReason::Recursive));
+                Ok(infer.set_error(x)) // TODO: Not actually ok
             } else {
-                Ok(self.set_info(x, TyInfo::Ref(y)))
+                Ok(infer.set_info(x, TyInfo::Ref(y)))
             },
-            (x_info, TyInfo::Unknown(_)) => if self.occurs_in(y, x) {
-                self.errors.push(InferError::Recursive(x, self.follow(y)));
-                self.set_info(y, TyInfo::Error(ErrorReason::Recursive));
-                Ok(self.set_error(y)) // TODO: Not actually ok
+            (x_info, TyInfo::Unknown(_)) => if infer.as_ref().occurs_in(y, x) {
+                infer.emit_error(InferError::Recursive(x, infer.as_ref().follow(y)));
+                infer.set_info(y, TyInfo::Error(ErrorReason::Recursive));
+                Ok(infer.set_error(y)) // TODO: Not actually ok
             } else {
-                Ok(self.set_info(y, TyInfo::Ref(x)))
+                Ok(infer.set_info(y, TyInfo::Ref(x)))
             },
 
             // Unify errors
             (_, TyInfo::Error(_)) => {
-                self.set_error(x);
-                Ok(self.set_info(x, TyInfo::Ref(y)))
+                infer.set_error(x);
+                Ok(infer.set_info(x, TyInfo::Ref(y)))
             },
             (TyInfo::Error(_), _) => {
-                self.set_error(y);
-                Ok(self.set_info(y, TyInfo::Ref(x)))
+                infer.set_error(y);
+                Ok(infer.set_info(y, TyInfo::Ref(x)))
             },
 
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
-            (TyInfo::List(x), TyInfo::List(y)) => self.make_flow_inner(x, y),
-            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => make_flow_many(self, xs, ys),
+            (TyInfo::List(x), TyInfo::List(y)) => Self::flow_inner(infer, x, y),
+            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => flow_many(infer, xs, ys),
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
                 .keys()
                 .all(|x| ys.contains_key(x)) => xs
                     .into_iter()
-                    .try_for_each(|(x, x_ty)| self.make_flow_inner(x_ty, ys[&x])),
+                    .try_for_each(|(x, x_ty)| Self::flow_inner(infer, x_ty, ys[&x])),
             (TyInfo::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                let i_err = self.make_flow_inner(y_i, x_i).err().map(|(a, b)| (b, a)); // Input is contravariant
-                let o_err = self.make_flow_inner(x_o, y_o).err();
+                let i_err = Self::flow_inner(infer, y_i, x_i).err().map(|(a, b)| (b, a)); // Input is contravariant
+                let o_err = Self::flow_inner(infer, x_o, y_o).err();
                 i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
                 xs.len() == ys.len() /* TODO: Assert this! */ => {
                 // TODO: Unnecessarily conservative, variance of data type generics should be determined
-                let co_error = make_flow_many(self, xs.iter().copied(), ys.iter().copied()).err();
-                let contra_error = make_flow_many(self, ys, xs).err().map(|(a, b)| (b, a));
+                let co_error = flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
+                let contra_error = flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
                 co_error.or(contra_error).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
@@ -704,10 +745,10 @@ impl<'a> Infer<'a> {
             (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
                 if assoc_x == assoc_y => {
                     // associated types are invariant
-                    let co_error = self.make_flow_inner(x, y).err();
-                    let contra_error = self.make_flow_inner(y, x).err().map(|(a, b)| (b, a));
+                    let co_error = Self::flow_inner(infer, x, y).err();
+                    let contra_error = Self::flow_inner(infer, y, x).err().map(|(a, b)| (b, a));
 
-                    let class_err = make_flow_class(self, (class_x, x), (class_y, y)).err();
+                    let class_err = flow_class(infer, (class_x, x), (class_y, y)).err();
 
                     co_error
                         .or(contra_error)
@@ -716,9 +757,9 @@ impl<'a> Infer<'a> {
                         .unwrap_or(Ok(()))
                 },
             (TyInfo::Effect(x_eff, x_out, x_opaque), TyInfo::Effect(y_eff, y_out, y_opaque)) => {
-                let eff_err = make_flow_effect(self, (x_eff, x), (y_eff, y)).err();
-                let o_err = self.make_flow_inner(x_out, y_out).err();
-                let opaque_err = self.make_flow_inner(x_opaque, y_opaque).err().map(|_| (x, y));
+                let eff_err = flow_effect(infer, (x_eff, x), (y_eff, y)).err();
+                let o_err = Self::flow_inner(infer, x_out, y_out).err();
+                let opaque_err = Self::flow_inner(infer, x_opaque, y_opaque).err().map(|_| (x, y));
                 o_err.or(eff_err).or(opaque_err).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Opaque(x_id), TyInfo::Opaque(y_id)) if x_id == y_id => Ok(()),
@@ -978,6 +1019,7 @@ impl<'a> Infer<'a> {
 
         // TODO: Check soundness of flow relationship
         self.make_flow(inst_field_ty, field_ty, field.span());
+
         Some(Ok(()))
     }
 
@@ -1058,7 +1100,9 @@ impl<'a> Infer<'a> {
             let mut covers = false;
             // Filter further by classes that have members that cover our type
             for (_, member) in self.ctx.classes.members_of(class_id) {
-                if Self::covers_var(self, ty, member.member)? {
+                // TODO: Also check member args?
+                // TODO: Deal with maybe covering?
+                if self.covers_var(ty, member.member, &mut HashMap::default()) == Ok(true) {
                     covers = true;
                 }
             }
@@ -1115,39 +1159,56 @@ impl<'a> Infer<'a> {
         }
     }
 
-    // Returns true if ty covers var (i.e: var is a structural subset of ty)
+    // Returns:
+    // Ok(true) => ty definitely covers var (i.e: var is a structural subset of ty)
+    // Ok(false) => ty may cover var
+    // Err(()) => ty definitely does not cover var
+    // This method also checks that generic types in `ty` all uniquely map to a corresponding type within `var`.
+    // This prevents `(A, A)` from covering `(Nat, Bool)`, since obviously the generic type `A` does not *uniquely*
+    // correspond to both `Nat` and `Bool` at the same time.
     // TODO: Flip arg order
-    fn covers_var(&self, var: TyVar, ty: TyId) -> Option<bool> {
+    fn covers_var(&self, var: TyVar, ty: TyId, gens: &mut HashMap<usize, TyVar>) -> Result<bool, ()> {
         match (self.follow_info(var), self.ctx.tys.get(ty)) {
-            (TyInfo::Unknown(_), _) => None,
-            (_, Ty::Gen(_, _)) => Some(true), // Blanket impls match everything
-            (TyInfo::Prim(x), Ty::Prim(y)) if x == y => Some(true),
-            (TyInfo::List(x), Ty::List(y)) => self.covers_var(x, y),
+            // Blanket impls match everything
+            // TODO: Match instantiations of each generic type with one-another
+            (_, Ty::Gen(idx, _)) => {
+                let other_gen_var = *gens.entry(idx).or_insert(var);
+                // Invariance check of generic types with one-another
+                if self.check_flow(var, other_gen_var) && self.check_flow(other_gen_var, var) {
+                    Ok(true)
+                } else {
+                    Err(())
+                }
+            },
+            (TyInfo::Prim(x), Ty::Prim(y)) if x == y => Ok(true),
+            (TyInfo::List(x), Ty::List(y)) => self.covers_var(x, y, gens),
             (TyInfo::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(Some(true), |a, (x, y)| Some(a? && self.covers_var(x, y)?)),
+                .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, gens)?)),
             (TyInfo::Record(xs), Ty::Record(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(Some(true), |a, ((_, x), (_, y))| Some(a? && self.covers_var(x, y)?)),
+                .try_fold(true, |a, ((_, x), (_, y))| Ok(a && self.covers_var(x, y, gens)?)),
             (TyInfo::Func(x_i, x_o), Ty::Func(y_i, y_o)) => {
-                Some(self.covers_var(x_i, y_i)? && self.covers_var(x_o, y_o)?)
+                Ok(self.covers_var(x_i, y_i, gens)? && self.covers_var(x_o, y_o, gens)?)
             },
             (TyInfo::Data(x, xs), Ty::Data(y, ys)) if x == y && xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .fold(Some(true), |a, (x, y)| Some(a? && self.covers_var(x, y)?)),
+                .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, gens)?)),
             (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, (class_id_y, args_y), assoc_y))
-                if assoc_x == assoc_y => Some(self.covers_var(x, y)? && match self.follow_class(class_x) {
+                if assoc_x == assoc_y => Ok(self.covers_var(x, y, gens)? && match self.follow_class(class_x) {
                     ClassInfo::Ref(_) => unreachable!(),
-                    ClassInfo::Unknown => None?, // TODO: correct?
+                    ClassInfo::Unknown => false, // TODO: correct?
                     ClassInfo::Known(class_id_x, args_x) => class_id_x == class_id_y && args_x
                         .into_iter()
                         .zip(args_y.into_iter())
-                        .fold(Some(true), |a, (x, y)| Some(a? && self.covers_var(x, y)?))?,
+                        .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, gens)?))?,
                 }),
-            _ => Some(false),
+            // Unknown types *could* match, maybe
+            (TyInfo::Unknown(_), _) => Ok(false),
+            _ => Err(()),
         }
     }
 
@@ -1253,21 +1314,27 @@ impl<'a> Infer<'a> {
                 } else {
                     // Find a class member declaration that covers our type
                     let mut covering_members = Vec::new();
+                    let mut maybe_covering_members = Vec::new();
                     for (member_id, member) in self.ctx.classes.members_of(class_id) {
                         // println!("Checking coverage of {:?} by {} via member {}", self.follow_info(ty), *self.ctx.classes.get(class_id).name, self.ctx.tys.display(&self.ctx, member.member));
-                        let covers = Self::covers_var(self, ty, member.member)?
-                        && class_args.iter()
-                            .zip(member.args.iter())
-                            .fold(Some(true), |a, (ty, arg)| Some(a? && Self::covers_var(self, *ty, *arg)?))?;
-                        // println!("Result = {}", covers);
-                        if covers {
-                            covering_members.push((member_id, member));
-                        }
+                        let mut gens = HashMap::new();
+                        let (covers, maybe_covers) = match Self::covers_var(self, ty, member.member, &mut gens)
+                            .and_then(|covers| Ok(covers && class_args.iter()
+                                .zip(member.args.iter())
+                                .try_fold(true, |a, (ty, arg)| Ok(a && Self::covers_var(self, *ty, *arg, &mut gens)?))?))
+                        {
+                            Ok(true) => (true, false),
+                            Ok(false) => (false, true),
+                            Err(()) => (false, false),
+                        };
+
+                        if covers { covering_members.push((member_id, member)); }
+                        if maybe_covers { maybe_covering_members.push((member_id, member)); }
                     }
 
-                    match covering_members.len() {
+                    match (covering_members.len(), maybe_covering_members.len()) {
                         // No covering members (perhaps we need more information?
-                        0 => {
+                        (0, 0) => {
                             // println!(
                             //     "Failed to solve {:?} as member of {}{}!",
                             //     self.follow_info(ty),
@@ -1283,11 +1350,12 @@ impl<'a> Infer<'a> {
                             // None
                         },
                         // Exactly one covering member: great, we know what to substitute!
-                        1 => {
+                        (1, _) => {
                             // Can't fail
-                            let (covering_member_id, covering_member) = covering_members.into_iter().next().unwrap();
-
-                            let gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
+                            let (covering_member_id, covering_member) = covering_members
+                                .into_iter().next()
+                                .or(maybe_covering_members.into_iter().next())
+                                .unwrap();
 
                             let mut links = HashMap::new();
                             self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
@@ -1295,7 +1363,11 @@ impl<'a> Infer<'a> {
                                 self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
                             }
 
-                            for member in gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
+                            let covering_member_member = covering_member.member;
+                            let covering_member_args = covering_member.args.clone();
+
+                            let covering_gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
+                            for member in covering_gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
                                 let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty));
                                 let member_args = member.args
                                     .iter()
@@ -1310,7 +1382,18 @@ impl<'a> Infer<'a> {
                                     ImpliedItems::Real(_) => Vec::new(),
                                 };
 
-                                if proof_stack.contains(&(member_ty, *member.class, class_args.clone())) {
+                                // Unify member and class args: we did it, patrick!
+                                // TODO: Do we *need* to do this?
+                                // TODO: Move assoc flowing from obligation constraint to here too
+                                // let member_ty = self.instantiate(covering_member_member, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
+                                // self.make_flow(ty, member_ty, EqInfo::from(use_span));
+                                // for (arg, covering_arg) in class_args.iter().zip(covering_member_args.iter()) {
+                                //     let covering_arg_ty = self.instantiate(*covering_arg, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
+                                //     self.make_flow(*arg, covering_arg_ty, EqInfo::from(use_span));
+                                // }
+
+                                let proof_key = (member_ty, *member.class, member_args.clone());
+                                if proof_stack.contains(&proof_key) {
                                     return Some(Err(InferError::CycleWhenResolving(ty, (class_id, class_args.clone()), member.span())));
                                 } else {
                                     // println!(
@@ -1319,7 +1402,7 @@ impl<'a> Infer<'a> {
                                     //     *self.ctx.classes.get(*member.class).name,
                                     //     member_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
                                     // );
-                                    proof_stack.push((member_ty, *member.class, class_args.clone()));
+                                    proof_stack.push(proof_key);
                                     let res = self.resolve_obligation(proof_stack, member_ty, (*member.class, member_args.clone()), member_assoc, member.class.span(), use_span);
                                     // if matches!(res, Some(Ok(_))) {
                                     //     println!("Successfully proved!");
@@ -1345,12 +1428,27 @@ impl<'a> Infer<'a> {
                             Some(Ok(Ok(ImpliedItems::Real(covering_member_id))))
                         },
                         // Multiple covering members: we don't know which one to pick!
-                        // TODO: Instead of bailing out, perhaps try each one in turn?
-                        // TODO: Should the coherence checker prevent this?
-                        _ => {
-                            // println!("Incoherence! This is probably bad!");
+                        // This *probably* happened because we don't have have enough information about the member or
+                        // about available members, so bail for now and resolve this later.
+                        (2.., _) => {
+                            println!(
+                                "Incoherence when solving {:?} as member of {}{}!",
+                                self.follow_info(ty),
+                                *self.ctx.classes.get(class_id).name,
+                                class_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
+                            );
+                            println!("Members are:");
+                            for (member_id, member) in covering_members {
+                                println!(
+                                    "{} < {}{}",
+                                    self.ctx().tys.display(self.ctx(), member.member),
+                                    *self.ctx.classes.get(class_id).name,
+                                    member.args.iter().map(|arg| format!(" {}", self.ctx().tys.display(self.ctx(), *arg))).collect::<String>(),
+                                );
+                            }
                             None
                         },
+                        (_, _) => None,
                     }
                 }
             },

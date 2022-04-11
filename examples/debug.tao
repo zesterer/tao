@@ -9,6 +9,7 @@ member Natural of Eq =
         | Zero, Zero => True
         | Succ x, Succ y => x = y
         \ _, _ => False
+    => ne = fn x, y => !Self.eq(x, y)
 
 fn show_negative A : A -> Str where
     A < Neg,
@@ -19,7 +20,13 @@ fn show_negative A : A -> Str where
 =
     a => (----a):show
 
-def main = [1, 2, 3, 4]:map(fn x => x * x):sum
+def main = [1, 2, 3, 4]
+    :map(fn x => x + 3)
+    :map(fn x => x + x)
+    :map(fn x => x * x)
+    :sum
+
+def f = fn x => x + 4
 
 class VecData A =
     => Proj
