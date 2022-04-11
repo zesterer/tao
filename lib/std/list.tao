@@ -56,6 +56,10 @@ fn sort A < Ord : [A] -> [A] =
             ++
         xs:filter(fn x => x >= mid):sort
 
+fn rev A : [A] -> [A] =
+    | [] => []
+    \ [x .. xs] => xs:rev ++ [x]
+
 def sum A : [A] -> A where
     A < Zero + Add A with { Output = A },
 =

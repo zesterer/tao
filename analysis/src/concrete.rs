@@ -270,7 +270,13 @@ impl ConContext {
 
                 let mut links = HashMap::new();
                 self.derive_links(hir, member.member, self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
-                assert_eq!(args.len(), member.args.len(), "Member and instance args must be the same length");
+                assert_eq!(
+                    args.len(),
+                    member.args.len(),
+                    "Member and instance args must be the same length in member {} of {}",
+                    hir.tys.display(hir, member.member),
+                    *hir.classes.get(class_id).name,
+                );
                 for (member_arg, arg) in member.args.iter().zip(args.iter()) {
                     self.derive_links(hir, *member_arg, *arg, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
                 }
@@ -352,7 +358,13 @@ impl ConContext {
 
                     let mut links = HashMap::new();
                     self.derive_links(hir, member.member, *self_ty, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
-                    assert_eq!(args.len(), member.args.len(), "Member and instance args must be the same length");
+                    assert_eq!(
+                        args.len(),
+                        member.args.len(),
+                        "Member and instance args must be the same length in member {} of {}",
+                        hir.tys.display(hir, member.member),
+                        *hir.classes.get(hir.classes.get_member(*member_id).class).name,
+                    );
                     for (member_arg, arg) in member.args.iter().zip(args.iter()) {
                         self.derive_links(hir, *member_arg, *arg, &mut |gen_idx, ty| { links.insert(gen_idx, ty); });
                     }

@@ -243,6 +243,7 @@ impl Context {
                 gen_scope: *gen_scope,
                 attr: attr.to_vec(),
                 member: member_ty,
+                class: *class_id,
                 args,
                 fields: None,
                 assoc: None,

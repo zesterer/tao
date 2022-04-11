@@ -24,7 +24,9 @@ def main = [1, 2, 3, 4]
     :map(fn x => x + 3)
     :map(fn x => x + x)
     :map(fn x => x * x)
-    :sum
+    :rev
+    :sort
+    # :sum
 
 def f = fn x => x + 4
 

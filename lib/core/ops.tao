@@ -146,9 +146,9 @@ data Ordering =
     \ Equal
 
 member Nat of Ord =
-    => cmp = fn x, y => if x < y
+    => cmp = fn x, y => if @less_nat(x, y)
         then Less
-        else if x > y
+        else if @less_nat(y, x)
         then More
         else Equal
 
@@ -174,10 +174,10 @@ for A < Ord member A of OrdExt =
         \ _ => True
 
 $[lang(join)]
-class Join =
+class Join B =
     => Output
-    => join : Self -> Self -> Self.Output
+    => join : Self -> B -> Self.Output
 
-for A member [A] of Join =
+for A member [A] of Join [A] =
     => Output = [A]
     => join = fn xs, ys => @join_list(xs, ys)

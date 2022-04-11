@@ -641,10 +641,10 @@ impl ToHir for ast::Expr {
                     ast::BinaryOp::Sub => (infer.ctx().classes.lang.sub, SrcNode::new(Ident::new("sub"), self.span()), vec![a.meta().1]),
                     ast::BinaryOp::Mul => (infer.ctx().classes.lang.mul, SrcNode::new(Ident::new("mul"), self.span()), vec![a.meta().1]),
                     ast::BinaryOp::Div => (infer.ctx().classes.lang.div, SrcNode::new(Ident::new("div"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::Less => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("less"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::LessEq => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("less_eq"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::More => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("less"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::MoreEq => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("more_eq"), self.span()), vec![a.meta().1]),
+                    ast::BinaryOp::Less => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("less"), self.span()), vec![]),
+                    ast::BinaryOp::LessEq => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("less_eq"), self.span()), vec![]),
+                    ast::BinaryOp::More => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("more"), self.span()), vec![]),
+                    ast::BinaryOp::MoreEq => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("more_eq"), self.span()), vec![]),
                     ast::BinaryOp::And => (infer.ctx().classes.lang.and, SrcNode::new(Ident::new("and_"), self.span()), vec![a.meta().1]),
                     ast::BinaryOp::Or => (infer.ctx().classes.lang.or, SrcNode::new(Ident::new("or_"), self.span()), vec![a.meta().1]),
                     ast::BinaryOp::Join => (infer.ctx().classes.lang.join, SrcNode::new(Ident::new("join"), self.span()), vec![a.meta().1]),
@@ -885,10 +885,11 @@ impl ToHir for ast::Expr {
                 ];
 
                 const BINARY_OPS: &[(&'static str, Intrinsic,  Prim, Prim, Prim)] = &[
-                    ("add_nat", Intrinsic::AddNat, Prim::Nat,  Prim::Nat,  Prim::Nat),
-                    ("mul_nat", Intrinsic::MulNat, Prim::Nat,  Prim::Nat,  Prim::Nat),
-                    ("eq_char", Intrinsic::EqChar, Prim::Char, Prim::Char, Prim::Bool),
-                    ("eq_nat",  Intrinsic::EqNat,  Prim::Nat,  Prim::Nat,  Prim::Bool),
+                    ("add_nat",  Intrinsic::AddNat,  Prim::Nat,  Prim::Nat,  Prim::Nat),
+                    ("mul_nat",  Intrinsic::MulNat,  Prim::Nat,  Prim::Nat,  Prim::Nat),
+                    ("eq_char",  Intrinsic::EqChar,  Prim::Char, Prim::Char, Prim::Bool),
+                    ("eq_nat",   Intrinsic::EqNat,   Prim::Nat,  Prim::Nat,  Prim::Bool),
+                    ("less_nat", Intrinsic::LessNat, Prim::Nat,  Prim::Nat,  Prim::Bool),
                 ];
 
                 if let Some((_, intrinsic, a_prim, out_prim)) = UNARY_OPS

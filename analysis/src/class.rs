@@ -274,6 +274,7 @@ pub struct Member {
     pub gen_scope: GenScopeId,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub member: TyId,
+    pub class: ClassId,
     pub args: Vec<TyId>,
     pub assoc: Option<HashMap<Ident, TyId>>,
     pub fields: Option<HashMap<Ident, TyExpr>>,
