@@ -6,7 +6,6 @@ fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
         ast::Literal::Nat(_) => TyInfo::Prim(Prim::Nat),
         ast::Literal::Int(_) => TyInfo::Prim(Prim::Int),
         ast::Literal::Real(x) => TyInfo::Prim(Prim::Real),
-        ast::Literal::Bool(_) => TyInfo::Prim(Prim::Bool),
         ast::Literal::Char(_) => TyInfo::Prim(Prim::Char),
         ast::Literal::Str(_) => TyInfo::List(infer.insert(span, TyInfo::Prim(Prim::Char))),
     }
@@ -144,7 +143,6 @@ impl ToHir for ast::Type {
                 ("Nat", 0) => TyInfo::Prim(Prim::Nat),
                 ("Int", 0) => TyInfo::Prim(Prim::Int),
                 ("Real", 0) => TyInfo::Prim(Prim::Real),
-                ("Bool", 0) => TyInfo::Prim(Prim::Bool),
                 ("Char", 0) => TyInfo::Prim(Prim::Char),
                 _ => {
                     let params = params
@@ -309,7 +307,6 @@ impl ToHir for ast::Binding {
                     ast::Literal::Nat(x) => hir::Pat::Literal(ast::Literal::Nat(*x)),
                     ast::Literal::Int(x) => hir::Pat::Literal(ast::Literal::Int(*x)),
                     ast::Literal::Real(x) => hir::Pat::Literal(ast::Literal::Real(*x)),
-                    ast::Literal::Bool(x) => hir::Pat::Literal(ast::Literal::Bool(*x)),
                     ast::Literal::Char(c) => hir::Pat::Literal(ast::Literal::Char(*c)),
                     ast::Literal::Str(s) => {
                         // Bit of a hack, we do this because equality of literals is not supported in the MIR, so a
@@ -727,8 +724,8 @@ impl ToHir for ast::Expr {
                     (TyInfo::Ref(output_ty), hir::Expr::Match(true, pred, arms))
                 }
             },
-            ast::Expr::If(pred, a, b) => {
-                let pred_ty = infer.insert(pred.span(), TyInfo::Prim(Prim::Bool));
+            ast::Expr::If(pred, a, b) => if let Some(bool_data) = infer.ctx().datas.lang.r#bool {
+                let pred_ty = infer.insert(pred.span(), TyInfo::Data(bool_data, Vec::new()));
                 let output_ty = infer.unknown(self.span());
                 let pred = pred.to_hir(infer, scope);
                 infer.make_flow(pred.meta().1, pred_ty, EqInfo::new(self.span(), format!("Conditions must be booleans")));
@@ -736,11 +733,14 @@ impl ToHir for ast::Expr {
                 let b = b.to_hir(infer, scope);
                 infer.make_flow(a.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                 infer.make_flow(b.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
+                let unit = InferNode::new(hir::Binding::unit(pred.meta().0), (pred.meta().0, infer.insert(pred.meta().0, TyInfo::Tuple(Vec::new()))));
                 let arms = vec![
-                    (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Literal(ast::Literal::Bool(true)), pred.meta().0)), *pred.meta()), a),
-                    (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Literal(ast::Literal::Bool(false)), pred.meta().0)), *pred.meta()), b),
+                    (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Decons(SrcNode::new(bool_data, pred.meta().0), Ident::new("True"), unit.clone()), pred.meta().0)), *pred.meta()), a),
+                    (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Decons(SrcNode::new(bool_data, pred.meta().0), Ident::new("False"), unit), pred.meta().0)), *pred.meta()), b),
                 ];
                 (TyInfo::Ref(output_ty), hir::Expr::Match(false, pred, arms))
+            } else {
+                (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
             },
             ast::Expr::Func(arms) => {
                 // TODO: Don't always refuse 0-branch functions? Can they be useful with never types?
@@ -872,27 +872,27 @@ impl ToHir for ast::Expr {
                 let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, self.span());
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },
-            ast::Expr::Intrinsic(name, args) => {
+            ast::Expr::Intrinsic(name, args) => if let Some(bool_data) = infer.ctx().datas.lang.r#bool {
                 let mut args = args
                     .iter()
                     .map(|arg| arg.to_hir(infer, scope))
                     .collect::<Vec<_>>();
 
-                const UNARY_OPS: &[(&'static str, Intrinsic, Prim, Prim)] = &[
+                let unary_ops = [
                     ("neg_nat",  Intrinsic::NegNat, Prim::Nat, Prim::Int),
                     ("neg_int",  Intrinsic::NegInt, Prim::Int, Prim::Int),
                     ("neg_real", Intrinsic::NegReal, Prim::Real, Prim::Real),
                 ];
 
-                const BINARY_OPS: &[(&'static str, Intrinsic,  Prim, Prim, Prim)] = &[
-                    ("add_nat",  Intrinsic::AddNat,  Prim::Nat,  Prim::Nat,  Prim::Nat),
-                    ("mul_nat",  Intrinsic::MulNat,  Prim::Nat,  Prim::Nat,  Prim::Nat),
-                    ("eq_char",  Intrinsic::EqChar,  Prim::Char, Prim::Char, Prim::Bool),
-                    ("eq_nat",   Intrinsic::EqNat,   Prim::Nat,  Prim::Nat,  Prim::Bool),
-                    ("less_nat", Intrinsic::LessNat, Prim::Nat,  Prim::Nat,  Prim::Bool),
+                let binary_ops = [
+                    ("add_nat",  Intrinsic::AddNat,  Prim::Nat,  Prim::Nat,  TyInfo::Prim(Prim::Nat)),
+                    ("mul_nat",  Intrinsic::MulNat,  Prim::Nat,  Prim::Nat,  TyInfo::Prim(Prim::Nat)),
+                    ("eq_char",  Intrinsic::EqChar,  Prim::Char, Prim::Char, TyInfo::Data(bool_data, Vec::new())),
+                    ("eq_nat",   Intrinsic::EqNat,   Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new())),
+                    ("less_nat", Intrinsic::LessNat, Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new())),
                 ];
 
-                if let Some((_, intrinsic, a_prim, out_prim)) = UNARY_OPS
+                if let Some((_, intrinsic, a_prim, out_prim)) = unary_ops
                     .iter()
                     .find(|(op, _, _, _)| op == &***name)
                     .filter(|_| args.len() == 1)
@@ -902,11 +902,11 @@ impl ToHir for ast::Expr {
                     let a_ty = infer.insert(a.meta().0, TyInfo::Prim(a_prim));
                     infer.make_flow(args[0].meta().1, a_ty, EqInfo::from(name.span()));
                     (TyInfo::Prim(out_prim), hir::Expr::Intrinsic(SrcNode::new(intrinsic, name.span()), args))
-                } else if let Some((_, intrinsic, a_prim, b_prim, out_prim)) = BINARY_OPS
+                } else if let Some((_, intrinsic, a_prim, b_prim, out_ty)) = binary_ops
                     .iter()
                     .find(|(op, _, _, _, _)| op == &***name)
                     .filter(|_| args.len() == 2)
-                    .copied()
+                    .cloned()
                 {
                     let a = &args[0];
                     let b = &args[1];
@@ -914,7 +914,7 @@ impl ToHir for ast::Expr {
                     let b_ty = infer.insert(b.meta().0, TyInfo::Prim(b_prim));
                     infer.make_flow(args[0].meta().1, a_ty, EqInfo::from(name.span()));
                     infer.make_flow(args[1].meta().1, b_ty, EqInfo::from(name.span()));
-                    (TyInfo::Prim(out_prim), hir::Expr::Intrinsic(SrcNode::new(intrinsic, name.span()), args))
+                    (out_ty, hir::Expr::Intrinsic(SrcNode::new(intrinsic, name.span()), args))
                 } else {
                     match name.as_str() {
                         "type_name" if args.len() == 1 => {
@@ -1009,6 +1009,8 @@ impl ToHir for ast::Expr {
                         },
                     }
                 }
+            } else {
+                (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
             },
             ast::Expr::Update(record, fields) => {
                 let record = record.to_hir(infer, scope);

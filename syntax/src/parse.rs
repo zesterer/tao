@@ -7,7 +7,6 @@ pub fn literal_parser() -> impl Parser<ast::Literal> {
         Token::Nat(x) => ast::Literal::Nat(x),
         Token::Int(x) => ast::Literal::Int(x),
         Token::Real(x) => ast::Literal::Real(x.parse().expect("Real could not be parsed as f64")),
-        Token::Bool(x) => ast::Literal::Bool(x),
         Token::Char(x) => ast::Literal::Char(x),
         Token::Str(x) => ast::Literal::Str(x),
     }
@@ -22,11 +21,6 @@ pub fn term_ident_parser() -> impl Parser<ast::Ident> {
 pub fn type_ident_parser() -> impl Parser<ast::Ident> {
     select! { Token::TypeIdent(x) => x }
         .map_err(|e: Error| e.expected(Pattern::TypeIdent))
-}
-
-pub fn bool_parser() -> impl Parser<bool> {
-    select! { Token::Bool(x) => x }
-        .map_err(|e: Error| e.expected(Pattern::Literal))
 }
 
 pub fn nested_parser<'a, T: 'a>(parser: impl Parser<T> + 'a, delimiter: Delimiter, f: impl Fn(Span) -> T + Clone + 'a) -> impl Parser<T> + 'a {

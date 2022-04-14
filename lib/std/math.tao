@@ -45,12 +45,12 @@ for A, N member Vector A N of Add (Vector A N) where
     => Output = Self
     => add = fn Vector xs, Vector ys => Vector N.map2(xs, ys, fn x, y => x + y)
 
-for A, N member Vector A N of Add A where
-    N < VectorData A,
-    A < Add A with { Output = A },
-=
-    => Output = Self
-    => add = fn Vector xs, y => Vector N.map(xs, fn x => x + y)
+# for A, B, N member Vector A N of Add B where
+#     N < VectorData A,
+#     A < Add B with { Output = A },
+# =
+#     => Output = Self
+#     => add = fn Vector xs, y => Vector N.map(xs, fn x => x + y)
 
 for A, N member Vector A N of Mul (Vector A N) where
     N < VectorData A,

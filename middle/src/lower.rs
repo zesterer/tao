@@ -27,7 +27,6 @@ impl Context {
             hir::Literal::Nat(x) => mir::Literal::Nat(*x),
             hir::Literal::Int(x) => mir::Literal::Int(*x),
             hir::Literal::Str(s) => mir::Literal::List(s.chars().map(mir::Literal::Char).collect()),
-            hir::Literal::Bool(x) => mir::Literal::Bool(*x),
             hir::Literal::Real(x) => mir::Literal::Real(*x),
             hir::Literal::Char(c) => mir::Literal::Char(*c),
         }
@@ -56,7 +55,6 @@ impl Context {
                 ty::Prim::Int => repr::Prim::Int,
                 ty::Prim::Real => repr::Prim::Real,
                 ty::Prim::Char => repr::Prim::Char,
-                ty::Prim::Bool => repr::Prim::Bool,
                 ty::Prim::Universe => repr::Prim::Universe,
             }
         }

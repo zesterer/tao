@@ -1,5 +1,9 @@
 use super::*;
-use std::io::Write;
+use std::{
+    io::Write,
+    rc::Rc,
+};
+use im::Vector;
 
 #[derive(Clone, Debug)]
 pub enum Instr {
@@ -67,7 +71,7 @@ pub enum Instr {
 
 impl Instr {
     pub fn bool(x: bool) -> Self {
-        Self::Imm(Value::Bool(x))
+        Self::Imm(Value::Sum(x as usize, Rc::new(Value::List(Vector::new()))))
     }
 }
 

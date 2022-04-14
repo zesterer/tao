@@ -12,7 +12,6 @@ fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
         mir::Literal::Int(x) => Value::Int(*x),
         mir::Literal::Real(x) => Value::Real(*x),
         mir::Literal::Char(c) => Value::Char(*c),
-        mir::Literal::Bool(x) => Value::Bool(*x),
         mir::Literal::Tuple(fields) => Value::List(fields
             .iter()
             .map(litr_to_value)
@@ -142,23 +141,17 @@ impl Program {
         } else {
             match &binding.pat {
                 mir::Pat::Wildcard => unreachable!(), // Caught by refutability check above
-                mir::Pat::Literal(litr) => match litr {
-                    mir::Literal::Bool(true) => {},
-                    mir::Literal::Bool(false) => {
-                        self.push(Instr::NotBool);
-                    },
-                    litr => {
-                        if let Some(val) = litr_to_value(litr) {
-                            self.push(Instr::Imm(val));
-                        }
-                        match binding.meta() {
-                            repr::Repr::Prim(repr::Prim::Bool) => self.push(Instr::EqBool),
-                            repr::Repr::Prim(repr::Prim::Nat) => self.push(Instr::EqInt),
-                            repr::Repr::Prim(repr::Prim::Int) => self.push(Instr::EqInt),
-                            repr::Repr::Prim(repr::Prim::Char) => self.push(Instr::EqChar),
-                            r => todo!("repr = {:?}, litr = {:?}", r, litr),
-                        };
-                    },
+                mir::Pat::Literal(litr) => {
+                    if let Some(val) = litr_to_value(litr) {
+                        self.push(Instr::Imm(val));
+                    }
+                    match binding.meta() {
+                        repr::Repr::Prim(repr::Prim::Bool) => self.push(Instr::EqBool),
+                        repr::Repr::Prim(repr::Prim::Nat) => self.push(Instr::EqInt),
+                        repr::Repr::Prim(repr::Prim::Int) => self.push(Instr::EqInt),
+                        repr::Repr::Prim(repr::Prim::Char) => self.push(Instr::EqChar),
+                        r => todo!("repr = {:?}, litr = {:?}", r, litr),
+                    };
                 },
                 mir::Pat::Single(inner) => self.compile_matcher(inner),
                 mir::Pat::Add(lhs, rhs) => {
@@ -301,7 +294,6 @@ impl Program {
                 match intrinsic {
                     Intrinsic::Debug => { self.push(Instr::Break); },
                     Intrinsic::MakeList(_) => { self.push(Instr::MakeList(args.len())); },
-                    Intrinsic::NotBool => { self.push(Instr::NotBool); },
                     Intrinsic::NegNat | Intrinsic::NegInt => { self.push(Instr::NegInt); },
                     Intrinsic::NegReal => { self.push(Instr::NegReal); },
                     Intrinsic::AddNat | Intrinsic::AddInt => { self.push(Instr::AddInt); },
@@ -322,7 +314,6 @@ impl Program {
                     Intrinsic::LessEqNat | Intrinsic::LessEqInt => { self.push(Instr::LessEqInt); },
                     Intrinsic::MoreEqNat | Intrinsic::MoreEqInt => { self.push(Instr::MoreEqInt); },
                     Intrinsic::Join(_) => { self.push(Instr::JoinList); },
-                    Intrinsic::AndBool => { self.push(Instr::AndBool); },
                     Intrinsic::Print => { self.push(Instr::Print); },
                     Intrinsic::Input => { self.push(Instr::Input); },
                     Intrinsic::UpdateField(idx) => { self.push(Instr::SetList(*idx)); },

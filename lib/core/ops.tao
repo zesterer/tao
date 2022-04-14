@@ -1,17 +1,13 @@
 #! Operator definitions.
 
+import "lib/core/bool.tao"
+
 # Not
 
 $[lang(not)]
 class Not =
     => Output
     => not : Self -> Self.Output
-
-member Bool of Not =
-    => Output = Self
-    => not = fn
-        | True => False
-        \ False => True
 
 for A < Not member [A] of Not =
     => Output = [A.Output]
@@ -85,24 +81,12 @@ class And B =
     => Output
     => and_ : Self -> B -> Self.Output
 
-member Bool of And Bool =
-    => Output = Bool
-    => and_ = fn
-        | True, True => True
-        \ _, _ => False
-
 # Or
 
 $[lang(or_)]
 class Or B =
     => Output
     => or_ : Self -> B -> Self.Output
-
-member Bool of Or Bool =
-    => Output = Bool
-    => or_ = fn
-        | False, False => False
-        \ _, _ => True
 
 # Eq
 

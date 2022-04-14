@@ -1318,6 +1318,7 @@ impl<'a> Infer<'a> {
                     for (member_id, member) in self.ctx.classes.members_of(class_id) {
                         // println!("Checking coverage of {:?} by {} via member {}", self.follow_info(ty), *self.ctx.classes.get(class_id).name, self.ctx.tys.display(&self.ctx, member.member));
                         let mut gens = HashMap::new();
+                        // TODO: Instantiation should occur here, in a temporary inference context, to allow type projections to occur
                         let (covers, maybe_covers) = match Self::covers_var(self, ty, member.member, &mut gens)
                             .and_then(|covers| Ok(covers && class_args.iter()
                                 .zip(member.args.iter())
@@ -1350,7 +1351,8 @@ impl<'a> Infer<'a> {
                             // None
                         },
                         // Exactly one covering member: great, we know what to substitute!
-                        (1, _) => {
+                        // TODO: Allow for maybe-matching members
+                        (1, _) /*| (_, 1)*/ => {
                             // Can't fail
                             let (covering_member_id, covering_member) = covering_members
                                 .into_iter().next()

@@ -9,7 +9,6 @@ use ranges::Ranges;
 #[derive(Debug)]
 pub enum AbstractPat {
     Wildcard,
-    Bool([bool; 2]),
     Nat(Ranges<u64>),
     Int(Ranges<i64>),
     Real(f64),
@@ -27,10 +26,6 @@ impl AbstractPat {
         match &*binding.pat {
             hir::Pat::Error => Self::Wildcard,
             hir::Pat::Wildcard => Self::Wildcard,
-            hir::Pat::Literal(hir::Literal::Bool(x)) => Self::Bool([
-                !x,
-                *x,
-            ]),
             hir::Pat::Literal(hir::Literal::Nat(x)) => Self::Nat({
                 let mut range = Ranges::new();
                 range.insert(*x..*x + 1);
@@ -73,7 +68,6 @@ impl AbstractPat {
     fn is_refutable_basic(&self, ctx: &Context) -> bool {
         match self {
             AbstractPat::Wildcard => false,
-            AbstractPat::Bool([t, f]) => !(*t && *f),
             AbstractPat::Nat(set) => !set.clone().invert().is_empty(),
             AbstractPat::Int(set) => !set.clone().invert().is_empty(),
             AbstractPat::Char(_) => true,
@@ -130,26 +124,6 @@ impl AbstractPat {
                     }
                 }
                 covered.clone().invert().into_iter().next().map(ExamplePrim::Int).map(ExamplePat::Prim)
-            },
-            Ty::Prim(Prim::Bool) => {
-                let (mut caught_f, mut caught_t) = (false, false);
-                for pat in filter {
-                    match pat {
-                        AbstractPat::Wildcard => return None,
-                        AbstractPat::Bool([f, t]) => {
-                            caught_f |= f;
-                            caught_t |= t;
-                        },
-                        _ => return None, // Type mismatch, don't yield an error because one was already generated
-                    }
-                }
-                if !caught_f {
-                    Some(ExamplePat::Prim(ExamplePrim::Bool(false)))
-                } else if !caught_t {
-                    Some(ExamplePat::Prim(ExamplePrim::Bool(true)))
-                } else {
-                    None
-                }
             },
             Ty::Prim(Prim::Char) => {
                 for pat in filter {
@@ -368,7 +342,6 @@ impl AbstractPat {
 
 #[derive(Clone, Debug)]
 pub enum ExamplePrim {
-    Bool(bool),
     Nat(u64),
     Int(i64),
 }
@@ -376,7 +349,6 @@ pub enum ExamplePrim {
 impl fmt::Display for ExamplePrim {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Bool(x) => write!(f, "{}", if *x { "True" } else { "False" }),
             Self::Nat(x) => write!(f, "{}", x),
             Self::Int(x) => write!(f, "{}", x),
         }

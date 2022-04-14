@@ -60,12 +60,12 @@ fn rev A : [A] -> [A] =
     | [] => []
     \ [x .. xs] => xs:rev ++ [x]
 
-def sum A : [A] -> A where
-    A < Zero + Add A with { Output = A },
-=
-    fold(A.zero, fn x, y => x + y)
+# def sum A : [A] -> A where
+#     A < Zero + Add A with { Output = A },
+# =
+#     fold(A.zero, fn x, y => x + y)
 
-def product A : [A] -> A where
-    A < One + Mul A with { Output = A }
-=
-    fold(A.one, fn x, y => A.mul(x, y))
+# def product A : [A] -> A where
+#     A < One + Mul A with { Output = A }
+# =
+    # fold(A.one, fn x, y => A.mul(x, y))

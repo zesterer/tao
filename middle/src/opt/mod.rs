@@ -390,7 +390,6 @@ pub fn check(ctx: &Context) {
     fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (&binding.pat, repr) {
             (Pat::Data(a, inner), Repr::Data(b)) if a == b => {}, // TODO: Check inner
-            (Pat::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Pat::Wildcard, _) => {},
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
             (Pat::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => check_binding(ctx, inner, &variants[*idx], stack),
@@ -407,7 +406,6 @@ pub fn check(ctx: &Context) {
         match (expr, repr) {
             (Expr::Data(a, inner), Repr::Data(b)) if a == b => {}, // TODO: Check inner
             // TODO: Check literals elsewhere
-            (Expr::Literal(Literal::Bool(_)), Repr::Prim(Prim::Bool)) => {},
             (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {},
             (Expr::Literal(Literal::List(_)), Repr::List(_)) => {},
             (Expr::Literal(Literal::Tuple(_)), Repr::Tuple(_)) => {},

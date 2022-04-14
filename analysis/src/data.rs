@@ -23,6 +23,7 @@ pub struct Alias {
 #[derive(Default)]
 pub struct Lang {
     pub go: Option<DataId>,
+    pub r#bool: Option<DataId>,
 }
 
 #[derive(Default)]
@@ -106,9 +107,8 @@ impl Datas {
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
             {
-                if lang.iter().find(|a| &**a.name == "go").is_some() {
-                    self.lang.go = Some(id);
-                }
+                if lang.iter().find(|a| &**a.name == "go").is_some() { self.lang.go = Some(id); }
+                if lang.iter().find(|a| &**a.name == "bool").is_some() { self.lang.r#bool = Some(id); }
             }
 
             self.datas.push((name.span(), None, gen_scope));
@@ -120,6 +120,7 @@ impl Datas {
         let mut errors = Vec::new();
 
         if self.lang.go.is_none() { errors.push(Error::MissingLangItem("go")); }
+        if self.lang.r#bool.is_none() { errors.push(Error::MissingLangItem("bool")); }
 
         errors
     }

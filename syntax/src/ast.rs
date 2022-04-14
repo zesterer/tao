@@ -98,7 +98,6 @@ pub enum Literal {
     Nat(u64),
     Int(i64),
     Real(f64),
-    Bool(bool),
     Char(char),
     Str(Intern<String>),
 }
@@ -109,7 +108,6 @@ impl fmt::Debug for Literal {
             Self::Nat(x) => write!(f, "`{}`", x),
             Self::Int(x) => write!(f, "`{}`", x),
             Self::Real(x) => write!(f, "`{}`", x),
-            Self::Bool(x) => write!(f, "`{}`", x),
             Self::Char(c) => write!(f, "`{}`", c),
             Self::Str(s) => write!(f, "`\"{}\"`", s),
         }

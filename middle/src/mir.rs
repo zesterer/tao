@@ -26,7 +26,6 @@ pub enum Const<U> {
     Int(i64),
     Real(f64),
     Char(char),
-    Bool(bool),
     Tuple(Vec<Self>),
     List(Vec<Self>),
     Sum(usize, Box<Self>),
@@ -39,7 +38,6 @@ pub type Partial = Const<Option<Local>>;
 impl<U: fmt::Debug + Clone> Const<U> {
     pub fn nat(&self) -> u64 { if let Const::Nat(x) = self { *x } else { panic!("{:?}", self) } }
     pub fn int(&self) -> i64 { if let Const::Int(x) = self { *x } else { panic!("{:?}", self) } }
-    pub fn bool(&self) -> bool { if let Const::Bool(x) = self { *x } else { panic!("{:?}", self) } }
     pub fn list(&self) -> Vec<Self> { if let Const::List(x) = self { x.clone() } else { panic!("{:?}", self) } }
 }
 
@@ -52,7 +50,6 @@ impl Partial {
             Self::Int(x) => Some(Literal::Int(*x)),
             Self::Real(x) => Some(Literal::Real(*x)),
             Self::Char(c) => Some(Literal::Char(*c)),
-            Self::Bool(x) => Some(Literal::Bool(*x)),
             Self::Tuple(fields) => Some(Literal::Tuple(fields
                 .iter()
                 .map(|field| field.to_literal())
@@ -78,7 +75,6 @@ impl Partial {
             (Self::Int(x), Self::Int(y)) if x == y => Self::Int(x),
             (Self::Real(x), Self::Real(y)) if x == y => Self::Real(x),
             (Self::Char(x), Self::Char(y)) if x == y => Self::Char(x),
-            (Self::Bool(x), Self::Bool(y)) if x == y => Self::Bool(x),
             (Self::Tuple(xs), Self::Tuple(ys)) => Self::Tuple(xs
                 .into_iter()
                 .zip(ys)
@@ -105,7 +101,6 @@ impl Literal {
             Self::Int(x) => Partial::Int(*x),
             Self::Real(x) => Partial::Real(*x),
             Self::Char(c) => Partial::Char(*c),
-            Self::Bool(x) => Partial::Bool(*x),
             Self::Tuple(fields) => Partial::Tuple(fields
                 .iter()
                 .map(|field| field.to_partial())
@@ -131,7 +126,6 @@ impl fmt::Display for Literal {
             Self::Char('\t') => write!(f, "'\\t'"),
             Self::Char('\n') => write!(f, "'\\n'"),
             Self::Char(c) => write!(f, "'{}'", c),
-            Self::Bool(x) => write!(f, "{}", x),
             Self::Tuple(xs) => write!(f, "({})", xs.iter().map(|x| format!("{},", x)).collect::<Vec<_>>().join(" ")),
             Self::List(xs) => write!(f, "[{}]", xs.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(", ")),
             Self::Sum(v, x) => write!(f, "#{} {}", v, x),
@@ -144,7 +138,6 @@ impl fmt::Display for Literal {
 pub enum Intrinsic {
     Debug,
     MakeList(Repr),
-    NotBool,
     NegNat,
     NegInt,
     NegReal,
@@ -169,7 +162,6 @@ pub enum Intrinsic {
     MoreEqNat,
     MoreEqInt,
     Join(Repr),
-    AndBool,
     Print,
     Input,
     UpdateField(usize),
@@ -554,7 +546,6 @@ impl Expr {
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExpr(i, self.1 + 1, false))).collect::<Vec<_>>().join(", ")),
-                    Expr::Intrinsic(NotBool, args) => write!(f, "!{}", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(NegNat | NegInt | NegReal, args) => write!(f, "-{}", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(EqChar | EqNat | EqInt, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(AddNat | AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
@@ -565,7 +556,6 @@ impl Expr {
                     Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(AndBool, args) => write!(f, "{} and {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Print, args) => write!(f, "@print({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Input, args) => write!(f, "@input({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(UpdateField(idx), args) => write!(f, "@update_field<{}>({}, {})", idx, DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),

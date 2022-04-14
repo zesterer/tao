@@ -13,3 +13,13 @@ class Fold A =
     => fold : A -> (A -> Self.Item -> A) -> Self -> A
 
 def fold V < Fold A, A : A -> (A -> V.Item -> A) -> V -> A = V.fold
+
+def sum C, A : C -> A where
+    C < Fold A with { Item = A },
+    A < Zero + Add A with { Output = A },
+= fold(A.zero, fn x, y => x + y)
+
+def product C, A : C -> A where
+    C < Fold A with { Item = A },
+    A < One + Mul A with { Output = A },
+= fold(A.one, fn x, y => x * y)

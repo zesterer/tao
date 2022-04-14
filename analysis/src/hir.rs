@@ -4,7 +4,7 @@ pub use ast::Literal as Literal;
 
 pub trait Meta {
     type Ty;
-    type Data: fmt::Debug;
+    type Data: Clone + fmt::Debug;
     type Class;
     type Global;
     type Effect;
@@ -34,7 +34,7 @@ impl Meta for ConMeta {
     type Effect = ConEffectId;
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Pat<M: Meta> {
     Error,
     Wildcard,
@@ -48,7 +48,7 @@ pub enum Pat<M: Meta> {
     Decons(M::Data, Ident, Node<Binding<M>, M>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Binding<M: Meta> {
     pub pat: SrcNode<Pat<M>>,
     pub name: Option<SrcNode<Ident>>,
@@ -65,6 +65,10 @@ impl<M: Meta> Binding<M> {
 
     pub fn wildcard(name: SrcNode<Ident>) -> Self {
         Self { pat: SrcNode::new(hir::Pat::Wildcard, name.span()), name: Some(name) }
+    }
+
+    pub fn unit(span: Span) -> Self {
+        Self { pat: SrcNode::new(hir::Pat::Tuple(Vec::new()), span), name: None }
     }
 }
 

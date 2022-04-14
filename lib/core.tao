@@ -1,2 +1,4 @@
+import "lib/core/bool.tao"
 import "lib/core/ops.tao"
+import "lib/core/monad.tao"
 import "lib/core/tail.tao"

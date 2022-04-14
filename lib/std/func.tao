@@ -11,3 +11,17 @@
 ## ```
 fn fix A, B : ((A -> B) -> A -> B) -> A -> B =
     \ f, n => f(f:fix, n)
+
+## A functor with no environment.
+class FnZero I =
+    => O
+    => call : I -> Self.O
+
+## A functor.
+class Fn I =
+    => O
+    => call : I -> Self -> Self.O
+
+for I, O member I -> O of Fn I =
+    => O = O
+    => call = fn i, f => f(i)

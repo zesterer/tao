@@ -66,7 +66,6 @@ pub enum Token {
     Int(i64),
     Real(Intern<String>),
     Char(char),
-    Bool(bool),
     Str(Intern<String>),
     Open(Delimiter),
     Close(Delimiter),
@@ -117,7 +116,6 @@ impl fmt::Display for Token {
             Token::Int(x) => write!(f, "{}i", x),
             Token::Real(x) => write!(f, "{}", x),
             Token::Char(c) => write!(f, "{}", c),
-            Token::Bool(x) => write!(f, "{}", x),
             Token::Str(s) => write!(f, "{}", s),
             Token::Open(Delimiter::Paren) => write!(f, "("),
             Token::Open(Delimiter::Brack) => write!(f, "["),
@@ -283,8 +281,6 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         "and" => Token::Op(Op::And),
         "or" => Token::Op(Op::Or),
         "xor" => Token::Op(Op::Xor),
-        "True" => Token::Bool(true),
-        "False" => Token::Bool(false),
         "_" => Token::Wildcard,
         _ => if s.chars().next().map_or(false, |c| c.is_uppercase()) {
             Token::TypeIdent(ast::Ident::new(s))

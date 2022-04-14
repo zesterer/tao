@@ -16,7 +16,6 @@ pub enum Value {
     Int(i64),
     Real(f64),
     Char(char),
-    Bool(bool),
     List(Vector<Self>),
     Func(Addr, Vector<Self>),
     Sum(usize, Rc<Self>),
@@ -25,10 +24,14 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn new_bool(x: bool) -> Self {
+        Value::Sum(x as usize, Rc::new(Value::List(Vector::new())))
+    }
+
     pub fn int(self) -> i64 { if let Value::Int(x) = self { x } else { panic!("{}", self) } }
     pub fn real(self) -> f64 { if let Value::Real(x) = self { x } else { panic!("{}", self) } }
     pub fn char(self) -> char { if let Value::Char(c) = self { c } else { panic!("{}", self) } }
-    pub fn bool(self) -> bool { if let Value::Bool(x) = self { x } else { panic!("{}", self) } }
+    pub fn bool(self) -> bool { if let Value::Sum(x, _) = self { x > 0 } else { panic!("{}", self) } }
     pub fn list(self) -> Vector<Self> { if let Value::List(xs) = self { xs } else { panic!("{}", self) } }
     pub fn func(self) -> (Addr, Vector<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
     pub fn sum(self) -> (usize, Rc<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
@@ -42,8 +45,6 @@ impl fmt::Display for Value {
             Value::Int(x) => write!(f, "{}i", x),
             Value::Real(x) => write!(f, "{}f", x),
             Value::Char(c) => write!(f, "{}", c),
-            Value::Bool(true) => write!(f, "True"),
-            Value::Bool(false) => write!(f, "False"),
             Value::List(items) => match items.iter().next() {
                 Some(Value::Char(_)) => items
                     .iter()
@@ -210,7 +211,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::GetLocal(x) => stack.push(locals[locals.len() - 1 - x].clone()),
             Instr::NotBool => {
                 let x = stack.pop().unwrap().bool();
-                stack.push(Value::Bool(!x))
+                stack.push(Value::new_bool(!x))
             },
             Instr::NegInt => {
                 let x = stack.pop().unwrap().int();
@@ -238,42 +239,42 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::EqInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
-                stack.push(Value::Bool(x == y))
+                stack.push(Value::new_bool(x == y))
             },
             Instr::EqBool => {
                 let y = stack.pop().unwrap().bool();
                 let x = stack.pop().unwrap().bool();
-                stack.push(Value::Bool(x == y))
+                stack.push(Value::new_bool(x == y))
             },
             Instr::EqChar => {
                 let y = stack.pop().unwrap().char();
                 let x = stack.pop().unwrap().char();
-                stack.push(Value::Bool(x == y))
+                stack.push(Value::new_bool(x == y))
             },
             Instr::LessInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
-                stack.push(Value::Bool(x < y))
+                stack.push(Value::new_bool(x < y))
             },
             Instr::MoreInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
-                stack.push(Value::Bool(x > y))
+                stack.push(Value::new_bool(x > y))
             },
             Instr::LessEqInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
-                stack.push(Value::Bool(x <= y))
+                stack.push(Value::new_bool(x <= y))
             },
             Instr::MoreEqInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
-                stack.push(Value::Bool(x >= y))
+                stack.push(Value::new_bool(x >= y))
             },
             Instr::AndBool => {
                 let y = stack.pop().unwrap().bool();
                 let x = stack.pop().unwrap().bool();
-                stack.push(Value::Bool(x && y))
+                stack.push(Value::new_bool(x && y))
             },
             Instr::Print => {
                 let s = stack.pop().unwrap().list();

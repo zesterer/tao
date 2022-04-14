@@ -9,7 +9,6 @@ pub enum Prim {
     Nat,
     Int,
     Real,
-    Bool,
     Char,
     Universe,
 }
@@ -20,7 +19,6 @@ impl fmt::Display for Prim {
             Prim::Nat => write!(f, "Nat"),
             Prim::Int => write!(f, "Int"),
             Prim::Real => write!(f, "Real"),
-            Prim::Bool => write!(f, "Bool"),
             Prim::Char => write!(f, "Char"),
             Prim::Universe => write!(f, "@"),
         }
