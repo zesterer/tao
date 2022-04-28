@@ -38,8 +38,6 @@ for A < Add A with { Output = A } member Double of FnZero A =
     => call = fn x => x + x
 def forced_monomorphisation : [Out Nat Double] = [1, 2, 3, 4]:map2
 
-def f = fn x => x + 4
-
 class VecData A =
     => Proj
 

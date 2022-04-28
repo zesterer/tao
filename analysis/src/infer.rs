@@ -1117,11 +1117,12 @@ impl<'a> Infer<'a> {
             let mut covers = false;
             // Filter further by classes that have members that cover our type
             for (_, member) in self.ctx.classes.members_of(class_id) {
+                let mut gens = HashMap::default();
                 // TODO: Also check member args?
                 // TODO: Deal with maybe covering?
                 // Checking these cases isn't essential for now, we can be as coarse as we like. We're only generating
                 // a candidate list: checking of the finally selected member will occur later.
-                if matches!(self.covers_var(ty, member.member, &mut HashMap::default()), Ok(_)) {
+                if matches!(self.covers_var(ty, member.member, &mut gens), Ok(_)) {
                     covers = true;
                 }
             }
@@ -1139,7 +1140,7 @@ impl<'a> Infer<'a> {
     fn var_covers_var(&self, var: TyVar, ty: TyVar) -> Option<bool> {
         match (self.follow_info(var), self.follow_info(ty)) {
             (TyInfo::Unknown(_), _) => None,
-            (_, TyInfo::Unknown(_)) => None,//Some(false),
+            (_, TyInfo::Unknown(_)) => Some(false), // TODO: Why does this need to be Some(false)?
             (TyInfo::Gen(x, _, _), TyInfo::Gen(y, _, _)) if x == y => Some(true),
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Some(true),
             (TyInfo::List(x), TyInfo::List(y)) => self.var_covers_var(x, y),
