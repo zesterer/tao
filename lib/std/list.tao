@@ -1,8 +1,8 @@
 #! Utilities for programming with lists.
 
-import "lib/core/ops.tao"
-import "lib/std/value.tao"
-import "lib/std/container.tao"
+import "../core/ops.tao"
+import "value.tao"
+import "container.tao"
 
 for A, B member [A] of Map B =
     => Item = A

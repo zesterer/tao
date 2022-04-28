@@ -1,4 +1,4 @@
-import "lib/std.tao"
+import "std.tao"
 
 # fn fold A, B : ? -> (? -> A -> ?) -> ? -> B =
 #     | init, _, [] => init

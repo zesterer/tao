@@ -1,4 +1,4 @@
-import "lib/parse.tao"
+import "../lib/std.tao"
 
 def main : IO () = do {
     ["a", "b", "c", "d"]

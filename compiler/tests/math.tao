@@ -1,13 +1,17 @@
 # >>>> INPUT
 
+import "../../lib/std.tao"
+
 $[main]
 def main = 5
 
 # >>>> OUTPUT
 
-5
+5i
 
 # >>>> INPUT
+
+import "../../lib/std.tao"
 
 $[main]
 def main =
@@ -17,11 +21,13 @@ def main =
 
 # >>>> OUTPUT
 
-9
+9i
 
 # >>>> INPUT
 
-def factorial =
+import "../../lib/std.tao"
+
+fn factorial =
 	| 0 => 1
 	\ y ~ x + 1 => y * factorial(x)
 
@@ -30,4 +36,4 @@ def main = factorial(10)
 
 # >>>> OUTPUT
 
-3628800
+3628800i

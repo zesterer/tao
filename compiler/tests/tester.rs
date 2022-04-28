@@ -11,7 +11,7 @@ test!(math);
 test!(lists);
 test!(records);
 
-use tao::{Options, Opt, SrcId, run};
+use tao::{Options, OptMode, SrcId, run};
 use std::fs;
 
 fn test_configs(name: &str) {
@@ -36,13 +36,26 @@ fn test_configs(name: &str) {
                 State::Start | State::Output => if line.trim() == "# >>>> INPUT" || line.trim() == "# >>>> END" {
                     if let State::Output = &state {
                         let mut output = Vec::new();
-                        run(input.clone(), src_id, options.clone(), &mut output, |_| unimplemented!());
+                        run(
+                            input.clone(),
+                            src_id,
+                            options.clone(),
+                            &mut output,
+                            |src| fs::read_to_string(src.to_path()).ok(),
+                            |parent, rel| {
+                                let mut path = parent.to_path();
+                                path.pop();
+                                path.push(rel);
+                                let path = path.canonicalize().ok()?;
+                                Some(SrcId::from_path(path))
+                            },
+                        );
                         let output = String::from_utf8(output).unwrap();
                         if output.trim() != expected.trim() {
                             panic!("\n\n \
-                                ========[ EXPECTED OUTPUT ]========\n\n \
+                                ========[ EXPECTED OUTPUT ]========\n\n\
                                 {}\n \
-                                ========[ FOUND OUTPUT ]========\n\n \
+                                ========[ FOUND OUTPUT ]========\n\n\
                                 {}\n", expected, output);
                         }
 
@@ -66,10 +79,10 @@ fn test_configs(name: &str) {
 
     let mut options = Options {
         debug: Vec::new(),
-        opt: Opt::None,
+        opt: OptMode::None,
     };
-    options.opt = Opt::None;
+    options.opt = OptMode::None;
     test_config(name, options.clone());
-    options.opt = Opt::Fast;
+    options.opt = OptMode::Fast;
     test_config(name, options.clone());
 }

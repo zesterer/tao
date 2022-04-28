@@ -1,6 +1,6 @@
 #! Operator definitions.
 
-import "lib/core/bool.tao"
+import "bool.tao"
 
 # Not
 

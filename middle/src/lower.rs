@@ -388,7 +388,7 @@ impl Context {
             },
             hir::Expr::Basin(eff, inner) => mir::Expr::Basin(*eff, self.lower_expr(hir, con, inner, stack)),
             hir::Expr::Handle { expr, eff, send, recv } => {
-                let send_local = Local::new();;
+                let send_local = Local::new();
                 mir::Expr::Handle {
                     expr: self.lower_expr(hir, con, expr, stack),
                     eff: *eff,

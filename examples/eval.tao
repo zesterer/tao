@@ -1,4 +1,4 @@
-import "lib/parse.tao"
+import "../lib/parse.tao"
 
 def main : IO () = match "(4 + 5) * 3":parse(expr_parser) in
     | Ok expr => print(expr:eval:display)

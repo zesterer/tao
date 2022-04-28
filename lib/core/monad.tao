@@ -1,4 +1,4 @@
-import "lib/core/tail.tao"
+import "../core/tail.tao"
 
 type IO A = @ -> (@, A)
 

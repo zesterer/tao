@@ -1,5 +1,7 @@
 # >>>> INPUT
 
+import "../../lib/std.tao"
+
 $[main]
 def main: [()]= []
 
@@ -9,79 +11,87 @@ def main: [()]= []
 
 # >>>> INPUT
 
+import "../../lib/std.tao"
+
 $[main]
 def main = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # >>>> OUTPUT
 
-[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+[1i, 2i, 3i, 4i, 5i, 6i, 7i, 8i, 9i, 10i]
 
 # >>>> INPUT
 
-def len A =
+import "../../lib/std.tao"
+
+fn len2 A =
 	| []: [A] => 0
-	\ [_ .. tail] => 1 + tail:len
+	\ [_ .. tail] => 1 + tail:len2
 
 $[main]
-def main = [True, False, False, True, True, False, False]:len
+def main = [True, False, False, True, True, False, False]:len2
 
 # >>>> OUTPUT
 
-7
+7i
 
 # >>>> INPUT
 
-def sum =
+import "../../lib/std.tao"
+
+fn sum2 =
 	| []: [Nat] => 0
 	\ [x .. tail] => x + tail:sum
 
 $[main]
-def main = [1, 2, 3, 4, 5]:sum
+def main = [1, 2, 3, 4, 5]:sum2
 
 # >>>> OUTPUT
 
-15
+15i
 
 # >>>> INPUT
 
-data Maybe A =
-	| Just A
-	\ None
+import "../../lib/std.tao"
 
-def nth A : Nat -> [A] -> Maybe A =
+fn nth2 A : Nat -> [A] -> Maybe A =
     | 0, [x ..] => Just x
-    | n + 1, [_ .. tail] => tail:nth(n)
+    | n + 1, [_ .. tail] => tail:nth2(n)
     \ _, _ => None
 
 $[main]
 def main =
 	let xs = [5, 7, 2, 3, 9, 8] in
-	match xs:nth(0), xs:nth(1), xs:nth(5), xs:nth(6) in
+	match xs:nth2(0), xs:nth2(1), xs:nth2(5), xs:nth2(6) in
 	| Just 5, Just 7, Just 8, None => True
 	\ _, _, _, _ => False
 
 # >>>> OUTPUT
 
-true
+#1 []
 
 # >>>> INPUT
 
-def fold A, B : A -> (A -> B -> A) -> [B] -> A =
+import "../../lib/std.tao"
+
+fn fold2 A, B : A -> (A -> B -> A) -> [B] -> A =
 	| init, _, [] => init
-	\ init, f, [x .. tail] => fold(f(init, x), f, tail)
+	\ init, f, [x .. tail] => fold2(f(init, x), f, tail)
 
 $[main]
-def main = [1, 2, 3, 4, 5]:fold(0, fn x, y => x + y)
+def main = [1, 2, 3, 4, 5]:fold2(0, fn x, y => x + y)
 
 # >>>> OUTPUT
 
-15
+15i
 
 # >>>> INPUT
+
+import "../../lib/std.tao"
 
 $[main]
 def main = [1, 2 .. [3, 4, 5]]
 
 # >>>> OUTPUT
 
-[1, 2, 3, 4, 5]
+[1i, 2i, 3i, 4i, 5i]

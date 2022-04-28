@@ -1,4 +1,4 @@
-import "lib/core/monad.tao"
+import "../core/monad.tao"
 
 # IO operations
 

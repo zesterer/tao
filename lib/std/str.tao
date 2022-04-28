@@ -1,4 +1,4 @@
-import "lib/core/ops.tao"
+import "../core/ops.tao"
 
 #! Utilities for programming with strings.
 

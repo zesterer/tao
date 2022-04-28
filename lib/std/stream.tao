@@ -2,7 +2,7 @@
 #!
 #! In other languages, streams are often called 'iterators'.
 
-import "lib/std/value.tao"
+import "value.tao"
 
 # type Sum = (Nat | Num)
 # fn foo : Sum = &5

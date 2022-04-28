@@ -1,3 +1,3 @@
-import "lib/std.tao"
+import "../lib/std.tao"
 
 def main = print("Hello, world!")

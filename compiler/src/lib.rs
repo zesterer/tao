@@ -1,10 +1,11 @@
 mod error;
 
 pub use tao_syntax::SrcId;
+pub use tao_middle::OptMode;
 
 use tao_syntax::{parse_module, ast, SrcNode, Error as SyntaxError};
 use tao_analysis::Context as HirContext;
-use tao_middle::{Context, OptMode};
+use tao_middle::Context;
 use tao_vm::{Program, exec};
 use ariadne::sources;
 use structopt::StructOpt;
@@ -27,30 +28,38 @@ pub struct Options {
     pub opt: OptMode,
 }
 
-pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, options: Options, mut writer: impl Write, mut get_file: F) {
+pub fn run<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<SrcId>>(
+    src: String,
+    src_id: SrcId,
+    options: Options,
+    mut writer: impl Write,
+    mut get_file: F,
+    mut make_src: G,
+) {
     let (mut ast, mut syntax_errors) = parse_module(&src, src_id);
 
     // TODO: Write a proper module system you lazy git
-    fn resolve_imports<F: FnMut(SrcId) -> Option<String>>(
+    fn resolve_imports<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<SrcId>>(
+        parent_src: SrcId,
         module: Option<&mut ast::Module>,
         imported: &mut HashMap<SrcId, String>,
         import_errors: &mut Vec<Error>,
         syntax_errors: &mut Vec<SyntaxError>,
         get_file: &mut F,
+        make_src: &mut G,
     ) {
         if let Some(module) = module {
             let imports = std::mem::take(&mut module.imports);
 
             for import in imports {
-                let src_id = SrcId::from_path(import.as_str());
-                match get_file(src_id) {
-                    Some(src) => {
+                match make_src(parent_src, import.as_str()).and_then(|src_id| Some((src_id, get_file(src_id)?))) {
+                    Some((src_id, src)) => {
                         // Check for cycles
                         if imported.insert(src_id, src.clone()).is_none() {
                             let (mut ast, mut new_syntax_errors) = parse_module(&src, src_id);
                             syntax_errors.append(&mut new_syntax_errors);
 
-                            resolve_imports(ast.as_deref_mut(), imported, import_errors, syntax_errors, get_file);
+                            resolve_imports(src_id, ast.as_deref_mut(), imported, import_errors, syntax_errors, get_file, make_src);
 
                             if let Some(mut ast) = ast {
                                 let mut old_items = std::mem::take(&mut module.items);
@@ -68,7 +77,7 @@ pub fn run<F: FnMut(SrcId) -> Option<String>>(src: String, src_id: SrcId, option
     // Resolve imports
     let mut imported = HashMap::new();
     let mut import_errors = Vec::new();
-    resolve_imports(ast.as_deref_mut(), &mut imported, &mut import_errors, &mut syntax_errors, &mut get_file);
+    resolve_imports(src_id, ast.as_deref_mut(), &mut imported, &mut import_errors, &mut syntax_errors, &mut get_file, &mut make_src);
     let mut srcs = sources(imported.into_iter().chain(std::iter::once((src_id, src))));
     if !import_errors.is_empty() {
         for e in import_errors {

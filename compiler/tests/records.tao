@@ -1,5 +1,7 @@
 # >>>> INPUT
 
+import "../../lib/std.tao"
+
 $[main]
 def main = {}
 
@@ -9,14 +11,18 @@ def main = {}
 
 # >>>> INPUT
 
+import "../../lib/std.tao"
+
 $[main]
 def main = { b: 6, a: True, c: () }
 
 # >>>> OUTPUT
 
-[true, 6, []]
+[#1 [], 6i, []]
 
 # >>>> INPUT
+
+import "../../lib/std.tao"
 
 $[main]
 def main =
@@ -27,13 +33,15 @@ def main =
 
 # >>>> OUTPUT
 
-5
+5i
 
 # >>>> INPUT
 
-def fold A, B : A -> (A -> B -> A) -> [B] -> A =
+import "../../lib/std.tao"
+
+fn fold2 A, B : A -> (A -> B -> A) -> [B] -> A =
 	| init, _, [] => init
-	\ init, f, [x .. tail] => fold(f(init, x), f, tail)
+	\ init, f, [x .. tail] => fold2(f(init, x), f, tail)
 
 # Emulated typeclass
 data Add A = {
@@ -58,12 +66,12 @@ def summable_nat = Summable {
 }
 
 # Generic summing function
-def sum A : Summable A -> [A] -> A =
-	\ summable => fold(summable.zero, summable.add.add)
+fn sum2 A : Summable A -> [A] -> A =
+	summable => fold2(summable.zero, summable.add.add)
 
 $[main]
-def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:sum(summable_nat)
+def main = [1, 2, 3, 4, 5, 6, 7, 8, 9]:sum2(summable_nat)
 
 # >>>> OUTPUT
 
-45
+45i

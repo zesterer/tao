@@ -1,4 +1,4 @@
-import "lib/core/ops.tao"
+import "ops.tao"
 
 $[lang(bool)]
 data Bool =

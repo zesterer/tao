@@ -1,6 +1,6 @@
 #! Utilities for type-level programming.
 
-import "lib/std/str.tao"
+import "str.tao"
 
 class Any =
     => type_name : Str

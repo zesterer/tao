@@ -1,4 +1,4 @@
-import "lib/std.tao"
+import "../lib/std.tao"
 
 ## 1. Find the last element of a list
 fn last A : [A] -> Maybe A =

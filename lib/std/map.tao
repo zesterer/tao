@@ -1,6 +1,6 @@
 #! An ordered map.
 
-import "lib/core/ops.tao"
+import "../core/ops.tao"
 
 data Map K, V =
     | MEmpty

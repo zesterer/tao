@@ -1,4 +1,4 @@
-import "lib/std.tao"
+import "../lib/std.tao"
 
 fn yield A : A -> yield A ~ () =
     x => @{ @suspend(x) }

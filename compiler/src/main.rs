@@ -16,5 +16,17 @@ fn main() {
     let src = fs::read_to_string(&args.file)
         .expect("Failed to read file");
     let src_id = SrcId::from_path(args.file);
-    run(src, src_id, args.options, std::io::stdout(), |src| fs::read_to_string(src.to_path()).ok());
+    run(
+        src,
+        src_id,
+        args.options,
+        std::io::stdout(),
+        |src| fs::read_to_string(src.to_path()).ok(),
+        |parent, rel| {
+            let mut path = parent.to_path();
+            path.pop();
+            path.push(rel);
+            Some(SrcId::from_path(path.canonicalize().ok()?))
+        },
+    );
 }

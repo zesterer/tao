@@ -1,4 +1,4 @@
-import "lib/std.tao"
+import "../lib/std.tao"
 
 # Natural numbers
 

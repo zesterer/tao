@@ -1,4 +1,4 @@
-import "lib/std/value.tao"
+import "value.tao"
 
 data Result A, E =
     | Ok A
