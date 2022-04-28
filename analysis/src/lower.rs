@@ -886,7 +886,9 @@ impl ToHir for ast::Expr {
 
                 let binary_ops = [
                     ("add_nat",  Intrinsic::AddNat,  Prim::Nat,  Prim::Nat,  TyInfo::Prim(Prim::Nat)),
+                    ("add_int",  Intrinsic::AddInt,  Prim::Int,  Prim::Int,  TyInfo::Prim(Prim::Int)),
                     ("mul_nat",  Intrinsic::MulNat,  Prim::Nat,  Prim::Nat,  TyInfo::Prim(Prim::Nat)),
+                    ("mul_int",  Intrinsic::MulInt,  Prim::Int,  Prim::Int,  TyInfo::Prim(Prim::Int)),
                     ("eq_char",  Intrinsic::EqChar,  Prim::Char, Prim::Char, TyInfo::Data(bool_data, Vec::new())),
                     ("eq_nat",   Intrinsic::EqNat,   Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new())),
                     ("less_nat", Intrinsic::LessNat, Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new())),

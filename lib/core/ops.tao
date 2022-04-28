@@ -51,10 +51,23 @@ member Nat of Add Nat =
     => Output = Nat
     => add = fn x, y => @add_nat(x, y)
 
+member Int of Add Int =
+    => Output = Int
+    => add = fn x, y => @add_int(x, y)
+
 $[lang(sub)]
 class Sub B =
     => Output
     => sub : Self -> B -> Self.Output
+
+member Nat of Sub Nat =
+    => Output = Int
+    # Hacky, hacky, hacky
+    => sub = fn x, y => --x + -y
+
+member Int of Sub Int =
+    => Output = Int
+    => sub = fn x, y => x + -y
 
 # Mul
 
@@ -66,6 +79,10 @@ class Mul B =
 member Nat of Mul Nat =
     => Output = Nat
     => mul = fn x, y => @mul_nat(x, y)
+
+member Int of Mul Int =
+    => Output = Int
+    => mul = fn x, y => @mul_int(x, y)
 
 # Div
 

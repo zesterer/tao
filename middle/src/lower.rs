@@ -288,7 +288,15 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
+                    hir::Intrinsic::AddInt => mir::Expr::Intrinsic(mir::Intrinsic::AddInt, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                        self.lower_expr(hir, con, &args[1], stack),
+                    ]),
                     hir::Intrinsic::MulNat => mir::Expr::Intrinsic(mir::Intrinsic::MulNat, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                        self.lower_expr(hir, con, &args[1], stack),
+                    ]),
+                    hir::Intrinsic::MulInt => mir::Expr::Intrinsic(mir::Intrinsic::MulInt, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),

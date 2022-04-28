@@ -16,6 +16,27 @@ member Nat of Default =
 for A < Default, B < Default member (A, B) of Default =
     => default = (A.default, B.default)
 
+# From
+
+class From A =
+    => from : A -> Self
+
+for A member A of From A =
+    => from = identity
+
+fn from A, B < From A = a => B.from(a)
+
+class Into A =
+    => into : Self -> A
+
+fn into A < Into B, B = a => A.into(a)
+
+for A, B < From A member A of Into B =
+    => into = fn x => B.from(x)
+
+member Int of From Nat =
+    => from = fn x => --x
+
 # Maybe
 
 data Maybe A =

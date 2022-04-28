@@ -1,3 +1,13 @@
+import "lib/std/value.tao"
+
 data Result A, E =
     | Ok A
     \ Err E
+
+data Never =|
+
+for A member Result A Never of From A =
+    => from = fn x => Ok x
+
+for A member A of From (Result A Never) =
+    => from = fn Ok x => x

@@ -145,6 +145,7 @@ pub struct Infer<'a> {
     self_type: Option<TyVar>,
     // self_obligations: Vec<ClassId>,
     implied_members: Vec<InferImpliedMember>,
+    pub debug: bool,
 }
 
 impl<'a> Infer<'a> {
@@ -163,9 +164,15 @@ impl<'a> Infer<'a> {
             self_type: None,
             // self_obligations: Vec::new(),
             implied_members: Vec::new(),
+            debug: false,
         };
 
         this
+    }
+
+    pub fn with_debug(mut self, debug: bool) -> Self {
+        self.debug = debug;
+        self
     }
 
     pub fn with_gen_scope_implied(mut self) -> Self {
@@ -1097,18 +1104,21 @@ impl<'a> Infer<'a> {
                 class.field(*item).is_some()
             })
         {
+            // TODO: Reenable this, or is this too clever?
+            /*
             let mut covers = false;
             // Filter further by classes that have members that cover our type
             for (_, member) in self.ctx.classes.members_of(class_id) {
                 // TODO: Also check member args?
                 // TODO: Deal with maybe covering?
-                if self.covers_var(ty, member.member, &mut HashMap::default()) == Ok(true) {
+                if matches!(self.covers_var(ty, member.member, &mut HashMap::default()), Ok(true)) {
                     covers = true;
                 }
             }
             if covers {
+            */
                 external_candidates.insert(class_id);
-            }
+            //}
         }
 
         Some((implied_candidates, external_candidates))
