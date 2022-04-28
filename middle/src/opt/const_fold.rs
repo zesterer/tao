@@ -268,6 +268,7 @@ impl Intrinsic {
 
         match self {
             Intrinsic::NegNat => op!(Nat(x) => Int(-(*x as i64))),
+            Intrinsic::NegInt => op!(Int(x) => Int(-*x)),
             Intrinsic::AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
             Intrinsic::SubNat => op!(Nat(x), Nat(y) => Int(*x as i64 - *y as i64)),
             Intrinsic::MulNat => op!(Nat(x), Nat(y) => Nat(x * y)),

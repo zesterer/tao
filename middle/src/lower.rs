@@ -270,7 +270,7 @@ impl Context {
                         mir::Expr::Literal(mir::Literal::List(name.chars().map(mir::Literal::Char).collect()))
                     },
                     hir::Intrinsic::NegNat => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
-                    hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
+                    hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegInt, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::NegReal => mir::Expr::Intrinsic(mir::Intrinsic::NegReal, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::EqChar => mir::Expr::Intrinsic(mir::Intrinsic::EqChar, vec![
                         self.lower_expr(hir, con, &args[0], stack),

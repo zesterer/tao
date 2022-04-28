@@ -265,7 +265,12 @@ impl ConContext {
                 let member = hir.classes
                     .lookup_member(hir, self, self_ty, (class_id, args.clone()))
                     .map(|m| hir.classes.get_member(m))
-                    .expect("Could not select member candidate");
+                    .unwrap_or_else(|| panic!(
+                        "Could not select member candidate for {} as {}{}",
+                        self.display(hir, self_ty),
+                        *hir.classes.get(class_id).name,
+                        args.iter().map(|arg| format!(" {}", self.display(hir, *arg))).collect::<String>(),
+                    ));
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
                 let mut links = HashMap::new();
@@ -489,7 +494,12 @@ impl ConContext {
                     .collect::<Vec<_>>();
                 let member_id = hir.classes
                     .lookup_member(hir, self, self_ty, (*class_id, args.clone()))
-                    .expect("Could not select member candidate");
+                    .unwrap_or_else(|| panic!(
+                        "Could not select member candidate for '{}' as '{}{}'",
+                        self.display(hir, self_ty),
+                        *hir.classes.get(*class_id).name,
+                        args.iter().map(|arg| format!(" {}", self.display(hir, *arg))).collect::<String>(),
+                    ));
 
                 let id = Intern::new(ConProc::Field(self_ty, member_id, args, **field));
                 self.lower_proc(hir, id);

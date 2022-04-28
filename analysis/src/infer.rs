@@ -61,17 +61,19 @@ trait FlowInfer<'a>: AsRef<Infer<'a>> {
     fn set_effect_info(&mut self, x: EffectVar, info: EffectInfo);
     fn set_class_info(&mut self, x: ClassVar, info: ClassInfo);
     fn set_error(&mut self, x: TyVar);
+    fn set_unknown_flow(&mut self, x: TyVar, y: TyVar);
     fn emit_error(&mut self, err: InferError);
 }
 
-struct CheckFlow<'a, 'b>(&'b Infer<'a>, bool);
+struct CheckFlow<'a, 'b>(&'b Infer<'a>, Option<bool>);
 impl<'a, 'b> AsRef<Infer<'a>> for CheckFlow<'a, 'b> { fn as_ref(&self) -> &Infer<'a> { self.0 } }
 impl<'a, 'b> FlowInfer<'a> for CheckFlow<'a, 'b> {
     fn set_info(&mut self, x: TyVar, info: TyInfo) {}
     fn set_effect_info(&mut self, x: EffectVar, info: EffectInfo) {}
     fn set_class_info(&mut self, x: ClassVar, info: ClassInfo) {}
-    fn set_error(&mut self, x: TyVar) { self.1 = true; }
-    fn emit_error(&mut self, err: InferError) { self.1 = true; }
+    fn set_error(&mut self, x: TyVar) { self.1 = Some(false); }
+    fn set_unknown_flow(&mut self, x: TyVar, y: TyVar) { if self.1 == Some(true) { self.1 = None; } }
+    fn emit_error(&mut self, err: InferError) { self.1 = Some(false); }
 }
 
 struct MakeFlow<'a, 'b>(&'b mut Infer<'a>);
@@ -83,6 +85,7 @@ impl<'a, 'b> FlowInfer<'a> for MakeFlow<'a, 'b> {
     fn set_error(&mut self, x: TyVar) {
         self.0.set_error(x);
     }
+    fn set_unknown_flow(&mut self, x: TyVar, y: TyVar) {}
     fn emit_error(&mut self, err: InferError) {
         self.0.errors.push(err);
     }
@@ -629,11 +632,16 @@ impl<'a> Infer<'a> {
         }
     }
 
-    // Check to see whether the type `x` may flow into the type `y`
-    pub fn check_flow(&self, x: TyVar, y: TyVar) -> bool {
-        let mut check = CheckFlow(self, false);
+    // Check to see whether the type `x` may flow into the type `y`. Returns Some(true) for correct flow, Some(false)
+    // for an error, and None for a flow that may or may not be permitted
+    pub fn check_flow(&self, x: TyVar, y: TyVar) -> Option<bool> {
+        let mut check = CheckFlow(self, Some(true));
         let res = Self::flow_inner(&mut check, x, y);
-        res.is_ok() && !check.1
+        match check.1 {
+            Some(true) => Some(res.is_ok()),
+            None => (!res.is_ok()).then_some(false),
+            Some(false) => Some(false)
+        }
     }
 
     fn flow_inner<I: FlowInfer<'a>>(infer: &mut I, x: TyVar, y: TyVar) -> Result<(), (TyVar, TyVar)> {
@@ -707,6 +715,7 @@ impl<'a> Infer<'a> {
                 infer.set_info(x, TyInfo::Error(ErrorReason::Recursive));
                 Ok(infer.set_error(x)) // TODO: Not actually ok
             } else {
+                infer.set_unknown_flow(x, y);
                 Ok(infer.set_info(x, TyInfo::Ref(y)))
             },
             (x_info, TyInfo::Unknown(_)) => if infer.as_ref().occurs_in(y, x) {
@@ -714,6 +723,7 @@ impl<'a> Infer<'a> {
                 infer.set_info(y, TyInfo::Error(ErrorReason::Recursive));
                 Ok(infer.set_error(y)) // TODO: Not actually ok
             } else {
+                infer.set_unknown_flow(x, y);
                 Ok(infer.set_info(y, TyInfo::Ref(x)))
             },
 
@@ -1130,7 +1140,7 @@ impl<'a> Infer<'a> {
     fn var_covers_var(&self, var: TyVar, ty: TyVar) -> Option<bool> {
         match (self.follow_info(var), self.follow_info(ty)) {
             (TyInfo::Unknown(_), _) => None,
-            (_, TyInfo::Unknown(_)) => Some(false),
+            (_, TyInfo::Unknown(_)) => None,//Some(false),
             (TyInfo::Gen(x, _, _), TyInfo::Gen(y, _, _)) if x == y => Some(true),
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Some(true),
             (TyInfo::List(x), TyInfo::List(y)) => self.var_covers_var(x, y),
@@ -1184,10 +1194,10 @@ impl<'a> Infer<'a> {
             (_, Ty::Gen(idx, _)) => {
                 let other_gen_var = *gens.entry(idx).or_insert(var);
                 // Invariance check of generic types with one-another
-                if self.check_flow(var, other_gen_var) && self.check_flow(other_gen_var, var) {
-                    Ok(true)
-                } else {
-                    Err(())
+                match (self.check_flow(var, other_gen_var), self.check_flow(other_gen_var, var)) {
+                    (Some(true), Some(true)) => Ok(true),
+                    (Some(false), _) | (_, Some(false)) => Err(()),
+                    (_, _) => Ok(false),
                 }
             },
             (TyInfo::Prim(x), Ty::Prim(y)) if x == y => Ok(true),

@@ -172,26 +172,26 @@ impl Classes {
 
     pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, (class, args): (ClassId, Vec<ConTyId>)) -> Option<MemberId> {
         // Returns true if member covers ty
-        fn covers(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId) -> bool {
+        fn covers(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId, gens: &mut HashMap<usize, ConTyId>) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
-                (Ty::Gen(_, _), _) => true, // Blanket impls match everything
+                (Ty::Gen(idx, _), _) => *gens.entry(idx).or_insert(ty) == ty,
                 (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
-                (Ty::List(x), ConTy::List(y)) => covers(hir, ctx, x, *y),
+                (Ty::List(x), ConTy::List(y)) => covers(hir, ctx, x, *y, gens),
                 (Ty::Tuple(xs), ConTy::Tuple(ys)) if xs.len() == ys.len() => xs
                     .into_iter()
                     .zip(ys.into_iter())
-                    .all(|(x, y)| covers(hir, ctx, x, *y)),
+                    .all(|(x, y)| covers(hir, ctx, x, *y, gens)),
                 (Ty::Record(xs), ConTy::Record(ys)) if xs.len() == ys.len() => xs
                     .into_iter()
                     .zip(ys.into_iter())
-                    .all(|((_, x), (_, y))| covers(hir, ctx, x, *y)),
+                    .all(|((_, x), (_, y))| covers(hir, ctx, x, *y, gens)),
                 (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
-                    covers(hir, ctx, x_i, *y_i) && covers(hir, ctx, x_o, *y_o)
+                    covers(hir, ctx, x_i, *y_i, gens) && covers(hir, ctx, x_o, *y_o, gens)
                 },
                 (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0 && xs.len() == y.1.len() => xs
                     .into_iter()
                     .zip(y.1.iter())
-                    .all(|(x, y)| covers(hir, ctx, x, *y)),
+                    .all(|(x, y)| covers(hir, ctx, x, *y, gens)),
                 _ => false,
             }
         }
@@ -203,10 +203,10 @@ impl Classes {
                     .iter()
                     .filter(|m| {
                         let member = self.get_member(**m);
-                        covers(hir, ctx, member.member, ty)
-                        && member.args.iter()
+                        let mut gens = HashMap::new();
+                        covers(hir, ctx, member.member, ty, &mut gens) && member.args.iter()
                             .zip(args.iter())
-                            .all(|(member_arg, arg)| covers(hir, ctx, *member_arg, *arg))
+                            .all(|(member_arg, arg)| covers(hir, ctx, *member_arg, *arg, &mut gens))
                     })
                     .collect::<Vec<_>>();
 
@@ -234,10 +234,10 @@ impl Classes {
                                 },
                                 hir.tys.display(hir, c.member),
                                 **self.get(class).name,
-                                {
-                                    let gen_scope = hir.tys.get_gen_scope(self.get(class).gen_scope);
-                                    (0..gen_scope.len()).map(|i| format!(" {}", *gen_scope.get(i).name)).collect::<String>()
-                                },
+                                c.args
+                                    .iter()
+                                    .map(|ty| format!(" {}", hir.tys.display(hir, *ty)))
+                                    .collect::<String>(),
                                 hir.tys.get_span(c.member).src(),
                             )
                         })
