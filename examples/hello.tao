@@ -1,4 +1,3 @@
 import "lib/std.tao"
 
-$[ty_debug]
-def main : Nat = (5 * 47 - 8):into#print("Hello, world!")
+def main = print("Hello, world!")

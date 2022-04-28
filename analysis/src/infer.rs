@@ -1114,21 +1114,20 @@ impl<'a> Infer<'a> {
                 class.field(*item).is_some()
             })
         {
-            // TODO: Reenable this, or is this too clever?
-            /*
             let mut covers = false;
             // Filter further by classes that have members that cover our type
             for (_, member) in self.ctx.classes.members_of(class_id) {
                 // TODO: Also check member args?
                 // TODO: Deal with maybe covering?
-                if matches!(self.covers_var(ty, member.member, &mut HashMap::default()), Ok(true)) {
+                // Checking these cases isn't essential for now, we can be as coarse as we like. We're only generating
+                // a candidate list: checking of the finally selected member will occur later.
+                if matches!(self.covers_var(ty, member.member, &mut HashMap::default()), Ok(_)) {
                     covers = true;
                 }
             }
             if covers {
-            */
                 external_candidates.insert(class_id);
-            //}
+            }
         }
 
         Some((implied_candidates, external_candidates))
@@ -1452,6 +1451,7 @@ impl<'a> Infer<'a> {
                         // Multiple covering members: we don't know which one to pick!
                         // This *probably* happened because we don't have have enough information about the member or
                         // about available members, so bail for now and resolve this later.
+                        // TODO: Consider constraints?
                         (2.., _) => {
                             println!(
                                 "Incoherence when solving {:?} as member of {}{}!",
@@ -1468,6 +1468,8 @@ impl<'a> Infer<'a> {
                                     member.args.iter().map(|arg| format!(" {}", self.ctx().tys.display(self.ctx(), *arg))).collect::<String>(),
                                 );
                             }
+                            println!("This probably should be caught by a member overlap/coherence checker");
+                            println!("Note that Tao's understanding of a member overlap is current unnecessarily conservative and does not consider type obligations");
                             None
                         },
                         (_, _) => None,

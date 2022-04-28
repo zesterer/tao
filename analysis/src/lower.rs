@@ -634,25 +634,25 @@ impl ToHir for ast::Expr {
                 let (class_id, field, class_args) = match &**op {
                     ast::BinaryOp::Eq => (infer.ctx().classes.lang.eq, SrcNode::new(Ident::new("eq"), self.span()), vec![]),
                     ast::BinaryOp::NotEq => (infer.ctx().classes.lang.eq, SrcNode::new(Ident::new("ne"), self.span()), vec![]),
-                    ast::BinaryOp::Add => (infer.ctx().classes.lang.add, SrcNode::new(Ident::new("add"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::Sub => (infer.ctx().classes.lang.sub, SrcNode::new(Ident::new("sub"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::Mul => (infer.ctx().classes.lang.mul, SrcNode::new(Ident::new("mul"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::Div => (infer.ctx().classes.lang.div, SrcNode::new(Ident::new("div"), self.span()), vec![a.meta().1]),
+                    ast::BinaryOp::Add => (infer.ctx().classes.lang.add, SrcNode::new(Ident::new("add"), self.span()), vec![b.meta().1]),
+                    ast::BinaryOp::Sub => (infer.ctx().classes.lang.sub, SrcNode::new(Ident::new("sub"), self.span()), vec![b.meta().1]),
+                    ast::BinaryOp::Mul => (infer.ctx().classes.lang.mul, SrcNode::new(Ident::new("mul"), self.span()), vec![b.meta().1]),
+                    ast::BinaryOp::Div => (infer.ctx().classes.lang.div, SrcNode::new(Ident::new("div"), self.span()), vec![b.meta().1]),
                     ast::BinaryOp::Less => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("less"), self.span()), vec![]),
                     ast::BinaryOp::LessEq => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("less_eq"), self.span()), vec![]),
                     ast::BinaryOp::More => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("more"), self.span()), vec![]),
                     ast::BinaryOp::MoreEq => (infer.ctx().classes.lang.ord_ext, SrcNode::new(Ident::new("more_eq"), self.span()), vec![]),
-                    ast::BinaryOp::And => (infer.ctx().classes.lang.and, SrcNode::new(Ident::new("and_"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::Or => (infer.ctx().classes.lang.or, SrcNode::new(Ident::new("or_"), self.span()), vec![a.meta().1]),
-                    ast::BinaryOp::Join => (infer.ctx().classes.lang.join, SrcNode::new(Ident::new("join"), self.span()), vec![a.meta().1]),
+                    ast::BinaryOp::And => (infer.ctx().classes.lang.and, SrcNode::new(Ident::new("and_"), self.span()), vec![b.meta().1]),
+                    ast::BinaryOp::Or => (infer.ctx().classes.lang.or, SrcNode::new(Ident::new("or_"), self.span()), vec![b.meta().1]),
+                    ast::BinaryOp::Join => (infer.ctx().classes.lang.join, SrcNode::new(Ident::new("join"), self.span()), vec![b.meta().1]),
                     op => todo!("Implement binary op {:?}", op),
                 };
 
                 if let Some(class_id) = class_id {
                     let func2 = infer.insert(op.span(), TyInfo::Func(b.meta().1, output_ty));
                     let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, func2));
-                    infer.make_flow(a.meta().1, b.meta().1, EqInfo::from(self.span()));
-                    infer.make_flow(b.meta().1, a.meta().1, EqInfo::from(self.span()));
+                    //infer.make_flow(a.meta().1, b.meta().1, EqInfo::from(self.span()));
+                    //infer.make_flow(b.meta().1, a.meta().1, EqInfo::from(self.span()));
 
                     // TODO: Pass second arg to class
                     let class = infer.make_class_field_known(a.meta().1, field.clone(), (class_id, class_args), func, self.span());
