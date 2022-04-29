@@ -30,27 +30,27 @@ for A < Number member Succ A of Number =
 # Addition
 
 class TAdd B =
-    => Result
+    => Output
 
 for B member Zero of TAdd B =
-    => Result = B
+    => Output = B
 
 for A < TAdd B, B member Succ A of TAdd B =
-    => Result = Succ A.Result
+    => Output = Succ A.Output
 
 # Multiplication
 
 class TMul B =
-    => Result
+    => Output
 
 for B member Zero of TMul B =
-    => Result = Zero
+    => Output = Zero
 
 for A, B member Succ A of TMul B where
     A < TMul B,
-    A.Result < TAdd B,
+    A.Output < TAdd B,
 =
-    => Result = A.Result.Result
+    => Output = A.Output.Output
 
 fn f A < TMul Zero : A -> () =
     _ => ()
@@ -72,23 +72,23 @@ member TFalse of Truthy =
     => as_bool = False
 
 class If A, B =
-    => Result
+    => Output
 
 for A, B member TTrue of If (A) B =
-    => Result = A
+    => Output = A
 
 for A, B member TFalse of If (A) B =
-    => Result = B
+    => Output = B
 
 # Demo
 def main =
     <TTrue.<If
         TTrue.<If
-            Six.<TMul Seven>.Result
-            Ten.<TMul Four>.Result
-        >.Result
+            Six.<TMul Seven>.Output
+            Ten.<TMul Four>.Output
+        >.Output
         TFalse.<If
-            Three.<TMul Two>.Result
-            Nine.<TMul Nine>.Result
-        >.Result
-    >.Result>.as_nat
+            Three.<TMul Two>.Output
+            Nine.<TMul Nine>.Output
+        >.Output
+    >.Output>.as_nat

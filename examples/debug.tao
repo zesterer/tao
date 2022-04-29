@@ -20,6 +20,8 @@ fn show_negative A : A -> Str where
 =
     a => (----a):show
 
+def s = "The meaning of life is " + -42
+
 def main = [1, 2, 3, 4]
     :map(fn x => x + 3)
     :map(fn x => x + x)
@@ -37,22 +39,6 @@ for A < Add A with { Output = A } member Double of FnZero A =
     => O = A
     => call = fn x => x + x
 def forced_monomorphisation : [Out Nat Double] = [1, 2, 3, 4]:map2
-
-class VecData A =
-    => Proj
-
-data Three
-
-for A member Three of VecData A =
-    => Proj = { x : A, y : A, z : A }
-
-data Vec A, N < VecData A = N.Proj
-
-def v3 : Vec Nat Three = Vec {
-    x : 4,
-    y : 5,
-    z : 6,
-}
 
 # def main : IO () =
 #     print("hello")

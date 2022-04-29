@@ -272,6 +272,7 @@ impl Context {
                     hir::Intrinsic::NegNat => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegInt, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::NegReal => mir::Expr::Intrinsic(mir::Intrinsic::NegReal, vec![self.lower_expr(hir, con, &args[0], stack)]),
+                    hir::Intrinsic::DisplayInt => mir::Expr::Intrinsic(mir::Intrinsic::DisplayInt, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::EqChar => mir::Expr::Intrinsic(mir::Intrinsic::EqChar, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),

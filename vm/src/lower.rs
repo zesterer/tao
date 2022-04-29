@@ -296,6 +296,7 @@ impl Program {
                     Intrinsic::MakeList(_) => { self.push(Instr::MakeList(args.len())); },
                     Intrinsic::NegNat | Intrinsic::NegInt => { self.push(Instr::NegInt); },
                     Intrinsic::NegReal => { self.push(Instr::NegReal); },
+                    Intrinsic::DisplayInt => { self.push(Instr::Display); },
                     Intrinsic::AddNat | Intrinsic::AddInt => { self.push(Instr::AddInt); },
                     Intrinsic::SubNat | Intrinsic::SubInt => { self.push(Instr::SubInt); },
                     Intrinsic::MulNat | Intrinsic::MulInt => { self.push(Instr::MulInt); },

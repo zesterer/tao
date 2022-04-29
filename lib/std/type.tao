@@ -11,4 +11,4 @@ for A member A of Any =
         @type_name(xs)
 
 fn type_name_of A < Any =
-    \ x : A => A.type_name
+    _ : A => A.type_name

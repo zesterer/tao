@@ -91,7 +91,7 @@ impl Error {
                 match origin {
                     Some(origin) => vec![
                         (ctx.tys.get_span(a), format!("Use of generic item"), Color::Red),
-                        (origin, format!("Instantiation of this generic type"), Color::Red)
+                        (origin, format!("Instantiation of this generic type"), Color::Yellow)
                     ],
                     None => vec![(ctx.tys.get_span(a), format!("{}", display(a)), Color::Red)],
                 },

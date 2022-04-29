@@ -37,6 +37,15 @@ impl Value {
     pub fn sum(self) -> (usize, Rc<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
     pub fn universe(self) -> u64 { if let Value::Universe(x) = self { x } else { panic!("{}", self) } }
     pub fn eff(self) -> Rc<Effect> { if let Value::Effect(eff) = self { eff } else { panic!("{}", self) } }
+
+    pub fn display(self) -> String {
+        match self {
+            Value::Int(x) => format!("{}", x),
+            Value::Real(x) => format!("{}", x),
+            Value::Char(c) => format!("{}", c),
+            _ => todo!(),
+        }
+    }
 }
 
 impl fmt::Display for Value {
@@ -220,6 +229,10 @@ pub fn exec(prog: &Program) -> Option<Value> {
             Instr::NegReal => {
                 let x = stack.pop().unwrap().real();
                 stack.push(Value::Real(-x))
+            },
+            Instr::Display => {
+                let s = stack.pop().unwrap().display();
+                stack.push(Value::List(s.chars().map(Value::Char).collect()))
             },
             Instr::AddInt => {
                 let y = stack.pop().unwrap().int();

@@ -116,6 +116,7 @@ pub enum Intrinsic {
     NegNat,
     NegInt,
     NegReal,
+    DisplayInt,
     EqChar,
     EqNat,
     LessNat,

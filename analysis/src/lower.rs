@@ -873,15 +873,21 @@ impl ToHir for ast::Expr {
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },
             ast::Expr::Intrinsic(name, args) => if let Some(bool_data) = infer.ctx().datas.lang.r#bool {
+                fn make_str(infer: &mut Infer, span: Span) -> TyVar {
+                    let c = infer.insert(span, TyInfo::Prim(Prim::Char));
+                    infer.insert(span, TyInfo::List(c))
+                }
+
                 let mut args = args
                     .iter()
                     .map(|arg| arg.to_hir(infer, scope))
                     .collect::<Vec<_>>();
 
                 let unary_ops = [
-                    ("neg_nat",  Intrinsic::NegNat, Prim::Nat, Prim::Int),
-                    ("neg_int",  Intrinsic::NegInt, Prim::Int, Prim::Int),
-                    ("neg_real", Intrinsic::NegReal, Prim::Real, Prim::Real),
+                    ("neg_nat",  Intrinsic::NegNat, Prim::Nat, TyInfo::Prim(Prim::Int)),
+                    ("neg_int",  Intrinsic::NegInt, Prim::Int, TyInfo::Prim(Prim::Int)),
+                    ("neg_real", Intrinsic::NegReal, Prim::Real, TyInfo::Prim(Prim::Real)),
+                    ("display_int", Intrinsic::DisplayInt, Prim::Int, TyInfo::Ref(make_str(infer, self.span()))),
                 ];
 
                 let binary_ops = [
@@ -894,16 +900,16 @@ impl ToHir for ast::Expr {
                     ("less_nat", Intrinsic::LessNat, Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new())),
                 ];
 
-                if let Some((_, intrinsic, a_prim, out_prim)) = unary_ops
+                if let Some((_, intrinsic, a_prim, out_ty)) = unary_ops
                     .iter()
                     .find(|(op, _, _, _)| op == &***name)
                     .filter(|_| args.len() == 1)
-                    .copied()
+                    .cloned()
                 {
                     let a = &args[0];
                     let a_ty = infer.insert(a.meta().0, TyInfo::Prim(a_prim));
                     infer.make_flow(args[0].meta().1, a_ty, EqInfo::from(name.span()));
-                    (TyInfo::Prim(out_prim), hir::Expr::Intrinsic(SrcNode::new(intrinsic, name.span()), args))
+                    (out_ty, hir::Expr::Intrinsic(SrcNode::new(intrinsic, name.span()), args))
                 } else if let Some((_, intrinsic, a_prim, b_prim, out_ty)) = binary_ops
                     .iter()
                     .find(|(op, _, _, _, _)| op == &***name)
@@ -957,8 +963,7 @@ impl ToHir for ast::Expr {
                             let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
                             infer.make_flow(a.meta().1, universe, EqInfo::from(name.span()));
 
-                            let c = infer.insert(self.span(), TyInfo::Prim(Prim::Char));
-                            let s = infer.insert(self.span(), TyInfo::List(c));
+                            let s = make_str(infer, self.span());
 
                             (TyInfo::Tuple(vec![universe, s]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Input, name.span()), args))
                         },

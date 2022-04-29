@@ -30,59 +30,59 @@ for A member A of Num where
 
 # A generic vector type
 
-class VectorData A =
+class VecData A =
     => Data
     => splat : A -> Self.Data
     => map : Self.Data -> (A -> A) -> Self.Data
     => map2 : Self.Data -> Self.Data -> (A -> A -> A) -> Self.Data
 
-data Vector A, N < VectorData A = N.Data
+data Vec A, N < VecData A = N.Data
 
-for A, N member Vector A N of Add (Vector A N) where
-    N < VectorData A,
+for A, N member Vec A N of Add (Vec A N) where
+    N < VecData A,
     A < Add A with { Output = A },
 =
     => Output = Self
-    => add = fn Vector xs, Vector ys => Vector N.map2(xs, ys, fn x, y => x + y)
+    => add = fn Vec xs, Vec ys => Vec N.map2(xs, ys, fn x, y => x + y)
 
-#for A, B, N member Vector A N of Add B where
-#    N < VectorData A,
+#for A, B, N member Vec A N of Add B where
+#    N < VecData A,
 #    A < Add B with { Output = A },
 #=
 #    => Output = Self
-#    => add = fn Vector xs, y => Vector N.map(xs, fn x => x + y)
+#    => add = fn Vec xs, y => Vec N.map(xs, fn x => x + y)
 
-for A, N member Vector A N of Mul (Vector A N) where
-    N < VectorData A,
+for A, N member Vec A N of Mul (Vec A N) where
+    N < VecData A,
     A < Mul A with { Output = A },
 =
     => Output = Self
-    => mul = fn Vector xs, Vector ys => Vector N.map2(xs, ys, fn x, y => x * y)
+    => mul = fn Vec xs, Vec ys => Vec N.map2(xs, ys, fn x, y => x * y)
 
 data N2
-for A member N2 of VectorData A =
+for A member N2 of VecData A =
     => Data = { x : A, y : A }
     => splat = fn e => { x : e, y : e }
     => map = fn xs, f => { x : f(xs.x), y : f(xs.y) }
     => map2 = fn xs, ys, f => { x : f(xs.x, ys.x), y : f(xs.y, ys.y) }
 
 data N3
-for A member N3 of VectorData A =
+for A member N3 of VecData A =
     => Data = { x : A, y : A, z : A }
     => splat = fn e => { x : e, y : e, z : e }
     => map = fn xs, f => { x : f(xs.x), y : f(xs.y), z : f(xs.z) }
     => map2 = fn xs, ys, f => { x : f(xs.x, ys.x), y : f(xs.y, ys.y), z : f(xs.z, ys.z) }
 
-fn splat A, N < VectorData A : A -> Vector A N =
-    e => Vector N.splat(e)
+fn splat A, N < VecData A  : A -> Vec A N =
+    e => Vec N.splat(e)
 
-for A < Zero, N < VectorData A member Vector A N of Zero =
+for A < Zero, N < VecData A member Vec A N of Zero =
     => zero = splat(A.zero)
 
-for A < One, N < VectorData A member Vector A N of One =
+for A < One, N < VecData A member Vec A N of One =
     => one = splat(A.one)
 
 fn mul_add A < Num : A -> A -> A -> A =
     x, y, z => x * y + z
 
-def mul_add_demo : Vector Nat N3 = mul_add(zero, one, one)
+def mul_add_demo : Vec Nat N3 = mul_add(zero, one, one)

@@ -45,6 +45,8 @@ pub enum Instr {
     NegInt, // Int -> Int
     NegReal, // Real -> Real
 
+    Display, // ? -> Str
+
     AddInt, // Int -> Int -> Int
     SubInt, // Int -> Int -> Int
     MulInt,
@@ -154,6 +156,7 @@ impl Program {
                 Instr::NotBool
                 | Instr::NegInt
                 | Instr::NegReal => 0,
+                Instr::Display => 0,
                 Instr::AddInt
                 | Instr::SubInt
                 | Instr::MulInt
@@ -204,6 +207,7 @@ impl Program {
                 Instr::NotBool => format!("bool.not"),
                 Instr::NegInt => format!("int.neg"),
                 Instr::NegReal => format!("real.neg"),
+                Instr::Display => format!("any.display"),
                 Instr::AddInt => format!("int.add"),
                 Instr::SubInt => format!("int.sub"),
                 Instr::MulInt => format!("int.mul"),
