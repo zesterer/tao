@@ -10,20 +10,20 @@ import "value.tao"
 class Stream A =
     => next : Self -> (Maybe A, Self)
 
-#class IntoStream =
-#    => Stream
-#    => into : Self -> Self.Stream
+class IntoStream =
+   => Stream
+   => into : Self -> Self.Stream
 
 # for S < Stream member S of IntoStream =
 #     => Stream = S
 #     => into = identity
 
-#for A member [A] of IntoStream =
-#    => Stream = List A
-#    => into = fn xs => List xs
+for A member [A] of IntoStream =
+   => Stream = List A
+   => into = fn xs => List xs
 
-#fn into_stream A < IntoStream =
-#    \ s => A.into(s)
+fn into_stream A < IntoStream =
+   \ s => A.into(s)
 
 data List A = [A]
 

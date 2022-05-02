@@ -32,7 +32,7 @@ fn describe : State -> IO () = state => do {
     state.loc
         :directions
         :into_stream
-        :for_each(fn (dir, _) => do {
+        :for_each(fn (dir, _) : (Str, Location) => do {
             print("- " ++ dir);
         });
 }

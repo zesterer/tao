@@ -409,7 +409,10 @@ impl<'a> Infer<'a> {
             Ty::Gen(index, scope) => match f(index, scope, self.ctx) {
                 Some(ty) => TyInfo::Ref(ty),
                 None => {
-                    println!("Generic length mismatch!");
+                    println!("Generic length mismatch! Tried to get idx = {}", index);
+                    let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
+                    // TODO: A better error, if this occurs? (it shouldn't)
+                    self.ctx.emit(Error::WrongNumberOfGenerics(span, 999, span, 999));
                     // TODO: Can only occur if there's a mismatch in generic parameters, for which we already report an error
                     TyInfo::Error(ErrorReason::Invalid)
                 },
@@ -1238,6 +1241,7 @@ impl<'a> Infer<'a> {
     fn derive_links(&self, member: TyId, ty: TyVar, link_gen: &mut impl FnMut(usize, TyVar)) {
         match (self.ctx.tys.get(member), self.follow_info(ty)) {
             (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
+            (_, TyInfo::Unknown(_)) => println!("Warning: trying to derive non-generic links from an unknown type. This is not (yet) valid!"),
             (Ty::List(x), TyInfo::List(y)) => self.derive_links(x, y, link_gen),
             (Ty::Tuple(xs), TyInfo::Tuple(ys)) => xs
                 .into_iter()
@@ -1371,7 +1375,8 @@ impl<'a> Infer<'a> {
                             // None
                         },
                         // Exactly one covering member: great, we know what to substitute!
-                        // TODO: Allow for maybe-matching members
+                        // TODO: Allow for maybe-matching members, by having derive_links properly instantiate unknown
+                        // types!
                         (1, _) /*| (_, 1)*/ => {
                             // Can't fail
                             let (covering_member_id, covering_member) = covering_members
@@ -1387,8 +1392,9 @@ impl<'a> Infer<'a> {
 
                             let covering_member_member = covering_member.member;
                             let covering_member_args = covering_member.args.clone();
+                            let covering_member_gen_scope = covering_member.gen_scope;
 
-                            let covering_gen_scope = self.ctx.tys.get_gen_scope(covering_member.gen_scope);
+                            let covering_gen_scope = self.ctx.tys.get_gen_scope(covering_member_gen_scope);
                             for member in covering_gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
                                 let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty));
                                 let member_args = member.args
@@ -1403,16 +1409,6 @@ impl<'a> Infer<'a> {
                                         .collect::<Vec<_>>(),
                                     ImpliedItems::Real(_) => Vec::new(),
                                 };
-
-                                // Unify member and class args: we did it, patrick!
-                                // TODO: Do we *need* to do this?
-                                // TODO: Move assoc flowing from obligation constraint to here too
-                                // let member_ty = self.instantiate(covering_member_member, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
-                                // self.make_flow(ty, member_ty, EqInfo::from(use_span));
-                                // for (arg, covering_arg) in class_args.iter().zip(covering_member_args.iter()) {
-                                //     let covering_arg_ty = self.instantiate(*covering_arg, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
-                                //     self.make_flow(*arg, covering_arg_ty, EqInfo::from(use_span));
-                                // }
 
                                 let proof_key = (member_ty, *member.class, member_args.clone());
                                 if proof_stack.contains(&proof_key) {
@@ -1436,7 +1432,8 @@ impl<'a> Infer<'a> {
                                     proof_stack.pop();
                                     match res {
                                         Some(Ok(Ok(_))) => {},
-                                        Some(Ok(Err(()))) => return Some(Ok(Err(()))),
+                                        // Successful, but only because an existing error occurred
+                                        Some(Ok(Err(()))) => {},//return Some(Ok(Err(()))),
                                         Some(Err(err)) => return Some(Err(err)),
                                         None => {
                                             // Not enough information to resolve it yet? That's okay! Take it as a win
@@ -1446,6 +1443,23 @@ impl<'a> Infer<'a> {
                                     }
                                 }
                             }
+
+                            // Unify member and class args: we did it, patrick!
+                            // TODO: Do we *need* to do this?
+                            // TODO: Move assoc flowing from obligation constraint to here too
+                            //println!("Instantiating {} as {}", self.ctx().tys.display(self.ctx(), covering_member_member), *self.ctx.classes.get(class_id).name);
+                            //println!("Links: {:?}", links);
+                            //println!("Instantiating member...");
+                            /*
+                            let member_ty = self.instantiate(covering_member_member, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
+                            self.make_flow(ty, member_ty, EqInfo::from(use_span));
+                            for (arg, covering_arg) in class_args.iter().zip(covering_member_args.iter()) {
+                                //println!("Instantiating arg...");
+                                let covering_arg_ty = self.instantiate(*covering_arg, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
+                                self.make_flow(*arg, covering_arg_ty, EqInfo::from(use_span));
+                            }
+                            //println!("Finished instantiating.");
+                            */
 
                             Some(Ok(Ok(ImpliedItems::Real(covering_member_id))))
                         },
@@ -1463,10 +1477,11 @@ impl<'a> Infer<'a> {
                             println!("Members are:");
                             for (member_id, member) in covering_members {
                                 println!(
-                                    "{} < {}{}",
+                                    "{} < {}{} (in {})",
                                     self.ctx().tys.display(self.ctx(), member.member),
                                     *self.ctx.classes.get(class_id).name,
                                     member.args.iter().map(|arg| format!(" {}", self.ctx().tys.display(self.ctx(), *arg))).collect::<String>(),
+                                    self.ctx().tys.get_span(member.member).src(),
                                 );
                             }
                             println!("This probably should be caught by a member overlap/coherence checker");

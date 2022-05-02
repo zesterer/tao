@@ -12,9 +12,17 @@ fn factorial
     0 = 1
     m ~ n + 1 = m * n:factorial
 
-fn sum
-    [] = zero
-    [x .. xs] = x + xs:sum
+class Sum < Zero + Add
+for A < Zero + Add member A of Sum
+
+class Product < One + Mul
+for A < One + Mul member A of Product
+
+fn sum : a -> a where
+    a < Sum
+is
+    [] => zero
+    [x .. xs] => x + xs:sum
 
 data Maybe a
     Just a
@@ -31,8 +39,8 @@ class Iterator
 member [a] of Iterator
     Item = a
     next = fn
-        [] = (None, [])
-        [x .. xs] = (Just x, xs)
+        [] => (None, [])
+        [x .. xs] => (Just x, xs)
 
 fn foobar x, y
     let xy = x + y

@@ -1,12 +1,13 @@
 #! Utilities for manipulating and traversing containers.
 
+import "math.tao"
+
 class Map B =
     => Item
     => Output
     => map : (Self.Item -> B) -> Self -> Self.Output
 
 def map V < Map B, B : (V.Item -> B) -> V -> V.Output = V.map
-
 
 class Fold A =
     => Item
@@ -16,10 +17,10 @@ def fold V < Fold A, A : A -> (A -> V.Item -> A) -> V -> A = V.fold
 
 def sum C, A : C -> A where
     C < Fold A with { Item = A },
-    A < Zero + Add A with { Output = A },
+    A < Sum
 = fold(A.zero, fn x, y => x + y)
 
 def product C, A : C -> A where
     C < Fold A with { Item = A },
-    A < One + Mul A with { Output = A },
+    A < Product
 = fold(A.one, fn x, y => x * y)

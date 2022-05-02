@@ -18,15 +18,23 @@ def one A < One : A = A.one
 member Nat of One =
     => one = 1
 
+class Sum where
+    Self < Zero + Add Self with { Output = Self }
+
+for A member A of Sum where
+    A < Zero + Add A with { Output = A }
+
+class Product where
+    Self < One + Mul Self with { Output = Self }
+
+for A member A of Product where
+    A < One + Mul A with { Output = A }
+
 class Num where
-    Self < Zero + One,
-    Self < Add Self with { Output = Self },
-    Self < Mul Self with { Output = Self },
+    Self < Sum + Product,
 
 for A member A of Num where
-    A < Zero + One,
-    A < Add A with { Output = A },
-    A < Mul A with { Output = A },
+    A < Sum + Product
 
 # A generic vector type
 
