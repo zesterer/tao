@@ -484,7 +484,7 @@ impl Context {
                 let obl_member_ty = infer.instantiate(
                     *member_obl.member,
                     member_obl.member.span(),
-                    &|idx, _, _| member_args.get(idx).copied(),
+                    &mut |idx, _, _| member_args.get(idx).copied(),
                     Some(member_ty.meta().1),
                 );
                 let obl_member_args = member_obl.args
@@ -492,7 +492,7 @@ impl Context {
                     .map(|arg| infer.instantiate(
                         *arg,
                         member_obl.member.span(),
-                        &|idx, _, _| member_args.get(idx).copied(),
+                        &mut |idx, _, _| member_args.get(idx).copied(),
                         Some(member_ty.meta().1),
                     ))
                     .collect();
@@ -503,7 +503,7 @@ impl Context {
                         .map(|(name, assoc)| (name.clone(), infer.instantiate(
                             *assoc,
                             name.span(),
-                            &|idx, _, _| member_args.get(idx).copied(),
+                            &mut |idx, _, _| member_args.get(idx).copied(),
                             Some(member_ty.meta().1),
                         )))
                         .collect(),
@@ -584,7 +584,7 @@ impl Context {
                                 let val_ty = infer.instantiate(
                                     *field_ty,
                                     Some(name.span()),
-                                    &|idx, _, _| args.get(idx).copied(),
+                                    &mut |idx, _, _| args.get(idx).copied(),
                                     Some(self_ty),
                                 );
                                 infer.make_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));

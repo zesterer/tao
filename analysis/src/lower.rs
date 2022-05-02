@@ -98,14 +98,14 @@ pub fn enforce_generic_obligations(
         Err(())
     } else {
         for member in gen_scope.implied_members.as_ref().expect("Implied members must be available").clone() {
-            let member_ty = infer.instantiate(*member.member, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty);
+            let member_ty = infer.instantiate(*member.member, member.member.span(), &mut |idx, _, _| params.get(idx).copied(), self_ty);
             let args = member.args
                 .iter()
-                .map(|arg| infer.instantiate(*arg, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty))
+                .map(|arg| infer.instantiate(*arg, member.member.span(), &mut |idx, _, _| params.get(idx).copied(), self_ty))
                 .collect();
             let assoc = match &member.items {
                 ImpliedItems::Eq(assoc) => assoc.iter()
-                    .map(|(name, assoc)| (name.clone(), infer.instantiate(*assoc, member.member.span(), &|idx, _, _| params.get(idx).copied(), self_ty)))
+                    .map(|(name, assoc)| (name.clone(), infer.instantiate(*assoc, member.member.span(), &mut |idx, _, _| params.get(idx).copied(), self_ty)))
                     .collect(),
                 ImpliedItems::Real(_) => Vec::new(),
             };
@@ -165,7 +165,7 @@ impl ToHir for ast::Type {
 
                             let alias_ty = alias.ty;
                             let alias_gen_scope = alias.gen_scope;
-                            let get_gen = |index, scope, ctx: &Context| {
+                            let mut get_gen = |index, scope, infer: &mut Infer| {
                                 params.get(index).copied()
                             };
 
@@ -193,7 +193,7 @@ impl ToHir for ast::Type {
                                     infer.ctx_mut().emit(err);
                                     TyInfo::Error(ErrorReason::Unknown)
                                 },
-                                Ok(()) => TyInfo::Ref(infer.instantiate(alias_ty, self.span(), &get_gen, None)),
+                                Ok(()) => TyInfo::Ref(infer.instantiate(alias_ty, self.span(), &mut get_gen, None)),
                             }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error(ErrorReason::Unknown));
@@ -427,9 +427,9 @@ impl ToHir for ast::Binding {
                 let inner_ty = {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
-                    let get_gen = |index, _, ctx: &Context| generic_tys.get(index).copied();
+                    let mut get_gen = |index, _, infer: &mut Infer| generic_tys.get(index).copied();
 
-                    infer.instantiate(inner_ty, inner.span(), &get_gen, None)
+                    infer.instantiate(inner_ty, inner.span(), &mut get_gen, None)
                 };
 
                 let inner = inner.to_hir(infer, scope);
@@ -481,14 +481,14 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     let def = infer.ctx().defs.get(def_id);
     let def_gen_scope = def.gen_scope;
     let def_name = def.name.clone();
-    let get_gen = |index: usize, _, ctx: &Context| generic_tys.get(index).map(|(_, ty)| *ty);
+    let mut get_gen = |index: usize, _, infer: &mut Infer| generic_tys.get(index).map(|(_, ty)| *ty);
     let ty = if let Some(body_ty) = def.ty_hint
         .or_else(|| def.body
             .as_ref()
             .map(|body| body.meta().1))
     {
         // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-        let def_ty_actual = infer.instantiate(body_ty, span_override, &get_gen, None);
+        let def_ty_actual = infer.instantiate(body_ty, span_override, &mut get_gen, None);
         let def_ty = infer.unknown(span);
         infer.make_flow(def_ty_actual, def_ty, EqInfo::from(inst_span));
         Some(def_ty)
@@ -852,9 +852,9 @@ impl ToHir for ast::Expr {
                 let inner_ty = {
                     let data = infer.ctx().datas.get_data(data);
                     let data_gen_scope = data.gen_scope;
-                    let get_gen = |index, _, ctx: &Context| generic_tys.get(index).copied();
+                    let mut get_gen = |index, _, infer: &mut Infer| generic_tys.get(index).copied();
 
-                    infer.instantiate(inner_ty, name.span(), &get_gen, None)
+                    infer.instantiate(inner_ty, name.span(), &mut get_gen, None)
                 };
 
                 let inner = inner.to_hir(infer, scope);

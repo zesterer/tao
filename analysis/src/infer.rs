@@ -236,16 +236,16 @@ impl<'a> Infer<'a> {
         {
             // TODO: Consider class args too when deciding to recurse!
             if !searched.contains(&*new_member.class) {
-                let member_ty = self.instantiate(*new_member.member, new_member.member.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member));
+                let member_ty = self.instantiate(*new_member.member, new_member.member.span(), &mut |idx, _, _| member.args.get(idx).copied(), Some(*member.member));
                 let member_args = new_member.args
                     .iter()
-                    .map(|arg| self.instantiate(*arg, new_member.member.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member)))
+                    .map(|arg| self.instantiate(*arg, new_member.member.span(), &mut |idx, _, _| member.args.get(idx).copied(), Some(*member.member)))
                     .collect();
                 let items = match &new_member.items {
                     ImpliedItems::Real(member) => ImpliedItems::Real(*member),
                     ImpliedItems::Eq(assoc) => ImpliedItems::Eq(assoc
                         .iter()
-                        .map(|(name, assoc)| (name.clone(), self.instantiate(*assoc, name.span(), &|idx, _, _| member.args.get(idx).copied(), Some(*member.member))))
+                        .map(|(name, assoc)| (name.clone(), self.instantiate(*assoc, name.span(), &mut |idx, _, _| member.args.get(idx).copied(), Some(*member.member))))
                         .collect()),
                 };
 
@@ -383,10 +383,10 @@ impl<'a> Infer<'a> {
                     })
                     .collect::<Vec<_>>()
             });
-        self.instantiate(ty, span, &|idx, gen_scope, ctx| gens.as_ref().expect("No gen scope").get(idx).copied(), self.self_type)
+        self.instantiate(ty, span, &mut |idx, gen_scope, ctx| gens.as_ref().expect("No gen scope").get(idx).copied(), self.self_type)
     }
 
-    pub fn instantiate(&mut self, ty: TyId, span: impl Into<Option<Span>>, f: &impl Fn(usize, GenScopeId, &Context) -> Option<TyVar>, self_ty: Option<TyVar>) -> TyVar {
+    pub fn instantiate(&mut self, ty: TyId, span: impl Into<Option<Span>>, f: &mut impl FnMut(usize, GenScopeId, &mut Self) -> Option<TyVar>, self_ty: Option<TyVar>) -> TyVar {
         let span = span.into();
         let info = match self.ctx.tys.get(ty) {
             Ty::Error(reason) => TyInfo::Error(reason),
@@ -406,7 +406,7 @@ impl<'a> Infer<'a> {
                 .map(|param| self.instantiate(param, span, f, self_ty))
                 .collect()),
              // TODO: Check scope is valid for recursive scopes
-            Ty::Gen(index, scope) => match f(index, scope, self.ctx) {
+            Ty::Gen(index, scope) => match f(index, scope, self) {
                 Some(ty) => TyInfo::Ref(ty),
                 None => {
                     println!("Generic length mismatch! Tried to get idx = {}", index);
@@ -888,7 +888,7 @@ impl<'a> Infer<'a> {
                 if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
                     if let Ty::Record(fields) = self.ctx.tys.get(*ty) {
                         if let Some(field_ty) = fields.get(&field_name) {
-                            let field_ty = self.instantiate(*field_ty, self.span(record), &|index, _, _| params.get(index).copied(), Some(record));
+                            let field_ty = self.instantiate(*field_ty, self.span(record), &mut |index, _, _| params.get(index).copied(), Some(record));
                             if flow_out {
                                 self.make_flow(field_ty, field, field_name.span());
                             } else {
@@ -932,17 +932,20 @@ impl<'a> Infer<'a> {
                             Ok(member) => {
                                 for (assoc, assoc_ty) in unchecked_assoc {
                                     match member {
-                                        Ok(ImpliedItems::Real(member)) => {
-                                            let member = self.ctx.classes.get_member(member);
+                                        Ok(ImpliedItems::Real(member_id)) => {
+                                            let member = self.ctx.classes.get_member(member_id);
+                                            let member_member = member.member;
+                                            let member_args = member.args.clone();
 
                                             let mut links = HashMap::new();
-                                            self.derive_links(member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
-                                            for (member_arg, arg) in member.args.iter().zip(args.iter()) {
-                                                self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
+                                            self.derive_links(member_member, ty, Some(ty), &mut links);
+                                            for (member_arg, arg) in member_args.iter().zip(args.iter()) {
+                                                self.derive_links(*member_arg, *arg, Some(ty), &mut links);
                                             }
 
+                                            let member = self.ctx.classes.get_member(member_id);
                                             if let Some(member_assoc_ty) = member.assoc_ty(*assoc) {
-                                                let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &|idx, gen_scope, ctx| links.get(&idx).copied(), Some(ty));
+                                                let assoc_ty_inst = self.instantiate(member_assoc_ty, obl_span, &mut |idx, gen_scope, ctx| links.get(&idx).copied(), Some(ty));
                                                 // TODO: Check ordering for soundness
                                                 self.make_flow(assoc_ty_inst, assoc_ty, obl_span);
                                             }
@@ -985,14 +988,14 @@ impl<'a> Infer<'a> {
                     let send_ty = self.instantiate(
                         self.ctx.effects.get_decl(decl).send.expect("Send must be init"),
                         span,
-                        &|idx, _gen_scope, _ctx| args.get(idx).copied(),
+                        &mut |idx, _gen_scope, _ctx| args.get(idx).copied(),
                         None,
                     );
                     self.make_flow(send, send_ty, span);
                     let recv_ty = self.instantiate(
                         self.ctx.effects.get_decl(decl).recv.expect("Recv must be init"),
                         span,
-                        &|idx, _gen_scope, _ctx| args.get(idx).copied(),
+                        &mut |idx, _gen_scope, _ctx| args.get(idx).copied(),
                         None,
                     );
                     // TODO: The variance here is a bit fucked, this needs to swap when we're
@@ -1035,7 +1038,7 @@ impl<'a> Infer<'a> {
             .get(class_id)
             .field(*field)
             .unwrap();
-        let inst_field_ty = self.instantiate(field_ty_id, field.span(), &|idx, _, _| args.get(idx).copied(), Some(ty));
+        let inst_field_ty = self.instantiate(field_ty_id, field.span(), &mut |idx, _, _| args.get(idx).copied(), Some(ty));
 
         // TODO: Check soundness of flow relationship
         self.make_flow(inst_field_ty, field_ty, field.span());
@@ -1238,30 +1241,39 @@ impl<'a> Infer<'a> {
     // Link the generic types of a class member with type variables in the current scope so obligations
     // can be generated
     // TODO: Derive links for effects
-    fn derive_links(&self, member: TyId, ty: TyVar, link_gen: &mut impl FnMut(usize, TyVar)) {
+    fn derive_links(&mut self, member: TyId, ty: TyVar, self_ty: Option<TyVar>, links: &mut HashMap<usize, TyVar>) {
         match (self.ctx.tys.get(member), self.follow_info(ty)) {
-            (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
-            (_, TyInfo::Unknown(_)) => println!("Warning: trying to derive non-generic links from an unknown type. This is not (yet) valid!"),
-            (Ty::List(x), TyInfo::List(y)) => self.derive_links(x, y, link_gen),
+            (Ty::Gen(gen_idx, _), _) => { links.insert(gen_idx, ty); },
+            // If we try to derive links through an unknown type variable, we instantiate the reified type into the
+            // current context, generating free type variables for any as-yet unseen generics. This allows
+            // maybe-covering impls to work.
+            // TODO: This can potentially result in orphaned free type variables that never get inferred, despite the
+            // program being well-typed, which could cause phantom errors.
+            (_, TyInfo::Unknown(_)) => {
+                let span = self.ctx().tys.get_span(member);
+                let inst_ty = self.instantiate(member, span, &mut |idx, _, this: &mut Self| Some(*links.entry(idx).or_insert_with(|| this.unknown(span))), self_ty);
+                self.make_flow(ty, inst_ty, span);
+            },
+            (Ty::List(x), TyInfo::List(y)) => self.derive_links(x, y, self_ty, links),
             (Ty::Tuple(xs), TyInfo::Tuple(ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .for_each(|(x, y)| self.derive_links(x, y, link_gen)),
+                .for_each(|(x, y)| self.derive_links(x, y, self_ty, links)),
             (Ty::Record(xs), TyInfo::Record(ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .for_each(|((_, x), (_, y))| self.derive_links(x, y, link_gen)),
+                .for_each(|((_, x), (_, y))| self.derive_links(x, y, self_ty, links)),
             (Ty::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                self.derive_links(x_i, y_i, link_gen);
-                self.derive_links(x_o, y_o, link_gen);
+                self.derive_links(x_i, y_i, self_ty, links);
+                self.derive_links(x_o, y_o, self_ty, links);
             },
             (Ty::Data(_, xs), TyInfo::Data(_, ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .for_each(|(x, y)| self.derive_links(x, y, link_gen)),
+                .for_each(|(x, y)| self.derive_links(x, y, self_ty, links)),
             (Ty::Assoc(x, (class_id_x, args_x), assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
                 if assoc_x == assoc_y => {
-                    self.derive_links(x, y, link_gen);
+                    self.derive_links(x, y, self_ty, links);
                     match self.follow_class(class_y) {
                         ClassInfo::Unknown => panic!("Deriving links for unknown class!"),
                         ClassInfo::Ref(_) => unreachable!(),
@@ -1270,7 +1282,7 @@ impl<'a> Infer<'a> {
                             args_x
                                 .into_iter()
                                 .zip(args_y.into_iter())
-                                .for_each(|(x, y)| self.derive_links(x, y, link_gen));
+                                .for_each(|(x, y)| self.derive_links(x, y, self_ty, links));
                         },
                     }
                 },
@@ -1377,35 +1389,35 @@ impl<'a> Infer<'a> {
                         // Exactly one covering member: great, we know what to substitute!
                         // TODO: Allow for maybe-matching members, by having derive_links properly instantiate unknown
                         // types!
-                        (1, _) /*| (_, 1)*/ => {
+                        (1, _) | (0, 1) => {
                             // Can't fail
                             let (covering_member_id, covering_member) = covering_members
                                 .into_iter().next()
                                 .or(maybe_covering_members.into_iter().next())
                                 .unwrap();
 
-                            let mut links = HashMap::new();
-                            self.derive_links(covering_member.member, ty, &mut |gen_idx, var| { links.insert(gen_idx, var); });
-                            for (member_arg, arg) in covering_member.args.iter().zip(class_args.iter()) {
-                                self.derive_links(*member_arg, *arg, &mut |gen_idx, var| { links.insert(gen_idx, var); });
-                            }
-
                             let covering_member_member = covering_member.member;
                             let covering_member_args = covering_member.args.clone();
                             let covering_member_gen_scope = covering_member.gen_scope;
 
+                            let mut links = HashMap::new();
+                            self.derive_links(covering_member_member, ty, Some(ty), &mut links);
+                            for (member_arg, arg) in covering_member_args.iter().zip(class_args.iter()) {
+                                self.derive_links(*member_arg, *arg, Some(ty), &mut links);
+                            }
+
                             let covering_gen_scope = self.ctx.tys.get_gen_scope(covering_member_gen_scope);
                             for member in covering_gen_scope.implied_members.as_ref().expect("Implied members must be known here").clone() {
-                                let member_ty = self.instantiate(*member.member, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty));
+                                let member_ty = self.instantiate(*member.member, member.member.span(), &mut |idx, _, _| links.get(&idx).copied(), Some(ty));
                                 let member_args = member.args
                                     .iter()
-                                    .map(|arg| self.instantiate(*arg, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty)))
+                                    .map(|arg| self.instantiate(*arg, member.member.span(), &mut |idx, _, _| links.get(&idx).copied(), Some(ty)))
                                     .collect::<Vec<_>>();
 
                                 let member_assoc = match &member.items {
                                     ImpliedItems::Eq(assoc) => assoc
                                         .iter()
-                                        .map(|(name, assoc)| (name.clone(), self.instantiate(*assoc, member.member.span(), &|idx, _, _| links.get(&idx).copied(), Some(ty))))
+                                        .map(|(name, assoc)| (name.clone(), self.instantiate(*assoc, member.member.span(), &mut |idx, _, _| links.get(&idx).copied(), Some(ty))))
                                         .collect::<Vec<_>>(),
                                     ImpliedItems::Real(_) => Vec::new(),
                                 };
@@ -1447,19 +1459,13 @@ impl<'a> Infer<'a> {
                             // Unify member and class args: we did it, patrick!
                             // TODO: Do we *need* to do this?
                             // TODO: Move assoc flowing from obligation constraint to here too
-                            //println!("Instantiating {} as {}", self.ctx().tys.display(self.ctx(), covering_member_member), *self.ctx.classes.get(class_id).name);
-                            //println!("Links: {:?}", links);
-                            //println!("Instantiating member...");
-                            /*
-                            let member_ty = self.instantiate(covering_member_member, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
+                            let member_ty = self.instantiate(covering_member_member, use_span, &mut |idx, _, _| links.get(&idx).copied(), Some(ty));
                             self.make_flow(ty, member_ty, EqInfo::from(use_span));
                             for (arg, covering_arg) in class_args.iter().zip(covering_member_args.iter()) {
                                 //println!("Instantiating arg...");
-                                let covering_arg_ty = self.instantiate(*covering_arg, use_span, &|idx, _, _| links.get(&idx).copied(), Some(ty));
+                                let covering_arg_ty = self.instantiate(*covering_arg, use_span, &mut |idx, _, _| links.get(&idx).copied(), Some(ty));
                                 self.make_flow(*arg, covering_arg_ty, EqInfo::from(use_span));
                             }
-                            //println!("Finished instantiating.");
-                            */
 
                             Some(Ok(Ok(ImpliedItems::Real(covering_member_id))))
                         },
