@@ -1386,9 +1386,8 @@ impl<'a> Infer<'a> {
                             Some(Err(InferError::TypeDoesNotFulfil(self.insert_class(obl_span, ClassInfo::Known(class_id, class_args)), ty, obl_span, gen_span, use_span)))
                             // None
                         },
-                        // Exactly one covering member: great, we know what to substitute!
-                        // TODO: Allow for maybe-matching members, by having derive_links properly instantiate unknown
-                        // types!
+                        // Exactly one definitely covering member, one one possible-covering member: great, we know
+                        // what to substitute!
                         (1, _) | (0, 1) => {
                             // Can't fail
                             let (covering_member_id, covering_member) = covering_members
@@ -1400,6 +1399,7 @@ impl<'a> Infer<'a> {
                             let covering_member_args = covering_member.args.clone();
                             let covering_member_gen_scope = covering_member.gen_scope;
 
+                            // Derive generic types that need substituting from the member
                             let mut links = HashMap::new();
                             self.derive_links(covering_member_member, ty, Some(ty), &mut links);
                             for (member_arg, arg) in covering_member_args.iter().zip(class_args.iter()) {
@@ -1445,6 +1445,7 @@ impl<'a> Infer<'a> {
                                     match res {
                                         Some(Ok(Ok(_))) => {},
                                         // Successful, but only because an existing error occurred
+                                        // TODO: Return immediately, or continue to generate errors?
                                         Some(Ok(Err(()))) => {},//return Some(Ok(Err(()))),
                                         Some(Err(err)) => return Some(Err(err)),
                                         None => {

@@ -14,23 +14,10 @@ class IntoStream =
    => Stream
    => into : Self -> Self.Stream
 
-# for S < Stream member S of IntoStream =
-#     => Stream = S
-#     => into = identity
-
-for A member [A] of IntoStream =
-   => Stream = List A
-   => into = fn xs => List xs
-
-fn into_stream A < IntoStream =
-   \ s => A.into(s)
-
-data List A = [A]
-
-for A member List A of Stream A =
+for A member [A] of Stream A =
     => next = fn
-        | List [x .. xs] => (Just x, List xs)
-        \ List [] => (None, List [])
+        | [x .. xs] => (Just x, xs)
+        \ [] => (None, [])
 
 data Take S = {
     s: S,

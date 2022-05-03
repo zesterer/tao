@@ -1,8 +1,7 @@
-import "../lib/std.tao"
+import "../lib/parse.tao"
 
 def main : IO () = do {
     ["a", "b", "c", "d"]
-        :into_stream
         :for_each(fn x => do {
             print("Element = " ++ x);
         });
