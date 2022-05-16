@@ -210,9 +210,14 @@ impl<'a> Infer<'a> {
         self
     }
 
-    pub fn with_self_type(mut self, ty: TyId, span: Span) -> Self {
-        self.self_type = Some(self.instantiate_local(ty, span));
+    pub fn with_self_var(mut self, ty: TyVar) -> Self {
+        self.self_type = Some(ty);
         self
+    }
+
+    pub fn with_self_type(mut self, ty: TyId, span: Span) -> Self {
+        let var = self.instantiate_local(ty, span);
+        self.with_self_var(var)
     }
 
     pub fn set_self_unknown(&mut self, span: Span) -> TyVar {
@@ -1009,7 +1014,8 @@ impl<'a> Infer<'a> {
 
     fn try_resolve_class_from_assoc(&mut self, ty: TyVar, class_var: ClassVar, assoc: SrcNode<Ident>, assoc_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
         let (class_id, args) = match self.select_member_from_item(ty, class_var, assoc.clone(), assoc_ty, span, true) {
-            Some(Ok((class_id, args))) => (class_id, args),
+            Some(Ok(Some((class_id, args)))) => (class_id, args),
+            Some(Ok(None)) => return Some(Ok(())),
             Some(Err(err)) => return Some(Err(err)),
             None => return None,
         };
@@ -1026,7 +1032,8 @@ impl<'a> Infer<'a> {
 
     fn try_resolve_class_from_field(&mut self, ty: TyVar, class_var: ClassVar, field: SrcNode<Ident>, field_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
         let (class_id, args) = match self.select_member_from_item(ty, class_var, field.clone(), field_ty, span, false) {
-            Some(Ok((class_id, args))) => (class_id, args),
+            Some(Ok(Some((class_id, args)))) => (class_id, args),
+            Some(Ok(None)) => return Some(Ok(())),
             Some(Err(err)) => return Some(Err(err)),
             None => return None,
         };
@@ -1046,33 +1053,33 @@ impl<'a> Infer<'a> {
         Some(Ok(()))
     }
 
-    fn select_member_from_item(&mut self, ty: TyVar, class_var: ClassVar, item: SrcNode<Ident>, item_ty: TyVar, span: Span, is_assoc: bool) -> Option<Result<(ClassId, Vec<TyVar>), InferError>> {
+    fn select_member_from_item(&mut self, ty: TyVar, class_var: ClassVar, item: SrcNode<Ident>, item_ty: TyVar, span: Span, is_assoc: bool) -> Option<Result<Option<(ClassId, Vec<TyVar>)>, InferError>> {
         if let ClassInfo::Known(class_id, args) = self.follow_class(class_var) {
-            Some(Ok((class_id, args)))
+            Some(Ok(Some((class_id, args))))
         } else {
             let Some((implied_candidates, external_candidates)) = self.find_class_candidates_from_item(ty, item.clone(), item_ty, is_assoc)
-                else { return None }; // Resolving an error type always succeeds;
+                else { return Some(Ok(None)) }; // Resolving an error type always succeeds;
 
             match (implied_candidates.len(), external_candidates.len()) {
                 // Easy case: we found exactly 1 candidate implied by the gen scope, so we know it much be the one we're looking for.
                 (1, _) => {
                     // Can't fail
                     let member = implied_candidates.into_iter().next().unwrap();
-                    Some(Ok((*member.class, member.args)))
+                    Some(Ok(Some((*member.class, member.args))))
                 },
                 // Exactly one external candidate was found, so instantiate it
                 (0, 1) => {
                     // Can't fail
                     let class_id = external_candidates.into_iter().next().unwrap();
                     // TODO: Should we make use of member information? external_candidates should probably be HashSet<MemberId>
-                    Some(Ok((class_id, self.instantiate_class(class_id, item.span(), Some(ty)))))
+                    Some(Ok(Some((class_id, self.instantiate_class(class_id, item.span(), Some(ty))))))
                 },
                 // No implied or external candidates were found, so we can't resolve the member
                 (0, 0) => {
                     // No external candidates match either, so bail
                     // TODO: Should this really generate an error? It might be that we just need more info
                     self.set_error(item_ty);
-                    Some(Err(InferError::NoSuchItem(ty, span, item)))
+                    Some(Err(InferError::NoSuchItem(ty, self.span(ty), item)))
                     // None
                 },
                 (_, _) => {
@@ -1573,8 +1580,10 @@ impl<'a> Infer<'a> {
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
                     errors.push(InferError::AmbiguousClassItem(field, Vec::new()))
                 },
-                Constraint::ClassAssoc(_ty, _class, assoc, _assoc_ty, _span) => {
-                    errors.push(InferError::AmbiguousClassItem(assoc, Vec::new()))
+                Constraint::ClassAssoc(ty, _class, assoc, assoc_ty, _span) => {
+                    if !self.is_error(ty) && !self.is_error(assoc_ty) {
+                        errors.push(InferError::AmbiguousClassItem(assoc, Vec::new()))
+                    }
                 },
                 Constraint::EffectSendRecv(eff, send, recv, span) => errors.push(InferError::CannotInferEffect(eff)),
             }

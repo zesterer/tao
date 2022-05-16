@@ -38,6 +38,7 @@ pub enum Error {
     WrongNumberOfGenerics(Span, usize, Span, usize),
     DefTypeNotSpecified(Span, Span, Ident),
     SelfNotValidHere(Span),
+    AssocNotValidHere(Span),
     NoEntryPoint(Span),
     MultipleEntryPoints(Span, Span),
     GenericEntryPoint(SrcNode<Ident>, Span),
@@ -348,6 +349,13 @@ impl Error {
                     (span, format!("Not valid in this context"), Color::Red),
                 ],
                 vec![format!("The {} type can only be used in type classes", "Self".fg(Color::Blue))],
+            ),
+            Error::AssocNotValidHere(span) => (
+                format!("Associated types cannot be used here"),
+                vec![
+                    (span, format!("Not valid in this context"), Color::Red),
+                ],
+                vec![format!("Associated types may not be used as class members directly")],
             ),
             Error::NoEntryPoint(root_span) => (
                 format!("No main definition"),

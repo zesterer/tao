@@ -187,7 +187,7 @@ impl Context {
                 // TODO: Enforce these?
                 //.with_gen_scope_implied();
 
-            let ty = alias.ty.to_hir(&mut infer, &Scope::Empty);
+            let ty = alias.ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
@@ -212,10 +212,13 @@ impl Context {
             let mut infer = Infer::new(&mut this, Some(*gen_scope))
                 .with_gen_scope_implied();
 
-            let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
+            let member_ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
+
+            let mut infer = infer.with_self_var(member_ty.meta().1);
+
             let args = member.class.params
                 .iter()
-                .map(|arg| arg.to_hir(&mut infer, &Scope::Empty))
+                .map(|arg| arg.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty))
                 .collect::<Vec<_>>();
 
             let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class_id).gen_scope);
@@ -248,7 +251,7 @@ impl Context {
                 fields: None,
                 assoc: None,
             });
-            members.push((*member, *class_id, member_id, *gen_scope));
+            members.push((*member, *class_id, member_id, member_ty, *gen_scope));
         }
 
         // Check for lang items
@@ -259,8 +262,8 @@ impl Context {
             let mut infer = Infer::new(&mut this, Some(gen_scope))
                 .with_gen_scope_implied();
 
-            let send = eff.send.to_hir(&mut infer, &Scope::Empty);
-            let recv = eff.recv.to_hir(&mut infer, &Scope::Empty);
+            let send = eff.send.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
+            let recv = eff.recv.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
@@ -318,7 +321,7 @@ impl Context {
                         });
                         let mut infer = infer.with_gen_scope_implied();
 
-                        let ty = ty.to_hir(&mut infer, &Scope::Empty);
+                        let ty = ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
 
                         let (mut checked, mut errs) = infer.into_checked();
                         errors.append(&mut errs);
@@ -341,7 +344,7 @@ impl Context {
             this.classes.define_fields(*class_id, fields);
         }
         // Member associated types
-        for (member, class_id, member_id, gen_scope) in &members {
+        for (member, class_id, member_id, member_ty, gen_scope) in &members {
             let assoc = member.items
                 .iter()
                 .filter_map(|item| {
@@ -350,7 +353,7 @@ impl Context {
                         .with_self_type(member_ty, member.member.span());
                     let args = member.class.params
                         .iter()
-                        .map(|ty| ty.to_hir(&mut infer, &Scope::Empty).meta().1)
+                        .map(|ty| ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
                         .collect();
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
@@ -367,7 +370,7 @@ impl Context {
                             errors.push(Error::NoSuchClassItem(name.clone(), class.name.clone()));
                             None
                         } else {
-                            let ty = ty.to_hir(&mut infer, &Scope::Empty);
+                            let ty = ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
 
                             let (mut checked, mut errs) = infer.into_checked();
                             errors.append(&mut errs);
@@ -414,7 +417,7 @@ impl Context {
             let variants = data.variants
                 .iter()
                 .map(|(name, ty)| {
-                    let ty = ty.to_hir(&mut infer, &Scope::Empty);
+                    let ty = ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
                     (name.clone(), ty)
                 })
                 .collect::<Vec<_>>();
@@ -442,15 +445,15 @@ impl Context {
         }
 
         // Enforce member obligations
-        for (member, class_id, member_id, gen_scope) in &members {
+        for (member, class_id, member_id, member_ty, gen_scope) in &members {
             let mut infer = Infer::new(&mut this, Some(*gen_scope))
                 .with_gen_scope_implied();
 
-            let member_ty = member.member.to_hir(&mut infer, &Scope::Empty);
+            let member_ty = infer.instantiate_local(*member_ty, member.member.span());
 
             let member_args = member.class.params
                 .iter()
-                .map(|arg| member.member.to_hir(&mut infer, &Scope::Empty).meta().1)
+                .map(|arg| member.member.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
                 .collect::<Vec<_>>();
 
             // infer.add_implied_member(ImpliedMember {
@@ -485,7 +488,7 @@ impl Context {
                     *member_obl.member,
                     member_obl.member.span(),
                     &mut |idx, _, _| member_args.get(idx).copied(),
-                    Some(member_ty.meta().1),
+                    Some(member_ty),
                 );
                 let obl_member_args = member_obl.args
                     .iter()
@@ -493,7 +496,7 @@ impl Context {
                         *arg,
                         member_obl.member.span(),
                         &mut |idx, _, _| member_args.get(idx).copied(),
-                        Some(member_ty.meta().1),
+                        Some(member_ty),
                     ))
                     .collect();
                 let obl_assoc = match &member_obl.items {
@@ -504,7 +507,7 @@ impl Context {
                             *assoc,
                             name.span(),
                             &mut |idx, _, _| member_args.get(idx).copied(),
-                            Some(member_ty.meta().1),
+                            Some(member_ty),
                         )))
                         .collect(),
                 };
@@ -522,7 +525,7 @@ impl Context {
                 let mut infer = Infer::new(&mut this, Some(gen_scope))
                     .with_debug(attr.iter().find(|a| **a.name == "ty_debug").is_some())
                     .with_gen_scope_implied();
-                let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
+                let ty_hint = def.ty_hint.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
 
                 let (mut checked, mut errs) = infer.into_checked();
                 errors.append(&mut errs);
@@ -551,18 +554,17 @@ impl Context {
         this.errors.append(&mut this.defs.check_lang_items());
 
         // Member fields
-        for (member, class_id, member_id, gen_scope) in &members {
+        for (member, class_id, member_id, member_ty, gen_scope) in &members {
             let fields = member.items
                 .iter()
                 .filter_map(|item| {
-                    let member_ty = this.classes.get_member(*member_id).member;
                     let mut infer = Infer::new(&mut this, Some(*gen_scope))
-                        .with_self_type(member_ty, member.member.span())
+                        .with_self_type(*member_ty, member.member.span())
                         .with_gen_scope_implied();
                     let self_ty = infer.self_type().unwrap();
                     let args = member.class.params
                         .iter()
-                        .map(|ty| ty.to_hir(&mut infer, &Scope::Empty).meta().1)
+                        .map(|ty| ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
                         .collect::<Vec<_>>();
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
@@ -578,7 +580,7 @@ impl Context {
                             errors.push(Error::NoSuchClassItem(name.clone(), class.name.clone()));
                             None
                         } else {
-                            let val = val.to_hir(&mut infer, &Scope::Empty);
+                            let val = val.to_hir(&(), &mut infer, &Scope::Empty);
                             let class = infer.ctx().classes.get(*class_id);
                             if let Some(field_ty) = class.field(**name).cloned() {
                                 let val_ty = infer.instantiate(
@@ -636,7 +638,7 @@ impl Context {
                 .with_debug(attr.iter().find(|a| **a.name == "ty_debug").is_some())
                 .with_gen_scope_implied();
 
-            let ty_hint = def.ty_hint.to_hir(&mut infer, &Scope::Empty);
+            let ty_hint = def.ty_hint.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
 
             let gen_tys = (0..infer.ctx().tys.get_gen_scope(gen_scope).len())
                 .map(|i| {
@@ -645,7 +647,7 @@ impl Context {
                 })
                 .collect();
 
-            let body = def.body.to_hir(&mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
+            let body = def.body.to_hir(&(), &mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
             infer.make_flow(body.meta().1, ty_hint.meta().1, EqInfo::default());
 
             let (mut checked, mut errs) = infer.into_checked();
@@ -732,14 +734,14 @@ impl Context {
                     return None;
                 };
 
-                let ty = member.member.to_hir(&mut infer, &Scope::Empty);
+                let ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
                 let args = member.class.params
                     .iter()
-                    .map(|arg| arg.to_hir(&mut infer, &Scope::Empty).meta().1)
+                    .map(|arg| arg.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
                     .collect::<Vec<_>>();
                 let items = member.assoc
                     .iter()
-                    .map(|(name, assoc)| (name.clone(), assoc.to_hir(&mut infer, &Scope::Empty).meta().1))
+                    .map(|(name, assoc)| (name.clone(), assoc.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1))
                     .collect::<Vec<_>>();
 
                 let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class).gen_scope);
