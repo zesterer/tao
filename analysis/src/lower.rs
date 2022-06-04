@@ -146,7 +146,7 @@ impl ToHir for ast::Type {
             ast::Type::Record(fields) => TyInfo::Record(fields
                 .iter()
                 .map(|(name, field)| (**name, field.to_hir(cfg, infer, scope).meta().1))
-                .collect()),
+                .collect(), false),
             ast::Type::Func(i, o) => TyInfo::Func(i.to_hir(cfg, infer, scope).meta().1, o.to_hir(cfg, infer, scope).meta().1),
             ast::Type::Data(name, params) => match (name.as_str(), params.len()) {
                 ("Self", 0) => if let Some(var) = infer.self_type() {
@@ -376,7 +376,7 @@ impl ToHir for ast::Binding {
                 (TyInfo::Record(fields
                     .iter()
                     .map(|(name, field)| (*name, field.meta().1))
-                    .collect()), hir::Pat::Record(fields))
+                    .collect(), false), hir::Pat::Record(fields, false))
             },
             ast::Pat::ListExact(items) => {
                 let item_ty = infer.unknown(self.pat.span());
@@ -598,7 +598,7 @@ impl ToHir for ast::Expr {
                     .iter()
                     .map(|(name, field)| (**name, field.meta().1))
                     .collect();
-                (TyInfo::Record(tys), hir::Expr::Record(fields))
+                (TyInfo::Record(tys, false), hir::Expr::Record(fields, false))
             },
             ast::Expr::Access(record, field) => {
                 let record = record.to_hir(cfg, infer, scope);

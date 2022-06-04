@@ -41,7 +41,8 @@ pub enum Pat<M: Meta> {
     Literal(Literal),
     Single(Node<Binding<M>, M>),
     Add(Node<Binding<M>, M>, SrcNode<u64>),
-    Record(BTreeMap<Ident, Node<Binding<M>, M>>),
+    // (_, is_tuple)
+    Record(BTreeMap<Ident, Node<Binding<M>, M>>, bool),
     ListExact(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<Node<Binding<M>, M>>),
     Decons(M::Data, Ident, Node<Binding<M>, M>),
@@ -53,7 +54,7 @@ impl<M: Meta> Pat<M> {
             .into_iter()
             .enumerate()
             .map(|(i, field)| (Ident::new(format!("{}", i)), field))
-            .collect())
+            .collect(), true)
     }
 }
 
@@ -99,7 +100,7 @@ impl<M: Meta> Binding<M> {
             Pat::Literal(_) => {},
             Pat::Single(inner) => inner.visit_bindings_inner(visit),
             Pat::Add(lhs, _) => lhs.visit_bindings_inner(visit),
-            Pat::Record(fields) => fields
+            Pat::Record(fields, _) => fields
                 .values()
                 .for_each(|field| field.visit_bindings_inner(visit)),
             Pat::ListExact(items) => items
@@ -148,7 +149,8 @@ pub enum Expr<M: Meta> {
     Local(Ident),
     Global(M::Global),
     List(Vec<Node<Self, M>>, Vec<Node<Self, M>>),
-    Record(BTreeMap<SrcNode<Ident>, Node<Self, M>>),
+    // (_, is_tuple)
+    Record(BTreeMap<SrcNode<Ident>, Node<Self, M>>, bool),
     Access(Node<Self, M>, SrcNode<Ident>),
     // hidden_outer
     Match(bool, Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
@@ -184,7 +186,7 @@ impl Expr<InferMeta> {
             .into_iter()
             .enumerate()
             .map(|(i, field)| (SrcNode::new(Ident::new(format!("{}", i)), field.meta().0), field))
-            .collect())
+            .collect(), true)
     }
 }
 
@@ -219,7 +221,7 @@ impl Expr<ConMeta> {
                 f.required_locals_inner(stack, required);
                 arg.required_locals_inner(stack, required);
             },
-            Expr::Record(fields) => fields
+            Expr::Record(fields, _) => fields
                 .iter()
                 .for_each(|(_, field)| field.required_locals_inner(stack, required)),
             Expr::List(items, tails) => {

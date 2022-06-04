@@ -20,10 +20,10 @@ impl Reify for hir::Binding<InferMeta> {
                 hir::Pat::Literal(litr) => hir::Pat::Literal(litr),
                 hir::Pat::Single(inner) => hir::Pat::Single(inner.reify(infer)),
                 hir::Pat::Add(lhs, rhs) => hir::Pat::Add(lhs.reify(infer), rhs),
-                hir::Pat::Record(fields) => hir::Pat::Record(fields
+                hir::Pat::Record(fields, is_tuple) => hir::Pat::Record(fields
                     .into_iter()
                     .map(|(name, field)| (name, field.reify(infer)))
-                    .collect()),
+                    .collect(), is_tuple),
                 hir::Pat::ListExact(items) => hir::Pat::ListExact(items
                     .into_iter()
                     .map(|item| item.reify(infer))
@@ -63,10 +63,10 @@ impl Reify for hir::Expr<InferMeta> {
                     .map(|tail| tail.reify(infer))
                     .collect(),
             ),
-            hir::Expr::Record(fields) => hir::Expr::Record(fields
+            hir::Expr::Record(fields, is_tuple) => hir::Expr::Record(fields
                 .into_iter()
                 .map(|(name, field)| (name, field.reify(infer)))
-                .collect()),
+                .collect(), is_tuple),
             hir::Expr::Access(record, field_name) => hir::Expr::Access(record.reify(infer), field_name),
             hir::Expr::Match(hidden_outer, pred, arms) => {
                 let pred = pred.reify(infer);

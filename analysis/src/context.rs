@@ -700,7 +700,7 @@ impl Context {
                         break None;
                     }
                 },
-                Ty::Record(fields) => if let Some((_, field_ty)) = fields.iter().find(|(name, _)| **name == field) {
+                Ty::Record(fields, _) => if let Some((_, field_ty)) = fields.iter().find(|(name, _)| **name == field) {
                     break Some((ty, *field_ty, already_seen.len()));
                 } else {
                     // Record has no such field

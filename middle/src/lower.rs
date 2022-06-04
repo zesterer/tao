@@ -103,7 +103,7 @@ impl Context {
                 let pat = mir::Pat::Variant(variant, self.lower_binding(hir, con, inner, bindings));
                 mir::Pat::Data(*data, MirNode::new(mir::Binding { pat, name: None }, self.reprs.get(*data).repr.clone()))
             },
-            hir::Pat::Record(fields) => {
+            hir::Pat::Record(fields, _) => {
                 let mut fields = fields
                     .iter()
                     .map(|(name, field)| (*name, self.lower_binding(hir, con, field, bindings)))
@@ -223,7 +223,7 @@ impl Context {
 
                 mir::Expr::Access(record, field_idx)
             },
-            hir::Expr::Record(fields) => {
+            hir::Expr::Record(fields, _) => {
                 let mut fields = fields
                     .iter()
                     .map(|(name, field)| (**name, self.lower_expr(hir, con, field, stack)))

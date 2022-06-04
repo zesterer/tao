@@ -19,5 +19,13 @@ member Nat of Display =
 member Int of Display =
     => display = fn x => @display_int(x)
 
+member Bool of Display =
+    => display = fn
+        | True => "true"
+        \ False => "false"
+
 member Char of Display =
     => display = fn c => [c]
+
+member Str of Display =
+    => display = fn s => s

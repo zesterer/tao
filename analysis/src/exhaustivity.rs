@@ -13,7 +13,8 @@ pub enum AbstractPat {
     Int(Ranges<i64>),
     Real(f64),
     Char(char),
-    Record(Vec<(Ident, Self)>),
+    // (_, is_tuple)
+    Record(Vec<(Ident, Self)>, bool),
     Variant(DataId, Ident, Box<Self>),
     ListExact(Vec<Self>), // Exactly N in size
     ListFront(Vec<Self>, Box<Self>), // At least N in size
@@ -52,10 +53,10 @@ impl AbstractPat {
                 .iter()
                 .map(|item| AbstractPat::from_binding(ctx, item))
                 .collect(), Box::new(tail.as_ref().map(|tail| AbstractPat::from_binding(ctx, tail)).unwrap_or(AbstractPat::Wildcard))),
-            hir::Pat::Record(fields) => AbstractPat::Record(fields
+            hir::Pat::Record(fields, is_tuple) => AbstractPat::Record(fields
                 .iter()
                 .map(|(name, field)| (*name, AbstractPat::from_binding(ctx, field)))
-                .collect()),
+                .collect(), *is_tuple),
             pat => todo!("{:?}", pat),
         }
     }
@@ -69,7 +70,7 @@ impl AbstractPat {
             AbstractPat::ListExact(_) => true,
             AbstractPat::ListFront(items, tail) => !items.is_empty() || tail.is_refutable_basic(ctx),
             AbstractPat::Variant(data, _, _) => ctx.datas.get_data(*data).cons.len() > 1,
-            AbstractPat::Record(fields) => !fields
+            AbstractPat::Record(fields, _) => !fields
                 .iter()
                 .all(|(_, field)| !field.is_refutable_basic(ctx)),
             pat => todo!("{:?}", pat),
@@ -147,19 +148,19 @@ impl AbstractPat {
                 Some(ExamplePat::Wildcard)
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
-            Ty::Record(fields) if fields.len() == 1 => {
+            Ty::Record(fields, is_tuple) if fields.len() == 1 => {
                 let mut inners = Vec::new();
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
-                        AbstractPat::Record(fields) => inners.push(&fields[0].1),
+                        AbstractPat::Record(fields, _) => inners.push(&fields[0].1),
                         _ => return None, // Type mismatch, don't yield an error because one was already generated
                     }
                 }
                 Self::inexhaustive_pat(ctx, *fields.values().next().unwrap(), &mut inners.into_iter(), get_gen_ty)
-                    .map(|inner| ExamplePat::Record(vec![(*fields.keys().next().unwrap(), inner)]))
+                    .map(|inner| ExamplePat::Record(vec![(*fields.keys().next().unwrap(), inner)], is_tuple))
             },
-            Ty::Record(fields) => {
+            Ty::Record(fields, is_tuple) => {
                 let filter = (&mut filter).collect::<Vec<_>>();
 
                 if filter.iter().copied().any(|pat| !pat.is_refutable_basic(ctx)) {
@@ -170,7 +171,7 @@ impl AbstractPat {
                     for pat in filter.iter().copied() {
                         match pat {
                             AbstractPat::Wildcard => (0..fields.len()).for_each(|i| cols[i].push((&wildcard, ty))),
-                            AbstractPat::Record(pat_fields) => {
+                            AbstractPat::Record(pat_fields, _) => {
                                 debug_assert_eq!(fields.len(), cols.len());
                                 for ((i, (_, pat)), (_, ty)) in pat_fields.iter().enumerate().zip(fields.iter()) {
                                     cols[i].push((pat, *ty));
@@ -195,7 +196,7 @@ impl AbstractPat {
                                     (0..idx).map(|idx| (*fields.keys().nth(idx).unwrap(), ExamplePat::Wildcard))
                                         .chain(std::iter::once((*fields.keys().nth(idx).unwrap(), pat)))
                                         .chain((idx + 1..fields.len()).map(|idx| (*fields.keys().nth(idx).unwrap(), ExamplePat::Wildcard)))
-                                        .collect()))
+                                        .collect(), is_tuple))
                         },
                         _ => Some(ExamplePat::Wildcard),
                     }
@@ -298,7 +299,8 @@ pub enum ExamplePat {
     Wildcard,
     Prim(ExamplePrim),
     Tuple(Vec<Self>),
-    Record(Vec<(Ident, Self)>),
+    // (_, is_tuple)
+    Record(Vec<(Ident, Self)>, bool),
     List(Vec<Self>),
     Variant(Ident, Box<Self>),
 }
@@ -323,7 +325,8 @@ impl ExamplePat {
                         .map(|f| format!("{}", DisplayExamplePat(f, false, ctx)))
                         .collect::<Vec<_>>()
                         .join(", "), if fields.len() == 1 { "," } else { "" }),
-                    ExamplePat::Record(fields) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(" ")),
+                    ExamplePat::Record(fields, true) => write!(f, "({})", fields.iter().map(|(name, f)| format!("{},", DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(" ")),
+                    ExamplePat::Record(fields, false) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(" ")),
                     ExamplePat::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExamplePat(i, false, ctx))).collect::<Vec<_>>().join(", ")),
                     ExamplePat::Variant(name, inner) => write!(f, "{} {}", name, DisplayExamplePat(inner, false, ctx)),
                 }

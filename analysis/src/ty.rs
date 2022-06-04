@@ -37,7 +37,8 @@ pub enum Ty {
     Error(ErrorReason),
     Prim(Prim),
     List(TyId),
-    Record(BTreeMap<Ident, TyId>),
+    // (_, is_tuple)
+    Record(BTreeMap<Ident, TyId>, bool),
     Func(TyId, TyId),
     Data(DataId, Vec<TyId>),
     Gen(usize, GenScopeId),
@@ -100,7 +101,7 @@ impl Types {
             (Ty::Error(_), _) | (_, Ty::Error(_)) => true,
             (Ty::Prim(x), Ty::Prim(y)) => x == y,
             (Ty::List(x), Ty::List(y)) => self.is_eq(x, y),
-            (Ty::Record(_), Ty::Record(_)) => todo!("Record equality"),
+            (Ty::Record(_, _), Ty::Record(_, _)) => todo!("Record equality"),
             (Ty::Func(x_i, x_o), Ty::Func(y_i, y_o)) => self.is_eq(x_i, y_i) && self.is_eq(x_o, y_o),
             (Ty::Data(x, xs), Ty::Data(y, ys)) => x == y && xs.len() == ys.len() && xs
                 .into_iter()
@@ -134,7 +135,7 @@ impl Types {
             Ty::Error(_) => false,
             Ty::Prim(_) => true,
             Ty::List(_) => true, // Empty list
-            Ty::Record(fields) => fields
+            Ty::Record(fields, _) => fields
                 .into_iter()
                 .all(|(_, field)| self.has_inhabitants(datas, field, gen)),
             Ty::Func(_, _) => true,
@@ -209,11 +210,19 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             Ty::Error(ErrorReason::Invalid) => write!(f, "!"),
             Ty::Prim(prim) => write!(f, "{}", prim),
             Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
-            Ty::Record(fields) => write!(f, "{{ {} }}", fields
-                .into_iter()
-                .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
-                .collect::<Vec<_>>()
-                .join(", ")),
+            Ty::Record(fields, is_tuple) => if is_tuple {
+                write!(f, "({})", fields
+                    .values()
+                    .map(|field| format!("{}", self.with_ty(*field, false)))
+                    .collect::<Vec<_>>()
+                    .join(", "))
+            } else {
+                write!(f, "{{ {} }}", fields
+                    .into_iter()
+                    .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
+                    .collect::<Vec<_>>()
+                    .join(", "))
+            },
             Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
             Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
             Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", *self.ctx.datas.get_data(name).name, params

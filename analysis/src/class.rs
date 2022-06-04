@@ -177,7 +177,8 @@ impl Classes {
                 (Ty::Gen(idx, _), _) => *gens.entry(idx).or_insert(ty) == ty,
                 (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
                 (Ty::List(x), ConTy::List(y)) => covers(hir, ctx, x, *y, gens),
-                (Ty::Record(xs), ConTy::Record(ys)) if xs.len() == ys.len() => xs
+                // TODO: Care about field names!
+                (Ty::Record(xs, _), ConTy::Record(ys)) if xs.len() == ys.len() => xs
                     .into_iter()
                     .zip(ys.into_iter())
                     .all(|((_, x), (_, y))| covers(hir, ctx, x, *y, gens)),

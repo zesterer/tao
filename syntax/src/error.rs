@@ -64,14 +64,14 @@ impl Error {
                 ErrorKind::NoEndBranch => format!("No end branch"),
             },
             if let Some(label) = self.label {
-                format!(" while parsing {}", label)
+                format!(" while parsing {}", label.fg(Color::Cyan))
             } else {
                 "".to_string()
             },
             match self.expected.len() {
                 0 => "something else".to_string(),
-                1 => format!("{}", self.expected.into_iter().next().unwrap().fg(Color::Cyan)),
-                _ => format!("one of {}", self.expected.into_iter().map(|x| x.fg(Color::Cyan).to_string()).collect::<Vec<_>>().join(", ")),
+                1 => format!("{}", self.expected.into_iter().next().unwrap().fg(Color::Yellow)),
+                _ => format!("one of {}", self.expected.into_iter().map(|x| x.fg(Color::Yellow).to_string()).collect::<Vec<_>>().join(", ")),
             },
         );
 

@@ -151,6 +151,7 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(effect)
             .map(|ty| ty.into_inner())
     })
+        .labelled("type")
 }
 
 pub fn class_inst_parser() -> impl Parser<ast::ClassInst> {
@@ -362,7 +363,6 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
     // Type hint
     let binding = binding
         .map(|expr| expr.into_inner())
-        .labelled("pattern")
         .then(ty_hint_parser())
         .map(|(binding, ty)| ast::Binding {
             ty,
@@ -371,6 +371,7 @@ pub fn binding_parser() -> impl Parser<ast::Binding> {
 
     // Union pattern
     binding
+        .labelled("pattern")
 }
 
 pub fn expr_parser() -> impl Parser<ast::Expr> {
@@ -1178,13 +1179,13 @@ pub fn item_parser() -> impl Parser<ast::Item> {
         .repeated()
         .flatten();
 
-    let item = def_parser().map(ast::ItemKind::Def)
-        .or(fn_parser().map(ast::ItemKind::Def))
-        .or(data_parser().map(ast::ItemKind::Data))
-        .or(alias_parser().map(ast::ItemKind::Alias))
-        .or(class_parser().map(ast::ItemKind::Class))
-        .or(member_parser().map(ast::ItemKind::Member))
-        .or(effect_parser().map(ast::ItemKind::Effect));
+    let item = def_parser().map(ast::ItemKind::Def).labelled("definition")
+        .or(fn_parser().map(ast::ItemKind::Def).labelled("function"))
+        .or(data_parser().map(ast::ItemKind::Data).labelled("data type"))
+        .or(alias_parser().map(ast::ItemKind::Alias).labelled("type alias"))
+        .or(class_parser().map(ast::ItemKind::Class).labelled("class"))
+        .or(member_parser().map(ast::ItemKind::Member).labelled("class member"))
+        .or(effect_parser().map(ast::ItemKind::Effect).labelled("effect"));
 
     let tail = one_of::<_, _, Error>(ITEM_STARTS)
         .ignored()

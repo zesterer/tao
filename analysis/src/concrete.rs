@@ -163,7 +163,7 @@ impl ConContext {
             (Ty::Prim(x), ConTy::Prim(y)) => assert_eq!(x, *y),
             (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
             (Ty::List(x), ConTy::List(y)) => self.derive_links(hir, x, *y, link_gen),
-            (Ty::Record(xs), ConTy::Record(ys)) => xs
+            (Ty::Record(xs, _), ConTy::Record(ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
                 .for_each(|((_, x), (_, y))| self.derive_links(hir, x, *y, link_gen)),
@@ -230,7 +230,7 @@ impl ConContext {
             Ty::Error(_) => panic!("Concretizable type cannot be an error"),
             Ty::Prim(prim) => ConTy::Prim(prim),
             Ty::List(item) => ConTy::List(self.lower_ty(hir, item, ty_insts)),
-            Ty::Record(fields) => ConTy::Record(fields
+            Ty::Record(fields, _) => ConTy::Record(fields
                 .into_iter()
                 .map(|(name, field)| (name, self.lower_ty(hir, field, ty_insts)))
                 .collect()),
@@ -387,10 +387,10 @@ impl ConContext {
             hir::Pat::Literal(litr) => hir::Pat::Literal(*litr),
             hir::Pat::Single(inner) => hir::Pat::Single(self.lower_binding(hir, inner, ty_insts)),
             hir::Pat::Add(lhs, rhs) => hir::Pat::Add(self.lower_binding(hir, lhs, ty_insts), rhs.clone()),
-            hir::Pat::Record(fields) => hir::Pat::Record(fields
+            hir::Pat::Record(fields, is_tuple) => hir::Pat::Record(fields
                 .iter()
                 .map(|(name, field)| (*name, self.lower_binding(hir, field, ty_insts)))
-                .collect()),
+                .collect(), *is_tuple),
             hir::Pat::ListExact(items) => hir::Pat::ListExact(items
                 .iter()
                 .map(|item| self.lower_binding(hir, item, ty_insts))
@@ -439,10 +439,10 @@ impl ConContext {
                     .map(|tail| self.lower_expr(hir, tail, ty_insts))
                     .collect(),
             ),
-            hir::Expr::Record(fields) => hir::Expr::Record(fields
+            hir::Expr::Record(fields, is_tuple) => hir::Expr::Record(fields
                 .iter()
                 .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))
-                .collect()),
+                .collect(), *is_tuple),
             hir::Expr::Access(record, field) => hir::Expr::Access(self.lower_expr(hir, record, ty_insts), field.clone()),
             hir::Expr::Match(hidden_outer, pred, arms) => hir::Expr::Match(
                 *hidden_outer,
