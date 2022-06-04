@@ -7,7 +7,6 @@ pub type ConNode<T> = Node<T, ConMeta>;
 pub enum ConTy {
     Prim(Prim),
     List(ConTyId),
-    Tuple(Vec<ConTyId>),
     Record(BTreeMap<Ident, ConTyId>),
     Func(ConTyId, ConTyId),
     Data(ConDataId),
@@ -164,10 +163,6 @@ impl ConContext {
             (Ty::Prim(x), ConTy::Prim(y)) => assert_eq!(x, *y),
             (Ty::Gen(gen_idx, _), _) => link_gen(gen_idx, ty),
             (Ty::List(x), ConTy::List(y)) => self.derive_links(hir, x, *y, link_gen),
-            (Ty::Tuple(xs), ConTy::Tuple(ys)) => xs
-                .into_iter()
-                .zip(ys.into_iter())
-                .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
             (Ty::Record(xs), ConTy::Record(ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
@@ -235,10 +230,6 @@ impl ConContext {
             Ty::Error(_) => panic!("Concretizable type cannot be an error"),
             Ty::Prim(prim) => ConTy::Prim(prim),
             Ty::List(item) => ConTy::List(self.lower_ty(hir, item, ty_insts)),
-            Ty::Tuple(fields) => ConTy::Tuple(fields
-                .into_iter()
-                .map(|field| self.lower_ty(hir, field, ty_insts))
-                .collect()),
             Ty::Record(fields) => ConTy::Record(fields
                 .into_iter()
                 .map(|(name, field)| (name, self.lower_ty(hir, field, ty_insts)))
@@ -396,10 +387,6 @@ impl ConContext {
             hir::Pat::Literal(litr) => hir::Pat::Literal(*litr),
             hir::Pat::Single(inner) => hir::Pat::Single(self.lower_binding(hir, inner, ty_insts)),
             hir::Pat::Add(lhs, rhs) => hir::Pat::Add(self.lower_binding(hir, lhs, ty_insts), rhs.clone()),
-            hir::Pat::Tuple(fields) => hir::Pat::Tuple(fields
-                .iter()
-                .map(|field| self.lower_binding(hir, field, ty_insts))
-                .collect()),
             hir::Pat::Record(fields) => hir::Pat::Record(fields
                 .iter()
                 .map(|(name, field)| (*name, self.lower_binding(hir, field, ty_insts)))
@@ -442,10 +429,6 @@ impl ConContext {
                 self.lower_proc(hir, id);
                 hir::Expr::Global(id)
             },
-            hir::Expr::Tuple(fields) => hir::Expr::Tuple(fields
-                .iter()
-                .map(|field| self.lower_expr(hir, field, ty_insts))
-                .collect()),
             hir::Expr::List(items, tails) => hir::Expr::List(
                 items
                     .iter()
@@ -584,11 +567,6 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
         match self.con_ctx.get_ty(self.ty).clone() {
             ConTy::Prim(prim) => write!(f, "{}", prim),
             ConTy::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
-            ConTy::Tuple(fields) => write!(f, "({}{})", fields
-                .iter()
-                .map(|field| format!("{}", self.with_ty(*field, false)))
-                .collect::<Vec<_>>()
-                .join(", "), if fields.len() == 1 { "," } else { "" }),
             ConTy::Record(fields) => write!(f, "{{ {} }}", fields
                 .into_iter()
                 .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))

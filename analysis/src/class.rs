@@ -177,10 +177,6 @@ impl Classes {
                 (Ty::Gen(idx, _), _) => *gens.entry(idx).or_insert(ty) == ty,
                 (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
                 (Ty::List(x), ConTy::List(y)) => covers(hir, ctx, x, *y, gens),
-                (Ty::Tuple(xs), ConTy::Tuple(ys)) if xs.len() == ys.len() => xs
-                    .into_iter()
-                    .zip(ys.into_iter())
-                    .all(|(x, y)| covers(hir, ctx, x, *y, gens)),
                 (Ty::Record(xs), ConTy::Record(ys)) if xs.len() == ys.len() => xs
                     .into_iter()
                     .zip(ys.into_iter())

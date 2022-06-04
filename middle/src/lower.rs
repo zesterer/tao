@@ -62,32 +62,12 @@ impl Context {
         match con.get_ty(ty) {
             ConTy::Prim(prim) => Repr::Prim(prim_to_mir(*prim)),
             ConTy::List(item) => Repr::List(Box::new(self.lower_ty(hir, con, *item))),
-            ConTy::Tuple(fields) => Repr::Tuple(fields
-                .iter()
-                .map(|field| self.lower_ty(hir, con, *field))
-                .collect()),
             ConTy::Func(i, o) => Repr::Func(
                 Box::new(self.lower_ty(hir, con, *i)),
                 Box::new(self.lower_ty(hir, con, *o)),
             ),
-            ConTy::Data(data_id) => {
-                let data = con.get_data(*data_id);
-
-                // let args = data_id.1
-                //     .iter()
-                //     .map(|arg| self.lower_ty(hir, con, *arg))
-                //     .collect::<Vec<_>>();
-
-                self.lower_data(hir, con, *data_id)
-            },
-            ConTy::Record(fields) => {
-                let mut fields = fields
-                    .into_iter()
-                    .map(|(name, field)| (*name, self.lower_ty(hir, con, *field)))
-                    .collect::<Vec<_>>();
-                fields.sort_by_key(|(name, _)| name.as_ref());
-                Repr::Tuple(fields.into_iter().map(|(_, ty)| ty).collect())
-            },
+            ConTy::Data(data_id) => self.lower_data(hir, con, *data_id),
+            ConTy::Record(fields) => Repr::Tuple(fields.iter().map(|(_, field)| self.lower_ty(hir, con, *field)).collect()),
             ConTy::Effect(eff, out) => Repr::Effect(*eff, Box::new(self.lower_ty(hir, con, *out))),
         }
     }
@@ -99,10 +79,6 @@ impl Context {
             hir::Pat::Literal(litr) => mir::Pat::Literal(self.lower_litr(hir, con, litr)),
             hir::Pat::Single(inner) => mir::Pat::Single(self.lower_binding(hir, con, inner, bindings)),
             hir::Pat::Add(lhs, rhs) => mir::Pat::Add(self.lower_binding(hir, con, lhs, bindings), **rhs),
-            hir::Pat::Tuple(fields) => mir::Pat::Tuple(fields
-                .iter()
-                .map(|field| self.lower_binding(hir, con, field, bindings))
-                .collect()),
             hir::Pat::ListExact(items) => mir::Pat::ListExact(items
                 .iter()
                 .map(|item| self.lower_binding(hir, con, item, bindings))
@@ -176,10 +152,6 @@ impl Context {
                     .collect();
                 mir::Expr::Match(self.lower_expr(hir, con, pred, stack), arms)
             },
-            hir::Expr::Tuple(fields) => mir::Expr::Tuple(fields
-                .iter()
-                .map(|field| self.lower_expr(hir, con, field, stack))
-                .collect()),
             hir::Expr::List(items, tails) => {
                 let mut list = mir::Expr::List(items
                     .iter()

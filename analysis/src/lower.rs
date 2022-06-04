@@ -121,7 +121,7 @@ pub struct TypeLowerCfg {
 }
 
 impl TypeLowerCfg {
-    pub fn member() -> Self {
+    pub fn no_proj() -> Self {
         Self { projection_permitted: false }
     }
 
@@ -140,10 +140,9 @@ impl ToHir for ast::Type {
             ast::Type::Unknown => TyInfo::Unknown(None),
             ast::Type::Universe => TyInfo::Prim(Prim::Universe),
             ast::Type::List(item) => TyInfo::List(item.to_hir(cfg, infer, scope).meta().1),
-            ast::Type::Tuple(items) => TyInfo::Tuple(items
+            ast::Type::Tuple(items) => TyInfo::tuple(items
                 .iter()
-                .map(|item| item.to_hir(cfg, infer, scope).meta().1)
-                .collect()),
+                .map(|item| item.to_hir(cfg, infer, scope).meta().1)),
             ast::Type::Record(fields) => TyInfo::Record(fields
                 .iter()
                 .map(|(name, field)| (**name, field.to_hir(cfg, infer, scope).meta().1))
@@ -365,10 +364,9 @@ impl ToHir for ast::Binding {
                     .iter()
                     .map(|item| item.to_hir(cfg, infer, scope))
                     .collect::<Vec<_>>();
-                (TyInfo::Tuple(items
+                (TyInfo::tuple(items
                     .iter()
-                    .map(|item| item.meta().1)
-                    .collect()), hir::Pat::Tuple(items))
+                    .map(|item| item.meta().1)), hir::Pat::tuple(items))
             },
             ast::Pat::Record(fields) => {
                 let fields = fields
@@ -563,11 +561,9 @@ impl ToHir for ast::Expr {
                     .iter()
                     .map(|item| item.to_hir(cfg, infer, scope))
                     .collect::<Vec<_>>();
-                let tys = items
+                (TyInfo::tuple(items
                     .iter()
-                    .map(|item| item.meta().1)
-                    .collect();
-                (TyInfo::Tuple(tys), hir::Expr::Tuple(items))
+                    .map(|item| item.meta().1)), hir::Expr::tuple(items))
             },
             ast::Expr::List(items, tails) => {
                 let item_ty = infer.unknown(self.span());
@@ -597,7 +593,7 @@ impl ToHir for ast::Expr {
                 let fields = fields
                     .iter()
                     .map(|(name, field)| (name.clone(), field.to_hir(cfg, infer, scope)))
-                    .collect::<Vec<_>>();
+                    .collect::<BTreeMap<_, _>>();
                 let tys = fields
                     .iter()
                     .map(|(name, field)| (**name, field.meta().1))
@@ -760,7 +756,7 @@ impl ToHir for ast::Expr {
                 let b = b.to_hir(cfg, infer, scope);
                 infer.make_flow(a.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
                 infer.make_flow(b.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
-                let unit = InferNode::new(hir::Binding::unit(pred.meta().0), (pred.meta().0, infer.insert(pred.meta().0, TyInfo::Tuple(Vec::new()))));
+                let unit = InferNode::new(hir::Binding::unit(pred.meta().0), (pred.meta().0, infer.insert(pred.meta().0, TyInfo::tuple(Vec::new()))));
                 let arms = vec![
                     (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Decons(SrcNode::new(bool_data, pred.meta().0), Ident::new("True"), unit.clone()), pred.meta().0)), *pred.meta()), a),
                     (InferNode::new(hir::Binding::from_pat(SrcNode::new(hir::Pat::Decons(SrcNode::new(bool_data, pred.meta().0), Ident::new("False"), unit), pred.meta().0)), *pred.meta()), b),
@@ -992,7 +988,7 @@ impl ToHir for ast::Expr {
 
                             let s = make_str(infer, self.span());
 
-                            (TyInfo::Tuple(vec![universe, s]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Input, name.span()), args))
+                            (TyInfo::tuple(vec![universe, s]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Input, name.span()), args))
                         },
                         "len_list" if args.len() == 1 => {
                             let item = infer.unknown(args[0].meta().0);
@@ -1152,11 +1148,10 @@ fn tupleify_expr(items: &SrcNode<Vec<SrcNode<ast::Expr>>>, cfg: &<ast::Expr as T
         .iter()
         .map(|item| item.to_hir(cfg, infer, scope))
         .collect::<Vec<_>>();
-    let tuple_ty = infer.insert(items.span(), TyInfo::Tuple(hir_items
+    let tuple_ty = infer.insert(items.span(), TyInfo::tuple(hir_items
         .iter()
-        .map(|item| item.meta().1)
-        .collect()));
-    InferNode::new(hir::Expr::Tuple(hir_items), (items.span(), tuple_ty))
+        .map(|item| item.meta().1)));
+    InferNode::new(hir::Expr::tuple(hir_items), (items.span(), tuple_ty))
 }
 
 // Desugar a list of bindings into a tuple
@@ -1165,12 +1160,11 @@ fn tupleify_binding(items: &SrcNode<Vec<SrcNode<ast::Binding>>>, cfg: &<ast::Exp
         .iter()
         .map(|item| item.to_hir(cfg, infer, scope))
         .collect::<Vec<_>>();
-    let tuple_ty = infer.insert(items.span(), TyInfo::Tuple(hir_items
+    let tuple_ty = infer.insert(items.span(), TyInfo::tuple(hir_items
         .iter()
-        .map(|item| item.meta().1)
-        .collect()));
+        .map(|item| item.meta().1)));
     let binding = hir::Binding {
-        pat: SrcNode::new(hir::Pat::Tuple(hir_items), items.span()),
+        pat: SrcNode::new(hir::Pat::tuple(hir_items), items.span()),
         name: None,
     };
     InferNode::new(binding, (items.span(), tuple_ty))

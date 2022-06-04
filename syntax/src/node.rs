@@ -1,7 +1,7 @@
 use super::*;
 use std::{
     ops::{Deref, DerefMut},
-    cmp::PartialEq,
+    cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering},
     fmt,
 };
 
@@ -58,6 +58,20 @@ impl<T: PartialEq, M> PartialEq for Node<T, M> {
     fn eq(&self, other: &Self) -> bool {
         // Only compare inner
         self.inner == other.inner
+    }
+}
+
+impl<T: Eq, M> Eq for Node<T, M> {}
+
+impl<T: Ord, M> Ord for Node<T, M> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.inner.cmp(&other.inner)
+    }
+}
+
+impl<T: PartialOrd, M> PartialOrd for Node<T, M> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.inner.partial_cmp(&other.inner)
     }
 }
 

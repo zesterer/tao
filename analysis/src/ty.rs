@@ -37,7 +37,6 @@ pub enum Ty {
     Error(ErrorReason),
     Prim(Prim),
     List(TyId),
-    Tuple(Vec<TyId>),
     Record(BTreeMap<Ident, TyId>),
     Func(TyId, TyId),
     Data(DataId, Vec<TyId>),
@@ -101,10 +100,6 @@ impl Types {
             (Ty::Error(_), _) | (_, Ty::Error(_)) => true,
             (Ty::Prim(x), Ty::Prim(y)) => x == y,
             (Ty::List(x), Ty::List(y)) => self.is_eq(x, y),
-            (Ty::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
-                .into_iter()
-                .zip(ys)
-                .all(|(x, y)| self.is_eq(x, y)),
             (Ty::Record(_), Ty::Record(_)) => todo!("Record equality"),
             (Ty::Func(x_i, x_o), Ty::Func(y_i, y_o)) => self.is_eq(x_i, y_i) && self.is_eq(x_o, y_o),
             (Ty::Data(x, xs), Ty::Data(y, ys)) => x == y && xs.len() == ys.len() && xs
@@ -139,9 +134,6 @@ impl Types {
             Ty::Error(_) => false,
             Ty::Prim(_) => true,
             Ty::List(_) => true, // Empty list
-            Ty::Tuple(fields) => fields
-                .into_iter()
-                .all(|field| self.has_inhabitants(datas, field, gen)),
             Ty::Record(fields) => fields
                 .into_iter()
                 .all(|(_, field)| self.has_inhabitants(datas, field, gen)),
@@ -217,11 +209,6 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             Ty::Error(ErrorReason::Invalid) => write!(f, "!"),
             Ty::Prim(prim) => write!(f, "{}", prim),
             Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
-            Ty::Tuple(fields) => write!(f, "({}{})", fields
-                .iter()
-                .map(|field| format!("{}", self.with_ty(*field, false)))
-                .collect::<Vec<_>>()
-                .join(", "), if fields.len() == 1 { "," } else { "" }),
             Ty::Record(fields) => write!(f, "{{ {} }}", fields
                 .into_iter()
                 .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))

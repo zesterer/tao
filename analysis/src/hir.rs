@@ -41,11 +41,20 @@ pub enum Pat<M: Meta> {
     Literal(Literal),
     Single(Node<Binding<M>, M>),
     Add(Node<Binding<M>, M>, SrcNode<u64>),
-    Tuple(Vec<Node<Binding<M>, M>>),
     Record(BTreeMap<Ident, Node<Binding<M>, M>>),
     ListExact(Vec<Node<Binding<M>, M>>),
     ListFront(Vec<Node<Binding<M>, M>>, Option<Node<Binding<M>, M>>),
     Decons(M::Data, Ident, Node<Binding<M>, M>),
+}
+
+impl<M: Meta> Pat<M> {
+    pub fn tuple(i: impl IntoIterator<Item = Node<Binding<M>, M>>) -> Self {
+        Self::Record(i
+            .into_iter()
+            .enumerate()
+            .map(|(i, field)| (Ident::new(format!("{}", i)), field))
+            .collect())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -68,7 +77,7 @@ impl<M: Meta> Binding<M> {
     }
 
     pub fn unit(span: Span) -> Self {
-        Self { pat: SrcNode::new(hir::Pat::Tuple(Vec::new()), span), name: None }
+        Self { pat: SrcNode::new(hir::Pat::tuple([]), span), name: None }
     }
 }
 
@@ -90,9 +99,6 @@ impl<M: Meta> Binding<M> {
             Pat::Literal(_) => {},
             Pat::Single(inner) => inner.visit_bindings_inner(visit),
             Pat::Add(lhs, _) => lhs.visit_bindings_inner(visit),
-            Pat::Tuple(items) => items
-                .iter()
-                .for_each(|item| item.visit_bindings_inner(visit)),
             Pat::Record(fields) => fields
                 .values()
                 .for_each(|field| field.visit_bindings_inner(visit)),
@@ -141,9 +147,8 @@ pub enum Expr<M: Meta> {
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
     Global(M::Global),
-    Tuple(Vec<Node<Self, M>>),
     List(Vec<Node<Self, M>>, Vec<Node<Self, M>>),
-    Record(Vec<(SrcNode<Ident>, Node<Self, M>)>),
+    Record(BTreeMap<SrcNode<Ident>, Node<Self, M>>),
     Access(Node<Self, M>, SrcNode<Ident>),
     // hidden_outer
     Match(bool, Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
@@ -172,6 +177,16 @@ pub enum Expr<M: Meta> {
 pub type InferExpr = InferNode<Expr<InferMeta>>;
 pub type TyExpr = TyNode<Expr<TyMeta>>;
 pub type ConExpr = ConNode<Expr<ConMeta>>;
+
+impl Expr<InferMeta> {
+    pub fn tuple(i: impl IntoIterator<Item = InferExpr>) -> Self {
+        Self::Record(i
+            .into_iter()
+            .enumerate()
+            .map(|(i, field)| (SrcNode::new(Ident::new(format!("{}", i)), field.meta().0), field))
+            .collect())
+    }
+}
 
 impl Expr<ConMeta> {
     fn required_locals_inner(&self, stack: &mut Vec<Ident>, required: &mut Vec<Ident>) {
@@ -204,9 +219,6 @@ impl Expr<ConMeta> {
                 f.required_locals_inner(stack, required);
                 arg.required_locals_inner(stack, required);
             },
-            Expr::Tuple(fields) => fields
-                .iter()
-                .for_each(|field| field.required_locals_inner(stack, required)),
             Expr::Record(fields) => fields
                 .iter()
                 .for_each(|(_, field)| field.required_locals_inner(stack, required)),

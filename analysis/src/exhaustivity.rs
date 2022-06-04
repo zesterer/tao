@@ -13,7 +13,6 @@ pub enum AbstractPat {
     Int(Ranges<i64>),
     Real(f64),
     Char(char),
-    Tuple(Vec<Self>),
     Record(Vec<(Ident, Self)>),
     Variant(DataId, Ident, Box<Self>),
     ListExact(Vec<Self>), // Exactly N in size
@@ -44,10 +43,6 @@ impl AbstractPat {
                 range.insert(**rhs..);
                 range
             }),
-            hir::Pat::Tuple(fields) => AbstractPat::Tuple(fields
-                .iter()
-                .map(|field| AbstractPat::from_binding(ctx, field))
-                .collect()),
             hir::Pat::Decons(data, cons, inner) => AbstractPat::Variant(**data, *cons, Box::new(AbstractPat::from_binding(ctx, inner))),
             hir::Pat::ListExact(items) => AbstractPat::ListExact(items
                 .iter()
@@ -71,9 +66,6 @@ impl AbstractPat {
             AbstractPat::Nat(set) => !set.clone().invert().is_empty(),
             AbstractPat::Int(set) => !set.clone().invert().is_empty(),
             AbstractPat::Char(_) => true,
-            AbstractPat::Tuple(fields) => !fields
-                .iter()
-                .all(|field| !field.is_refutable_basic(ctx)),
             AbstractPat::ListExact(_) => true,
             AbstractPat::ListFront(items, tail) => !items.is_empty() || tail.is_refutable_basic(ctx),
             AbstractPat::Variant(data, _, _) => ctx.datas.get_data(*data).cons.len() > 1,
@@ -155,18 +147,6 @@ impl AbstractPat {
                 Some(ExamplePat::Wildcard)
             },
             Ty::Prim(prim) => todo!("{:?}", prim),
-            Ty::Tuple(fields) if fields.len() == 1 => {
-                let mut inners = Vec::new();
-                for pat in filter {
-                    match pat {
-                        AbstractPat::Wildcard => return None,
-                        AbstractPat::Tuple(fields) => inners.push(&fields[0]),
-                        _ => return None, // Type mismatch, don't yield an error because one was already generated
-                    }
-                }
-                Self::inexhaustive_pat(ctx, fields[0], &mut inners.into_iter(), get_gen_ty)
-                    .map(|inner| ExamplePat::Tuple(vec![inner]))
-            },
             Ty::Record(fields) if fields.len() == 1 => {
                 let mut inners = Vec::new();
                 for pat in filter {
@@ -178,48 +158,6 @@ impl AbstractPat {
                 }
                 Self::inexhaustive_pat(ctx, *fields.values().next().unwrap(), &mut inners.into_iter(), get_gen_ty)
                     .map(|inner| ExamplePat::Record(vec![(*fields.keys().next().unwrap(), inner)]))
-            },
-            Ty::Tuple(fields) => {
-                let filter = (&mut filter).collect::<Vec<_>>();
-
-                if filter.iter().copied().any(|pat| !pat.is_refutable_basic(ctx)) {
-                    None
-                } else {
-                    let wildcard = AbstractPat::Wildcard;
-                    let mut cols = vec![Vec::new(); fields.len()];
-                    for pat in filter.iter().copied() {
-                        match pat {
-                            AbstractPat::Wildcard => (0..fields.len()).for_each(|i| cols[i].push((&wildcard, ty))),
-                            AbstractPat::Tuple(pat_fields) => {
-                                debug_assert_eq!(pat_fields.len(), cols.len());
-                                for ((i, pat), ty) in pat_fields.iter().enumerate().zip(fields.iter()) {
-                                    cols[i].push((pat, *ty));
-                                }
-                            },
-                            _ => return None, // Type mismatch, don't yield an error because one was already generated
-                        }
-                    }
-
-                    let mut refutable = cols
-                        .into_iter()
-                        .enumerate()
-                        .filter(|(_, col)| col.iter().any(|(pat, ty)| pat.is_refutable(ctx, *ty, get_gen_ty)))
-                        .collect::<Vec<_>>();
-
-                    match refutable.len() {
-                        0 => None,
-                        1 => {
-                            let (idx, col) = refutable.remove(0);
-                            Self::inexhaustive_pat(ctx, fields[idx], &mut col.into_iter().map(|(pat, _)| pat), get_gen_ty)
-                                .map(|pat| ExamplePat::Tuple(
-                                    (0..idx).map(|_| ExamplePat::Wildcard)
-                                        .chain(std::iter::once(pat))
-                                        .chain((idx + 1..fields.len()).map(|_| ExamplePat::Wildcard))
-                                        .collect()))
-                        },
-                        _ => Some(ExamplePat::Wildcard),
-                    }
-                }
             },
             Ty::Record(fields) => {
                 let filter = (&mut filter).collect::<Vec<_>>();

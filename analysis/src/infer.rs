@@ -11,7 +11,6 @@ pub enum TyInfo {
     Unknown(Option<Span>), // With optional instantiation origin
     Prim(ty::Prim),
     List(TyVar),
-    Tuple(Vec<TyVar>),
     Record(BTreeMap<Ident, TyVar>),
     Func(TyVar, TyVar),
     Data(DataId, Vec<TyVar>),
@@ -22,6 +21,16 @@ pub enum TyInfo {
     // Effect, output type, opaque type variable for tracking
     Effect(EffectVar, TyVar, TyVar),
     Opaque(usize),
+}
+
+impl TyInfo {
+    pub fn tuple(i: impl IntoIterator<Item = TyVar>) -> Self {
+        Self::Record(i
+            .into_iter()
+            .enumerate()
+            .map(|(i, ty)| (Ident::new(format!("{}", i)), ty))
+            .collect())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -324,9 +333,6 @@ impl<'a> Infer<'a> {
                 | TyInfo::Opaque(_)
                 | TyInfo::SelfType => {},
                 TyInfo::List(item) => self.set_error(item),
-                TyInfo::Tuple(fields) => fields
-                    .into_iter()
-                    .for_each(|field| self.set_error(field)),
                 TyInfo::Record(fields) => fields
                     .into_iter()
                     .for_each(|(_, field)| self.set_error(field)),
@@ -397,10 +403,6 @@ impl<'a> Infer<'a> {
             Ty::Error(reason) => TyInfo::Error(reason),
             Ty::Prim(prim) => TyInfo::Prim(prim),
             Ty::List(item) => TyInfo::List(self.instantiate(item, span, f, self_ty)),
-            Ty::Tuple(fields) => TyInfo::Tuple(fields
-                .into_iter()
-                .map(|field| self.instantiate(field, span, f, self_ty))
-                .collect()),
             Ty::Record(fields) => TyInfo::Record(fields
                 .into_iter()
                 .map(|(name, field)| (name, self.instantiate(field, span, f, self_ty)))
@@ -590,9 +592,6 @@ impl<'a> Infer<'a> {
                 TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
                 TyInfo::List(item) => x == item || self.occurs_in_inner(x, item, seen),
                 TyInfo::Func(i, o) => x == i || x == o || self.occurs_in_inner(x, i, seen) || self.occurs_in_inner(x, o, seen),
-                TyInfo::Tuple(ys) => ys
-                    .into_iter()
-                    .any(|y| x == y || self.occurs_in_inner(x, y, seen)),
                 TyInfo::Record(ys) => ys
                     .into_iter()
                     .any(|(_, y)| x == y || self.occurs_in_inner(x, y, seen)),
@@ -747,7 +746,6 @@ impl<'a> Infer<'a> {
 
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
             (TyInfo::List(x), TyInfo::List(y)) => Self::flow_inner(infer, x, y),
-            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => flow_many(infer, xs, ys),
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() && xs
                 .keys()
                 .all(|x| ys.contains_key(x)) => xs
@@ -813,13 +811,6 @@ impl<'a> Infer<'a> {
             // TODO: Reinstantiate type parameters with fresh type variables, but without creating inference problems
             // TODO: Is this even correct?
             TyInfo::Gen(x, _, origin) => ty,//self.insert(span, TyInfo::Unknown(Some(origin))),
-            TyInfo::Tuple(fields) => {
-                let fields = fields
-                    .into_iter()
-                    .map(|field| self.reinstantiate(span, field))
-                    .collect();
-                self.insert(self.span(ty), TyInfo::Tuple(fields))
-            },
             TyInfo::Record(fields) => {
                 let fields = fields
                     .into_iter()
@@ -1157,10 +1148,6 @@ impl<'a> Infer<'a> {
             (TyInfo::Gen(x, _, _), TyInfo::Gen(y, _, _)) if x == y => Some(true),
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Some(true),
             (TyInfo::List(x), TyInfo::List(y)) => self.var_covers_var(x, y),
-            (TyInfo::Tuple(xs), TyInfo::Tuple(ys)) if xs.len() == ys.len() => xs
-                .into_iter()
-                .zip(ys.into_iter())
-                .fold(Some(true), |a, (x, y)| Some(a? && self.var_covers_var(x, y)?)),
             (TyInfo::Record(xs), TyInfo::Record(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
@@ -1215,10 +1202,6 @@ impl<'a> Infer<'a> {
             },
             (TyInfo::Prim(x), Ty::Prim(y)) if x == y => Ok(true),
             (TyInfo::List(x), Ty::List(y)) => self.covers_var(x, y, gens),
-            (TyInfo::Tuple(xs), Ty::Tuple(ys)) if xs.len() == ys.len() => xs
-                .into_iter()
-                .zip(ys.into_iter())
-                .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, gens)?)),
             (TyInfo::Record(xs), Ty::Record(ys)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
@@ -1262,10 +1245,6 @@ impl<'a> Infer<'a> {
                 self.make_flow(ty, inst_ty, span);
             },
             (Ty::List(x), TyInfo::List(y)) => self.derive_links(x, y, self_ty, links),
-            (Ty::Tuple(xs), TyInfo::Tuple(ys)) => xs
-                .into_iter()
-                .zip(ys.into_iter())
-                .for_each(|(x, y)| self.derive_links(x, y, self_ty, links)),
             (Ty::Record(xs), TyInfo::Record(ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
@@ -1656,10 +1635,6 @@ impl<'a> Checked<'a> {
                 TyInfo::Error(reason) => Ty::Error(reason),
                 TyInfo::Prim(prim) => Ty::Prim(prim),
                 TyInfo::List(item) => Ty::List(self.reify_inner(item)),
-                TyInfo::Tuple(items) => Ty::Tuple(items
-                    .into_iter()
-                    .map(|item| self.reify_inner(item))
-                    .collect()),
                 TyInfo::Record(fields) => Ty::Record(fields
                     .into_iter()
                     .map(|(name, field)| (name, self.reify_inner(field)))

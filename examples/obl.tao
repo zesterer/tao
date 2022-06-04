@@ -1,14 +1,13 @@
 import "../lib/std.tao"
 
-data Biz
-
-class Foo A =
+class Biz =
     => Bar
 
-member () of Foo Self =
-    => Bar = Biz
+member () of Biz =
+    => Bar = Nat
 
-member ().Bar of Show =
-    => show = fn _ => "bar"
+class Foo T
+
+member () of Foo Self.Bar
 
 def main = print("Hello, world!")

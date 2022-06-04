@@ -212,13 +212,13 @@ impl Context {
             let mut infer = Infer::new(&mut this, Some(*gen_scope))
                 .with_gen_scope_implied();
 
-            let member_ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
+            let member_ty = member.member.to_hir(&TypeLowerCfg::no_proj(), &mut infer, &Scope::Empty);
 
             let mut infer = infer.with_self_var(member_ty.meta().1);
 
             let args = member.class.params
                 .iter()
-                .map(|arg| arg.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty))
+                .map(|arg| arg.to_hir(&TypeLowerCfg::no_proj(), &mut infer, &Scope::Empty))
                 .collect::<Vec<_>>();
 
             let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class_id).gen_scope);
@@ -734,7 +734,7 @@ impl Context {
                     return None;
                 };
 
-                let ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
+                let ty = member.member.to_hir(&TypeLowerCfg::no_proj(), &mut infer, &Scope::Empty);
                 let args = member.class.params
                     .iter()
                     .map(|arg| arg.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
