@@ -667,8 +667,9 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             Apply(Option<Vec<SrcNode<ast::Expr>>>, Span),
         }
 
+        let field = term_ident_parser().or(select! { Token::Nat(x) => ast::Ident::new(format!("{}", x)) });
         let chain = just(Token::Op(Op::Dot))
-            .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
+            .ignore_then(field.map_with_span(SrcNode::new))
             .map(Chain::Field)
             .or(just(Token::Colon).ignore_then(direct.clone())
                 .map(Chain::Infix))
