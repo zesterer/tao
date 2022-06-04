@@ -19,7 +19,7 @@ fn count_from : Nat -> yield Nat ~ () =
 # Prints the natural numbers to the console
 def print_nats : print ~ () = @{
     count_from(0)
-        handle yield Nat with n => do_print(""#(n:show)#)?
+        handle yield Nat with n => do_print(""#(n->show)#)?
 }
 
 effect get_name = () => Str

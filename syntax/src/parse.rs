@@ -671,7 +671,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         let chain = just(Token::Op(Op::Dot))
             .ignore_then(field.map_with_span(SrcNode::new))
             .map(Chain::Field)
-            .or(just(Token::Colon).ignore_then(direct.clone())
+            .or(just(Token::Op(Op::RArrow)).ignore_then(direct.clone())
                 .map(Chain::Infix))
             .or(paren_exp_list
                 .map_with_span(|args, span| Chain::Apply(args, span)))

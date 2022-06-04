@@ -41,7 +41,7 @@ data Mapped A, S = {
 
 for A, S < Stream A member Mapped A S of Stream A =
     => next = fn Mapped { s, f } => match S.next(s) in
-        | (Just x, s) => (Just x:f, Mapped { s, f })
+        | (Just x, s) => (Just x->f, Mapped { s, f })
         \ (None, s) => (None, Mapped { s, f })
 
 fn mapped A, S : (A -> A) -> S -> Mapped A S =
@@ -61,11 +61,11 @@ fn mapped A, S : (A -> A) -> S -> Mapped A S =
 
 ## Collect the elements of a stream into a list
 # fn collect S < Stream = s => match S.next(s) in
-#     | (Just x, s) => [x .. s:collect]
+#     | (Just x, s) => [x .. s->collect]
 #     \ (None, _) => []
 
 # fn stream_nth S < Stream : Nat -> S -> Maybe S.Item =
 #     | 0, s =>
 #         let (x, _) = S.next(s) in x
 #     \ n + 1, s =>
-#         let (_, s) = S.next(s) in s:stream_nth(n)
+#         let (_, s) = S.next(s) in s->stream_nth(n)

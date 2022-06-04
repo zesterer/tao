@@ -27,7 +27,7 @@ for A < Debug, B < Debug member (A, B) of Debug =
     => debug = fn (a, b) => "(" ++ A.debug(a) ++ ", " ++ B.debug(b) ++ ")"
 
 #for A < Debug member [A] of Debug =
-#    => debug = fn xs => "[" ++ xs:fold("", fn s, x => s ++ ", " ++ x:A.debug) ++ "]"
+#    => debug = fn xs => "[" ++ xs->fold("", fn s, x => s ++ ", " ++ x->A.debug) ++ "]"
 
 # Show
 

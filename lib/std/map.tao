@@ -16,8 +16,8 @@ for K, V member Map K V of Debug where
 =
     => debug = fn
         | MEmpty => "{}"
-        | MLeaf (k, v) => k:debug ++ ": " ++ v:debug
-        \ MBranch (_, a, b) => a:debug ++ ", " ++ b:debug
+        | MLeaf (k, v) => k->debug ++ ": " ++ v->debug
+        \ MBranch (_, a, b) => a->debug ++ ", " ++ b->debug
 
 fn insert K < Ord, V : K -> V -> Map K V -> Map K V =
     | k, v, MEmpty => MLeaf (k, v)
@@ -26,8 +26,8 @@ fn insert K < Ord, V : K -> V -> Map K V -> Map K V =
         | More => MBranch (k, MLeaf (k_old, v_old), MLeaf (k, v))
         \ Equal => MLeaf (k, v)
     \ k, v, MBranch (k_ref, a, b) => if K.less(k, k_ref)
-        then MBranch (k_ref, a:insert(k, v), b)
-        else MBranch (k_ref, a, b:insert(k, v))
+        then MBranch (k_ref, a->insert(k, v), b)
+        else MBranch (k_ref, a, b->insert(k, v))
 
 fn get K < Ord, V : K -> Map K V -> Maybe V =
     | _, MEmpty => None
@@ -35,13 +35,13 @@ fn get K < Ord, V : K -> Map K V -> Maybe V =
         then Just v
         else None
     \ k, MBranch (k_ref, a, b) => if K.less(k, k_ref)
-        then a:get(k)
-        else b:get(k)
+        then a->get(k)
+        else b->get(k)
 
 fn contains K < Ord, V : K -> Map K V -> Bool =
-    k, m => match m:get(k) in
+    k, m => match m->get(k) in
         | Just _ => True
         \ None => False
 
 def from_list K < Ord, V : [(K, V)] -> Map K V =
-    fold(default, fn m, (k, v) => m:insert(k, v))
+    fold(default, fn m, (k, v) => m->insert(k, v))

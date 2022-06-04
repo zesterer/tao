@@ -13,7 +13,7 @@ fn fold_r A, B =
 fn reduce_r A, B = f, (xs, init) : ([B], A) => fold_r(init, f, xs)
 
 fn map_res A, B, E : (A -> B) -> Result A E -> Result B E =
-	| f, Ok ok => Ok ok:f
+	| f, Ok ok => Ok ok->f
 	\ _, Err err => Err err
 
 data ParseErr I =
@@ -26,7 +26,7 @@ type Parser I, O = [I] -> Result (O, [I]) (ParseErr I)
 
 fn filter_tok I, O : (I -> Result O (ParseErr I)) -> Parser I O =
     | _, [] => Err UnexpectedEnd
-    \ f, [head .. tail] => head:f:map_res(fn o => (o, tail))
+    \ f, [head .. tail] => head->f->map_res(fn o => (o, tail))
 
 fn just : Char -> ? =
     c => filter_tok(fn head => if head = c
@@ -36,55 +36,55 @@ fn just : Char -> ? =
 fn and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
 	b, a, xs => match xs:a in
 		| Err err => Err err
-		\ Ok (a, xs) => match xs:b in
+		\ Ok (a, xs) => match xs->b in
 			| Err err => Err err
 			\ Ok (b, xs) => Ok ((a, b), xs)
 
 fn or_else I, O : Parser I O -> Parser I O -> Parser I O =
-	a, b, xs => match xs:a in
+	a, b, xs => match xs->a in
 		| ok ~ Ok _ => ok
-		\ Err _ => match xs:b in
+		\ Err _ => match xs->b in
 			| ok ~ Ok _ => ok
 			\ err ~ Err _ => err
 
 fn repeated I, O : Parser I O -> Parser I [O] =
-	a, xs => match xs:a in
-		| Ok (out, tail) => match tail:repeated(a) in
+	a, xs => match xs->a in
+		| Ok (out, tail) => match tail->repeated(a) in
 			| Ok (items, tail) => Ok ([out .. items], tail)
 			\ err ~ Err _ => Ok ([], tail)
 		\ Err err => Ok ([], xs)
 
 fn repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
-	n, a, xs => match xs:repeated(a) in
-		| ok ~ Ok (out, tail) => if out:len >= n
+	n, a, xs => match xs->repeated(a) in
+		| ok ~ Ok (out, tail) => if out->len >= n
 			then ok
 			else Err ExpectedMore
 		\ err ~ Err _ => err
 
 fn map_to I, O, U : (O -> U) -> Parser I O -> Parser I U =
-    f, a, xs => xs:a:map_res(fn (out, tail) => (out:f, tail))
+    f, a, xs => xs->a->map_res(fn (out, tail) => (out->f, tail))
 
 fn then_ignore I, O, U : Parser I U -> Parser I O -> Parser I O =
     b, a => a
-        :and_then(b)
-        :map_to(fn (a, _) => a)
+    -> and_then(b)
+    -> map_to(fn (a, _) => a)
 
 fn ignore_then I, O, U : Parser I U -> Parser I O -> Parser I U =
     b, a => a
-        :and_then(b)
-        :map_to(fn (_, b) => b)
+    -> and_then(b)
+    -> map_to(fn (_, b) => b)
 
 def whitespace = just(' ')
-	:or_else(just('\t'))
+	-> or_else(just('\t'))
 
-def whitespaces = whitespace:repeated
+def whitespaces = whitespace->repeated
 
 fn padded O : Parser Char O -> Parser Char O =
     a => whitespaces
-        :ignore_then(a)
-        :then_ignore(whitespaces)
+    -> ignore_then(a)
+    -> then_ignore(whitespaces)
 
-fn recurse I, O : Parser I O -> Parser I O = f, xs => match xs:f in
+fn recurse I, O : Parser I O -> Parser I O = f, xs => match xs->f in
     | Ok (out, tail) => Ok (out, tail)
     \ Err e => Err e
 
@@ -94,7 +94,7 @@ data FindErr =
 fn find_start : Nat -> Char -> Str -> Result Nat FindErr =
 	| idx, c, [head .. tail] => if c = head
 		then Ok idx
-		else tail:find_start(idx + 1, c)
+		else tail->find_start(idx + 1, c)
 	\ idx, c, [] => Err NotFound
 
 def find = find_start(0)
@@ -103,16 +103,16 @@ fn end I : Parser I () =
     | [] => Ok ((), [])
     \ [x ..] => Err ExpectedFound (None, x)
 
-fn char_to_num = c => "0123456789":find(c)
+fn char_to_num = c => "0123456789"->find(c)
 
-def digit = filter_tok(fn c => match c:char_to_num in
+def digit = filter_tok(fn c => match c->char_to_num in
 	| Ok n => Ok n
 	\ Err NotFound => Err ExpectedPat "digit")
 
 def number = digit
-	:repeated_at_least(1)
-	:map_to(fn xs => xs:fold(0, fn a, x => a * 10 + x))
-	:padded
+	-> repeated_at_least(1)
+	-> map_to(fn xs => xs->fold(0, fn a, x => a * 10 + x))
+	-> padded
 
 data Unary =
 	\ Neg
@@ -128,49 +128,49 @@ data Expr =
 	\ Binary (Binary, Expr, Expr)
 
 def atom = number
-	:map_to(fn x => Natural x)
-	:or_else(just('(')
-		:padded
-		:ignore_then(recurse(fn xs => xs:expr_parser))
-		:then_ignore(just(')'))
-		:padded)
+	-> map_to(fn x => Natural x)
+	-> or_else(just('(')
+		-> padded
+		-> ignore_then(recurse(fn xs => xs->expr_parser))
+		-> then_ignore(just(')'))
+		-> padded)
 
-fn op = c => just(c):padded
+fn op = c => just(c)->padded
 
 def unary = op('-')
-	:map_to(fn _ => Neg)
-	:repeated
-	:and_then(atom)
-	:map_to(reduce_r(fn op, a => Unary (op, a)))
+	-> map_to(fn _ => Neg)
+	-> repeated
+	-> and_then(atom)
+	-> map_to(reduce_r(fn op, a => Unary (op, a)))
 
 def product_parser = unary
-	:and_then(op('*'):map_to(fn _ => Mul)
-		:and_then(unary)
-		:repeated)
-	:map_to(reduce(fn a, (op, b) => Binary (op, a, b)))
+	-> and_then(op('*')->map_to(fn _ => Mul)
+		-> and_then(unary)
+		-> repeated)
+	-> map_to(reduce(fn a, (op, b) => Binary (op, a, b)))
 
 def sum_parser = product_parser
-	:and_then(op('+'):map_to(fn _ => Add)
-		:or_else(op('-'):map_to(fn _ => Sub))
-		:and_then(product_parser)
-		:repeated)
-	:map_to(reduce(fn a, (op, b) => Binary (op, a, b)))
+	-> and_then(op('+')->map_to(fn _ => Add)
+		-> or_else(op('-')->map_to(fn _ => Sub))
+		-> and_then(product_parser)
+		-> repeated)
+	-> map_to(reduce(fn a, (op, b) => Binary (op, a, b)))
 
 def expr_parser : Parser Char Expr = sum_parser
 
 fn parse I, O : Parser I O -> [I] -> Result O (ParseErr I) = parser, input =>
-    match input:(parser:and_then(end)) in
+    match input->(parser->and_then(end)) in
         | Ok ((o, _), _) => Ok o
         \ Err e => Err e
 
 fn eval =
 	| Natural x => --x
-	| Unary (Neg, a) => -a:eval
-	| Binary (Add, a, b) => a:eval + b:eval
-	| Binary (Sub, a, b) => a:eval - b:eval
-	\ Binary (Mul, a, b) => a:eval * b:eval
+	| Unary (Neg, a) => -a->eval
+	| Binary (Add, a, b) => a->eval + b->eval
+	| Binary (Sub, a, b) => a->eval - b->eval
+	\ Binary (Mul, a, b) => a->eval * b->eval
 
 # $[main]
 # def main =
-#     let parser = expr_parser:map_to(eval) in
+#     let parser = expr_parser->map_to(eval) in
 #     parser("2 * (5 - 1)")

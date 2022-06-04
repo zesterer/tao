@@ -10,7 +10,7 @@
 ## factorial(10)
 ## ```
 fn fix A, B : ((A -> B) -> A -> B) -> A -> B =
-    \ f, n => f(f:fix, n)
+    \ f, n => f(f->fix, n)
 
 ## A functor with no environment.
 class FnZero I =

@@ -21,10 +21,10 @@ def main3 =
     f(4)
 
 # fn main = [1, 2, 3, 4, 5, 6]
-#     :stream
-#     :take(5)
-#     :mapped(fn x => x * x)
-#     :nth(3)
+# -> stream
+# -> take(5)
+# -> mapped(fn x => x * x)
+# -> nth(3)
 
 class Mappable =
     => Item
@@ -34,7 +34,7 @@ class Mappable =
 for A member [A] of Mappable =
     => Item = A
     => Output = [A]
-    => map = fn f, self => self:map(f)
+    => map = fn f, self => self->map(f)
 
 fn do_map A < Mappable =
     \ f, m => A.map(f, m)
@@ -56,6 +56,6 @@ def main = [
         (3, "d"),
         (1, "b"),
     ]
-        :from_list
-        :contains(4)
-        :debug
+    -> from_list
+    -> contains(4)
+    -> debug

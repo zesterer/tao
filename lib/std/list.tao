@@ -9,7 +9,7 @@ for A, B member [A] of Map B =
     => Output = [B]
     => map = fn
         | _, [] => []
-        \ f, [x .. xs] => [x:f .. xs:Self.map(f)]
+        \ f, [x .. xs] => [x->f .. xs->Self.map(f)]
 
 for A, B member [B] of Fold A =
     => Item = B
@@ -19,13 +19,13 @@ for A, B member [B] of Fold A =
 
 # fn map A, B : (A -> B) -> [A] -> [B] =
 #     | _, [] => []
-#     \ f, [x .. xs] => [x:f .. xs:map(f)]
+#     \ f, [x .. xs] => [x->f .. xs->map(f)]
 
 fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
-    \ f, [x .. xs] => (if x:f then [x] else []) ++ xs:filter(f)
+    \ f, [x .. xs] => (if x->f then [x] else []) ++ xs->filter(f)
 
-fn find_first A : (A -> Bool) -> [A] -> Maybe A = f, xs => match xs:filter(f) in
+fn find_first A : (A -> Bool) -> [A] -> Maybe A = f, xs => match xs->filter(f) in
     | [] => None
     \ [x ..] => Just x
 
@@ -37,11 +37,11 @@ fn len A : [A] -> Nat = xs => @len_list(xs)
 
 fn repeat A : Nat -> [A] -> [A] =
     | 0, _ => []
-    \ n + 1, x => x ++ x:repeat(n)
+    \ n + 1, x => x ++ x->repeat(n)
 
 fn swap A : Nat -> (A -> A) -> [A] -> [A] = n, f, xs => match @skip_list(xs, n) in
     | [] => xs
-    \ [x .. tail] => @trim_list(xs, n) ++ [x:f .. tail]
+    \ [x .. tail] => @trim_list(xs, n) ++ [x->f .. tail]
 
 fn nth A : Nat -> [A] -> Maybe A = n, xs => match @skip_list(xs, n) in
     | [x ..] => Just x
@@ -50,15 +50,15 @@ fn nth A : Nat -> [A] -> Maybe A = n, xs => match @skip_list(xs, n) in
 fn sort A < Ord : [A] -> [A] =
     | [] => []
     \ [mid .. xs] =>
-        xs:filter(fn x => x < mid):sort
+        xs->filter(fn x => x < mid)->sort
             ++
         [mid]
             ++
-        xs:filter(fn x => x >= mid):sort
+        xs->filter(fn x => x >= mid)->sort
 
 fn rev A : [A] -> [A] =
     | [] => []
-    \ [x .. xs] => xs:rev ++ [x]
+    \ [x .. xs] => xs->rev ++ [x]
 
 # def sum A : [A] -> A where
 #     A < Zero + Add A with { Output = A },

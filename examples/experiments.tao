@@ -6,11 +6,11 @@ fn add x, y = x + y
 
 fn filter
     _, [] = []
-    f, [x .. xs] = [.. if x:f then [x] else [], xs]
+    f, [x .. xs] = [.. if x->f then [x] else [], xs]
 
 fn factorial
     0 = 1
-    m ~ n + 1 = m * n:factorial
+    m ~ n + 1 = m * n->factorial
 
 class Sum < Zero + Add
 for A < Zero + Add member A of Sum
@@ -22,7 +22,7 @@ fn sum : a -> a where
     a < Sum
 is
     [] => zero
-    [x .. xs] => x + xs:sum
+    [x .. xs] => x + xs->sum
 
 data Maybe a
     Just a
@@ -67,10 +67,10 @@ fn add : Int -> Int -> Int is
 
 fn len : [a] -> Nat is
     | [] -> 0
-    \ [_ .. as] -> 1 + as:len
+    \ [_ .. as] -> 1 + as->len
 
 fn zip : [a] -> [b] -> [(a, b)] is
-    | [a .. as], [b .. bs] => [(a, b) .. xs:zip]
+    | [a .. as], [b .. bs] => [(a, b) .. xs->zip]
     \ _, _ => []
 
 class Sum < Zero + Add
@@ -79,7 +79,7 @@ fn sum : [a] -> a where
     a < Sum
 is
     | [] => zero
-    \ [a .. as] => a + as:sum
+    \ [a .. as] => a + as->sum
 
 fn sum<A: Sum>(xs: [A]) -> A {
     match xs {
@@ -90,4 +90,4 @@ fn sum<A: Sum>(xs: [A]) -> A {
 
 fn sum : [a < Sum] -> a is
     | [] => zero
-    \ [a .. as] => a + as:sum
+    \ [a .. as] => a + as->sum

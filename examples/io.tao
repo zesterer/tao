@@ -2,19 +2,19 @@ import "../lib/parse.tao"
 
 def main : IO () = do {
     ["a", "b", "c", "d"]
-        :for_each(fn x => do {
-            print("Element = " ++ x);
-        });
+    -> for_each(fn x => do {
+        print("Element = " ++ x);
+    });
 
     while(do {
         print("Enter an expression to evaluate, q to quit");
         let text <- input;
-        if text:eq("q") then do {
+        if text = "q" then do {
             print("Ok, goodbye");
             return False
         } else do {
-            match text:parse(expr_parser) in
-                | Ok expr => print(expr:eval:display)
+            match text->parse(expr_parser) in
+                | Ok expr => print(expr->eval->display)
                 \ Err err => print("Failed to parse expression '" ++ text ++ "'")
             ;
             return True

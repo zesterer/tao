@@ -10,18 +10,18 @@ data Instr =
     \ Loop [Instr]
 
 fn parse =
-    | ['<' .. s] => let (xs, s) = s:parse in ([Left .. xs], s)
-    | ['>' .. s] => let (xs, s) = s:parse in ([Right .. xs], s)
-    | ['+' .. s] => let (xs, s) = s:parse in ([Incr .. xs], s)
-    | ['-' .. s] => let (xs, s) = s:parse in ([Decr .. xs], s)
-    | [',' .. s] => let (xs, s) = s:parse in ([Read .. xs], s)
-    | ['.' .. s] => let (xs, s) = s:parse in ([Write .. xs], s)
+    | ['<' .. s] => let (xs, s) = s->parse in ([Left .. xs], s)
+    | ['>' .. s] => let (xs, s) = s->parse in ([Right .. xs], s)
+    | ['+' .. s] => let (xs, s) = s->parse in ([Incr .. xs], s)
+    | ['-' .. s] => let (xs, s) = s->parse in ([Decr .. xs], s)
+    | [',' .. s] => let (xs, s) = s->parse in ([Read .. xs], s)
+    | ['.' .. s] => let (xs, s) = s->parse in ([Write .. xs], s)
     | [']' .. s] => ([], s)
     | ['[' .. s] =>
-        let (xs, s) = s:parse in
-        let (tail, s) = s:parse in
+        let (xs, s) = s->parse in
+        let (tail, s) = s->parse in
         ([Loop xs] ++ tail, s)
-    | [_ .. s] => s:parse
+    | [_ .. s] => s->parse
     \ [] => ([], "")
 
 data State = {
@@ -34,7 +34,7 @@ data State = {
 member State of Default =
     => default = State {
         ptr: 0,
-        tape: [0]:repeat(1000),
+        tape: [0]->repeat(1000),
         stdin: "",
         stdout: "",
     }
@@ -51,12 +51,12 @@ fn exec : State -> Instr -> IO State =
                 \ l => l + 1
         }
     | state, Incr => return state with {
-            tape: state.tape:swap(state.ptr, fn
+            tape: state.tape->swap(state.ptr, fn
                 | 255 => 0
                 \ n => n + 1)
         }
     | state, Decr => return state with {
-            tape: state.tape:swap(state.ptr, fn
+            tape: state.tape->swap(state.ptr, fn
                 | 0 => 255
                 \ n + 1 => n)
         }
@@ -64,25 +64,25 @@ fn exec : State -> Instr -> IO State =
             print("Read not supported yet");
             return state
         }
-    | state, Write => match state.tape:nth(state.ptr) in
+    | state, Write => match state.tape->nth(state.ptr) in
         # Newline
         | Just 10 => do {
                 print(state.stdout);
                 return state with { stdout: "" }
             }
         | Just n + 32 => match " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
-            :nth(n) in
+            -> nth(n) in
             | Just c => do {
                 #print(state.stdout);
                 return state with { stdout: state.stdout ++ [c] }
             }
             \ None => return state
         \ _ => return state
-    \ state, Loop xs => match state.tape:nth(state.ptr) in
+    \ state, Loop xs => match state.tape->nth(state.ptr) in
         | Just 0 => return state
         | Just _ => do {
                 let state <- xs
-                    :fold_for_each(state, exec);
+                    -> fold_for_each(state, exec);
                 exec(state, Loop xs)
             }
         \ None => return state
@@ -97,7 +97,7 @@ http://brainfuck.org/]
     ]>.>+[>>]>+
 ]
 [Shows an ASCII representation of the Sierpinski triangle
-(iteration 5).]":parse;
+(iteration 5).]"->parse;
     xs
-        :fold_for_each(default, exec);
+    -> fold_for_each(default, exec);
 }
