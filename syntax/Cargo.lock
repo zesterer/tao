@@ -21,9 +21,8 @@ dependencies = [
 
 [[package]]
 name = "ariadne"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7080ae01b2f0c312065d4914cd0f0de045eb8832e9415b355106a6cff3073cb4"
+version = "0.1.5"
+source = "git+https://github.com/zesterer/ariadne.git#dc1396c5e430b455d3b685db5e773cab689f7c1d"
 dependencies = [
  "yansi",
 ]
@@ -54,7 +53,12 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chumsky"
-version = "0.5.0-alpha"
+version = "0.8.0"
+source = "git+https://github.com/zesterer/chumsky.git#53dbc20ee3afeb815c01db0290e155f6db548288"
+dependencies = [
+ "hashbrown 0.11.2",
+ "stacker",
+]
 
 [[package]]
 name = "clipboard-win"
@@ -188,12 +192,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "maybe_box"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffb7513bfacf0de18eb942977c490642cb92ccd53cc42af5941883cf16c49f9a"
-
-[[package]]
 name = "memchr"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -219,9 +217,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.22.1"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7555d6c7164cc913be1ce7f95cbecdabda61eb2ccd89008524af306fb7f5031"
+checksum = "e4916f159ed8e5de0082076562152a76b7a1f64a01fd9d1e0fea002c37624faf"
 dependencies = [
  "bitflags",
  "cc",
@@ -259,6 +257,15 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "winapi",
+]
+
+[[package]]
+name = "psm"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "871372391786ccec00d3c5d3d6608905b3d4db263639cfe075d3b60a736d115a"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -327,20 +334,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 
 [[package]]
+name = "stacker"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90939d5171a4420b3ff5fbc8954d641e7377335454c259dcb80786f3f21dc9b4"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "libc",
+ "psm",
+ "winapi",
+]
+
+[[package]]
 name = "str-buf"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d44a3643b4ff9caf57abcee9c2c621d6c03d9135e0d8b589bd9afb5992cb176a"
 
 [[package]]
-name = "tao-syntax"
+name = "tao_syntax"
 version = "0.1.0"
 dependencies = [
  "ariadne",
  "chumsky",
  "hashbrown 0.11.2",
  "internment",
- "maybe_box",
  "rustyline",
 ]
 
