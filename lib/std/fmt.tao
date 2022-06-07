@@ -17,7 +17,7 @@ member Bool of Debug =
         | True => "True"
         \ False => "False"
 
-member Str of Debug =
+member [Char] of Debug =
     => debug = fn s => "\"" ++ s ++ "\""
 
 member Char of Debug =
@@ -36,5 +36,5 @@ class Show =
 
 def show A < Show : A -> Str = A.show
 
-member Str of Show =
+member [Char] of Show =
     => show = fn s => s

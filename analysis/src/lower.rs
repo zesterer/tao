@@ -118,15 +118,22 @@ pub fn enforce_generic_obligations(
 
 pub struct TypeLowerCfg {
     pub projection_permitted: bool,
+    pub alias_permitted: bool,
 }
 
 impl TypeLowerCfg {
-    pub fn no_proj() -> Self {
-        Self { projection_permitted: false }
+    pub fn member() -> Self {
+        Self {
+            projection_permitted: false,
+            alias_permitted: false,
+        }
     }
 
     pub fn other() -> Self {
-        Self { projection_permitted: true }
+        Self {
+            projection_permitted: true,
+            alias_permitted: true,
+        }
     }
 }
 
@@ -212,7 +219,11 @@ impl ToHir for ast::Type {
                             }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error(ErrorReason::Unknown));
-                            infer.emit(InferError::RecursiveAlias(alias_id, err_ty, name.span()));
+                            if cfg.alias_permitted {
+                                infer.emit(InferError::RecursiveAlias(alias_id, err_ty, name.span()));
+                            } else {
+                                infer.ctx_mut().emit(Error::AliasNotPermitted(alias_id, name.span()));
+                            };
                             TyInfo::Ref(err_ty)
                         }
                     } else if let Some(data_id) = infer.ctx().datas.lookup_data(**name) {

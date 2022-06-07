@@ -8,6 +8,7 @@ pub enum Error {
     CannotInfer(TyId, Option<Span>),
     CannotInferEffect(EffectId),
     Recursive(TyId, Span, Span),
+    AliasNotPermitted(AliasId, Span),
     NoSuchItem(TyId, Span, SrcNode<Ident>),
     NoSuchField(TyId, Span, SrcNode<Ident>),
     NoSuchLocal(SrcNode<Ident>),
@@ -114,6 +115,19 @@ impl Error {
                     format!("If this was intentional, consider using {} instead", "data".fg(Color::Cyan)),
                 ],
             ),
+            Error::AliasNotPermitted(alias, span) => {
+                let alias = ctx.datas.get_alias(alias).unwrap();
+                (
+                    format!("Type alias {} not valid here", alias.name.fg(Color::Red)),
+                    vec![
+                        (span, format!("Not valid here"), Color::Red),
+                    ],
+                    vec![
+                        format!("Types aliases are not valid as class members"),
+                        format!("Consider using the full type, {}, instead", display(alias.ty).fg(Color::Blue)),
+                    ],
+                )
+            },
             Error::NoSuchItem(a, record_span, field) => (
                 format!("Type {} has no item named {}", display(a).fg(Color::Red), (*field).fg(Color::Red)),
                 vec![

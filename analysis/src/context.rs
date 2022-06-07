@@ -178,47 +178,18 @@ impl Context {
             );
         }
 
-        // Alias definition must go before members and defs because they might have type hints that make use of type
-        // aliases
-        for (attr, alias, _) in aliases {
-            let gen_scope = this.datas.name_gen_scope(*alias.name);
-
-            let mut infer = Infer::new(&mut this, Some(gen_scope));
-                // TODO: Enforce these?
-                //.with_gen_scope_implied();
-
-            let ty = alias.ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
-
-            let (mut checked, mut errs) = infer.into_checked();
-            errors.append(&mut errs);
-
-            let ty = checked.reify(ty.meta().1);
-
-            this.datas.define_alias(
-                this.datas
-                    .lookup_alias(*alias.name)
-                    .expect("Alias must be pre-declared before definition"),
-                Alias {
-                    name: alias.name.clone(),
-                    attr: attr.to_vec(),
-                    gen_scope,
-                    ty,
-                },
-            );
-        }
-
         let mut members = Vec::new();
         for (attr, member, class_id, gen_scope) in &members_init {
             let mut infer = Infer::new(&mut this, Some(*gen_scope))
                 .with_gen_scope_implied();
 
-            let member_ty = member.member.to_hir(&TypeLowerCfg::no_proj(), &mut infer, &Scope::Empty);
+            let member_ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
 
             let mut infer = infer.with_self_var(member_ty.meta().1);
 
             let args = member.class.params
                 .iter()
-                .map(|arg| arg.to_hir(&TypeLowerCfg::no_proj(), &mut infer, &Scope::Empty))
+                .map(|arg| arg.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty))
                 .collect::<Vec<_>>();
 
             let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class_id).gen_scope);
@@ -252,6 +223,35 @@ impl Context {
                 assoc: None,
             });
             members.push((*member, *class_id, member_id, member_ty, *gen_scope));
+        }
+
+        // Alias definition must go before members and defs because they might have type hints that make use of type
+        // aliases
+        for (attr, alias, _) in aliases {
+            let gen_scope = this.datas.name_gen_scope(*alias.name);
+
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
+                // TODO: Enforce these?
+                //.with_gen_scope_implied();
+
+            let ty = alias.ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let ty = checked.reify(ty.meta().1);
+
+            this.datas.define_alias(
+                this.datas
+                    .lookup_alias(*alias.name)
+                    .expect("Alias must be pre-declared before definition"),
+                Alias {
+                    name: alias.name.clone(),
+                    attr: attr.to_vec(),
+                    gen_scope,
+                    ty,
+                },
+            );
         }
 
         // Check for lang items
@@ -734,7 +734,7 @@ impl Context {
                     return None;
                 };
 
-                let ty = member.member.to_hir(&TypeLowerCfg::no_proj(), &mut infer, &Scope::Empty);
+                let ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
                 let args = member.class.params
                     .iter()
                     .map(|arg| arg.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)

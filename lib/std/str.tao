@@ -4,7 +4,7 @@ import "../core/ops.tao"
 
 type Str = [Char]
 
-for B < Display member Str of Add B =
+for B < Display member [Char] of Add B =
     => Output = Str
     => add = fn s, b => s ++ b->display
 
@@ -27,5 +27,5 @@ member Bool of Display =
 member Char of Display =
     => display = fn c => [c]
 
-member Str of Display =
+member [Char] of Display =
     => display = fn s => s
