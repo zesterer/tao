@@ -1090,7 +1090,7 @@ impl ToHir for ast::Expr {
                         ]), then_meta)
                     });
 
-                let opaque = infer.unknown(self.span());
+                let opaque = infer.opaque(self.span(), false);
                 (TyInfo::Effect(eff, last_meta.1, opaque), hir::Expr::Basin(eff, chain))
             },
             ast::Expr::Handle { expr, eff_name, eff_args, send, state, recv } => {
