@@ -708,7 +708,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .boxed();
 
         // Propagated effects
-        let op = just(Token::Question).to(ast::UnaryOp::Propagate)
+        let op = just(Token::Op(Op::Not)).to(ast::UnaryOp::Propagate)
             .map_with_span(SrcNode::new);
         let propagated = chained.clone()
             .then(op.repeated())

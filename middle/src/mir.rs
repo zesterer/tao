@@ -564,6 +564,8 @@ impl Expr {
                     Expr::Intrinsic(LenList, args) => write!(f, "@len_list({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(SkipList, args) => write!(f, "@skip_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(TrimList, args) => write!(f, "@trim_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(Suspend(_), args) => write!(f, "@suspend({})", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(Propagate, args) => write!(f, "{}!", DisplayExpr(&args[0], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
                         write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))
@@ -579,6 +581,15 @@ impl Expr {
                         }
                         Ok(())
                     },
+                    Expr::Basin(eff, inner) => write!(f, "{{ {} }}", DisplayExpr(inner, self.1, false)),
+                    Expr::Handle { expr, eff, send, recv } => write!(
+                        f,
+                        "{} handle {:?} with ${} =>\n{}",
+                        DisplayExpr(expr, self.1, false),
+                        eff,
+                        send.0,
+                        DisplayExpr(recv, self.1 + 1, false),
+                    ),
                     Expr::Access(inner, field) => write!(f, "({}).{}", DisplayExpr(inner, self.1, false), field),
                     Expr::AccessVariant(inner, variant) => write!(f, "({}).#{}", DisplayExpr(inner, self.1, false), variant),
                     Expr::Data(data, inner) => write!(f, "{:?} {}", data.0, DisplayExpr(inner, self.1, false)),
