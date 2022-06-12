@@ -21,7 +21,7 @@ pub enum TyInfo {
     Assoc(TyVar, ClassVar, SrcNode<Ident>),
     // Effect, output type, opaque type variable for tracking
     Effect(EffectVar, TyVar, TyVar),
-    Opaque(usize),
+    Opaque(usize, bool),
 }
 
 impl TyInfo {
@@ -331,7 +331,7 @@ impl<'a> Infer<'a> {
                 | TyInfo::Unknown(_)
                 | TyInfo::Prim(_)
                 | TyInfo::Gen(..)
-                | TyInfo::Opaque(_)
+                | TyInfo::Opaque(_, _)
                 | TyInfo::SelfType => {},
                 TyInfo::List(item) => self.set_error(item),
                 TyInfo::Record(fields, _) => fields
@@ -454,7 +454,7 @@ impl<'a> Infer<'a> {
                         span.unwrap_or_else(|| self.ctx.tys.get_span(ty)),
                         EffectInfo::Known(decl, args),
                     );
-                    let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)));
+                    let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), false);
                     TyInfo::Effect(eff, self.instantiate(out, span, f, self_ty), opaque)
                 },
             },
@@ -466,8 +466,8 @@ impl<'a> Infer<'a> {
         self.insert(span, TyInfo::Unknown(None))
     }
 
-    pub fn opaque(&mut self, span: Span) -> TyVar {
-        let ty = self.insert(span, TyInfo::Opaque(self.opaque_id));
+    pub fn opaque(&mut self, span: Span, relaxed: bool) -> TyVar {
+        let ty = self.insert(span, TyInfo::Opaque(self.opaque_id, relaxed));
         self.opaque_id += 1;
         ty
     }
@@ -588,7 +588,7 @@ impl<'a> Infer<'a> {
                 | TyInfo::Error(_)
                 | TyInfo::Prim(_)
                 | TyInfo::SelfType
-                | TyInfo::Opaque(_)
+                | TyInfo::Opaque(_, _)
                 | TyInfo::Gen(_, _, _) => false,
                 TyInfo::Ref(y) => x == y || self.occurs_in_inner(x, y, seen),
                 TyInfo::List(item) => x == item || self.occurs_in_inner(x, item, seen),
@@ -635,7 +635,12 @@ impl<'a> Infer<'a> {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
-                self.errors.push(InferError::CannotCoerce(x, y, Some((a, b)), info.into()));
+                let mut eq_info = info.into();
+                // TODO: Don't put this here, it's a bit silly
+                if let (TyInfo::Effect(_, _, _), TyInfo::Effect(_, _, _)) = (self.info(a), self.info(b)) {
+                    eq_info.reason = Some("Effect objects have unique types and cannot be substituted for one-another".to_string());
+                }
+                self.errors.push(InferError::CannotCoerce(x, y, Some((a, b)), eq_info));
             }
         }
     }
@@ -786,7 +791,15 @@ impl<'a> Infer<'a> {
                 let opaque_err = Self::flow_inner(infer, x_opaque, y_opaque).err().map(|_| (x, y));
                 o_err.or(eff_err).or(opaque_err).map(Err).unwrap_or(Ok(()))
             },
-            (TyInfo::Opaque(x_id), TyInfo::Opaque(y_id)) if x_id == y_id => Ok(()),
+            (TyInfo::Opaque(x_id, _), TyInfo::Opaque(y_id, _)) if x_id == y_id => Ok(()),
+            (TyInfo::Opaque(x_id, relaxed_x), TyInfo::Opaque(y_id, relaxed_y)) if relaxed_x || relaxed_y => {
+                if relaxed_y {
+                    infer.set_info(y, TyInfo::Ref(x));
+                } else {
+                    infer.set_info(x, TyInfo::Ref(y));
+                }
+                Ok(())
+            },
             (_, _) => Err((x, y)),
         }
     }
@@ -798,7 +811,7 @@ impl<'a> Infer<'a> {
         match self.info(ty) {
             TyInfo::Ref(x) => self.reinstantiate(span, x),
             TyInfo::Error(reason) => self.insert(self.span(ty), TyInfo::Error(reason)),
-            TyInfo::Opaque(_) => self.opaque(span),
+            TyInfo::Opaque(_, _) => self.opaque(span, false),
             TyInfo::Unknown(_) | TyInfo::Prim(_) => ty,
             TyInfo::List(item) => {
                 let item = self.reinstantiate(span, item);
@@ -1634,7 +1647,7 @@ impl<'a> Checked<'a> {
                 // Unknown types are treated as errors from here on out
                 TyInfo::Unknown(_) => Ty::Error(ErrorReason::Unknown),
                 // TODO: Not actual an error, but shouldn't appear in an actual type signature
-                TyInfo::Opaque(_) => Ty::Error(ErrorReason::Unknown),
+                TyInfo::Opaque(_, _) => Ty::Error(ErrorReason::Unknown),
                 TyInfo::Error(reason) => Ty::Error(reason),
                 TyInfo::Prim(prim) => Ty::Prim(prim),
                 TyInfo::List(item) => Ty::List(self.reify_inner(item)),

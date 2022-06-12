@@ -1,3 +1,6 @@
-import "../lib/std.tao"
+import "../lib/main.tao"
 
-def main = print("Hello, world!")
+def main : io ~ () = @{
+    print("Hello, world!")!;
+    print("How are you?")!;
+}

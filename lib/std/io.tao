@@ -1,9 +1,16 @@
 import "../core/monad.tao"
 
-# IO operations
+effect io = Str => ()
 
-fn print : Str -> IO () = s, uni =>
+# Core monadic IO operations
+
+fn __print : Str -> IO () = s, uni =>
     let uni = @print(uni, s) in
     (uni, ())
 
-fn input : IO Str = uni => @input(uni)
+fn __input : IO Str = uni => @input(uni)
+
+# High-level effect IO operations
+
+fn print : Str -> io ~ () =
+    s => @{ @suspend(s) }

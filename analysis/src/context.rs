@@ -648,7 +648,7 @@ impl Context {
                 .collect();
 
             let body = def.body.to_hir(&(), &mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
-            infer.make_flow(body.meta().1, ty_hint.meta().1, EqInfo::default());
+            infer.make_flow(body.meta().1, ty_hint.meta().1, body.meta().0);
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);

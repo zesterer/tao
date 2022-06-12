@@ -1,0 +1,10 @@
+import "std.tao"
+
+$[entry]
+fn __start : @ -> (@, ()) = uni =>
+    let main : io ~ () = main in
+    let (_, uni) = (main, uni)
+        handle io with s, uni =>
+            let (uni, ()) = __print(s, uni) in
+            ((), uni)
+    in (uni, ())

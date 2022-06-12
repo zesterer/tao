@@ -265,7 +265,7 @@ impl AbstractPat {
                     ExamplePat::List((0..n).map(|_| ExamplePat::Wildcard).collect())
                 })
             },
-            Ty::Func(_, _) => {
+            Ty::Func(_, _) | Ty::Effect(_, _) => {
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,

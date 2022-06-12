@@ -305,9 +305,7 @@ impl ToHir for ast::Type {
                     ) {
                         Ok(()) => {
                             let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, params));
-                            // TODO: Use `unknown` instead of `Opaque` here, but don't generate type errors for free
-                            // opaque type variables, because not knowing them *is the point*
-                            let opaque = infer.opaque(self.span());
+                            let opaque = infer.opaque(self.span(), true);
                             TyInfo::Effect(eff, out, opaque)
                         },
                         Err(()) => TyInfo::Error(ErrorReason::Unknown),
