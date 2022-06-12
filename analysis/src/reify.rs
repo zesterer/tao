@@ -100,10 +100,11 @@ impl Reify for hir::Expr<InferMeta> {
                 .collect()),
             hir::Expr::Basin(eff, inner) => hir::Expr::Basin(infer.reify_effect(eff), inner.reify(infer)),
             hir::Expr::Suspend(eff, inner) => hir::Expr::Suspend(infer.reify_effect(eff), inner.reify(infer)),
-            hir::Expr::Handle { expr, eff, send, recv } => hir::Expr::Handle {
+            hir::Expr::Handle { expr, eff, send, state, recv } => hir::Expr::Handle {
                 expr: expr.reify(infer),
                 eff: infer.reify_effect(eff),
                 send: TyNode::new(*send, (send.meta().0, infer.reify(send.meta().1))),
+                state: state.map(|state| TyNode::new(*state, (state.meta().0, infer.reify(state.meta().1)))),
                 recv: recv.reify(infer),
             },
         };

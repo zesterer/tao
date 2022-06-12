@@ -1095,9 +1095,10 @@ impl ToHir for ast::Expr {
                 let opaque = infer.unknown(self.span());
                 (TyInfo::Effect(eff, last_meta.1, opaque), hir::Expr::Basin(eff, chain))
             },
-            ast::Expr::Handle { expr, eff_name, eff_args, send, recv } => {
+            ast::Expr::Handle { expr, eff_name, eff_args, send, state, recv } => {
                 let expr = expr.to_hir(cfg, infer, &scope);
                 let send = send.to_hir(cfg, infer, &scope);
+                let state = state.as_ref().map(|state| state.to_hir(cfg, infer, &scope));
                 let recv = recv.to_hir(cfg, infer, &scope.with_many(&send.get_binding_tys()));
 
                 let eff_args = eff_args
@@ -1121,22 +1122,51 @@ impl ToHir for ast::Expr {
                     ) {
                         Ok(()) => {
                             let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, eff_args));
-                            infer.make_effect_send_recv(eff, send.meta().1, recv.meta().1, eff_name.span());
+
+                            if let Some(state) = &state {
+                                let recv_ty = infer.unknown(recv.meta().0);
+                                let recv_and_state = infer.insert(expr.meta().0, TyInfo::tuple([recv_ty, state.meta().1]));
+                                infer.make_flow(recv.meta().1, recv_and_state, EqInfo::from(self.span()));
+
+                                infer.make_effect_send_recv(eff, send.meta().1, recv_ty, eff_name.span());
+                            } else {
+                                infer.make_effect_send_recv(eff, send.meta().1, recv.meta().1, eff_name.span());
+                            };
 
                             let opaque = infer.unknown(expr.meta().0);
-                            let eff_obj_ty = infer.insert(expr.meta().0, TyInfo::Effect(eff, out_ty, opaque));
+                            let eff_obj_ty = infer.insert(eff_name.span(), TyInfo::Effect(eff, out_ty, opaque));
 
-                            infer.make_flow(expr.meta().1, eff_obj_ty, EqInfo::from(self.span()));
+                            if let Some(state) = &state {
+                                let eff_and_state = infer.insert(expr.meta().0, TyInfo::tuple([eff_obj_ty, state.meta().1]));
+                                infer.make_flow(expr.meta().1, eff_and_state, EqInfo::from(self.span()));
+                            } else {
+                                infer.make_flow(expr.meta().1, eff_obj_ty, EqInfo::from(self.span()));
+                            };
+
+                            let overall_ty = if let Some(state) = &state {
+                                TyInfo::tuple([out_ty, state.meta().1])
+                            } else {
+                                TyInfo::Ref(out_ty)
+                            };
 
                             let recv_meta = *recv.meta();
-                            (TyInfo::Ref(out_ty), hir::Expr::Handle {
+                            (overall_ty, hir::Expr::Handle {
                                 expr,
                                 eff,
-                                send: InferNode::new(Ident::new("send"), *send.meta()),
+                                send: InferNode::new(Ident::new("0"), *send.meta()),
+                                state: state.as_ref().map(|state| InferNode::new(Ident::new("1"), *state.meta())),
                                 recv: InferNode::new(hir::Expr::Match(
                                     false,
-                                    InferNode::new(hir::Expr::Local(Ident::new("send")), *send.meta()),
-                                    vec![(send, recv)],
+                                    InferNode::new(hir::Expr::Local(Ident::new("0")), *send.meta()),
+                                    if let Some(state) = state {
+                                        vec![(send, InferNode::new(hir::Expr::Match(
+                                            false,
+                                            InferNode::new(hir::Expr::Local(Ident::new("1")), *state.meta()),
+                                            vec![(state, recv)],
+                                        ), recv_meta))]
+                                    } else {
+                                        vec![(send, recv)]
+                                    },
                                 ), recv_meta),
                             })
                         },

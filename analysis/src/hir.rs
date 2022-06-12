@@ -172,6 +172,7 @@ pub enum Expr<M: Meta> {
         expr: Node<Self, M>,
         eff: M::Effect,
         send: Node<Ident, M>,
+        state: Option<Node<Ident, M>>,
         recv: Node<Self, M>,
     },
 }

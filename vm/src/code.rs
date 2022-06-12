@@ -66,9 +66,11 @@ pub enum Instr {
 
     // Make an effect object using the relative offset and by capturing the last N items on the stack
     MakeEffect(isize, usize),
-    Propagate,
+    Propagate(EffectId),
     Suspend(EffectId),
     Register(EffectId),
+    Resume(EffectId),
+    EndHandler(EffectId),
 }
 
 impl Instr {
@@ -171,9 +173,11 @@ impl Program {
                 Instr::Print => -1,
                 Instr::Input => 0,
                 Instr::MakeEffect(_, n) => -(n as isize),
-                Instr::Propagate => -1,
+                Instr::Propagate(_) => -1,
                 Instr::Suspend(_) => 0,
                 Instr::Register(_) => -1,
+                Instr::Resume(_) => 0,
+                Instr::EndHandler(_) => -1,
             };
 
             let instr_display = match instr {
@@ -222,9 +226,11 @@ impl Program {
                 Instr::Print => format!("io.print"),
                 Instr::Input => format!("io.input"),
                 Instr::MakeEffect(i, n) => format!("eff.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
-                Instr::Propagate => format!("eff.propagate"),
+                Instr::Propagate(eff) => format!("eff.propagate {:?}", eff),
                 Instr::Suspend(eff) => format!("eff.suspend {:?}", eff),
                 Instr::Register(eff) => format!("eff.register {:?}", eff),
+                Instr::Resume(eff) => format!("eff.resume {:?}", eff),
+                Instr::EndHandler(eff) => format!("eff.end_handler {:?}", eff),
             };
 
             writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();

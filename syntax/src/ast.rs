@@ -218,6 +218,7 @@ pub enum Expr {
         eff_name: SrcNode<Ident>,
         eff_args: Vec<SrcNode<Type>>,
         send: SrcNode<Binding>,
+        state: Option<SrcNode<Binding>>,
         recv: SrcNode<Self>
     },
 }

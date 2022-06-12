@@ -997,7 +997,7 @@ impl<'a> Infer<'a> {
                     );
                     // TODO: The variance here is a bit fucked, this needs to swap when we're
                     // inferring flow into (from a handler) vs flow out of (via a propagation)
-                    self.make_flow(recv, recv_ty, span);
+                    self.make_flow(recv, recv_ty, self.span(recv));
                     Some(Ok(()))
                 },
             },

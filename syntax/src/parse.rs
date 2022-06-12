@@ -816,22 +816,25 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(with)
             .boxed();
 
+        let binding = binding_parser().map_with_span(SrcNode::new);
         let handle = cons.then(just(Token::Handle)
                 .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
                 .then(type_parser()
                     .map_with_span(SrcNode::new)
                     .repeated())
                 .then_ignore(just(Token::With))
-                .then(binding_parser().map_with_span(SrcNode::new))
+                .then(binding.clone())
+                .then(just(Token::Comma).ignore_then(binding).or_not())
                 .then_ignore(just(Token::Op(Op::RFlow)))
                 .then(expr.clone().map_with_span(SrcNode::new))
                 .or_not())
-            .map_with_span(|(expr, handle), span| if let Some((((eff_name, eff_args), send), recv)) = handle {
+            .map_with_span(|(expr, handle), span| if let Some(((((eff_name, eff_args), send), state), recv)) = handle {
                 SrcNode::new(ast::Expr::Handle {
                     expr,
                     eff_name,
                     eff_args,
                     send,
+                    state,
                     recv,
                 }, span)
             } else {

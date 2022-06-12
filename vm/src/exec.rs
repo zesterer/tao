@@ -93,7 +93,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
     } else {
         Vec::new()
     };
-    let mut handlers: Vector<(_, Value)> = Vector::new();
+    let mut handlers: Vector<(_, Value, Value)> = Vector::new();
 
     let mut tick = 0u64;
     loop {
@@ -322,29 +322,52 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 }));
                 stack.push(func);
             },
-            Instr::Propagate => {
-                let mut eff = stack.pop().unwrap().eff();
+            Instr::Propagate(eff_id) => {
+                let eff = stack.pop().unwrap().eff();
 
                 funcs.push(next_addr);
                 next_addr = eff.addr;
 
                 locals.extend(eff.captures.iter().cloned());
             },
-            Instr::Suspend(eff) => {
-                let (f_addr, mut captures) = handlers
+            Instr::Suspend(eff_id) => {
+                let handler = handlers
                     .iter()
                     .rev()
-                    .find(|(e, _)| *e == eff)
-                    .unwrap().1.clone().func();
+                    .find(|(e, _, _)| *e == eff_id)
+                    .unwrap();
+                let (f_addr, mut captures) = handler.1.clone().func();
 
                 funcs.push(next_addr);
                 next_addr = f_addr;
 
+                locals.push(handler.2.clone());
                 locals.extend(captures.into_iter());
             },
-            Instr::Register(eff) => {
+            Instr::Register(eff_id) => {
                 let handler = stack.pop().unwrap();
-                handlers.push_back((eff, handler));
+                let state = stack.pop().unwrap();
+                handlers.push_back((eff_id, handler, state));
+            },
+            Instr::EndHandler(eff_id) => {
+                let out = stack.pop().unwrap();
+                let handler = handlers.pop_back().unwrap();
+                debug_assert_eq!(handler.0, eff_id);
+                stack.push(Value::List([out, handler.2].into_iter().collect()));
+            },
+            Instr::Resume(eff_id) => {
+                let out_and_state = stack.pop().unwrap().list();
+                let out = out_and_state[0].clone();
+                let state = out_and_state[1].clone();
+
+                // Replace old state
+                handlers
+                    .iter_mut()
+                    .rev()
+                    .find(|(e, _, _)| *e == eff_id)
+                    .unwrap().2 = state;
+
+                stack.push(out);
             },
         }
 

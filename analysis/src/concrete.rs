@@ -504,10 +504,11 @@ impl ConContext {
                 self.lower_effect(hir, *eff, ty_insts),
                 self.lower_expr(hir, inner, ty_insts),
             ),
-            hir::Expr::Handle { expr, eff, send, recv } => hir::Expr::Handle {
+            hir::Expr::Handle { expr, eff, send, state, recv } => hir::Expr::Handle {
                 expr: self.lower_expr(hir, expr, ty_insts),
                 eff: self.lower_effect(hir, *eff, ty_insts),
                 send: ConNode::new(**send, self.lower_ty(hir, send.meta().1, ty_insts)),
+                state: state.as_ref().map(|state| ConNode::new(**state, self.lower_ty(hir, state.meta().1, ty_insts))),
                 recv: self.lower_expr(hir, recv, ty_insts),
             },
         };

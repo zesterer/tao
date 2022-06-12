@@ -170,7 +170,7 @@ pub enum Intrinsic {
     SkipList,
     TrimList,
     Suspend(EffectId),
-    Propagate,
+    Propagate(EffectId),
 }
 
 #[derive(Clone, Debug)]
@@ -358,6 +358,7 @@ pub enum Expr {
         expr: MirNode<Self>,
         eff: EffectId,
         send: MirNode<Local>,
+        state: MirNode<Local>,
         recv: MirNode<Self>,
     },
 }
@@ -417,14 +418,18 @@ impl Expr {
                 stack.pop();
                 **next = new_init;
             },
-            Expr::Handle { expr, eff, send, recv } => {
+            Expr::Handle { expr, eff, send, state, recv } => {
                 expr.refresh_locals_inner(stack);
 
                 let new_send = Local::new();
+                let new_state = Local::new();
+                let old_len = stack.len();
                 stack.push((**send, new_send));
+                stack.push((**state, new_state));
                 recv.refresh_locals_inner(stack);
-                stack.pop();
+                stack.truncate(old_len);
                 **send = new_send;
+                **state = new_state;
             },
             _ => self.for_children_mut(|expr| expr.refresh_locals_inner(stack)),
         }
@@ -481,11 +486,13 @@ impl Expr {
             Expr::Data(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessData(inner, _) => inner.required_locals_inner(stack, required),
             Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
-            Expr::Handle { expr, eff, send, recv } => {
+            Expr::Handle { expr, eff, send, state, recv } => {
                 expr.required_locals_inner(stack, required);
+                let old_len = stack.len();
                 stack.push(**send);
+                stack.push(**state);
                 recv.required_locals_inner(stack, required);
-                stack.pop();
+                stack.truncate(old_len);
             },
         }
     }
@@ -565,7 +572,7 @@ impl Expr {
                     Expr::Intrinsic(SkipList, args) => write!(f, "@skip_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(TrimList, args) => write!(f, "@trim_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Suspend(_), args) => write!(f, "@suspend({})", DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(Propagate, args) => write!(f, "{}!", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(Propagate(_), args) => write!(f, "{}!", DisplayExpr(&args[0], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
                         write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))
@@ -582,12 +589,13 @@ impl Expr {
                         Ok(())
                     },
                     Expr::Basin(eff, inner) => write!(f, "{{ {} }}", DisplayExpr(inner, self.1, false)),
-                    Expr::Handle { expr, eff, send, recv } => write!(
+                    Expr::Handle { expr, eff, send, state, recv } => write!(
                         f,
-                        "{} handle {:?} with ${} =>\n{}",
+                        "{} handle {:?} with ${}, ${} =>\n{}",
                         DisplayExpr(expr, self.1, false),
                         eff,
                         send.0,
+                        state.0,
                         DisplayExpr(recv, self.1 + 1, false),
                     ),
                     Expr::Access(inner, field) => write!(f, "({}).{}", DisplayExpr(inner, self.1, false), field),

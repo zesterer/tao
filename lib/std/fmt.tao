@@ -38,3 +38,17 @@ def show A < Show : A -> Str = A.show
 
 member [Char] of Show =
     => show = fn s => s
+
+member Nat of Show =
+    => show = fn x => @display_int(--x)
+
+member Int of Show =
+    => show = fn x => @display_int(x)
+
+member Bool of Show =
+    => show = fn
+        | True => "true"
+        \ False => "false"
+
+member Char of Show =
+    => show = fn c => [c]

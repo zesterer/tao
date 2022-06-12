@@ -231,7 +231,7 @@ impl Expr {
             Expr::Data(_, inner) => f(inner),
             Expr::AccessData(inner, _) => f(inner),
             Expr::Basin(_, inner) => f(inner),
-            Expr::Handle { expr, eff, send, recv } => {
+            Expr::Handle { expr, eff, send, state, recv } => {
                 f(expr);
                 f(recv);
             },
@@ -271,7 +271,7 @@ impl Expr {
             Expr::Data(_, inner) => f(inner),
             Expr::AccessData(inner, _) => f(inner),
             Expr::Basin(_, inner) => f(inner),
-            Expr::Handle { expr, eff, send, recv } => {
+            Expr::Handle { expr, eff, send, state, recv } => {
                 f(expr);
                 f(recv);
             },
@@ -294,9 +294,9 @@ impl Expr {
                     body.inline_local(name, local_expr);
                 }
             },
-            Expr::Handle { expr, eff, send, recv } => {
+            Expr::Handle { expr, eff, send, state, recv } => {
                 expr.inline_local(name, local_expr);
-                if **send != name {
+                if **send != name && **state != name {
                     recv.inline_local(name, local_expr);
                 }
             },

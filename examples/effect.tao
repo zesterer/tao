@@ -10,16 +10,18 @@ effect yield A = A => ()
 effect print = Str => ()
 
 # Counts the natural numbers, yielding each one to the caller
-fn count_from : Nat -> yield Nat ~ () =
-    n => @{
+fn count_range : Nat -> Nat -> yield Nat ~ () =
+    n, max => if n < max
+    then @{
         yield(n)!;
-        count_from(n + 1)!;
+        count_range(n + 1, max)!;
     }
+    else @{}
 
 # Prints the natural numbers to the console
 def print_nats : print ~ () = @{
-    count_from(0)
-        handle yield Nat with n => do_print(""#(n->show)#)!
+    count_range(0, 10)
+        handle yield Nat with n => do_print("Next nat: " + n->show)!
 }
 
 effect get_name = () => Str
@@ -38,22 +40,9 @@ fn hello_to : Str -> Str =
 
 def hello_to_you = hello_to("you")
 
-# def eff_main = do {
-#     print("Hello, world!")!;
-# }
-
-# fn handle_effects : print + input ~ () -> @ -> @ = eff, uni =>
-#     with uni
-#     on eff
-#         handle print in uni, eff, s =>
-#             let uni = @print(uni, s) in
-#             (uni, @resume(~print, eff, ()))
-#         handle input in uni, eff, () =>
-#             let (uni, s) = @input(uni) in
-#             (uni, @resume(~input, eff, s))
-#     until uni, () => uni
-
-# def main : @ -> @ =
-#     handle_effects(eff_main)
-
-def main = print(hello_to_you)
+fn main : @ -> (@, ()) =
+    uni => let (_, uni) = (print_nats, uni)
+        handle print with s, uni =>
+            let (uni, ()) = print(s, uni) in
+            ((), uni)
+        in (uni, ())

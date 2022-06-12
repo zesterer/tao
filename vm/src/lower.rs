@@ -216,12 +216,12 @@ impl Program {
     pub fn compile_body(
         &mut self,
         mir: &MirContext,
-        arg: Option<mir::Local>,
+        args: Vec<mir::Local>,
         body: &mir::Expr,
         stack: &mut Vec<mir::Local>,
         proc_fixups: &mut Vec<(ProcId, Addr)>,
     ) -> (Addr, usize) {
-        let captures = body.required_locals(arg);
+        let captures = body.required_locals(args.iter().copied());
 
         let old_stack = stack.len();
 
@@ -230,15 +230,15 @@ impl Program {
         let f_addr = self.next_addr();
 
         let mut f_stack = Vec::new();
-        if let Some(arg) = arg {
-            f_stack.push(arg); // Will be pushed to locals stack on application
+        for arg in &args {
+            f_stack.push(*arg); // Will be pushed to locals stack on application
         }
         f_stack.append(&mut captures.clone());
 
         // A function with an undefined body doesn't need to be compiled!
         if !matches!(&*body, mir::Expr::Undefined) {
             self.compile_expr(mir, body, &mut f_stack, proc_fixups);
-            self.push(Instr::PopLocal(arg.is_some() as usize + captures.len())); // +1 is for the argument
+            self.push(Instr::PopLocal(args.len() + captures.len())); // +1 is for the argument
             self.push(Instr::Ret);
         }
 
@@ -324,8 +324,11 @@ impl Program {
                     Intrinsic::Suspend(eff) => {
                         self.push(Instr::PushLocal);
                         self.push(Instr::Suspend(*eff));
+                        self.push(Instr::Resume(*eff));
                     },
-                    Intrinsic::Propagate => { self.push(Instr::Propagate); },
+                    Intrinsic::Propagate(eff) => {
+                        self.push(Instr::Propagate(*eff));
+                    },
                 };
             },
             mir::Expr::Tuple(fields) => {
@@ -388,7 +391,7 @@ impl Program {
                 }
             },
             mir::Expr::Func(arg, body) => {
-                let (f_addr, captures_len) = self.compile_body(mir, Some(**arg), body, stack, proc_fixups);
+                let (f_addr, captures_len) = self.compile_body(mir, vec![**arg], body, stack, proc_fixups);
 
                 self.push(Instr::MakeFunc(self.next_addr().jump_to(f_addr), captures_len));
             },
@@ -446,16 +449,25 @@ impl Program {
                 self.compile_expr(mir, inner, stack, proc_fixups);
             },
             mir::Expr::Basin(eff, inner) => {
-                let (f_addr, captures_len) = self.compile_body(mir, None, inner, stack, proc_fixups);
+                let (f_addr, captures_len) = self.compile_body(mir, Vec::new(), inner, stack, proc_fixups);
                 self.push(Instr::MakeEffect(self.next_addr().jump_to(f_addr), captures_len));
             },
-            mir::Expr::Handle { expr, eff, send, recv } => {
-                let (h_addr, captures_len) = self.compile_body(mir, Some(**send), recv, stack, proc_fixups);
+            mir::Expr::Handle { expr, eff, send, state, recv } => {
+                // self.debug("Starting handler...");
+                // self.debug("Compiling expr...");
+                self.compile_expr(mir, expr, stack, proc_fixups);
+
+                self.push(Instr::Dup);
+                self.push(Instr::IndexList(1));
+                // self.debug("Compiling body...");
+                let (h_addr, captures_len) = self.compile_body(mir, vec![**send, **state], recv, stack, proc_fixups);
                 self.push(Instr::MakeFunc(self.next_addr().jump_to(h_addr), captures_len));
                 self.push(Instr::Register(*eff));
 
-                self.compile_expr(mir, expr, stack, proc_fixups);
-                self.push(Instr::Propagate);
+                self.push(Instr::IndexList(0));
+                self.push(Instr::Propagate(*eff));
+                self.push(Instr::EndHandler(*eff));
+                // self.debug("...Ending handler");
             },
         }
     }

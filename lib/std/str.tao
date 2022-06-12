@@ -1,31 +1,10 @@
 import "../core/ops.tao"
+import "fmt.tao"
 
 #! Utilities for programming with strings.
 
 type Str = [Char]
 
-for B < Display member [Char] of Add B =
+for B < Show member [Char] of Add B =
     => Output = Str
-    => add = fn s, b => s ++ b->display
-
-class Display =
-    => display : Self -> Str
-
-fn display A < Display : A -> Str = x => A.display(x)
-
-member Nat of Display =
-    => display = fn x => @display_int(--x)
-
-member Int of Display =
-    => display = fn x => @display_int(x)
-
-member Bool of Display =
-    => display = fn
-        | True => "true"
-        \ False => "false"
-
-member Char of Display =
-    => display = fn c => [c]
-
-member [Char] of Display =
-    => display = fn s => s
+    => add = fn s, b => s ++ b->show
