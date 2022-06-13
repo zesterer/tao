@@ -454,7 +454,8 @@ impl<'a> Infer<'a> {
                         span.unwrap_or_else(|| self.ctx.tys.get_span(ty)),
                         EffectInfo::Known(decl, args),
                     );
-                    let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), false);
+                    // TODO: Should this be strict instead of relaxed?
+                    let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), true);
                     TyInfo::Effect(eff, self.instantiate(out, span, f, self_ty), opaque)
                 },
             },

@@ -13,6 +13,9 @@ def default A < Default : A = A.default
 member Nat of Default =
     => default = Nat.zero
 
+for A member [A] of Default =
+    => default = []
+
 for A < Default, B < Default member (A, B) of Default =
     => default = (A.default, B.default)
 

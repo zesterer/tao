@@ -9,19 +9,26 @@ class Debug =
 
 def debug A < Debug : A -> Str = A.debug
 
-member Nat of Debug =
-    => debug = fn _ => "nat"
-
 member Bool of Debug =
     => debug = fn
         | True => "True"
         \ False => "False"
 
-member [Char] of Debug =
-    => debug = fn s => "\"" ++ s ++ "\""
+# TODO: Add this again when some form of specialisation is added
+# member [Char] of Debug =
+#     => debug = fn s => "\"" ++ s ++ "\""
+
+for A < Debug member [A] of Debug =
+    => debug = fn xs => "[" ++ xs -> fix(fn
+        | _, [] => ""
+        | rec, [x] => x -> debug
+        \ rec, [x .. xs] => x -> debug ++ ", " ++ xs -> rec) ++ "]"
 
 member Char of Debug =
     => debug = fn c => [c]
+
+member Nat of Debug =
+    => debug = fn x => @display_int(--x)
 
 for A < Debug, B < Debug member (A, B) of Debug =
     => debug = fn (a, b) => "(" ++ A.debug(a) ++ ", " ++ B.debug(b) ++ ")"
