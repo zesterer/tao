@@ -18,7 +18,7 @@ impl Context {
 
         // Find special compiler types
         // TODO: Quite hacky
-        this.reprs.r#bool = Some(this.lower_data(hir, con, Intern::new((hir.datas.lang.r#bool.unwrap(), Vec::new()))));
+        this.reprs.r#bool = con.r#bool;
 
         this.entry = Some(this.lower_proc(hir, con, con.entry_proc()));
 

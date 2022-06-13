@@ -72,6 +72,8 @@ pub struct ConContext {
     ty_lookup: HashMap<ConTy, ConTyId>,
     procs: HashMap<ConProcId, Option<ConExpr>>,
     entry: Option<ConProcId>,
+    // Lang items
+    pub r#bool: Option<ConDataId>,
 }
 
 impl ConContext {
@@ -83,7 +85,12 @@ impl ConContext {
             ty_lookup: HashMap::default(),
             procs: HashMap::default(),
             entry: None,
+            r#bool: None,
         };
+
+        // Find special compiler types
+        // TODO: Quite hacky
+        this.r#bool = Some(this.lower_data(hir, hir.datas.lang.r#bool.unwrap(), &[]));
 
         let mut errors = Vec::new();
 
