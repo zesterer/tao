@@ -7,8 +7,14 @@ pub struct Data {
     pub cons: Vec<(SrcNode<Ident>, TyId)>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct DataId(usize);
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DataId(usize, Ident);
+
+impl fmt::Debug for DataId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.1)
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AliasId(usize);
@@ -32,14 +38,14 @@ pub struct Datas {
     name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>, GenScopeId)>,
     cons_lut: HashMap<Ident, (Span, DataId)>,
     alias_lut: HashMap<Ident, Alias>,
-    datas: Vec<(Span, Option<Data>, GenScopeId)>,
+    datas: Vec<(Span, Option<Data>, GenScopeId, Ident)>,
     aliases: Vec<(Span, Option<Alias>, GenScopeId)>,
     pub lang: Lang,
 }
 
 impl Datas {
-    pub fn iter_datas(&self) -> impl Iterator<Item = DataId> {
-        (0..self.datas.len()).map(|i| DataId(i))
+    pub fn iter_datas(&self) -> impl Iterator<Item = DataId> + '_ {
+        (0..self.datas.len()).map(|i| DataId(i, Ident::new(self.datas[i].3)))
     }
 
     pub fn iter_aliases(&self) -> impl Iterator<Item = AliasId> {
@@ -98,7 +104,7 @@ impl Datas {
     }
 
     pub fn declare_data(&mut self, name: SrcNode<Ident>, gen_scope: GenScopeId, attr: &[SrcNode<ast::Attr>]) -> Result<DataId, Error> {
-        let id = DataId(self.datas.len());
+        let id = DataId(self.datas.len(), *name);
         if let Err(old) = self.name_lut.try_insert(*name, (name.span(), Ok(id), gen_scope)) {
             Err(Error::DuplicateTypeName(*name, old.entry.get().0, name.span()))
         } else {
@@ -111,7 +117,7 @@ impl Datas {
                 if lang.iter().find(|a| &**a.name == "bool").is_some() { self.lang.r#bool = Some(id); }
             }
 
-            self.datas.push((name.span(), None, gen_scope));
+            self.datas.push((name.span(), None, gen_scope, *name));
             Ok(id)
         }
     }

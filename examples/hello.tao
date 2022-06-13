@@ -1,6 +1,11 @@
 import "../lib/main.tao"
 
+def foo : io ~ () = @{
+    print("bar")!;
+    print("baz")!;
+}
+
 def main : io ~ () = @{
     print("Hello, world!")!;
-    print("How are you?")!;
+    foo handle io with s => print("Output: " ++ s)!;
 }

@@ -503,6 +503,39 @@ impl Expr {
         required
     }
 
+    // If an expression has no side effect, it can be optimised away if its result is unused
+    pub fn may_have_effect(&self) -> bool {
+        match self {
+            Expr::Undefined => false,
+            Expr::Literal(_) => false,
+            Expr::Local(local) => false,
+            Expr::Global(_, _) => false,
+            Expr::Intrinsic(Intrinsic::Propagate(_), _) => true,
+            Expr::Intrinsic(_, args) => args
+                .iter()
+                .any(|arg| arg.may_have_effect()),
+            Expr::Match(pred, arms) => pred.may_have_effect() || arms
+                .iter()
+                .any(|(_, body)| body.may_have_effect()),
+            Expr::Func(_, _) => false,
+            Expr::Go(next, body, init) => init.may_have_effect() || body.may_have_effect(),
+            Expr::Apply(f, arg) => f.may_have_effect() || arg.may_have_effect(),
+            Expr::Tuple(fields) => fields
+                .iter()
+                .any(|field| field.may_have_effect()),
+            Expr::List(items) => items
+                .iter()
+                .any(|item| item.may_have_effect()),
+            Expr::Access(tuple, _) => tuple.may_have_effect(),
+            Expr::Variant(_, inner) => inner.may_have_effect(),
+            Expr::AccessVariant(inner, _) => inner.may_have_effect(),
+            Expr::Data(_, inner) => inner.may_have_effect(),
+            Expr::AccessData(inner, _) => inner.may_have_effect(),
+            Expr::Basin(_, inner) => false,
+            Expr::Handle { expr, eff, send, state, recv } => expr.may_have_effect() || recv.may_have_effect(),
+        }
+    }
+
     pub fn print<'a>(self: &'a MirNode<Self>) -> impl fmt::Display + 'a {
         struct DisplayBinding<'a>(&'a MirNode<Binding>, usize);
 

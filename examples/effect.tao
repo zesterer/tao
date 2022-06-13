@@ -1,4 +1,4 @@
-import "../lib/std.tao"
+import "../lib/main.tao"
 
 fn yield A : A -> yield A ~ () =
     x => @{ @suspend(x) }
@@ -11,12 +11,14 @@ effect print = Str => ()
 
 # Counts the natural numbers, yielding each one to the caller
 fn count_range : Nat -> Nat -> yield Nat ~ () =
-    n, max => if n < max
-    then @{
-        yield(n)!;
-        count_range(n + 1, max)!;
+    n, max => @{
+        if n < max
+        then @{
+            yield(n)!;
+            count_range(n + 1, max)!;
+        }!
+        else ()
     }
-    else @{}
 
 # Prints the natural numbers to the console
 def print_nats : print ~ () = @{
@@ -40,9 +42,7 @@ fn hello_to : Str -> Str =
 
 def hello_to_you = hello_to("you")
 
-fn main : @ -> (@, ()) =
-    uni => let (_, uni) = (print_nats, uni)
-        handle print with s, uni =>
-            let (uni, ()) = print(s, uni) in
-            ((), uni)
-        in (uni, ())
+def main : io ~ () = @{
+    print_nats
+        handle print with s => print(s)!
+}

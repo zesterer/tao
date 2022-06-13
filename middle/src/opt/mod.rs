@@ -455,6 +455,13 @@ pub fn check(ctx: &Context) {
             },
             (Expr::Variant(idx, inner), Repr::Data(_)) => {}, // TODO
             (Expr::Intrinsic(_, _), _) => {}, // TODO
+            (Expr::Access(_, _), _) => {}, // TODO
+            (Expr::Basin(_, inner), Repr::Effect(_, o)) => {
+                check_expr(ctx, inner, o, stack);
+            }, // TODO
+            (Expr::Handle { expr, eff, send, state, recv }, r) if matches!(expr.meta(), Repr::Effect(_, _)) => {
+                check_expr(ctx, expr, &Repr::Effect(*eff, Box::new(r.clone())), stack);
+            },
             // (Expr::Data(_, _, _), Repr::Func(_, _)) => {},
             (expr, repr) => panic!("Inconsistency between expression\n\n {:?}\n\nand repr {:?}", expr, repr),
         }

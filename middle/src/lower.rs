@@ -32,7 +32,7 @@ impl Context {
         }
     }
 
-    pub fn lower_data(&mut self, hir: &HirContext, con: &ConContext, data: ConDataId) -> Repr {
+    pub fn lower_data(&mut self, hir: &HirContext, con: &ConContext, data: ConDataId) -> ConDataId {
         if self.reprs.declare(data) {
             let con_data = con.get_data(data);
             let variants = con_data
@@ -45,7 +45,7 @@ impl Context {
                 repr: Repr::Sum(variants),
             });
         }
-        Repr::Data(data)
+        data
     }
 
     pub fn lower_ty(&mut self, hir: &HirContext, con: &ConContext, ty: ConTyId) -> Repr {
@@ -66,7 +66,7 @@ impl Context {
                 Box::new(self.lower_ty(hir, con, *i)),
                 Box::new(self.lower_ty(hir, con, *o)),
             ),
-            ConTy::Data(data_id) => self.lower_data(hir, con, *data_id),
+            ConTy::Data(data_id) => Repr::Data(self.lower_data(hir, con, *data_id)),
             ConTy::Record(fields) => Repr::Tuple(fields.iter().map(|(_, field)| self.lower_ty(hir, con, *field)).collect()),
             ConTy::Effect(eff, out) => Repr::Effect(*eff, Box::new(self.lower_ty(hir, con, *out))),
         }
@@ -367,16 +367,16 @@ impl Context {
                 let send_local = Local::new();
                 let state_local = Local::new();
                 let default_state_repr = Repr::Tuple(Vec::new());
-                mir::Expr::Handle {
+                let expr = self.lower_expr(hir, con, expr, stack);
+                let expr_repr = expr.meta().clone();
+                let handler = mir::Expr::Handle {
                     expr: if state.is_none() {
-                        let handler = self.lower_expr(hir, con, expr, stack);
-                        let handler_repr = handler.meta().clone();
                         MirNode::new(mir::Expr::Tuple(vec![
-                            handler,
+                            expr,
                             MirNode::new(mir::Expr::Tuple(Vec::new()), default_state_repr.clone())
-                        ]), Repr::Tuple(vec![handler_repr, default_state_repr.clone()]))
+                        ]), Repr::Tuple(vec![expr_repr.clone(), default_state_repr.clone()]))
                     } else {
-                        self.lower_expr(hir, con, expr, stack)
+                        expr
                     },
                     eff: *eff,
                     send: MirNode::new(send_local, self.lower_ty(hir, con, *send.meta())),
@@ -384,6 +384,7 @@ impl Context {
                         .map(|state| MirNode::new(state_local, self.lower_ty(hir, con, *state.meta())))
                         .unwrap_or(MirNode::new(state_local, default_state_repr.clone())),
                     recv: {
+                        let old_len = stack.len();
                         stack.push((**send, send_local));
                         if let Some(state) = state {
                             stack.push((**state, state_local));
@@ -398,9 +399,22 @@ impl Context {
                         } else {
                             self.lower_expr(hir, con, recv, stack)
                         };
-                        stack.pop();
+                        stack.truncate(old_len);
                         recv
                     },
+                };
+
+                if state.is_some() {
+                    handler
+                } else {
+                    mir::Expr::Access(MirNode::new(handler, Repr::Tuple(vec![
+                        if let Repr::Effect(_, out) = expr_repr {
+                            (*out).clone()
+                        } else {
+                            unreachable!()
+                        },
+                        default_state_repr.clone(),
+                    ])), 1)
                 }
             },
             hir::Expr::Suspend(eff, inner) => mir::Expr::Intrinsic(mir::Intrinsic::Suspend(*eff), vec![

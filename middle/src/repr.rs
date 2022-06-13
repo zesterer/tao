@@ -31,6 +31,7 @@ pub struct Data {
 #[derive(Default)]
 pub struct Reprs {
     pub datas: BTreeMap<ConDataId, Option<Data>>,
+    pub r#bool: Option<ConDataId>,
 }
 
 impl Reprs {

@@ -75,18 +75,22 @@ impl Pass for RemoveUnusedBindings {
                             stack.truncate(old_stack);
                         });
 
+                    // Visit predicate last to avoid visiting it again if the match was removed
+                    visit(mir, pred, stack, proc_stack);
+
                     // Flatten matches with a single arm where the arm does not bind
                     if arms.len() == 1 && !arms.first().unwrap().0.binds() {
-                        *expr = arms.remove(0).1.into_inner();
-                    } else if arms.get(0).map_or(false, |(b, _)| matches!(&b.pat, Pat::Wildcard)) {
-                        let (arm, mut body) = arms.remove(0);
-                        if let Some(name) = arm.name {
-                            body.inline_local(name, pred);
+                        if !pred.may_have_effect() {
+                            *expr = arms.remove(0).1.into_inner();
                         }
-                        *expr = body.into_inner();
-                    } else {
-                        // Visit predicate last to avoid visiting it again if the match was removed
-                        visit(mir, pred, stack, proc_stack);
+                    } else if arms.get(0).map_or(false, |(b, _)| matches!(&b.pat, Pat::Wildcard)) {
+                        if !pred.may_have_effect() {
+                            let (arm, mut body) = arms.remove(0);
+                            if let Some(name) = arm.name {
+                                body.inline_local(name, pred);
+                            }
+                            *expr = body.into_inner();
+                        }
                     }
                 },
                 Expr::Func(arg, body) => {
@@ -99,6 +103,14 @@ impl Pass for RemoveUnusedBindings {
                     stack.push((**next, 0));
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
+                },
+                Expr::Handle { expr, eff: _, send, state, recv } => {
+                    visit(mir, expr, stack, proc_stack);
+                    let old_len = stack.len();
+                    stack.push((**send, 0));
+                    stack.push((**state, 0));
+                    visit(mir, recv, stack, proc_stack);
+                    stack.truncate(old_len);
                 },
                 _ => expr.for_children_mut(|expr| visit(mir, expr, stack, proc_stack)),
             }
