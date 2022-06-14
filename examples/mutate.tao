@@ -11,9 +11,9 @@ fn mut A : (A -> A) -> mut A ~ () =
 
 ## Apply a series of mutations to a value
 fn apply_to A : A -> mut A ~ () -> A =
-    xs, m => let (_, xs) = (m, xs)
-        handle mut A with f, xs => ((), xs -> f)
-    in xs
+    x, m => let (_, x) = (m, x)
+        handle mut A with f, x => ((), x -> f)
+    in x
 
 ## A mutation that pushes an element to the end of a list
 fn push A : A -> mut [A] ~ () =

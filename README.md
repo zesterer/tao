@@ -52,7 +52,7 @@ have a few goals for the language itself:
 - [x] Type polymorphism via generics
     - [x] Class constraints
     - [x] Associated type equality constraints
-    - [x] Arbitrary `where` clauses
+    - [x] Arbitrary `where` clauses (including associated type equality)
     - [x] Lazy associated item inference (`Foo.Bar.Baz.Biz` lazily infers the class at each step!)
     - [x] Type checker is Turing-complete (is this a feature? Probably not...)
 - [x] Pattern matching
@@ -70,6 +70,13 @@ have a few goals for the language itself:
     - [x] Type parameters
     - [x] Associated types
     - [x] Operators are implemented as typeclasses
+- [x] Monadic IO (due for removal in favour of effect-based IO)
+    - [x] `do` notation
+- [x] Algebraic effects
+    - [x] Effect objects (independent of functions, unlike some languages)
+    - [x] Basin and propagation syntax (equivalent to Haskell's `do` notation, or Rust's `async` blocks)
+    - [x] Generic effects
+    - [x] Effect handlers (including stateful handlers, allowing expressing effect-driven IO in terms of monadic IO)
 - [x] Built-in lists
     - [x] Dedicated list construction syntax (`[a, b, c]`, `[a, b .. c, d]`, etc.)
 - [x] Explicit tail call optimisation
@@ -89,20 +96,23 @@ have a few goals for the language itself:
 - [ ] Pattern exhaustivity checking (sound, but unnecessarily conservative)
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
 - [ ] Typeclasses
-    - [ ] Associated type equality on class bounds
     - [ ] Coherence checker
 - [ ] MIR optimiser
     - [ ] Unboxing
     - [ ] Automatic repr changes for recursive types
         - [ ] Transform `data Nat = Succ Nat | Zero` into a runtime integer
         - [ ] Transform `data List A = Cons (A, List A) | Nil` into a vector
+- [ ] Algebraic effects
+    - [ ] Effect sets
+    - [ ] Effect aliases
+    - [ ] Higher-ranked effects (needed for async, etc.)
+    - [ ] Arbitrary resuming/suspending of effect objects
+    - [ ] Full monomorphisation of effect objects
 
 ## Planned features
 
 - [ ] Better syntax
-- [ ] Module system
-- [ ] Monadic IO (or an effect system?)
-- [ ] Do notation
+- [ ] Module system (instead of `import` copy/paste)
 - [ ] LLVM/Cranelift backend
 
 ## Interesting features
