@@ -8,8 +8,14 @@ pub struct Def {
     pub body: Option<TyExpr>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct DefId(pub usize);
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DefId(pub usize, Ident);
+
+impl fmt::Debug for DefId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.1)
+    }
+}
 
 #[derive(Default)]
 pub struct Lang {
@@ -29,7 +35,7 @@ impl Defs {
         self.defs
             .iter()
             .enumerate()
-            .map(|(i, d)| (DefId(i), d))
+            .map(|(i, d)| (DefId(i, *d.name), d))
     }
 
     pub fn get(&self, def: DefId) -> &Def {
@@ -41,7 +47,7 @@ impl Defs {
     }
 
     pub fn declare(&mut self, def: Def) -> Result<DefId, Error> {
-        let id = DefId(self.defs.len());
+        let id = DefId(self.defs.len(), *def.name);
         let name = *def.name;
         let span = def.name.span();
         if let Err(old) = self.lut.try_insert(name, (span, id)) {

@@ -1,5 +1,6 @@
 #! Utilities for formatting and displaying data.
 
+import "type.tao"
 import "str.tao"
 
 # Debug
@@ -14,18 +15,20 @@ member Bool of Debug =
         | True => "True"
         \ False => "False"
 
-# TODO: Add this again when some form of specialisation is added
-# member [Char] of Debug =
-#     => debug = fn s => "\"" ++ s ++ "\""
-
 for A < Debug member [A] of Debug =
-    => debug = fn xs => "[" ++ xs -> fix(fn
-        | _, [] => ""
-        | rec, [x] => x -> debug
-        \ rec, [x .. xs] => x -> debug ++ ", " ++ xs -> rec) ++ "]"
+    => debug = fn xs => dispatch(
+        xs,
+        # Specialise on [Char]
+        fn s => "\"" ++ s ++ "\"",
+        # Fallback for [A]
+        fn xs => "[" ++ xs -> fix(fn
+            | _, [] => ""
+            | _, [x] => x -> debug
+            \ rec, [x .. xs] => x -> debug ++ ", " ++ xs -> rec) ++ "]",
+    )
 
 member Char of Debug =
-    => debug = fn c => [c]
+    => debug = fn c => "'" ++ [c] ++ "'"
 
 member Nat of Debug =
     => debug = fn x => @display_int(--x)
@@ -43,8 +46,17 @@ class Show =
 
 def show A < Show : A -> Str = A.show
 
-member [Char] of Show =
-    => show = fn s => s
+for A < Debug member [A] of Show =
+    => show = fn xs => dispatch(
+        xs,
+        # Specialise on [Char]
+        fn s => s,
+        # Fallback for [A]
+        fn xs => xs -> fix(fn
+            | _, [] => ""
+            | _, [x] => x -> debug
+            \ rec, [x .. xs] => x -> debug ++ ", " ++ xs -> rec),
+    )
 
 member Nat of Show =
     => show = fn x => @display_int(--x)

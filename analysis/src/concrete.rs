@@ -26,32 +26,53 @@ pub struct ConEffect {
     recv: ConTyId,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ConProc {
     Def(DefId, Vec<ConTyId>),
     Field(ConTyId, MemberId, Vec<ConTyId>, Ident),
 }
 
-impl fmt::Display for ConProc {
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ConProcId(Intern<ConProc>);
+
+impl fmt::Debug for ConProcId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ConProc::Def(def, params) => write!(f, "{}<{}>",
-                def.0,
-                params.iter().map(|ty| ty.0.to_string()).collect::<Vec<_>>().join(", "),
-            ),
-            ConProc::Field(ty, member, args, field) => write!(f, "<{} in {}{}>.{}",
-                ty.0,
-                member.0,
-                args.iter().map(|ty| format!(" {}", ty.0.to_string())).collect::<String>(),
-                field,
-            ),
+        match &*self.0 {
+            ConProc::Def(def, args) if args.is_empty() => write!(f, "{:?}", def),
+            ConProc::Def(def, args) => write!(f, "{:?}::<{}>", def, args
+                .iter()
+                .map(|a| format!("{:?}", a))
+                .collect::<Vec<_>>()
+                .join(", ")),
+            ConProc::Field(ty, member, args, field) => write!(f, "<{:?} as {:?} {}>.{}", ty, member, args
+                .iter()
+                .map(|a| format!("{:?}", a))
+                .collect::<Vec<_>>()
+                .join(", "), field),
         }
     }
 }
 
-pub type ConProcId = Intern<ConProc>;
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ConDataId(pub(crate) Intern<(DataId, Vec<ConTyId>)>);
 
-pub type ConDataId = Intern<(DataId, Vec<ConTyId>)>;
+impl ConDataId {
+    pub fn data_id(&self) -> DataId { self.0.0 }
+}
+
+impl fmt::Debug for ConDataId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.0.1.is_empty() {
+            write!(f, "{:?}", self.0.0)
+        } else {
+            write!(f, "{:?}::<{}>", self.0.0, self.0.1
+                .iter()
+                .map(|a| format!("{:?}", a))
+                .collect::<Vec<_>>()
+                .join(", "))
+        }
+    }
+}
 
 pub type ConEffectId = Intern<(EffectDeclId, Vec<ConTyId>)>;
 
@@ -121,7 +142,7 @@ impl ConContext {
 
             let gen_scope = hir.tys.get_gen_scope(main.gen_scope);
             if gen_scope.len() == 0 {
-                let main_def = Intern::new(ConProc::Def(id, Vec::new()));
+                let main_def = ConProcId(Intern::new(ConProc::Def(id, Vec::new())));
                 this.lower_proc(hir, main_def);
                 this.entry = Some(main_def);
             } else {
@@ -180,7 +201,7 @@ impl ConContext {
             },
             (Ty::Data(_, xs), ConTy::Data(y)) => xs
                 .into_iter()
-                .zip(y.1.iter())
+                .zip(y.0.1.iter())
                 .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
             (Ty::Effect(x, x_out), ConTy::Effect(y, y_out)) => {
                 self.derive_links_effect(hir, x, *y, link_gen);
@@ -202,7 +223,7 @@ impl ConContext {
     }
 
     pub fn lower_data(&mut self, hir: &Context, data: DataId, args: &[ConTyId]) -> ConDataId {
-        let id = Intern::new((data, args.to_vec()));
+        let id = ConDataId(Intern::new((data, args.to_vec())));
         if let Some(data) = self.datas.get_mut(&id) {
             if let Err(is_recursive) = data {
                 // We're already in the process of initialising this data type so it must be recursive
@@ -345,7 +366,7 @@ impl ConContext {
         if !self.procs.contains_key(&proc) {
             self.procs.insert(proc, None);
 
-            let body = match &*proc {
+            let body = match &*proc.0 {
                 ConProc::Def(def, gen) => self.lower_expr(
                     hir,
                     hir.defs
@@ -432,7 +453,7 @@ impl ConContext {
                     .iter()
                     .map(|arg| self.lower_ty(hir, arg.1, ty_insts))
                     .collect::<Vec<_>>();
-                let id = Intern::new(ConProc::Def(*x, args.clone()));
+                let id = ConProcId(Intern::new(ConProc::Def(*x, args.clone())));
                 self.lower_proc(hir, id);
                 hir::Expr::Global(id)
             },
@@ -491,14 +512,33 @@ impl ConContext {
                         args.iter().map(|arg| format!(" {}", self.display(hir, *arg))).collect::<String>(),
                     ));
 
-                let id = Intern::new(ConProc::Field(self_ty, member_id, args, **field));
+                let id = ConProcId(Intern::new(ConProc::Field(self_ty, member_id, args, **field)));
                 self.lower_proc(hir, id);
                 hir::Expr::Global(id)
             },
-            hir::Expr::Intrinsic(name, args) => hir::Expr::Intrinsic(name.clone(), args
-                .into_iter()
-                .map(|arg| self.lower_expr(hir, arg, ty_insts))
-                .collect()),
+            hir::Expr::Intrinsic(name, args) => if let Intrinsic::Dispatch = &**name {
+                let specialised_fn = self.lower_ty(hir, args[1].meta().1, ty_insts);
+                let i = match self.get_ty(specialised_fn) {
+                    ConTy::Func(i, _) => *i,
+                    ty => unreachable!("Specialised function was of type {:?}", ty),
+                };
+                let input = self.lower_expr(hir, &args[0], ty_insts);
+                if *input.meta() == i {
+                    // Types match, time to specialise!
+                    let specialised_fn = self.lower_expr(hir, &args[1], ty_insts);
+                    hir::Expr::Apply(specialised_fn, input)
+                } else {
+                    //println!("Unmatched: {} with {}", self.display(hir, *input.meta()), self.display(hir, i));
+                    // No match, use the fallback implementation
+                    let fallback_fn = self.lower_expr(hir, &args[2], ty_insts);
+                    hir::Expr::Apply(fallback_fn, input)
+                }
+            } else {
+                hir::Expr::Intrinsic(name.clone(), args
+                    .into_iter()
+                    .map(|arg| self.lower_expr(hir, arg, ty_insts))
+                    .collect())
+            },
             hir::Expr::Update(record, fields) => hir::Expr::Update(self.lower_expr(hir, record, ty_insts), fields
                 .iter()
                 .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))
@@ -582,11 +622,11 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .join(", ")),
             ConTy::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
             ConTy::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-            ConTy::Data(data_id) if self.lhs_exposed && data_id.1.len() > 0 => write!(f, "({}{})", *self.datas.get_data(data_id.0).name, data_id.1
+            ConTy::Data(data_id) if self.lhs_exposed && data_id.0.1.len() > 0 => write!(f, "({}{})", *self.datas.get_data(data_id.0.0).name, data_id.0.1
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            ConTy::Data(data_id) => write!(f, "{}{}", *self.datas.get_data(data_id.0).name, data_id.1
+            ConTy::Data(data_id) => write!(f, "{}{}", *self.datas.get_data(data_id.0.0).name, data_id.0.1
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),

@@ -92,7 +92,7 @@ impl Context {
             ),
             hir::Pat::Decons(data, variant, inner) => {
                 let variant = hir.datas
-                    .get_data(data.0)
+                    .get_data(data.data_id())
                     .cons
                     .iter()
                     .enumerate()
@@ -185,7 +185,7 @@ impl Context {
             hir::Expr::Apply(f, arg) => mir::Expr::Apply(self.lower_expr(hir, con, f, stack), self.lower_expr(hir, con, arg, stack)),
             hir::Expr::Cons(data, variant, inner) => {
                 let variant = hir.datas
-                    .get_data(data.0)
+                    .get_data(data.data_id())
                     .cons
                     .iter()
                     .enumerate()
@@ -316,6 +316,7 @@ impl Context {
                             self.lower_expr(hir, con, &args[0], stack),
                         ])
                     },
+                    hir::Intrinsic::Dispatch => panic!("Type dispatching should have occurred during concretisation!"),
                 }
             },
             hir::Expr::Update(record, fields) => {

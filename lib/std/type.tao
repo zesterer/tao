@@ -12,3 +12,22 @@ for A member A of Any =
 
 fn type_name_of A < Any =
     _ : A => A.type_name
+
+## Apply one of two functions to a value depending on the type of the value.
+##
+## This can be used to specialise the implementation of code depending on the type of an
+## expression.
+fn dispatch A, B, C : A -> (B -> C) -> (A -> C) -> C =
+    x, special, fallback => dispatch_map(
+        x,
+        fn x => (x, x -> special),
+        fn x => (x, x -> fallback),
+    ).1
+
+## Apply one of two functions to a value depending on the type of the value, mapping the value
+## in the process.
+##
+## This can be used to specialise the implementation of code depending on the type of an
+## expression.
+fn dispatch_map A, B, C : A -> (B -> (B, C)) -> (A -> (A, C)) -> (A, C) =
+    x, special, fallback => @dispatch(x, special, fallback)

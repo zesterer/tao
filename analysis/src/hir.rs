@@ -139,6 +139,7 @@ pub enum Intrinsic {
     TrimList,
     JoinList,
     Propagate,
+    Dispatch,
 }
 
 #[derive(Debug)]

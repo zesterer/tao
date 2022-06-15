@@ -185,9 +185,9 @@ impl Classes {
                 (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
                     covers(hir, ctx, x_i, *y_i, gens) && covers(hir, ctx, x_o, *y_o, gens)
                 },
-                (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0 && xs.len() == y.1.len() => xs
+                (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0.0 && xs.len() == y.0.1.len() => xs
                     .into_iter()
-                    .zip(y.1.iter())
+                    .zip(y.0.1.iter())
                     .all(|(x, y)| covers(hir, ctx, x, *y, gens)),
                 _ => false,
             }

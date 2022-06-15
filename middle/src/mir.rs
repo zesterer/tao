@@ -558,12 +558,12 @@ impl Expr {
                     Pat::ListFront(items, tail) => write!(
                         f,
                         "[{} .. {}]",
-                        items.iter().map(|i| format!("{},", DisplayBinding(i, self.1 + 1))).collect::<Vec<_>>().join(" "),
+                        items.iter().map(|i| format!("{},", DisplayBinding(i, self.1))).collect::<Vec<_>>().join(" "),
                         tail.as_ref().map(|tail| format!("{}", DisplayBinding(tail, self.1))).unwrap_or_default(),
                     ),
-                    Pat::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayBinding(f, self.1 + 1))).collect::<Vec<_>>().join(" ")),
+                    Pat::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayBinding(f, self.1))).collect::<Vec<_>>().join(" ")),
                     Pat::Add(inner, n) => write!(f, "{} + {}", DisplayBinding(inner, self.1), n),
-                    Pat::Data(data, inner) => write!(f, "{:?} {}", data.0, DisplayBinding(inner, self.1)),
+                    Pat::Data(data, inner) => write!(f, "{:?} {}", data, DisplayBinding(inner, self.1)),
                     pat => todo!("{:?}", pat),
                 }
             }
@@ -579,13 +579,13 @@ impl Expr {
                 }
                 match &**self.0 {
                     Expr::Local(local) => write!(f, "${}", local.0),
-                    Expr::Global(global, _) => write!(f, "{}", global),
+                    Expr::Global(global, _) => write!(f, "{:?}", global),
                     Expr::Literal(c) => write!(f, "{}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Go(next, body, init) => write!(f, "go(${} => {}, {})", next.0, DisplayExpr(body, self.1, false), DisplayExpr(init, self.1, false)),
                     Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),
-                    Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1 + 1, false))).collect::<Vec<_>>().join(" ")),
+                    Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1, false))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExpr(i, self.1 + 1, false))).collect::<Vec<_>>().join(", ")),
                     Expr::Intrinsic(NegNat | NegInt | NegReal, args) => write!(f, "- {}", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(DisplayInt, args) => write!(f, "@display_int({})", DisplayExpr(&args[0], self.1, false)),
@@ -608,7 +608,7 @@ impl Expr {
                     Expr::Intrinsic(Propagate(_), args) => write!(f, "{}!", DisplayExpr(&args[0], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
-                        write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1 + 1, true))
+                        write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1, true))
                     },
                     Expr::Match(pred, arms) => {
                         write!(f, "match {} in", DisplayExpr(pred, self.1 + 1, false))?;
@@ -621,7 +621,7 @@ impl Expr {
                         }
                         Ok(())
                     },
-                    Expr::Basin(eff, inner) => write!(f, "{{ {} }}", DisplayExpr(inner, self.1, false)),
+                    Expr::Basin(eff, inner) => write!(f, "{{\n{}\n{}}}", DisplayExpr(inner, self.1 + 1, true), "    ".repeat(self.1)),
                     Expr::Handle { expr, eff, send, state, recv } => write!(
                         f,
                         "{} handle {:?} with ${}, ${} =>\n{}",
@@ -629,12 +629,12 @@ impl Expr {
                         eff,
                         send.0,
                         state.0,
-                        DisplayExpr(recv, self.1 + 1, false),
+                        DisplayExpr(recv, self.1 + 1, true),
                     ),
                     Expr::Access(inner, field) => write!(f, "({}).{}", DisplayExpr(inner, self.1, false), field),
                     Expr::AccessVariant(inner, variant) => write!(f, "({}).#{}", DisplayExpr(inner, self.1, false), variant),
-                    Expr::Data(data, inner) => write!(f, "{:?} {}", data.0, DisplayExpr(inner, self.1, false)),
-                    Expr::AccessData(inner, data) => write!(f, "{}.#{:?}", DisplayExpr(inner, self.1, false), data.0),
+                    Expr::Data(data, inner) => write!(f, "{:?} {}", data, DisplayExpr(inner, self.1, false)),
+                    Expr::AccessData(inner, data) => write!(f, "{}.#{:?}", DisplayExpr(inner, self.1, false), data),
                     // _ => write!(f, "<TODO>"),
                     expr => todo!("{:?}", expr),
                 }

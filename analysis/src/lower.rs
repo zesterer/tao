@@ -1042,6 +1042,23 @@ impl ToHir for ast::Expr {
                             infer.make_effect_send_recv(eff, a.meta().1, out, self.span());
                             (TyInfo::Ref(out), hir::Expr::Suspend(eff, args.remove(0)))
                         },
+                        "dispatch" if args.len() == 3 => {
+                            let general = infer.unknown(args[0].meta().0);
+                            let special = infer.unknown(args[1].meta().0);
+                            let byproduct = infer.unknown(self.span());
+
+                            let specialised_out = infer.insert(args[1].meta().0, TyInfo::tuple([special, byproduct]));
+                            let specialised_fn = infer.insert(args[1].meta().0, TyInfo::Func(special, specialised_out));
+
+                            let fallback_out = infer.insert(args[2].meta().0, TyInfo::tuple([general, byproduct]));
+                            let fallback_fn = infer.insert(args[2].meta().0, TyInfo::Func(general, fallback_out));
+
+                            infer.make_flow(args[0].meta().1, general, self.span());
+                            infer.make_flow(args[1].meta().1, specialised_fn, self.span());
+                            infer.make_flow(args[2].meta().1, fallback_fn, self.span());
+
+                            (TyInfo::Ref(fallback_out), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Dispatch, name.span()), args))
+                        },
                         _ => {
                             infer.ctx_mut().emit(Error::InvalidIntrinsic(name.clone()));
                             (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
