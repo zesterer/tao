@@ -36,6 +36,7 @@ member Nat of Debug =
 for A < Debug, B < Debug member (A, B) of Debug =
     => debug = fn (a, b) => "(" ++ A.debug(a) ++ ", " ++ B.debug(b) ++ ")"
 
+# TODO: Reenable this when conflict with Str is resolved!
 #for A < Debug member [A] of Debug =
 #    => debug = fn xs => "[" ++ xs->fold("", fn s, x => s ++ ", " ++ x->A.debug) ++ "]"
 

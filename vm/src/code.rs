@@ -46,6 +46,7 @@ pub enum Instr {
     NegReal, // Real -> Real
 
     Display, // ? -> Str
+    Codepoint, // Char -> Int
 
     AddInt, // Int -> Int -> Int
     SubInt, // Int -> Int -> Int
@@ -157,8 +158,9 @@ impl Program {
                 Instr::GetLocal(_) => 1,
                 Instr::NotBool
                 | Instr::NegInt
-                | Instr::NegReal => 0,
-                Instr::Display => 0,
+                | Instr::NegReal
+                | Instr::Display
+                | Instr::Codepoint => 0,
                 Instr::AddInt
                 | Instr::SubInt
                 | Instr::MulInt
@@ -212,6 +214,7 @@ impl Program {
                 Instr::NegInt => format!("int.neg"),
                 Instr::NegReal => format!("real.neg"),
                 Instr::Display => format!("any.display"),
+                Instr::Codepoint => format!("char.codepoint"),
                 Instr::AddInt => format!("int.add"),
                 Instr::SubInt => format!("int.sub"),
                 Instr::MulInt => format!("int.mul"),

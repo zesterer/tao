@@ -920,6 +920,7 @@ impl ToHir for ast::Expr {
                     ("neg_int",  Intrinsic::NegInt, Prim::Int, TyInfo::Prim(Prim::Int)),
                     ("neg_real", Intrinsic::NegReal, Prim::Real, TyInfo::Prim(Prim::Real)),
                     ("display_int", Intrinsic::DisplayInt, Prim::Int, TyInfo::Ref(make_str(infer, self.span()))),
+                    ("codepoint_char", Intrinsic::CodepointChar, Prim::Char, TyInfo::Prim(Prim::Nat)),
                 ];
 
                 let binary_ops = [

@@ -11,11 +11,11 @@ for A, B member [A] of Map B =
         | _, [] => []
         \ f, [x .. xs] => [x->f .. xs->Self.map(f)]
 
-for A, B member [B] of Fold A =
-    => Item = B
-    => fold = fn
-        | a, _, [] => a
-        \ a, f, [x .. xs] => Self.fold(f(a, x), f, xs)
+for A member [A] of Iter =
+    => Item = A
+    => next = fn
+        | [] => None
+        \ [x .. xs] => Just (x, xs)
 
 # fn map A, B : (A -> B) -> [A] -> [B] =
 #     | _, [] => []

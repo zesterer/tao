@@ -9,18 +9,20 @@ class Map B =
 
 def map V < Map B, B : (V.Item -> B) -> V -> V.Output = V.map
 
-class Fold A =
+class Iter =
     => Item
-    => fold : A -> (A -> Self.Item -> A) -> Self -> A
+    => next : Self -> Maybe (Self.Item, Self)
 
-def fold V < Fold A, A : A -> (A -> V.Item -> A) -> V -> A = V.fold
+fn fold A, I < Iter : A -> (A -> I.Item -> A) -> I -> A = a, f, xs => match I.next(xs) in
+    | None => a
+    \ Just (x, xs) => fold(f(a, x), f, xs)
 
 def sum C, A : C -> A where
-    C < Fold A with { Item = A },
-    A < Sum
+    C < Iter with { Item = A },
+    A < Zero + Add A with { Output = A },
 = fold(A.zero, fn x, y => x + y)
 
 def product C, A : C -> A where
-    C < Fold A with { Item = A },
-    A < Product
+    C < Iter with { Item = A },
+    A < One + Mul A with { Output = A },
 = fold(A.one, fn x, y => x * y)

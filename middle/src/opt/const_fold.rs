@@ -292,6 +292,7 @@ impl Intrinsic {
             Intrinsic::NegNat => op!(Nat(x) => Int(-(*x as i64))),
             Intrinsic::NegInt => op!(Int(x) => Int(-*x)),
             Intrinsic::DisplayInt => op!(Int(x) => List(x.to_string().chars().map(Const::Char).collect())),
+            Intrinsic::CodepointChar => op!(Char(c) => Nat(*c as u64)),
             Intrinsic::AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
             Intrinsic::SubNat => op!(Nat(x), Nat(y) => Int(*x as i64 - *y as i64)),
             Intrinsic::MulNat => op!(Nat(x), Nat(y) => Nat(x * y)),

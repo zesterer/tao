@@ -234,6 +234,10 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let s = stack.pop().unwrap().display();
                 stack.push(Value::List(s.chars().map(Value::Char).collect()))
             },
+            Instr::Codepoint => {
+                let c = stack.pop().unwrap().char();
+                stack.push(Value::Int(c as u64 as i64))
+            },
             Instr::AddInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();

@@ -653,7 +653,7 @@ impl<'a> Infer<'a> {
         let res = Self::flow_inner(&mut check, x, y);
         match check.1 {
             Some(true) => Some(res.is_ok()),
-            None => (!res.is_ok()).then_some(false),
+            None => if !res.is_ok() { Some(false) } else { None },
             Some(false) => Some(false)
         }
     }

@@ -134,6 +134,8 @@ fn eq A < Eq : A -> A -> Bool = x, y => A.eq(x, y)
 class Ord < Eq =
     => cmp : Self -> Self -> Ordering
 
+fn cmp A < Ord : A -> A -> Ordering = a, b => A.cmp(a, b)
+
 data Ordering =
     | Less
     | More
@@ -145,6 +147,19 @@ member Nat of Ord =
         else if @less_nat(y, x)
         then More
         else Equal
+
+member Char of Ord =
+    => cmp = fn x, y => cmp(@codepoint_char(x), @codepoint_char(y))
+
+for A < Ord member [A] of Ord =
+    => cmp = fn
+        | [x .. xs], [y .. ys] => match cmp(x, y) in
+            | Less => Less
+            | More => More
+            \ Equal => cmp(xs, ys)
+        | [], [_ ..] => Less
+        | [_ ..], [] => More
+        \ _, _ => Equal
 
 $[lang(ord_ext)]
 class OrdExt < Ord =

@@ -50,12 +50,13 @@ member Nat of Foo =
 def foo_nat : Nat.Bar = Nat.foo
 
 def main = [
-        (4, "e"),
-        (2, "c"),
-        (0, "a"),
-        (3, "d"),
-        (1, "b"),
+        ("dog", "e"),
+        ("cat", "c"),
+        ("hamster", "a"),
+        ("zebra", "z"),
+        ("mouse", "d"),
+        ("kangaroo", "b"),
     ]
     -> from_list
-    -> contains(4)
+    -> contains("cat")
     -> debug
