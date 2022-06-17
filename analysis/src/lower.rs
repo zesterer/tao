@@ -16,7 +16,7 @@ pub enum Scope<'a> {
     Recursive(SrcNode<Ident>, TyVar, DefId, Vec<(Span, TyVar)>),
     Binding(&'a Scope<'a>, SrcNode<Ident>, TyVar),
     Many(&'a Scope<'a>, &'a [(SrcNode<Ident>, TyVar)]),
-    Basin(&'a Scope<'a>, EffectVar),
+    Basin(&'a Scope<'a>, Option<EffectVar>),
 }
 
 impl<'a> Scope<'a> {
@@ -31,7 +31,11 @@ impl<'a> Scope<'a> {
     }
 
     fn with_basin<'b>(&'b self, basin: EffectVar) -> Scope<'b> {
-        Scope::Basin(self, basin)
+        Scope::Basin(self, Some(basin))
+    }
+
+    fn without_basin<'b>(&'b self) -> Scope<'b> {
+        Scope::Basin(self, None)
     }
 
     // bool = is_local
@@ -60,7 +64,7 @@ impl<'a> Scope<'a> {
             Self::Recursive(_, _, _, _) => None,
             Self::Binding(parent, _, _) => parent.last_basin(),
             Self::Many(parent, _) => parent.last_basin(),
-            Self::Basin(_, eff) => Some(*eff),
+            Self::Basin(_, eff) => *eff,
         }
     }
 }
@@ -775,6 +779,9 @@ impl ToHir for ast::Expr {
                 (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)
             },
             ast::Expr::Func(arms) => {
+                // Effects cannot be propagated from function bodies to their environment
+                let scope = &scope.without_basin();
+
                 // TODO: Don't always refuse 0-branch functions? Can they be useful with never types?
                 if let Some(first_arm) = arms.first() {
                     let mut is_err = false;
