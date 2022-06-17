@@ -530,7 +530,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     if let Some(ty) = ty {
         (TyInfo::Ref(ty), hir::Expr::Global((def_id, generic_tys)))
     } else {
-        infer.ctx_mut().emit(Error::DefTypeNotSpecified(def_name.span(), span, *def_name));
+        infer.ctx_mut().emit(Error::DefTypeNotSpecified(SrcNode::new(def_id, def_name.span()), span, *def_name));
         (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
     }
 }

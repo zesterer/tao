@@ -1,4 +1,4 @@
 import "../lib/main.tao"
 
-def main : io ~ () =
+def main =
     print("Hello, world!")

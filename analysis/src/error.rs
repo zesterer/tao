@@ -37,7 +37,7 @@ pub enum Error {
     // Span, uncovered example, hidden_outer
     NotExhaustive(Span, ExamplePat, bool),
     WrongNumberOfGenerics(Span, usize, Span, usize),
-    DefTypeNotSpecified(Span, Span, Ident),
+    DefTypeNotSpecified(SrcNode<DefId>, Span, Ident),
     SelfNotValidHere(Span),
     AssocNotValidHere(Span),
     NoEntryPoint(Span),
@@ -346,17 +346,25 @@ impl Error {
                 ],
                 vec![],
             ),
-            Error::DefTypeNotSpecified(def, usage, name) => (
-                format!("Type of {} must be fully specified", name.fg(Color::Red)),
-                vec![
-                    (def, format!("Definition does not have a fully specified type hint"), Color::Red),
-                    (usage, format!("Type must be fully known here"), Color::Yellow),
-                ],
-                vec![format!(
-                    "Add a type hint to the def like {}",
-                    format!("def {} : ...", name).fg(Color::Blue),
-                )],
-            ),
+            Error::DefTypeNotSpecified(def, usage, name) => {
+                let ty_str = ctx.defs
+                    .get(*def)
+                    .body
+                    .as_ref()
+                    .map(|body| display(body.meta().1).to_string())
+                    .unwrap_or_else(|| "...".to_string());
+                (
+                    format!("Type of {} must be fully specified", name.fg(Color::Red)),
+                    vec![
+                        (def.span(), format!("Definition does not have a fully specified type hint"), Color::Red),
+                        (usage, format!("Type must be fully known here"), Color::Yellow),
+                    ],
+                    vec![format!(
+                        "Add a type hint to the def like {}",
+                        format!("def {} : {}", name, ty_str).fg(Color::Blue),
+                    )],
+                )
+            },
             Error::SelfNotValidHere(span) => (
                 format!("Special type {} cannot be used here", "Self".fg(Color::Red)),
                 vec![
