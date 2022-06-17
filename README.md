@@ -131,7 +131,7 @@ operations and guarantee that no runtime errors or overflows can ever occur. Che
 program!
 
 ```py
-def factorial =
+fn factorial =
     | 0 => 1
     \ y ~ x + 1 => y * factorial(x)
 ```
