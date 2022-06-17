@@ -329,6 +329,13 @@ pub struct Effect {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct EffectAlias {
+    pub name: SrcNode<Ident>,
+    pub generics: Generics,
+    pub effects: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>)>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ItemKind {
     Data(Data),
     Alias(Alias),
@@ -336,6 +343,7 @@ pub enum ItemKind {
     Class(Class),
     Member(Member),
     Effect(Effect),
+    EffectAlias(EffectAlias),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -407,6 +415,15 @@ impl Module {
             .iter()
             .filter_map(|item| match &item.kind {
                 ItemKind::Effect(eff) => Some((item.attrs.as_slice(), eff)),
+                _ => None,
+            })
+    }
+
+    pub fn effect_aliases(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &EffectAlias)> + '_ {
+        self.items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                ItemKind::EffectAlias(eff) => Some((item.attrs.as_slice(), eff)),
                 _ => None,
             })
     }

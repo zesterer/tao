@@ -1157,6 +1157,28 @@ pub fn effect_parser() -> impl Parser<ast::Effect> {
         .boxed()
 }
 
+pub fn effect_alias_parser() -> impl Parser<ast::EffectAlias> {
+    let ty = type_parser()
+        .map_with_span(SrcNode::new);
+
+    let effect = term_ident_parser().map_with_span(SrcNode::new)
+        .then(ty.repeated());
+
+    just(Token::Effect)
+        .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
+        .then(generics_parser()
+            .then(where_parser())
+            .map(|(tys, implied)| ast::Generics::from_tys_and_implied(tys, implied)))
+        .then_ignore(just(Token::Op(Op::Eq)))
+        .then(effect.separated_by(just(Token::Op(Op::Add))))
+        .map(|((name, generics), effects)| ast::EffectAlias {
+            name,
+            generics,
+            effects,
+        })
+        .boxed()
+}
+
 pub fn item_parser() -> impl Parser<ast::Item> {
     let attr = recursive(|attr| term_ident_parser()
         .map_with_span(SrcNode::new)
@@ -1183,12 +1205,21 @@ pub fn item_parser() -> impl Parser<ast::Item> {
         .flatten();
 
     let item = def_parser().map(ast::ItemKind::Def).labelled("definition")
+        .boxed()
         .or(fn_parser().map(ast::ItemKind::Def).labelled("function"))
+        .boxed()
         .or(data_parser().map(ast::ItemKind::Data).labelled("data type"))
+        .boxed()
         .or(alias_parser().map(ast::ItemKind::Alias).labelled("type alias"))
+        .boxed()
         .or(class_parser().map(ast::ItemKind::Class).labelled("class"))
+        .boxed()
         .or(member_parser().map(ast::ItemKind::Member).labelled("class member"))
-        .or(effect_parser().map(ast::ItemKind::Effect).labelled("effect"));
+        .boxed()
+        .or(effect_parser().map(ast::ItemKind::Effect).labelled("effect"))
+        .boxed()
+        .or(effect_alias_parser().map(ast::ItemKind::EffectAlias).labelled("effect alias"))
+        .boxed();
 
     let tail = one_of::<_, _, Error>(ITEM_STARTS)
         .ignored()

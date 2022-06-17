@@ -75,6 +75,9 @@ impl Context {
                 Ok(eff_id) => effects.push((attr, eff, eff_id, gen_scope)),
             }
         }
+        for (attr, eff) in module.effect_aliases() {
+            errors.push(Error::Unsupported(eff.name.span(), "effect aliases"));
+        }
         for (attr, alias) in module.aliases() {
             let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics, alias.name.span());
             errors.append(&mut errs);
