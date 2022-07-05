@@ -48,7 +48,7 @@ have a few goals for the language itself:
     - [x] Record types
     - [x] Generic data types
     - [x] Nominal aliases (i.e: `data Metres = Real`)
-- [x] Type alises
+- [x] Type aliases
 - [x] Type polymorphism via generics
     - [x] Class constraints
     - [x] Associated type equality constraints
@@ -164,9 +164,9 @@ resulting in very natural, first-class pipeline syntax.
 
 ```py
 my_list
-    :filter(fn x => x % 2 == 0) # Include only even elements
-    :map(fn x => x * x)         # Square elements
-    :sum                        # Sum elements
+    -> filter(fn x => x % 2 == 0) # Include only even elements
+    -> map(fn x => x * x)         # Square elements
+    -> sum                        # Sum elements
 ```
 
 ### Useful, user-friendly error diagnostics
