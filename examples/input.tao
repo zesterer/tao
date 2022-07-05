@@ -1,5 +1,7 @@
 import "../lib/main.tao"
 
-def main : io ~ () = fix(fn rec, () => @{
-    let prompt = input!;
-})
+def main : io ~ () = @{
+    print("Enter your name")!;
+    let name = input!;
+    print("Hello " ++ name)!;
+}

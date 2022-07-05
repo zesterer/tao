@@ -3,8 +3,11 @@ import "std.tao"
 $[entry]
 fn __start : @ -> (@, ()) = uni =>
     let main : io ~ () = main in
-    let (_, uni) = (main, uni)
-        handle io with s, uni =>
+    let (_, uni) = (main, uni) handle
+        | print with s, uni =>
             let (uni, ()) = __print(s, uni) in
             ((), uni)
+        \ input with (), uni =>
+            let (uni, s) = __input(uni) in
+            (s, uni)
     in (uni, ())

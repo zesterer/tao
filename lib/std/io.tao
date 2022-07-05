@@ -1,6 +1,8 @@
 import "../core/monad.tao"
 
-effect io = Str => ()
+effect input = () => Str
+effect print = Str => ()
+effect io = input + print
 
 # Core monadic IO operations
 
@@ -12,5 +14,7 @@ fn __input : IO Str = uni => @input(uni)
 
 # High-level effect IO operations
 
-fn print : Str -> io ~ () =
+def input : input ~ Str = @{ @suspend(()) }
+
+fn print : Str -> print ~ () =
     s => @{ @suspend(s) }
