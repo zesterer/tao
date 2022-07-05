@@ -130,11 +130,18 @@ pub fn type_parser() -> impl Parser<ast::Type> {
             .or(assoc)
             .boxed();
 
-        let effect = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
+        let effect_insts = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
             .map_with_span(SrcNode::new)
             .then(data.clone().repeated())
             .separated_by(just(Token::Op(Op::Add)))
-            .allow_leading()
+            .allow_leading();
+
+        let effect = nested_parser(
+            effect_insts.clone(),
+            Delimiter::Paren,
+            |_| Vec::new()
+        )
+            .or(effect_insts)
             .then_ignore(just(Token::Tilde))
             .then(data.clone())
             .map(|(effs, out)| ast::Type::Effect(effs, out))

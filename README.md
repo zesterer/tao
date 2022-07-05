@@ -76,6 +76,8 @@ have a few goals for the language itself:
     - [x] Effect objects (independent of functions, unlike some languages)
     - [x] Basin and propagation syntax (equivalent to Haskell's `do` notation, or Rust's `async` blocks)
     - [x] Generic effects
+    - [x] Effect sets (i.e: can express values that have multiple side effects)
+    - [x] Effect aliases
     - [x] Effect handlers (including stateful handlers, allowing expressing effect-driven IO in terms of monadic IO)
 - [x] Built-in lists
     - [x] Dedicated list construction syntax (`[a, b, c]`, `[a, b .. c, d]`, etc.)
@@ -103,8 +105,6 @@ have a few goals for the language itself:
         - [ ] Transform `data Nat = Succ Nat | Zero` into a runtime integer
         - [ ] Transform `data List A = Cons (A, List A) | Nil` into a vector
 - [ ] Algebraic effects
-    - [ ] Effect sets
-    - [ ] Effect aliases
     - [ ] Higher-ranked effects (needed for async, etc.)
     - [ ] Arbitrary resuming/suspending of effect objects
     - [ ] Full monomorphisation of effect objects
