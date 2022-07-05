@@ -36,6 +36,7 @@ pub enum Instr {
     Imm(Value),
     Pop(usize),
     Replace,
+    Swap,
     Dup, // Duplicate value on top of stack
     PushLocal,
     PopLocal(usize), // Don't push to stack
@@ -71,7 +72,7 @@ pub enum Instr {
     Suspend(EffectId),
     Register(EffectId),
     Resume(EffectId),
-    EndHandler(EffectId),
+    EndHandlers(usize),
 }
 
 impl Instr {
@@ -135,6 +136,7 @@ impl Program {
                 Instr::Imm(_) => 1,
                 Instr::Pop(n) => -(n as isize),
                 Instr::Replace => -1,
+                Instr::Swap => 0,
                 Instr::Call(_) => 0,
                 Instr::Ret => 0,
                 Instr::MakeFunc(_, n) => -(n as isize),
@@ -179,7 +181,7 @@ impl Program {
                 Instr::Suspend(_) => 0,
                 Instr::Register(_) => -1,
                 Instr::Resume(_) => 0,
-                Instr::EndHandler(_) => -1,
+                Instr::EndHandlers(_) => -2,
             };
 
             let instr_display = match instr {
@@ -189,6 +191,7 @@ impl Program {
                 Instr::Imm(x) => format!("imm `{}`", x),
                 Instr::Pop(n) => format!("pop {}", n),
                 Instr::Replace => format!("replace"),
+                Instr::Swap => format!("swap"),
                 Instr::Call(x) => format!("call {:+} (0x{:03X})", x, addr.jump(x).0),
                 Instr::Ret => format!("ret"),
                 Instr::MakeFunc(i, n) => format!("func.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
@@ -233,7 +236,7 @@ impl Program {
                 Instr::Suspend(eff) => format!("eff.suspend {:?}", eff),
                 Instr::Register(eff) => format!("eff.register {:?}", eff),
                 Instr::Resume(eff) => format!("eff.resume {:?}", eff),
-                Instr::EndHandler(eff) => format!("eff.end_handler {:?}", eff),
+                Instr::EndHandlers(n) => format!("eff.end_handlers {}", n),
             };
 
             writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();

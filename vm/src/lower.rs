@@ -459,9 +459,6 @@ impl Program {
                 self.compile_expr(mir, expr, stack, proc_fixups);
 
                 for mir::Handler { eff, send, state, recv } in handlers {
-                    // Get state (TODO: Use the same state!!!)
-                    self.push(Instr::Dup);
-                    self.push(Instr::IndexList(1));
 
                     // self.debug("Compiling body...");
                     let (h_addr, captures_len) = self.compile_body(mir, vec![**send, **state], recv, stack, proc_fixups);
@@ -469,13 +466,14 @@ impl Program {
                     self.push(Instr::Register(*eff));
                 }
 
+                // Get state
+                self.push(Instr::Dup);
+                self.push(Instr::IndexList(1));
+                self.push(Instr::Swap);
                 self.push(Instr::IndexList(0));
                 self.push(Instr::Propagate);
 
-                for mir::Handler { eff, send, state, recv } in handlers.iter().rev() {
-                    self.push(Instr::EndHandler(*eff));
-                    // self.debug("...Ending handler");
-                }
+                self.push(Instr::EndHandlers(handlers.len()));
             },
         }
     }

@@ -93,7 +93,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
     } else {
         Vec::new()
     };
-    let mut handlers: Vector<(_, Value, Value)> = Vector::new();
+    let mut handlers: Vector<(_, Value, usize)> = Vector::new();
 
     let mut tick = 0u64;
     loop {
@@ -119,6 +119,12 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let x = stack.pop().unwrap();
                 stack.pop();
                 stack.push(x);
+            },
+            Instr::Swap => {
+                let x = stack.pop().unwrap();
+                let y = stack.pop().unwrap();
+                stack.push(x);
+                stack.push(y);
             },
             Instr::Call(n) => {
                 funcs.push(next_addr);
@@ -349,19 +355,19 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 funcs.push(next_addr);
                 next_addr = f_addr;
 
-                locals.push(handler.2.clone());
+                locals.push(stack[handler.2].clone()); // Push effect
                 locals.extend(captures.into_iter());
             },
             Instr::Register(eff_id) => {
                 let handler = stack.pop().unwrap();
-                let state = stack.pop().unwrap();
-                handlers.push_back((eff_id, handler, state));
+                // let state = stack.pop().unwrap();
+                handlers.push_back((eff_id, handler, stack.len() - 1));
             },
-            Instr::EndHandler(eff_id) => {
+            Instr::EndHandlers(n) => {
                 let out = stack.pop().unwrap();
-                let handler = handlers.pop_back().unwrap();
-                debug_assert_eq!(handler.0, eff_id);
-                stack.push(Value::List([out, handler.2].into_iter().collect()));
+                let state = stack.pop().unwrap();
+                handlers.truncate(handlers.len() - n);
+                stack.push(Value::List([out, state].into_iter().collect()));
             },
             Instr::Resume(eff_id) => {
                 let out_and_state = stack.pop().unwrap().list();
@@ -369,11 +375,12 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let state = out_and_state[1].clone();
 
                 // Replace old state
-                handlers
+                let stack_idx = handlers
                     .iter_mut()
                     .rev()
                     .find(|(e, _, _)| *e == eff_id)
-                    .unwrap().2 = state;
+                    .unwrap().2;
+                stack[stack_idx] = state;
 
                 stack.push(out);
             },

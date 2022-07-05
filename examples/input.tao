@@ -1,0 +1,5 @@
+import "../lib/main.tao"
+
+def main : io ~ () = fix(fn rec, () => @{
+    let prompt = input!;
+})
