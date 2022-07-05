@@ -224,14 +224,16 @@ impl ConstFold {
                 self.eval(ctx, inner, locals);
                 Partial::Unknown(None)
             },
-            Expr::Handle { expr, send, state, recv, .. } => {
+            Expr::Handle { expr, handlers } => {
                 self.eval(ctx, expr, locals);
 
-                let old_len = locals.len();
-                locals.push((**send, Partial::Unknown(Some(**send))));
-                locals.push((**state, Partial::Unknown(Some(**state))));
-                self.eval(ctx, recv, locals);
-                locals.truncate(old_len);
+                for Handler { send, state, recv, .. } in handlers {
+                    let old_len = locals.len();
+                    locals.push((**send, Partial::Unknown(Some(**send))));
+                    locals.push((**state, Partial::Unknown(Some(**state))));
+                    self.eval(ctx, recv, locals);
+                    locals.truncate(old_len);
+                }
 
                 Partial::Unknown(None)
             },

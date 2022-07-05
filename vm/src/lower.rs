@@ -327,8 +327,8 @@ impl Program {
                         self.push(Instr::Suspend(*eff));
                         self.push(Instr::Resume(*eff));
                     },
-                    Intrinsic::Propagate(eff) => {
-                        self.push(Instr::Propagate(*eff));
+                    Intrinsic::Propagate(effs) => {
+                        self.push(Instr::Propagate);
                     },
                 };
             },
@@ -453,22 +453,29 @@ impl Program {
                 let (f_addr, captures_len) = self.compile_body(mir, Vec::new(), inner, stack, proc_fixups);
                 self.push(Instr::MakeEffect(self.next_addr().jump_to(f_addr), captures_len));
             },
-            mir::Expr::Handle { expr, eff, send, state, recv } => {
+            mir::Expr::Handle { expr, handlers } => {
                 // self.debug("Starting handler...");
                 // self.debug("Compiling expr...");
                 self.compile_expr(mir, expr, stack, proc_fixups);
 
-                self.push(Instr::Dup);
-                self.push(Instr::IndexList(1));
-                // self.debug("Compiling body...");
-                let (h_addr, captures_len) = self.compile_body(mir, vec![**send, **state], recv, stack, proc_fixups);
-                self.push(Instr::MakeFunc(self.next_addr().jump_to(h_addr), captures_len));
-                self.push(Instr::Register(*eff));
+                for mir::Handler { eff, send, state, recv } in handlers {
+                    // Get state (TODO: Use the same state!!!)
+                    self.push(Instr::Dup);
+                    self.push(Instr::IndexList(1));
+
+                    // self.debug("Compiling body...");
+                    let (h_addr, captures_len) = self.compile_body(mir, vec![**send, **state], recv, stack, proc_fixups);
+                    self.push(Instr::MakeFunc(self.next_addr().jump_to(h_addr), captures_len));
+                    self.push(Instr::Register(*eff));
+                }
 
                 self.push(Instr::IndexList(0));
-                self.push(Instr::Propagate(*eff));
-                self.push(Instr::EndHandler(*eff));
-                // self.debug("...Ending handler");
+                self.push(Instr::Propagate);
+
+                for mir::Handler { eff, send, state, recv } in handlers.iter().rev() {
+                    self.push(Instr::EndHandler(*eff));
+                    // self.debug("...Ending handler");
+                }
             },
         }
     }

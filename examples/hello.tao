@@ -1,4 +1,23 @@
 import "../lib/main.tao"
 
+effect read = () => Str
+effect write = Str => ()
+
+fn write : Str -> write ~ () = s => @{ @suspend(s) }
+def read : read ~ Str = @{ @suspend(()) }
+
+effect console = read + write
+
+def say_hi : console ~ () = @{
+    let name = read!;
+    write("Hello, " ++ name)!;
+}
+
+def greeting = (
+    (say_hi, "") handle
+    | write with s, buf => ((), buf ++ s)
+    \ read with (), buf => ("bob", buf)
+).1
+
 def main : io ~ () =
-    print("Hello, world!")
+    print("Hello, world!" ++ greeting)

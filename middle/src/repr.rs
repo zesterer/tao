@@ -20,7 +20,7 @@ pub enum Repr {
     Sum(Vec<Repr>),
     Data(ConDataId),
     Func(Box<Repr>, Box<Repr>),
-    Effect(EffectId, Box<Repr>),
+    Effect(Vec<EffectId>, Box<Repr>),
 }
 
 pub struct Data {

@@ -28,6 +28,7 @@ impl Context {
         let mut aliases = Vec::new();
         let mut datas = Vec::new();
         let mut effects = Vec::new();
+        let mut effect_aliases = Vec::new();
         let mut members_init = Vec::new();
         let mut defs_init = Vec::new();
         // Declare items before declaration
@@ -75,8 +76,23 @@ impl Context {
                 Ok(eff_id) => effects.push((attr, eff, eff_id, gen_scope)),
             }
         }
-        for (attr, eff) in module.effect_aliases() {
-            errors.push(Error::Unsupported(eff.name.span(), "effect aliases"));
+        for (attr, alias) in module.effect_aliases() {
+            let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics, alias.name.span());
+            errors.append(&mut errs);
+            let gen_scope = this.tys.insert_gen_scope(gen_scope);
+            match this.effects.declare_alias(EffectAlias {
+                name: alias.name.clone(),
+                attr: attr.to_vec(),
+                gen_scope,
+                effects: None,
+            }) {
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                },
+                // Only mark for further processing if no errors occurred during declaration
+                Ok(eff_id) => effect_aliases.push((attr, alias, eff_id, gen_scope)),
+            }
         }
         for (attr, alias) in module.aliases() {
             let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics, alias.name.span());
@@ -149,6 +165,13 @@ impl Context {
         for (_, _, effect_id, _) in &effects {
             this.reify_gen_scope(
                 this.effects.get_decl(*effect_id).gen_scope,
+                |_infer| {},
+            );
+        }
+
+        for (_, _, alias_id, _) in &effect_aliases {
+            this.reify_gen_scope(
+                this.effects.get_alias(*alias_id).gen_scope,
                 |_infer| {},
             );
         }
@@ -255,6 +278,42 @@ impl Context {
                     ty,
                 },
             );
+        }
+
+        // Effect alias definition must go before members and defs because they might have type hints that make use of type
+        // aliases
+        for (attr, alias, alias_id, gen_scope) in effect_aliases {
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
+                // TODO: Enforce these?
+                //.with_gen_scope_implied();
+
+            let effs = alias.effects
+                .iter()
+                .filter_map(|(name, params)| match infer.ctx().effects.lookup(**name) {
+                    None => todo!("No such effect!"),
+                    Some(Ok(eff)) => Some((
+                        SrcNode::new(eff, name.span()),
+                        params
+                            .iter()
+                            .map(|param| param.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                            .collect::<Vec<TyVar>>(),
+                    )),
+                    Some(Err(_)) => todo!("Nested effect aliases"),
+                })
+                .collect::<Vec<_>>();
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let effs = effs
+                .into_iter()
+                .map(|(eff, params)| (eff, params
+                    .into_iter()
+                    .map(|param| checked.reify(param))
+                    .collect()))
+                .collect();
+
+            this.effects.define_alias_effects(alias_id, effs);
         }
 
         // Check for lang items

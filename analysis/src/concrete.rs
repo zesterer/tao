@@ -10,7 +10,7 @@ pub enum ConTy {
     Record(BTreeMap<Ident, ConTyId>),
     Func(ConTyId, ConTyId),
     Data(ConDataId),
-    Effect(ConEffectId, ConTyId),
+    Effect(Vec<ConEffectId>, ConTyId),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -203,22 +203,26 @@ impl ConContext {
                 .into_iter()
                 .zip(y.0.1.iter())
                 .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
-            (Ty::Effect(x, x_out), ConTy::Effect(y, y_out)) => {
-                self.derive_links_effect(hir, x, *y, link_gen);
+            (Ty::Effect(xs, x_out), ConTy::Effect(ys, y_out)) => {
+                self.derive_links_effect(hir, xs, ys, link_gen);
                 self.derive_links(hir, x_out, *y_out, link_gen);
             },
             (x, y) => todo!("{:?}", (x, y)),
         }
     }
 
-    fn derive_links_effect(&self, hir: &Context, member: EffectId, eff: ConEffectId, link_gen: &mut impl FnMut(usize, ConTyId)) {
+    fn derive_links_effect(&self, hir: &Context, member: EffectId, effs: &[ConEffectId], link_gen: &mut impl FnMut(usize, ConTyId)) {
         // TODO: link gen for effects when polymorphic effects are added
-        match (hir.tys.get_effect(member), self.get_effect(eff)) {
-            (Effect::Known(_, xs), _) => xs
-                .into_iter()
-                .zip(eff.1.iter())
-                .for_each(|(x, y)| self.derive_links(hir, x, *y, link_gen)),
-            (x, y) => todo!("{:?}", (x, y)),
+        match hir.tys.get_effect(member) /*self.get_effect(eff)*/ {
+            // Assumption here is that canonical ordering has been generated!
+            Effect::Known(effects) => effects
+                .iter()
+                .zip(effs)
+                .for_each(|(effect, eff)| effect.as_ref().expect("effect instance cannot be an error").1
+                    .iter()
+                    .zip(&eff.1)
+                    .for_each(|(x, y)| self.derive_links(hir, *x, *y, link_gen))),
+            x => todo!("{:?}", x),
         }
     }
 
@@ -316,16 +320,25 @@ impl ConContext {
                     gen: &gen,
                 });
             },
-            Ty::Effect(eff, out) => match hir.tys.get_effect(eff) {
-                Effect::Error => panic!("Concretizable effect cannot be an error"),
-                Effect::Known(decl, args) => {
-                    let args = args
+            Ty::Effect(eff, out) => {
+                let effs = match hir.tys.get_effect(eff) {
+                    Effect::Error => panic!("Concretizable effect cannot be an error"),
+                    Effect::Known(effs) => effs
                         .into_iter()
-                        .map(|arg| self.lower_ty(hir, arg, ty_insts))
-                        .collect::<Vec<_>>();
-                    let out = self.lower_ty(hir, out, ty_insts);
-                    ConTy::Effect(Intern::new((decl, args.to_vec())), out)
-                },
+                        .map(|eff| match eff {
+                            Ok((decl, args)) => {
+                                let args = args
+                                    .into_iter()
+                                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                                    .collect::<Vec<_>>();
+                                Intern::new((decl, args.to_vec()))
+                            },
+                            Err(()) => panic!("Concretizable effect instance cannot be an error"),
+                        })
+                        .collect(),
+                };
+                let out = self.lower_ty(hir, out, ty_insts);
+                ConTy::Effect(effs, out)
             },
         };
 
@@ -548,29 +561,44 @@ impl ConContext {
                 self.lower_expr(hir, inner, ty_insts),
             ),
             hir::Expr::Suspend(eff, inner) => hir::Expr::Suspend(
-                self.lower_effect(hir, *eff, ty_insts),
+                self.lower_effect_inst(hir, eff.clone().expect("Error effect instance should not exist during concretization"), ty_insts),
                 self.lower_expr(hir, inner, ty_insts),
             ),
-            hir::Expr::Handle { expr, eff, send, state, recv } => hir::Expr::Handle {
+            hir::Expr::Handle { expr, handlers } => hir::Expr::Handle {
                 expr: self.lower_expr(hir, expr, ty_insts),
-                eff: self.lower_effect(hir, *eff, ty_insts),
-                send: ConNode::new(**send, self.lower_ty(hir, send.meta().1, ty_insts)),
-                state: state.as_ref().map(|state| ConNode::new(**state, self.lower_ty(hir, state.meta().1, ty_insts))),
-                recv: self.lower_expr(hir, recv, ty_insts),
+                handlers: handlers
+                    .iter()
+                    .map(|hir::Handler { eff, send, state, recv }| hir::Handler {
+                        eff: self.lower_effect_inst(hir, eff.clone().expect("Error effect instance should not exist during concretization"), ty_insts),
+                        send: ConNode::new(**send, self.lower_ty(hir, send.meta().1, ty_insts)),
+                        state: state.as_ref().map(|state| ConNode::new(**state, self.lower_ty(hir, state.meta().1, ty_insts))),
+                        recv: self.lower_expr(hir, recv, ty_insts),
+                    })
+                    .collect(),
             },
         };
 
         ConNode::new(expr, self.lower_ty(hir, ty_expr.meta().1, ty_insts))
     }
 
-    pub fn lower_effect(&mut self, hir: &Context, eff: EffectId, ty_insts: &TyInsts) -> ConEffectId {
-        let (decl, args) = match hir.tys.get_effect(eff) {
+    pub fn lower_effect(&mut self, hir: &Context, eff: EffectId, ty_insts: &TyInsts) -> Vec<ConEffectId> {
+        match hir.tys.get_effect(eff) {
             Effect::Error => panic!("Error effect should not exist during concretization"),
-            Effect::Known(decl, args) => (decl, args
+            Effect::Known(effs) => effs
                 .into_iter()
-                .map(|arg| self.lower_ty(hir, arg, ty_insts))
-                .collect::<Vec<_>>()),
-        };
+                .map(|eff| match eff {
+                    Ok((decl, args)) => self.lower_effect_inst(hir, (decl, args), ty_insts),
+                    Err(()) => panic!("Error effect instance should not exist during concretization"),
+                })
+                .collect::<Vec<_>>(),
+        }
+    }
+
+    pub fn lower_effect_inst(&mut self, hir: &Context, (decl, args): (EffectDeclId, Vec<TyId>), ty_insts: &TyInsts) -> ConEffectId {
+        let args = args
+            .iter()
+            .map(|arg| self.lower_ty(hir, *arg, ty_insts))
+            .collect::<Vec<_>>();
         let id = Intern::new((decl, args.clone()));
         if !self.effects.contains_key(&id) {
             let decl = hir.effects.get_decl(decl);
@@ -630,10 +658,15 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .iter()
                 .map(|param| format!(" {}", self.with_ty(*param, true)))
                 .collect::<String>()),
-            ConTy::Effect(eff_id, out) => write!(f, "{}{} ~ {}", *self.effects.get_decl(eff_id.0).name, eff_id.1
-                .iter()
-                .map(|param| format!(" {}", self.with_ty(*param, true)))
-                .collect::<String>(), self.with_ty(out, true)),
+            ConTy::Effect(effs, out) => {
+                for eff_id in effs {
+                    write!(f, "{}{}", *self.effects.get_decl(eff_id.0).name, eff_id.1
+                        .iter()
+                        .map(|param| format!(" {}", self.with_ty(*param, true)))
+                        .collect::<String>())?;
+                }
+                write!(f, " ~ {}", self.with_ty(out, true))
+            },
         }
     }
 }

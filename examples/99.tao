@@ -22,7 +22,7 @@ fn kth A : Nat -> [A] -> Maybe A =
 ## 4. Find the number of elements of a list
 fn length A : [A] -> Nat =
     | [] => 0
-    \ [_ .. xs] => 1 + xs->length
+    \ [.. xs] => 1 + xs->length
 
 ## 5. Reverse a list
 fn reverse A : [A] -> [A] =
@@ -30,7 +30,8 @@ fn reverse A : [A] -> [A] =
     \ [x .. xs] => xs->reverse ++ [x]
 
 ## 6. Find out whether a list is a palindrome
-fn is_palindrome A < Eq : [A] -> Bool = xs => xs->eq(xs->reverse)
+fn is_palindrome A < Eq : [A] -> Bool =
+    xs => xs = xs->reverse
 
 ## 7. Flatten a nested list structure
 fn flatten A : [[A]] -> [A] =

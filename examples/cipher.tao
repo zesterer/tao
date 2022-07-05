@@ -1,0 +1,146 @@
+import "../lib/main.tao"
+
+data OutOfRange = Char
+
+member OutOfRange of Show =
+    => show = fn OutOfRange c => "character '" ++ [c] ++ "' is out of range!"
+
+data Character =
+    | A
+    | B
+    | C
+    | D
+    | E
+    | F
+    | G
+    | H
+    | I
+    | J
+    | K
+    | L
+    | M
+    | N
+    | O
+    | P
+    | Q
+    | R
+    | S
+    | T
+    | U
+    | V
+    | W
+    | X
+    | Y
+    \ Z
+
+member Character of Show =
+    => show = fn
+        | A => "a"
+        | B => "b"
+        | C => "c"
+        | D => "d"
+        | E => "e"
+        | F => "f"
+        | G => "g"
+        | H => "h"
+        | I => "i"
+        | J => "j"
+        | K => "k"
+        | L => "l"
+        | M => "m"
+        | N => "n"
+        | O => "o"
+        | P => "p"
+        | Q => "q"
+        | R => "r"
+        | S => "s"
+        | T => "t"
+        | U => "u"
+        | V => "v"
+        | W => "w"
+        | X => "x"
+        | Y => "y"
+        \ Z => "z"
+
+fn parse_char =
+    | 'a' => Ok A
+    | 'b' => Ok B
+    | 'c' => Ok C
+    | 'd' => Ok D
+    | 'e' => Ok E
+    | 'f' => Ok F
+    | 'g' => Ok G
+    | 'h' => Ok H
+    | 'i' => Ok I
+    | 'j' => Ok J
+    | 'k' => Ok K
+    | 'l' => Ok L
+    | 'm' => Ok M
+    | 'n' => Ok N
+    | 'o' => Ok O
+    | 'p' => Ok P
+    | 'q' => Ok Q
+    | 'r' => Ok R
+    | 's' => Ok S
+    | 't' => Ok T
+    | 'u' => Ok U
+    | 'v' => Ok V
+    | 'w' => Ok W
+    | 'x' => Ok X
+    | 'y' => Ok Y
+    | 'z' => Ok Z
+    \ c => Err OutOfRange c
+
+fn parse_str =
+    | [] => Ok []
+    \ [c .. cs] => match c -> parse_char in
+        | Ok c => match cs -> parse_str in
+            | Ok cs => Ok [c .. cs]
+            \ Err e => Err e
+        \ Err e => Err e
+
+fn shift_char =
+    | 0, c => c
+    \ n + 1, c => match c in
+        | A => B -> shift_char(n)
+        | B => C -> shift_char(n)
+        | C => D -> shift_char(n)
+        | D => E -> shift_char(n)
+        | E => F -> shift_char(n)
+        | F => G -> shift_char(n)
+        | G => H -> shift_char(n)
+        | H => I -> shift_char(n)
+        | I => J -> shift_char(n)
+        | J => K -> shift_char(n)
+        | K => L -> shift_char(n)
+        | L => M -> shift_char(n)
+        | M => N -> shift_char(n)
+        | N => O -> shift_char(n)
+        | O => P -> shift_char(n)
+        | P => Q -> shift_char(n)
+        | Q => R -> shift_char(n)
+        | R => S -> shift_char(n)
+        | S => T -> shift_char(n)
+        | T => U -> shift_char(n)
+        | U => V -> shift_char(n)
+        | V => W -> shift_char(n)
+        | W => X -> shift_char(n)
+        | X => Y -> shift_char(n)
+        | Y => Z -> shift_char(n)
+        \ Z => A -> shift_char(n)
+
+fn shift_str =
+    n => map(shift_char(n))
+
+def main : io ~ () = @{
+    let text = "hello";
+    print("Input = " ++ text)!;
+    match text -> parse_str in
+    | Ok s => @{
+        print("Parsed = " + s)!;
+        let n = 1;
+        let shifted = s -> shift_str(n);
+        print("Shifted(" + n + ") = " + shifted)!;
+    }!
+    \ Err e => print("Error: " + e)!
+}

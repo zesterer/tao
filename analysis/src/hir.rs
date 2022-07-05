@@ -5,9 +5,10 @@ pub use ast::Literal as Literal;
 pub trait Meta {
     type Ty;
     type Data: Clone + fmt::Debug;
-    type Class;
-    type Global;
-    type Effect;
+    type Class: fmt::Debug;
+    type Global: fmt::Debug;
+    type Effect: fmt::Debug;
+    type EffectInst;
 }
 
 impl Meta for InferMeta {
@@ -16,6 +17,7 @@ impl Meta for InferMeta {
     type Class = ClassVar;
     type Global = (DefId, Vec<Self>);
     type Effect = EffectVar;
+    type EffectInst = EffectInstVar;
 }
 
 impl Meta for TyMeta {
@@ -24,6 +26,7 @@ impl Meta for TyMeta {
     type Class = Option<(ClassId, Vec<TyId>)>; // Required because we don't have proper error classes yet
     type Global = (DefId, Vec<Self>);
     type Effect = EffectId;
+    type EffectInst = Result<(EffectDeclId, Vec<Self::Ty>), ()>;
 }
 
 impl Meta for ConMeta {
@@ -31,7 +34,8 @@ impl Meta for ConMeta {
     type Data = ConDataId;
     type Class = !;
     type Global = ConProcId;
-    type Effect = ConEffectId;
+    type Effect = Vec<ConEffectId>;
+    type EffectInst = ConEffectId;
 }
 
 #[derive(Clone, Debug)]
@@ -169,14 +173,19 @@ pub enum Expr<M: Meta> {
     // Blocks propagation of effects, collecting them
     // i.e: `@{ foo?; bar?; x }` gets type `foo + bar ~ X`
     Basin(M::Effect, Node<Self, M>),
-    Suspend(M::Effect, Node<Self, M>),
+    Suspend(M::EffectInst, Node<Self, M>),
     Handle {
         expr: Node<Self, M>,
-        eff: M::Effect,
-        send: Node<Ident, M>,
-        state: Option<Node<Ident, M>>,
-        recv: Node<Self, M>,
+        handlers: Vec<Handler<M>>,
     },
+}
+
+#[derive(Debug)]
+pub struct Handler<M: Meta> {
+    pub eff: M::EffectInst,
+    pub send: Node<Ident, M>,
+    pub state: Option<Node<Ident, M>>,
+    pub recv: Node<Expr<M>, M>,
 }
 
 pub type InferExpr = InferNode<Expr<InferMeta>>;
@@ -247,12 +256,15 @@ impl Expr<ConMeta> {
             },
             Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
             Expr::Suspend(_, inner) => inner.required_locals_inner(stack, required),
-            Expr::Handle { expr, send, recv, .. } => {
+            Expr::Handle { expr, handlers } => {
                 expr.required_locals_inner(stack, required);
-
-                stack.push(**send);
-                recv.required_locals_inner(stack, required);
-                stack.pop();
+                for Handler { send, recv, state, .. } in handlers {
+                    let old_len = stack.len();
+                    stack.push(**send);
+                    if let Some(state) = state { stack.push(**state); }
+                    recv.required_locals_inner(stack, required);
+                    stack.truncate(old_len);
+                }
             },
         }
     }

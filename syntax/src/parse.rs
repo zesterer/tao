@@ -133,9 +133,11 @@ pub fn type_parser() -> impl Parser<ast::Type> {
         let effect = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
             .map_with_span(SrcNode::new)
             .then(data.clone().repeated())
+            .separated_by(just(Token::Op(Op::Add)))
+            .allow_leading()
             .then_ignore(just(Token::Tilde))
             .then(data.clone())
-            .map(|((eff, params), out)| ast::Type::Effect(eff, params, out))
+            .map(|(effs, out)| ast::Type::Effect(effs, out))
             .map_with_span(SrcNode::new)
             .or(data)
             .boxed();
@@ -454,11 +456,11 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .map_with_span(SrcNode::new))
             .boxed();
 
-        let branches = branches(branch)
+        let pattern_branches = branches(branch)
             .or(just(Token::Pipe).map(|_| Vec::new()));
 
         let func = just(Token::Fn)
-            .ignore_then(branches.clone().map_with_span(SrcNode::new))
+            .ignore_then(pattern_branches.clone().map_with_span(SrcNode::new))
             .map(ast::Expr::Func);
 
         let class_access = type_parser()
@@ -500,7 +502,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .allow_trailing()
                 .map_with_span(SrcNode::new))
             .then_ignore(just(Token::In))
-            .then(branches)
+            .then(pattern_branches)
             .map(|(inputs, branches)| ast::Expr::Match(inputs, branches))
             .boxed();
 
@@ -594,14 +596,18 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 ast::Expr::Cons(cons, SrcNode::new(ast::Expr::Tuple(Vec::new()), span))
             });
 
+        let stmt = just(Token::Let)
+            .ignore_then(binding_parser().map_with_span(SrcNode::new))
+            .then_ignore(just(Token::Op(Op::Eq)))
+            .then(expr.clone().map_with_span(SrcNode::new))
+            .map(|(lhs, rhs)| (Some(lhs), rhs))
+            .or(expr.clone().map_with_span(SrcNode::new).map(|rhs| (None, rhs)));
         // @{ x; y; z }
         // TODO: Come up with a better syntax
         let block = just(Token::At)
             .ignore_then(nested_parser(
-                expr
-                    .clone()
+                stmt
                     .then_ignore(just(Token::Semicolon))
-                    .map_with_span(SrcNode::new)
                     .repeated()
                     .then(expr.clone()
                         .map_with_span(SrcNode::new)
@@ -817,25 +823,31 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .boxed();
 
         let binding = binding_parser().map_with_span(SrcNode::new);
-        let handle = cons.then(just(Token::Handle)
-                .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
-                .then(type_parser()
-                    .map_with_span(SrcNode::new)
-                    .repeated())
-                .then_ignore(just(Token::With))
-                .then(binding.clone())
-                .then(just(Token::Comma).ignore_then(binding).or_not())
-                .then_ignore(just(Token::Op(Op::RFlow)))
-                .then(expr.clone().map_with_span(SrcNode::new))
+        let handle = cons.then(just(Token::Handle).ignore_then(branches(
+                term_ident_parser().map_with_span(SrcNode::new)
+                    .then(type_parser()
+                        .map_with_span(SrcNode::new)
+                        .repeated())
+                    .then_ignore(just(Token::With))
+                    .then(binding.clone())
+                    .then(just(Token::Comma).ignore_then(binding).or_not())
+                    .then_ignore(just(Token::Op(Op::RFlow)))
+                    .then(expr.clone().map_with_span(SrcNode::new))
+                ))
                 .or_not())
-            .map_with_span(|(expr, handle), span| if let Some(((((eff_name, eff_args), send), state), recv)) = handle {
+            .map_with_span(|(expr, handlers), span| if let Some(handlers) = handlers {
                 SrcNode::new(ast::Expr::Handle {
                     expr,
-                    eff_name,
-                    eff_args,
-                    send,
-                    state,
-                    recv,
+                    handlers: handlers
+                        .into_iter()
+                        .map(|((((eff_name, eff_args), send), state), recv)| ast::Handler {
+                            eff_name,
+                            eff_args,
+                            send,
+                            state,
+                            recv,
+                        })
+                        .collect(),
                 }, span)
             } else {
                 expr

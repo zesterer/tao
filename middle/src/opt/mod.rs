@@ -231,9 +231,11 @@ impl Expr {
             Expr::Data(_, inner) => f(inner),
             Expr::AccessData(inner, _) => f(inner),
             Expr::Basin(_, inner) => f(inner),
-            Expr::Handle { expr, eff, send, state, recv } => {
+            Expr::Handle { expr, handlers } => {
                 f(expr);
-                f(recv);
+                for Handler { eff, send, state, recv } in handlers {
+                    f(recv);
+                }
             },
         }
     }
@@ -271,9 +273,11 @@ impl Expr {
             Expr::Data(_, inner) => f(inner),
             Expr::AccessData(inner, _) => f(inner),
             Expr::Basin(_, inner) => f(inner),
-            Expr::Handle { expr, eff, send, state, recv } => {
+            Expr::Handle { expr, handlers } => {
                 f(expr);
-                f(recv);
+                for Handler { eff, send, state, recv } in handlers {
+                    f(recv);
+                }
             },
         }
     }
@@ -294,10 +298,12 @@ impl Expr {
                     body.inline_local(name, local_expr);
                 }
             },
-            Expr::Handle { expr, eff, send, state, recv } => {
+            Expr::Handle { expr, handlers } => {
                 expr.inline_local(name, local_expr);
-                if **send != name && **state != name {
-                    recv.inline_local(name, local_expr);
+                for Handler { eff, send, state, recv } in handlers {
+                    if **send != name && **state != name {
+                        recv.inline_local(name, local_expr);
+                    }
                 }
             },
             _ => self.for_children_mut(|expr| expr.inline_local(name, local_expr)),
@@ -459,8 +465,9 @@ pub fn check(ctx: &Context) {
             (Expr::Basin(_, inner), Repr::Effect(_, o)) => {
                 check_expr(ctx, inner, o, stack);
             }, // TODO
-            (Expr::Handle { expr, eff, send, state, recv }, r) if matches!(expr.meta(), Repr::Effect(_, _)) => {
-                check_expr(ctx, expr, &Repr::Effect(*eff, Box::new(r.clone())), stack);
+            (Expr::Handle { expr, handlers }, r) if matches!(expr.meta(), Repr::Effect(_, _)) => {
+                // TODO: Revisit this, might not be correct with subtyping
+                // check_expr(ctx, expr, &Repr::Effect(vec![*eff], Box::new(r.clone())), stack);
             },
             // (Expr::Data(_, _, _), Repr::Func(_, _)) => {},
             (expr, repr) => panic!("Inconsistency between expression\n\n {:?}\n\nand repr {:?}", expr, repr),

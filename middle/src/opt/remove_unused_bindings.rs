@@ -104,13 +104,15 @@ impl Pass for RemoveUnusedBindings {
                     visit(mir, body, stack, proc_stack);
                     stack.pop();
                 },
-                Expr::Handle { expr, eff: _, send, state, recv } => {
+                Expr::Handle { expr, handlers } => {
                     visit(mir, expr, stack, proc_stack);
-                    let old_len = stack.len();
-                    stack.push((**send, 0));
-                    stack.push((**state, 0));
-                    visit(mir, recv, stack, proc_stack);
-                    stack.truncate(old_len);
+                    for Handler { eff: _, send, state, recv } in handlers {
+                        let old_len = stack.len();
+                        stack.push((**send, 0));
+                        stack.push((**state, 0));
+                        visit(mir, recv, stack, proc_stack);
+                        stack.truncate(old_len);
+                    }
                 },
                 _ => expr.for_children_mut(|expr| visit(mir, expr, stack, proc_stack)),
             }

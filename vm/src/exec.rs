@@ -326,7 +326,7 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 }));
                 stack.push(func);
             },
-            Instr::Propagate(eff_id) => {
+            Instr::Propagate => {
                 let eff = stack.pop().unwrap().eff();
 
                 funcs.push(next_addr);
@@ -339,7 +339,11 @@ pub fn exec(prog: &Program) -> Option<Value> {
                     .iter()
                     .rev()
                     .find(|(e, _, _)| *e == eff_id)
-                    .unwrap();
+                    .unwrap_or_else(|| panic!(
+                        "No such effect handler for {:?} on effect stack. Effect stack:\n{:#?}",
+                        eff_id,
+                        handlers,
+                    ));
                 let (f_addr, mut captures) = handler.1.clone().func();
 
                 funcs.push(next_addr);

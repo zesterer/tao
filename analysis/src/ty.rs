@@ -1,10 +1,13 @@
 use super::*;
-use std::rc::Rc;
+use std::{
+    cmp::Ordering,
+    rc::Rc,
+};
 
 pub type TyMeta = (Span, TyId);
 pub type TyNode<T> = Node<T, TyMeta>;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Prim {
     Nat,
     Int,
@@ -52,7 +55,7 @@ pub type TyId = Id<(Span, Ty)>;
 #[derive(Clone, Debug)]
 pub enum Effect {
     Error,
-    Known(EffectDeclId, Vec<TyId>),
+    Known(Vec<Result<(EffectDeclId, Vec<TyId>), ()>>),
 }
 
 pub type EffectId = Id<(Span, Effect)>;
@@ -95,38 +98,75 @@ impl Types {
         self.tys.add((span, ty))
     }
 
-    // Ignores gen_scope
-    pub fn is_eq(&self, x: TyId, y: TyId) -> bool {
-        match (self.get(x), self.get(y)) {
-            (Ty::Error(_), _) | (_, Ty::Error(_)) => true,
-            (Ty::Prim(x), Ty::Prim(y)) => x == y,
-            (Ty::List(x), Ty::List(y)) => self.is_eq(x, y),
-            (Ty::Record(_, _), Ty::Record(_, _)) => todo!("Record equality"),
-            (Ty::Func(x_i, x_o), Ty::Func(y_i, y_o)) => self.is_eq(x_i, y_i) && self.is_eq(x_o, y_o),
-            (Ty::Data(x, xs), Ty::Data(y, ys)) => x == y && xs.len() == ys.len() && xs
+    pub fn cmp_eff(&self, x: EffectId, y: EffectId) -> Ordering {
+        match (self.get_effect(x), self.get_effect(y)) {
+            (Effect::Error, _) => Ordering::Equal,
+            (_, Effect::Error) => Ordering::Equal,
+            // Assumes canonical order
+            (Effect::Known(xs), Effect::Known(ys)) => xs.len().cmp(&ys.len()).then_with(|| xs
                 .into_iter()
                 .zip(ys)
-                .all(|(x, y)| self.is_eq(x, y)),
-            (Ty::Gen(x, x_scope), Ty::Gen(y, y_scope)) => x == y && x_scope == y_scope,
-            (Ty::SelfType, Ty::SelfType) => true,
-            (Ty::Assoc(x_ty, (x_class_id, x_args), x_name), Ty::Assoc(y_ty, (y_class_id, y_args), y_name)) => self.is_eq(x_ty, y_ty)
-                && x_class_id == y_class_id
-                && *x_name == *y_name
-                && x_args
-                    .into_iter()
-                    .zip(y_args)
-                    .all(|(x, y)| self.is_eq(x, y)),
-            (Ty::Effect(x, x_out), Ty::Effect(y, y_out)) =>
-                x == y &&
-                match (self.get_effect(x), self.get_effect(y)) {
-                    (Effect::Error, _) => true,
-                    (_, Effect::Error) => true,
-                    (Effect::Known(x, xs), Effect::Known(y, ys)) => x == y && xs.len() == ys.len() && xs
+                .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| x.cmp(&y).then_with(|| match (x, y) {
+                    (Ok((x, xs)), Ok((y, ys))) => xs
                         .into_iter()
                         .zip(ys)
-                        .all(|(x, y)| self.is_eq(x, y)),
-                },
-            _ => false,
+                        .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y))),
+                    (_, _) => Ordering::Equal, // Errors always equal (bad?)
+                })))),
+        }
+    }
+
+    // Ignores gen_scope
+    pub fn is_eq(&self, x: TyId, y: TyId) -> bool {
+        self.cmp_ty(x, y) == Ordering::Equal
+    }
+
+    // Ignores gen_scope
+    // Derive a canonical ordering for types (note: unrelated to subtyping!)
+    pub fn cmp_ty(&self, x: TyId, y: TyId) -> Ordering {
+        match (self.get(x), self.get(y)) {
+            (Ty::Error(_), _) | (_, Ty::Error(_)) => Ordering::Equal,
+            (Ty::Prim(x), Ty::Prim(y)) => x.cmp(&y),
+            (Ty::List(x), Ty::List(y)) => self.cmp_ty(x, y),
+            (Ty::Record(_, _), Ty::Record(_, _)) => todo!("Record equality"),
+            (Ty::Func(x_i, x_o), Ty::Func(y_i, y_o)) => self.cmp_ty(x_i, y_i).then_with(|| self.cmp_ty(x_o, y_o)),
+            (Ty::Data(x, xs), Ty::Data(y, ys)) => x.cmp(&y).then_with(|| xs
+                .into_iter()
+                .zip(ys)
+                .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y)))),
+            (Ty::Gen(x, x_scope), Ty::Gen(y, y_scope)) => if x_scope == y_scope {
+                x.cmp(&y)
+            } else {
+                todo!("ordering of generic types in different scopes... does reordering need to occur with every reinstantiation?!")
+            },
+            (Ty::SelfType, Ty::SelfType) => Ordering::Equal,
+            (Ty::Assoc(x_ty, (x_class_id, x_args), x_name), Ty::Assoc(y_ty, (y_class_id, y_args), y_name)) => self.cmp_ty(x_ty, y_ty)
+                .then_with(|| x_class_id.cmp(&y_class_id))
+                .then_with(|| x_name.cmp(&y_name))
+                .then_with(|| x_args
+                    .into_iter()
+                    .zip(y_args)
+                    .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y)))),
+            (Ty::Effect(x, x_out), Ty::Effect(y, y_out)) =>
+                x.cmp(&y).then_with(|| self.cmp_ty(x_out, y_out)),
+            (x, y) => {
+                // Generate an ordering for all other types, fairly arbitrary
+                // Would be nice to use std::mem::Discriminant for this, but it's not ordered
+                let rank_of = |x: &Ty| match x {
+                    Ty::Error(_) => 0,
+                    Ty::Prim(_) => 1,
+                    Ty::List(_) => 2,
+                    Ty::Record(_, _) => 3,
+                    Ty::Func(_, _) => 4,
+                    Ty::Data(_, _) => 5,
+                    Ty::Gen(_, _) => 6,
+                    Ty::SelfType => 7,
+                    Ty::Assoc(_, _, _) => 8,
+                    Ty::Effect(_, _) => 9,
+                };
+
+                rank_of(&x).cmp(&rank_of(&y))
+            },
         }
     }
 
@@ -244,18 +284,30 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             },
             Ty::SelfType => write!(f, "Self"),
             Ty::Effect(eff, out) => {
-                let eff = match self.ctx.tys.get_effect(eff) {
-                    Effect::Error => "!".to_string(),
-                    Effect::Known(decl, args) => format!("{}{}", *self.ctx.effects.get_decl(decl).name, args
-                        .iter()
-                        .map(|arg| format!(" {}", self.with_ty(*arg, true)))
-                        .collect::<String>()),
-                };
                 if self.lhs_exposed {
-                    write!(f, "({} ~ {})", eff, self.with_ty(out, true))
-                } else {
-                    write!(f, "{} ~ {}", eff, self.with_ty(out, true))
+                    write!(f, "(")?;
                 }
+                match self.ctx.tys.get_effect(eff) {
+                    Effect::Error => write!(f, "!")?,
+                    Effect::Known(effs) => {
+                        write!(f, "{}", effs
+                            .iter()
+                            .map(|eff| match eff {
+                                Ok((decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
+                                    .iter()
+                                    .map(|arg| format!(" {}", self.with_ty(*arg, true)))
+                                    .collect::<String>()),
+                                Err(()) => format!("!"),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" + "))?;
+                    },
+                }
+                write!(f, " ~ {}", self.with_ty(out, true))?;
+                if self.lhs_exposed {
+                    write!(f, ")")?;
+                }
+                Ok(())
             },
         }
     }

@@ -127,7 +127,7 @@ pub enum Type {
     // TODO: Replace name with `Item` when ready
     Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Assoc(SrcNode<Self>, Option<SrcNode<ClassInst>>, SrcNode<Ident>),
-    Effect(SrcNode<Ident>, Vec<SrcNode<Self>>, SrcNode<Self>),
+    Effect(Vec<(SrcNode<Ident>, Vec<SrcNode<Self>>)>, SrcNode<Self>),
 }
 
 impl Type {
@@ -147,9 +147,11 @@ impl Type {
                 .iter()
                 .all(|arg| arg.is_fully_specified()),
             Self::Assoc(inner, _, _) => inner.is_fully_specified(),
-            Self::Effect(_, args, out) => args
+            Self::Effect(effs, out) => effs
                 .iter()
-                .all(|arg| arg.is_fully_specified()) && out.is_fully_specified(),
+                .all(|(_, args)| args
+                    .iter()
+                    .all(|arg| arg.is_fully_specified())) && out.is_fully_specified(),
         }
     }
 }
@@ -212,15 +214,20 @@ pub enum Expr {
     ClassAccess(SrcNode<Type>, SrcNode<Ident>),
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Update(SrcNode<Self>, Vec<(SrcNode<Ident>, SrcNode<Self>)>),
-    Block(Vec<SrcNode<Self>>, SrcNode<Self>),
+    Block(Vec<(Option<SrcNode<Binding>>, SrcNode<Self>)>, SrcNode<Self>),
     Handle {
         expr: SrcNode<Self>,
-        eff_name: SrcNode<Ident>,
-        eff_args: Vec<SrcNode<Type>>,
-        send: SrcNode<Binding>,
-        state: Option<SrcNode<Binding>>,
-        recv: SrcNode<Self>
+        handlers: Vec<Handler>,
     },
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Handler {
+    pub eff_name: SrcNode<Ident>,
+    pub eff_args: Vec<SrcNode<Type>>,
+    pub send: SrcNode<Binding>,
+    pub state: Option<SrcNode<Binding>>,
+    pub recv: SrcNode<Expr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

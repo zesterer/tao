@@ -68,7 +68,7 @@ impl Context {
             ),
             ConTy::Data(data_id) => Repr::Data(self.lower_data(hir, con, *data_id)),
             ConTy::Record(fields) => Repr::Tuple(fields.iter().map(|(_, field)| self.lower_ty(hir, con, *field)).collect()),
-            ConTy::Effect(eff, out) => Repr::Effect(*eff, Box::new(self.lower_ty(hir, con, *out))),
+            ConTy::Effect(effs, out) => Repr::Effect(effs.clone(), Box::new(self.lower_ty(hir, con, *out))),
         }
     }
 
@@ -312,8 +312,8 @@ impl Context {
                         ])
                     },
                     hir::Intrinsic::Propagate => {
-                        let ConTy::Effect(eff_id, _) = con.get_ty(*args[0].meta()) else { unreachable!() };
-                        mir::Expr::Intrinsic(mir::Intrinsic::Propagate(*eff_id), vec![
+                        let ConTy::Effect(effs, _) = con.get_ty(*args[0].meta()) else { unreachable!() };
+                        mir::Expr::Intrinsic(mir::Intrinsic::Propagate(effs.clone()), vec![
                             self.lower_expr(hir, con, &args[0], stack),
                         ])
                     },
@@ -364,15 +364,51 @@ impl Context {
 
                 mir_record.into_inner()
             },
-            hir::Expr::Basin(eff, inner) => mir::Expr::Basin(*eff, self.lower_expr(hir, con, inner, stack)),
-            hir::Expr::Handle { expr, eff, send, state, recv } => {
-                let send_local = Local::new();
-                let state_local = Local::new();
-                let default_state_repr = Repr::Tuple(Vec::new());
+            hir::Expr::Basin(effs, inner) => mir::Expr::Basin(effs.clone(), self.lower_expr(hir, con, inner, stack)),
+            hir::Expr::Handle { expr, handlers } => {
                 let expr = self.lower_expr(hir, con, expr, stack);
                 let expr_repr = expr.meta().clone();
+
+                let default_state_repr = Repr::Tuple(Vec::new());
+                let mut is_state = false;
+
+                let handlers = handlers
+                    .iter()
+                    .map(|hir::Handler { eff, send, state, recv }| {
+                        let send_local = Local::new();
+                        let state_local = Local::new();
+                        is_state = state.is_some();
+                        mir::Handler {
+                            eff: *eff,
+                            send: MirNode::new(send_local, self.lower_ty(hir, con, *send.meta())),
+                            state: state.as_ref()
+                                .map(|state| MirNode::new(state_local, self.lower_ty(hir, con, *state.meta())))
+                                .unwrap_or(MirNode::new(state_local, default_state_repr.clone())),
+                            recv: {
+                                let old_len = stack.len();
+                                stack.push((**send, send_local));
+                                if let Some(state) = state {
+                                    stack.push((**state, state_local));
+                                }
+                                let recv = if state.is_none() {
+                                    let out = self.lower_expr(hir, con, recv, stack);
+                                    let out_repr = out.meta().clone();
+                                    MirNode::new(mir::Expr::Tuple(vec![
+                                        out,
+                                        MirNode::new(mir::Expr::Tuple(Vec::new()), default_state_repr.clone())
+                                    ]), Repr::Tuple(vec![out_repr, default_state_repr.clone()]))
+                                } else {
+                                    self.lower_expr(hir, con, recv, stack)
+                                };
+                                stack.truncate(old_len);
+                                recv
+                            },
+                        }
+                    })
+                    .collect();
+
                 let handler = mir::Expr::Handle {
-                    expr: if state.is_none() {
+                    expr: if !is_state {
                         MirNode::new(mir::Expr::Tuple(vec![
                             expr,
                             MirNode::new(mir::Expr::Tuple(Vec::new()), default_state_repr.clone())
@@ -380,33 +416,10 @@ impl Context {
                     } else {
                         expr
                     },
-                    eff: *eff,
-                    send: MirNode::new(send_local, self.lower_ty(hir, con, *send.meta())),
-                    state: state.as_ref()
-                        .map(|state| MirNode::new(state_local, self.lower_ty(hir, con, *state.meta())))
-                        .unwrap_or(MirNode::new(state_local, default_state_repr.clone())),
-                    recv: {
-                        let old_len = stack.len();
-                        stack.push((**send, send_local));
-                        if let Some(state) = state {
-                            stack.push((**state, state_local));
-                        }
-                        let recv = if state.is_none() {
-                            let out = self.lower_expr(hir, con, recv, stack);
-                            let out_repr = out.meta().clone();
-                            MirNode::new(mir::Expr::Tuple(vec![
-                                out,
-                                MirNode::new(mir::Expr::Tuple(Vec::new()), default_state_repr.clone())
-                            ]), Repr::Tuple(vec![out_repr, default_state_repr.clone()]))
-                        } else {
-                            self.lower_expr(hir, con, recv, stack)
-                        };
-                        stack.truncate(old_len);
-                        recv
-                    },
+                    handlers,
                 };
 
-                if state.is_some() {
+                if is_state {
                     handler
                 } else {
                     mir::Expr::Access(MirNode::new(handler, Repr::Tuple(vec![

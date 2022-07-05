@@ -47,7 +47,7 @@ class Show =
 
 def show A < Show : A -> Str = A.show
 
-for A < Debug member [A] of Show =
+for A < Show member [A] of Show =
     => show = fn xs => dispatch(
         xs,
         # Specialise on [Char]
@@ -55,8 +55,8 @@ for A < Debug member [A] of Show =
         # Fallback for [A]
         fn xs => xs -> fix(fn
             | _, [] => ""
-            | _, [x] => x -> debug
-            \ rec, [x .. xs] => x -> debug ++ ", " ++ xs -> rec),
+            | _, [x] => x -> show
+            \ rec, [x .. xs] => x -> show ++ ", " ++ xs -> rec),
     )
 
 member Nat of Show =

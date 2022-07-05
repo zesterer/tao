@@ -16,6 +16,7 @@ pub enum Scope<'a> {
     Recursive(SrcNode<Ident>, TyVar, DefId, Vec<(Span, TyVar)>),
     Binding(&'a Scope<'a>, SrcNode<Ident>, TyVar),
     Many(&'a Scope<'a>, &'a [(SrcNode<Ident>, TyVar)]),
+    // `None` is no basin, i.e: in a function
     Basin(&'a Scope<'a>, Option<EffectVar>),
 }
 
@@ -30,8 +31,8 @@ impl<'a> Scope<'a> {
         Scope::Many(self, many)
     }
 
-    fn with_basin<'b>(&'b self, basin: EffectVar) -> Scope<'b> {
-        Scope::Basin(self, Some(basin))
+    fn with_basin<'b>(&'b self, eff: EffectVar) -> Scope<'b> {
+        Scope::Basin(self, Some(eff))
     }
 
     fn without_basin<'b>(&'b self) -> Scope<'b> {
@@ -287,37 +288,54 @@ impl ToHir for ast::Type {
                 infer.make_class_assoc(inner.meta().1, assoc.clone(), class, assoc_ty, self.span());
                 TyInfo::Ref(assoc_ty)
             },
-            ast::Type::Effect(name, params, out) => {
-                let params = params
-                    .iter()
-                    .map(|param| param.to_hir(cfg, infer, scope).meta().1)
-                    .collect::<Vec<_>>();
-
+            ast::Type::Effect(effs, out) => {
                 let out = out.to_hir(cfg, infer, scope).meta().1;
+                let opaque = infer.opaque(self.span(), true);
+                let mut eff_insts = Vec::new();
+                for (name, params) in effs {
+                    let params = params
+                        .iter()
+                        .map(|param| param.to_hir(cfg, infer, scope).meta().1)
+                        .collect::<Vec<_>>();
 
-                if let Some(eff_id) = infer.ctx().effects.lookup(**name) {
-                    let eff = infer.ctx().effects.get_decl(eff_id);
-                    let eff_gen_scope = eff.gen_scope;
-                    let eff_span = eff.name.span();
-                    match enforce_generic_obligations(
-                        infer,
-                        eff_gen_scope,
-                        &params,
-                        self.span(),
-                        eff_span,
-                        None,
-                    ) {
-                        Ok(()) => {
-                            let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, params));
-                            let opaque = infer.opaque(self.span(), true);
-                            TyInfo::Effect(eff, out, opaque)
+                    match infer.ctx().effects.lookup(**name) {
+                        Some(Ok(eff_id)) => {
+                            let eff = infer.ctx().effects.get_decl(eff_id);
+                            let eff_gen_scope = eff.gen_scope;
+                            let eff_span = eff.name.span();
+                            eff_insts.push(match enforce_generic_obligations(
+                                infer,
+                                eff_gen_scope,
+                                &params,
+                                self.span(),
+                                eff_span,
+                                None,
+                            ) {
+                                Ok(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Known(eff_id, params)),
+                                Err(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Unknown),
+                            });
                         },
-                        Err(()) => TyInfo::Error(ErrorReason::Unknown),
+                        Some(Err(eff)) => {
+                            fn build_effect_set(infer: &mut Infer, eff_insts: &mut Vec<EffectInstVar>, eff: EffectAliasId) {
+                                match &infer.ctx().effects.get_alias(eff).effects {
+                                    Some(effs) => {
+                                        for (name, params) in effs.clone() {
+                                            eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Known(*name, Vec::new())));
+                                            assert_eq!(params.len(), 0);
+                                        }
+                                    },
+                                    None => todo!("Effect alias cycle, should generate an error"),
+                                }
+                            }
+                            build_effect_set(infer, &mut eff_insts, eff);
+                        },
+                        None => {
+                            infer.ctx_mut().emit(Error::NoSuchEffect(name.clone()));
+                            eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Unknown));
+                        },
                     }
-                } else {
-                    infer.ctx_mut().emit(Error::NoSuchEffect(name.clone()));
-                    TyInfo::Error(ErrorReason::Invalid)
                 }
+                TyInfo::Effect(infer.insert_effect(self.span(), EffectInfo::Closed(eff_insts)), out, opaque)
             },
         };
 
@@ -628,7 +646,7 @@ impl ToHir for ast::Expr {
                     eff
                 } else {
                     infer.ctx_mut().errors.push(Error::NoBasin(op.span()));
-                    infer.unknown_effect(a.meta().0)
+                    infer.insert_effect(a.meta().0, EffectInfo::Unknown) // TODO: EffectInfo::Error instead
                 };
 
                 let opaque = infer.unknown(a.meta().0);
@@ -1040,15 +1058,21 @@ impl ToHir for ast::Expr {
                             let a = &args[0];
                             let out = infer.unknown(self.span());
 
-                            let eff = if let Some(eff) = scope.last_basin() {
-                                eff
+                            let eff_inst = if let Some(basin_eff) = scope.last_basin() {
+                                // TODO: Probably bad!
+                                // eff
+                                let eff_inst = infer.insert_effect_inst(self.span(), EffectInstInfo::Unknown);
+                                let eff = infer.insert_effect(self.span(), EffectInfo::Open(vec![eff_inst]));
+                                let phoney_ty = infer.insert(self.span(), TyInfo::tuple([]));
+                                infer.make_flow_effect((eff, phoney_ty), (basin_eff, phoney_ty), EqInfo::default());
+                                eff_inst
                             } else {
                                 infer.ctx_mut().errors.push(Error::NoBasin(name.span()));
-                                infer.unknown_effect(a.meta().0)
+                                infer.insert_effect_inst(self.span(), EffectInstInfo::Unknown)
                             };
 
-                            infer.make_effect_send_recv(eff, a.meta().1, out, self.span());
-                            (TyInfo::Ref(out), hir::Expr::Suspend(eff, args.remove(0)))
+                            infer.make_effect_send_recv(eff_inst, a.meta().1, out, self.span());
+                            (TyInfo::Ref(out), hir::Expr::Suspend(eff_inst, args.remove(0)))
                         },
                         "dispatch" if args.len() == 3 => {
                             let general = infer.unknown(args[0].meta().0);
@@ -1090,115 +1114,155 @@ impl ToHir for ast::Expr {
                 (TyInfo::Ref(record.meta().1), hir::Expr::Update(record, fields))
             },
             ast::Expr::Block(init, last) => {
-                let eff = infer.unknown_effect(self.span());
+                let eff = infer.insert_effect(self.span(), EffectInfo::Open(Vec::new()));
 
                 // Collect effects into this basin
                 let scope = scope.with_basin(eff);
-                let init = init
-                    .iter()
-                    .map(|stmt| stmt.to_hir(cfg, infer, &scope))
-                    .collect::<Vec<_>>();
-                let last = last.to_hir(cfg, infer, &scope);
 
-                let last_meta = *last.meta();
-                let chain = init
-                    .into_iter()
-                    .rev()
-                    .fold(last, |then, before| {
-                        let before_meta = *before.meta();
-                        let then_meta = *then.meta();
-                        InferNode::new(hir::Expr::Match(false, before, vec![
-                            (InferNode::new(hir::Binding {
-                                pat: SrcNode::new(hir::Pat::Wildcard, before_meta.0),
-                                name: None,
-                            }, before_meta), then),
-                        ]), then_meta)
-                    });
+                fn gen_block(
+                    infer: &mut Infer,
+                    cfg: &<ast::Expr as ToHir>::Cfg,
+                    init: &[(Option<SrcNode<ast::Binding>>, SrcNode<ast::Expr>)],
+                    last: &SrcNode<ast::Expr>,
+                    scope: &Scope,
+                ) -> InferExpr {
+                    match init {
+                        [(lhs, rhs), init @ ..] => {
+                            let rhs = rhs.to_hir(cfg, infer, scope);
+
+                            let lhs = match lhs {
+                                None => InferNode::new(hir::Binding {
+                                        pat: SrcNode::new(hir::Pat::Wildcard, rhs.meta().0),
+                                        name: None,
+                                    }, *rhs.meta()),
+                                Some(lhs) => lhs.to_hir(cfg, infer, scope),
+                            };
+
+                            let lhs_bindings = lhs.get_binding_tys();
+                            let scope = scope.with_many(&lhs_bindings);
+
+                            infer.make_flow(rhs.meta().1, lhs.meta().1, EqInfo::default());
+
+                            let then = gen_block(infer, cfg, init, last, &scope);
+                            let then_meta = *then.meta();
+
+                            InferNode::new(hir::Expr::Match(false, rhs, vec![(
+                                lhs,
+                                then,
+                            )]), then_meta)
+                        },
+                        [] => last.to_hir(cfg, infer, scope),
+                    }
+                }
+
+                let expr = gen_block(infer, cfg, &init, last, &scope);
 
                 let opaque = infer.opaque(self.span(), false);
-                (TyInfo::Effect(eff, last_meta.1, opaque), hir::Expr::Basin(eff, chain))
+                (TyInfo::Effect(eff, expr.meta().1, opaque), hir::Expr::Basin(eff, expr))
             },
-            ast::Expr::Handle { expr, eff_name, eff_args, send, state, recv } => {
+            ast::Expr::Handle { expr, handlers } => {
                 let expr = expr.to_hir(cfg, infer, &scope);
-                let send = send.to_hir(cfg, infer, &scope);
-                let state = state.as_ref().map(|state| state.to_hir(cfg, infer, &scope));
-                let recv = recv.to_hir(cfg, infer, &scope.with_many(&send.get_binding_tys()));
-
-                let eff_args = eff_args
-                    .iter()
-                    .map(|arg| arg.to_hir(&TypeLowerCfg::other(), infer, scope).meta().1)
-                    .collect::<Vec<_>>();
-
                 let out_ty = infer.unknown(self.span());
+                let mut state_ty = None;
+                handlers
+                    .iter()
+                    .map(|ast::Handler { eff_name, eff_args, send, state, recv }| {
+                        let send = send.to_hir(cfg, infer, &scope);
+                        let state = state.as_ref().map(|state| state.to_hir(cfg, infer, &scope));
+                        let recv = recv.to_hir(cfg, infer, &scope
+                            .with_many(&send.get_binding_tys())
+                            .with_many(&state.as_ref().map(|state| state.get_binding_tys()).unwrap_or_default()));
 
-                if let Some(eff_id) = infer.ctx().effects.lookup(**eff_name) {
-                    let eff = infer.ctx().effects.get_decl(eff_id);
-                    let eff_gen_scope = eff.gen_scope;
-                    let eff_span = eff.name.span();
-                    match enforce_generic_obligations(
-                        infer,
-                        eff_gen_scope,
-                        &eff_args,
-                        self.span(),
-                        eff_span,
-                        None,
-                    ) {
-                        Ok(()) => {
-                            let eff = infer.insert_effect(self.span(), EffectInfo::Known(eff_id, eff_args));
+                        let eff_args = eff_args
+                            .iter()
+                            .map(|arg| arg.to_hir(&TypeLowerCfg::other(), infer, scope).meta().1)
+                            .collect::<Vec<_>>();
 
-                            if let Some(state) = &state {
-                                let recv_ty = infer.unknown(recv.meta().0);
-                                let recv_and_state = infer.insert(expr.meta().0, TyInfo::tuple([recv_ty, state.meta().1]));
-                                infer.make_flow(recv.meta().1, recv_and_state, EqInfo::from(self.span()));
+                        if let Some(Ok(eff_id)) = infer.ctx().effects.lookup(**eff_name) {
+                            let eff = infer.ctx().effects.get_decl(eff_id);
+                            let eff_gen_scope = eff.gen_scope;
+                            let eff_span = eff.name.span();
+                            match enforce_generic_obligations(
+                                infer,
+                                eff_gen_scope,
+                                &eff_args,
+                                self.span(),
+                                eff_span,
+                                None,
+                            ) {
+                                Ok(()) => {
+                                    let eff = infer.insert_effect_inst(self.span(), EffectInstInfo::Known(eff_id, eff_args));
 
-                                infer.make_effect_send_recv(eff, send.meta().1, recv_ty, eff_name.span());
-                            } else {
-                                infer.make_effect_send_recv(eff, send.meta().1, recv.meta().1, eff_name.span());
-                            };
+                                    if let Some(state) = &state {
+                                        let recv_ty = infer.unknown(recv.meta().0);
+                                        let recv_and_state = infer.insert(expr.meta().0, TyInfo::tuple([recv_ty, state.meta().1]));
+                                        infer.make_flow(recv.meta().1, recv_and_state, EqInfo::from(self.span()));
 
-                            let opaque = infer.unknown(expr.meta().0);
-                            let eff_obj_ty = infer.insert(eff_name.span(), TyInfo::Effect(eff, out_ty, opaque));
+                                        infer.make_effect_send_recv(eff, send.meta().1, recv_ty, eff_name.span());
 
-                            if let Some(state) = &state {
-                                let eff_and_state = infer.insert(expr.meta().0, TyInfo::tuple([eff_obj_ty, state.meta().1]));
-                                infer.make_flow(expr.meta().1, eff_and_state, EqInfo::from(self.span()));
-                            } else {
-                                infer.make_flow(expr.meta().1, eff_obj_ty, EqInfo::from(self.span()));
-                            };
-
-                            let overall_ty = if let Some(state) = &state {
-                                TyInfo::tuple([out_ty, state.meta().1])
-                            } else {
-                                TyInfo::Ref(out_ty)
-                            };
-
-                            let recv_meta = *recv.meta();
-                            (overall_ty, hir::Expr::Handle {
-                                expr,
-                                eff,
-                                send: InferNode::new(Ident::new("0"), *send.meta()),
-                                state: state.as_ref().map(|state| InferNode::new(Ident::new("1"), *state.meta())),
-                                recv: InferNode::new(hir::Expr::Match(
-                                    false,
-                                    InferNode::new(hir::Expr::Local(Ident::new("0")), *send.meta()),
-                                    if let Some(state) = state {
-                                        vec![(send, InferNode::new(hir::Expr::Match(
-                                            false,
-                                            InferNode::new(hir::Expr::Local(Ident::new("1")), *state.meta()),
-                                            vec![(state, recv)],
-                                        ), recv_meta))]
+                                        match &mut state_ty {
+                                            Some(state_ty) => {
+                                                infer.make_flow(*state_ty, state.meta().1, EqInfo::from(state.meta().0));
+                                            },
+                                            None => state_ty = Some(state.meta().1),
+                                        }
                                     } else {
-                                        vec![(send, recv)]
-                                    },
-                                ), recv_meta),
-                            })
-                        },
-                        Err(()) => (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error),
-                    }
-                } else {
-                    infer.ctx_mut().emit(Error::NoSuchEffect(eff_name.clone()));
-                    (TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error) // TODO: Can we avoid making this entire node an error?
-                }
+                                        infer.make_effect_send_recv(eff, send.meta().1, recv.meta().1, eff_name.span());
+                                    };
+
+                                    let recv_meta = *recv.meta();
+                                    let handler = hir::Handler {
+                                        eff,
+                                        send: InferNode::new(Ident::new("0"), *send.meta()),
+                                        state: state.as_ref().map(|state| InferNode::new(Ident::new("1"), *state.meta())),
+                                        recv: InferNode::new(hir::Expr::Match(
+                                            false,
+                                            InferNode::new(hir::Expr::Local(Ident::new("0")), *send.meta()),
+                                            if let Some(state) = state {
+                                                vec![(send, InferNode::new(hir::Expr::Match(
+                                                    false,
+                                                    InferNode::new(hir::Expr::Local(Ident::new("1")), *state.meta()),
+                                                    vec![(state, recv)],
+                                                ), recv_meta))]
+                                            } else {
+                                                vec![(send, recv)]
+                                            },
+                                        ), recv_meta),
+                                    };
+
+                                    Ok((eff, handler))
+                                },
+                                Err(()) => Err((TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)),
+                            }
+                        } else {
+                            infer.ctx_mut().emit(Error::NoSuchEffect(eff_name.clone()));
+                            Err((TyInfo::Error(ErrorReason::Invalid), hir::Expr::Error)) // TODO: Can we avoid making this entire node an error?
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(|handlers| {
+                        let opaque = infer.unknown(expr.meta().0);
+                        let eff_set = infer.insert_effect(self.span(), EffectInfo::Closed(handlers.iter().map(|(ty, _)| *ty).collect()));
+                        let eff_obj_ty = infer.insert(self.span(), TyInfo::Effect(eff_set, out_ty, opaque));
+
+                        let overall_ty = if let Some(state_ty) = state_ty {
+                            let eff_and_state = infer.insert(expr.meta().0, TyInfo::tuple([eff_obj_ty, state_ty]));
+                            infer.make_flow(expr.meta().1, eff_and_state, EqInfo::from(self.span()));
+                            TyInfo::tuple([out_ty, state_ty])
+                        } else {
+                            infer.make_flow(expr.meta().1, eff_obj_ty, EqInfo::from(self.span()));
+                            TyInfo::Ref(out_ty)
+                        };
+
+                        (overall_ty, hir::Expr::Handle {
+                            expr,
+                            handlers: handlers
+                                .into_iter()
+                                .map(|(_, handler)| handler)
+                                .collect(),
+                        })
+                    })
+                    .unwrap_or_else(|e| e)
             },
         };
 

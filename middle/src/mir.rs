@@ -171,7 +171,7 @@ pub enum Intrinsic {
     SkipList,
     TrimList,
     Suspend(EffectId),
-    Propagate(EffectId),
+    Propagate(Vec<EffectId>),
 }
 
 #[derive(Clone, Debug)]
@@ -354,14 +354,19 @@ pub enum Expr {
     Data(ConDataId, MirNode<Self>),
     AccessData(MirNode<Self>, ConDataId),
 
-    Basin(EffectId, MirNode<Self>),
+    Basin(Vec<EffectId>, MirNode<Self>),
     Handle {
         expr: MirNode<Self>,
-        eff: EffectId,
-        send: MirNode<Local>,
-        state: MirNode<Local>,
-        recv: MirNode<Self>,
+        handlers: Vec<Handler>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub struct Handler {
+    pub eff: EffectId,
+    pub send: MirNode<Local>,
+    pub state: MirNode<Local>,
+    pub recv: MirNode<Expr>,
 }
 
 impl Expr {
@@ -419,18 +424,20 @@ impl Expr {
                 stack.pop();
                 **next = new_init;
             },
-            Expr::Handle { expr, eff, send, state, recv } => {
+            Expr::Handle { expr, handlers } => {
                 expr.refresh_locals_inner(stack);
 
-                let new_send = Local::new();
-                let new_state = Local::new();
-                let old_len = stack.len();
-                stack.push((**send, new_send));
-                stack.push((**state, new_state));
-                recv.refresh_locals_inner(stack);
-                stack.truncate(old_len);
-                **send = new_send;
-                **state = new_state;
+                for Handler { eff, send, state, recv } in handlers {
+                    let new_send = Local::new();
+                    let new_state = Local::new();
+                    let old_len = stack.len();
+                    stack.push((**send, new_send));
+                    stack.push((**state, new_state));
+                    recv.refresh_locals_inner(stack);
+                    stack.truncate(old_len);
+                    **send = new_send;
+                    **state = new_state;
+                }
             },
             _ => self.for_children_mut(|expr| expr.refresh_locals_inner(stack)),
         }
@@ -487,13 +494,15 @@ impl Expr {
             Expr::Data(_, inner) => inner.required_locals_inner(stack, required),
             Expr::AccessData(inner, _) => inner.required_locals_inner(stack, required),
             Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
-            Expr::Handle { expr, eff, send, state, recv } => {
+            Expr::Handle { expr, handlers } => {
                 expr.required_locals_inner(stack, required);
-                let old_len = stack.len();
-                stack.push(**send);
-                stack.push(**state);
-                recv.required_locals_inner(stack, required);
-                stack.truncate(old_len);
+                for Handler { eff, send, state, recv } in handlers {
+                    let old_len = stack.len();
+                    stack.push(**send);
+                    stack.push(**state);
+                    recv.required_locals_inner(stack, required);
+                    stack.truncate(old_len);
+                }
             },
         }
     }
@@ -533,7 +542,9 @@ impl Expr {
             Expr::Data(_, inner) => inner.may_have_effect(),
             Expr::AccessData(inner, _) => inner.may_have_effect(),
             Expr::Basin(_, inner) => false,
-            Expr::Handle { expr, eff, send, state, recv } => expr.may_have_effect() || recv.may_have_effect(),
+            Expr::Handle { expr, handlers } => expr.may_have_effect() || handlers
+                .iter()
+                .any(|Handler { recv, .. }| recv.may_have_effect()),
         }
     }
 
@@ -624,14 +635,22 @@ impl Expr {
                         Ok(())
                     },
                     Expr::Basin(eff, inner) => write!(f, "{{\n{}\n{}}}", DisplayExpr(inner, self.1 + 1, true), "    ".repeat(self.1)),
-                    Expr::Handle { expr, eff, send, state, recv } => write!(
+                    Expr::Handle { expr, handlers } => write!(
                         f,
-                        "{} handle {:?} with ${}, ${} =>\n{}",
+                        "{}\n{}",
                         DisplayExpr(expr, self.1, false),
-                        eff,
-                        send.0,
-                        state.0,
-                        DisplayExpr(recv, self.1 + 1, true),
+                        handlers
+                            .iter()
+                            .map(|Handler { eff, send, state, recv }| format!(
+                                "{}handle {:?} with ${}, ${} =>\n{}",
+                                "    ".repeat(self.1 + 1),
+                                eff,
+                                send.0,
+                                state.0,
+                                DisplayExpr(recv, self.1 + 1, true),
+                            ))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
                     ),
                     Expr::Access(inner, field) => write!(f, "({}).{}", DisplayExpr(inner, self.1, false), field),
                     Expr::AccessVariant(inner, variant) => write!(f, "({}).#{}", DisplayExpr(inner, self.1, false), variant),

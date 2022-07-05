@@ -6,7 +6,7 @@ pub enum Error {
     // Outer type, inner type
     CannotCoerce(TyId, TyId, Option<(TyId, TyId)>, EqInfo),
     CannotInfer(TyId, Option<Span>),
-    CannotInferEffect(EffectId),
+    CannotInferEffect(Span, Result<(EffectDeclId, Vec<TyId>), ()>),
     Recursive(TyId, Span, Span),
     AliasNotPermitted(AliasId, Span),
     NoSuchItem(TyId, Span, SrcNode<Ident>),
@@ -99,9 +99,9 @@ impl Error {
                 },
                 vec![],
             ),
-            Error::CannotInferEffect(a) => (
+            Error::CannotInferEffect(span, a) => (
                 format!("Cannot infer effect"),
-                vec![(ctx.tys.get_effect_span(a), format!("Cannot be inferred"), Color::Red)],
+                vec![(span, format!("Cannot be inferred"), Color::Red)],
                 vec![],
             ),
             Error::Recursive(a, span, part) => (

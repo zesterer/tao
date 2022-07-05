@@ -1,0 +1,21 @@
+import "../lib/main.tao"
+
+effect print = Str => ()
+effect input = () => Str
+
+fn write : Str -> print ~ () =
+    s => @{ @suspend(s) }
+
+def read : input ~ Str = @{ @suspend(()) }
+
+effect console = print + input
+
+def bar : io + console ~ () = @{
+    print("Hello")!;
+    write("World")!;
+    write("World")!;
+    read!;
+}
+
+def main : io ~ () =
+    print("Hello, world!")
