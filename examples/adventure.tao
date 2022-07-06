@@ -1,0 +1,87 @@
+import "../lib/main.tao"
+
+data Location =
+    | Beach
+    | Forest
+    | Village
+    \ Mountain
+
+fn describe_loc =
+    | Beach => "You are standing on a gravel beach"
+    | Forest => "You are in a dark, spooky forest"
+    | Village => "You are standing in the centre of sleepy village"
+    \ Mountain => "You are on the side of a desolate mountain"
+
+fn directions =
+    | Beach => [("uphill", Forest)]
+    | Forest => [("downhill", Beach), ("east", Village)]
+    | Village => [("west", Forest), ("climb", Mountain)]
+    \ Mountain => [("descend", Village)]
+
+data State = {
+    loc: Location,
+}
+
+def default_state = State {
+    loc: Beach,
+}
+
+fn describe : State -> io ~ () = state => @{
+    print(state.loc->describe_loc)!;
+    print("You can go...")!;
+    state.loc
+        -> directions
+        -> fold(@{}, fn prev, (dir, _) => @{
+            prev!;
+            print("- " ++ dir)!;
+        })!;
+}
+
+data Event =
+    | Grab
+    \ MoveTo Location
+
+fn apply : Event -> State -> io ~ State =
+    | Grab, state => @{
+            print("There was nothing to grab!")!;
+            state
+        }
+    \ MoveTo loc, state => @{
+        print("You moved.")!;
+        print(loc->describe_loc)!;
+        state with { loc }
+    }
+
+fn game_loop : State -> io ~ () = state => @{
+    let cmd = input!;
+    let res = (
+        match cmd in
+        | "quit" => Done
+        | "help" => @{
+                print("Commands: 'help', 'quit', 'look', 'grab'")!;
+                Next None
+            }!
+        | "look" => @{
+                state->describe!;
+                Next None
+            }!
+        | "grab" => Next Just Grab
+        \ other => match state.loc->directions->find_first(fn (name, _) => name = cmd) in
+            | Just (_, loc) => Next Just MoveTo loc
+            \ None => @{
+                print("Unknown command '" ++ cmd ++ "'")!;
+                Next None
+            }!
+    );
+    match res in
+        | Next Just event => game_loop(state->apply(event)!)!
+        | Next None => game_loop(state)!
+        \ Done => ()
+}
+
+def main : io ~ () = @{
+    print("Welcome to the adventure game!")!;
+    print("Type 'help' to get started.")!;
+    game_loop(default_state)!;
+    print("Goodbye!")!;
+}

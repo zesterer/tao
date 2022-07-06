@@ -22,6 +22,15 @@ data ParseErr I =
 	| ExpectedPat Str
 	\ ExpectedMore
 
+for I < Show member ParseErr I of Show =
+    => show = fn
+        | UnexpectedEnd => "unexpected end of input"
+        | ExpectedFound (expected, found) => "expected " ++ (match expected in
+            | Just expected => "'" ++ expected->show ++ "'"
+            \ None => "end of input") ++ " found '" ++ found->show ++ "'"
+        | ExpectedPat pat => "expected " ++ pat
+        \ ExpectedMore => "not enough elements"
+
 type Parser I, O = [I] -> Result (O, [I]) (ParseErr I)
 
 fn filter_tok I, O : (I -> Result O (ParseErr I)) -> Parser I O =
@@ -34,7 +43,7 @@ fn just : Char -> ? =
         else Err ExpectedFound (Just c, head))
 
 fn and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
-	b, a, xs => match xs:a in
+	b, a, xs => match xs->a in
 		| Err err => Err err
 		\ Ok (a, xs) => match xs->b in
 			| Err err => Err err

@@ -1,4 +1,4 @@
-import "../lib/std.tao"
+import "../lib/main.tao"
 
 data Instr =
     | Left
@@ -39,56 +39,67 @@ member State of Default =
         stdout: "",
     }
 
-fn exec : State -> Instr -> IO State =
-    | state, Left => return state with {
+fn exec : State -> Instr -> io ~ State =
+    | state, Left => @{
+        state with {
             ptr: match state.ptr in
                 | 0 => 9999
                 \ l + 1 => l
         }
-    | state, Right => return state with {
+    }
+    | state, Right => @{
+        state with {
             ptr: match state.ptr in
                 | 9999 => 0
                 \ l => l + 1
         }
-    | state, Incr => return state with {
+    }
+    | state, Incr => @{
+        state with {
             tape: state.tape->swap(state.ptr, fn
                 | 255 => 0
                 \ n => n + 1)
         }
-    | state, Decr => return state with {
+    }
+    | state, Decr => @{
+        state with {
             tape: state.tape->swap(state.ptr, fn
                 | 0 => 255
                 \ n + 1 => n)
         }
-    | state, Read => do {
-            print("Read not supported yet");
-            return state
-        }
+    }
+    | state, Read => @{
+        print("Read not supported yet")!;
+        state
+    }
     | state, Write => match state.tape->nth(state.ptr) in
         # Newline
-        | Just 10 => do {
-                print(state.stdout);
-                return state with { stdout: "" }
-            }
+        | Just 10 => @{
+            print(state.stdout)!;
+            state with { stdout: "" }
+        }
         | Just n + 32 => match " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
             -> nth(n) in
-            | Just c => do {
-                #print(state.stdout);
-                return state with { stdout: state.stdout ++ [c] }
-            }
-            \ None => return state
-        \ _ => return state
+            | Just c => @{ state with { stdout: state.stdout ++ [c] } }
+            \ None => @{ state }
+        \ _ => @{ state }
     \ state, Loop xs => match state.tape->nth(state.ptr) in
-        | Just 0 => return state
-        | Just _ => do {
-                let state <- xs
-                    -> fold_for_each(state, exec);
-                exec(state, Loop xs)
-            }
-        \ None => return state
+        | Just 0 => @{ state }
+        | Just _ => @{
+            let state = exec_all(state, xs)!;
+            exec(state, Loop xs)!
+        }
+        \ None => @{ state }
 
-def main = do {
-    let (xs, _) <- return "[sierpinski.b -- display Sierpinski triangle
+fn exec_all : State -> [Instr] -> io ~ State =
+    | state, [] => @{ state }
+    \ state, [x .. xs] => @{
+        let state = exec(state, x)!;
+        exec_all(state, xs)!
+    }
+
+def main : io ~ () = @{
+    let (xs, _) = "[sierpinski.b -- display Sierpinski triangle
 (c) 2016 Daniel B. Cristofani
 http://brainfuck.org/]
 ++++++++[>+>++++<<-]>++>>+<[-[>>+<<-]+>>]>+[
@@ -98,6 +109,5 @@ http://brainfuck.org/]
 ]
 [Shows an ASCII representation of the Sierpinski triangle
 (iteration 5).]"->parse;
-    xs
-    -> fold_for_each(default, exec);
+    exec_all(default, xs)!;
 }

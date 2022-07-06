@@ -1157,7 +1157,7 @@ impl ToHir for ast::Expr {
 
                 let expr = gen_block(infer, cfg, &init, last, &scope);
 
-                let opaque = infer.opaque(self.span(), false);
+                let opaque = infer.opaque(self.span(), true /* false */); // TODO: `false` instead?
                 (TyInfo::Effect(eff, expr.meta().1, opaque), hir::Expr::Basin(eff, expr))
             },
             ast::Expr::Handle { expr, handlers } => {

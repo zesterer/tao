@@ -9,7 +9,9 @@ functions, currying, good diagnostics, and much more!
 
 For more example programs, see...
 
-- `examples/hello.tao`: Hello world in Tao
+- `examples/hello.tao`: Hello world
+- `examples/input.tao`: Demonstrates a more complex example of IO effects
+- `examples/calc.tao`: A CLI calculator, demonstrating parser combinators
 - `examples/adventure.tao`: A text adventure game written in Tao
 - `examples/brainfuck.tao`: A brainfuck interpreter written in Tao
 
