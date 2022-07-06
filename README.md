@@ -159,7 +159,7 @@ no semicolons and no code blocks because of this fact.
 
 ### Currying and prefix calling
 
-In Tao, `arg:f` is shorthand for `f(arg)` (function application). Additionally, this prefix syntax can be chained,
+In Tao, `arg->f` is shorthand for `f(arg)` (function application). Additionally, this prefix syntax can be chained,
 resulting in very natural, first-class pipeline syntax.
 
 ```py
