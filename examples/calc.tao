@@ -1,21 +1,19 @@
 import "../lib/main.tao"
 import "../lib/parse.tao"
 
-def prompt : io ~ () = @{
+def prompt : io ~ () = do
     let line = input!;
     if line = "q"
     then ()
-    else @{
-        (
-            match line->parse(expr_parser) in
+    else do
+        match line->parse(expr_parser) in
             | Ok expr => print(expr->eval->show)!
-            \ Err err => print("Failed to parse '" ++ line ++ "': " ++ err->show)!
-        );
+            \ Err err => print("Failed to parse '" ++ line ++ "': " ++ err->show)!;
         prompt!;
-    }!
-}
+    end!
+end
 
-def main : io ~ () = @{
+def main : io ~ () = do
     print("Enter an expression (q to quit)")!;
     prompt!;
-}
+end

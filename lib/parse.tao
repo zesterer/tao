@@ -108,7 +108,7 @@ fn find_start : Nat -> Char -> Str -> Result Nat FindErr =
 
 def find = find_start(0)
 
-fn end I : Parser I () =
+fn eoi I : Parser I () =
     | [] => Ok ((), [])
     \ [x ..] => Err ExpectedFound (None, x)
 
@@ -168,7 +168,7 @@ def sum_parser = product_parser
 def expr_parser : Parser Char Expr = sum_parser
 
 fn parse I, O : Parser I O -> [I] -> Result O (ParseErr I) = parser, input =>
-    match input->(parser->and_then(end)) in
+    match input->(parser->and_then(eoi)) in
         | Ok ((o, _), _) => Ok o
         \ Err e => Err e
 
