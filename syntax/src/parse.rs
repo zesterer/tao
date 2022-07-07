@@ -614,21 +614,24 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         // @{ x; y; z }
         // TODO: Come up with a better syntax
         let block = just(Token::Do)
-            .ignore_then(stmt
-                .then_ignore(just(Token::Semicolon))
-                .repeated()
-                .then(expr.clone()
-                    .map_with_span(SrcNode::new)
-                    .or_not())
-                .map_with_span(|(init, end), span| {
-                    let last = if let Some(end) = end {
-                        end
-                    } else {
-                        SrcNode::new(ast::Expr::Tuple(Vec::new()), span)
-                    };
-                    ast::Expr::Block(init, last)
-                }))
-            .then_ignore(just(Token::End));
+            .ignore_then(nested_parser(
+                stmt
+                    .then_ignore(just(Token::Semicolon))
+                    .repeated()
+                    .then(expr.clone()
+                        .map_with_span(SrcNode::new)
+                        .or_not())
+                    .map_with_span(|(init, end), span| {
+                        let last = if let Some(end) = end {
+                            end
+                        } else {
+                            SrcNode::new(ast::Expr::Tuple(Vec::new()), span)
+                        };
+                        ast::Expr::Block(init, last)
+                    }),
+                Delimiter::Brace,
+                |_| ast::Expr::Error,
+            ));
 
         let atom = litr
             .or(ident)

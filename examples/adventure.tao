@@ -26,62 +26,62 @@ def default_state = State {
     loc: Beach,
 }
 
-fn describe : State -> io ~ () = state => do
+fn describe : State -> io ~ () = state => do {
     print(state.loc->describe_loc)!;
     print("You can go...")!;
     state.loc
         -> directions
-        -> fold(do end, fn prev, (dir, _) => do
+        -> fold(do {}, fn prev, (dir, _) => do {
             prev!;
             print("- " ++ dir)!;
-        end)!;
-end
+        })!;
+}
 
 data Event =
     | Grab
     \ MoveTo Location
 
 fn apply : Event -> State -> io ~ State =
-    | Grab, state => do
+    | Grab, state => do {
         print("There was nothing to grab!")!;
         state
-    end
-    \ MoveTo loc, state => do
+    }
+    \ MoveTo loc, state => do {
         print("You moved.")!;
         print(loc->describe_loc)!;
         state with { loc }
-    end
+    }
 
-fn game_loop : State -> io ~ () = state => do
+fn game_loop : State -> io ~ () = state => do {
     let cmd = input!;
     let res = (
         match cmd in
         | "quit" => Done
-        | "help" => do
+        | "help" => do {
             print("Commands: 'help', 'quit', 'look', 'grab'")!;
             Next None
-        end!
-        | "look" => do
+        }!
+        | "look" => do {
             state->describe!;
             Next None
-        end!
+        }!
         | "grab" => Next Just Grab
         \ other => match state.loc->directions->find_first(fn (name, _) => name = cmd) in
             | Just (_, loc) => Next Just MoveTo loc
-            \ None => do
+            \ None => do {
                 print("Unknown command '" ++ cmd ++ "'")!;
                 Next None
-            end!
+            }!
     );
     match res in
         | Next Just event => game_loop(state->apply(event)!)!
         | Next None => game_loop(state)!
         \ Done => ()
-end
+}
 
-def main : io ~ () = do
+def main : io ~ () = do {
     print("Welcome to the adventure game!")!;
     print("Type 'help' to get started.")!;
     game_loop(default_state)!;
     print("Goodbye!")!;
-end
+}
