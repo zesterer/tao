@@ -518,6 +518,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .then(paren_exp_list.clone().or_not())
             .map(|(name, args)| ast::Expr::Intrinsic(name, args.flatten().unwrap_or_default()));
 
+        /*
         enum DoItem {
             Stmt(SrcNode<ast::Expr>),
             Bind(SrcNode<ast::Binding>, SrcNode<ast::Expr>),
@@ -595,6 +596,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 SrcNode::new(ast::Expr::LangDef(ast::LangDef::IoUnit), span),
                 expr,
             ));
+        */
 
         let cons_unit = type_ident_parser()
             .map_with_span(SrcNode::new)
@@ -611,27 +613,22 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(expr.clone().map_with_span(SrcNode::new).map(|rhs| (None, rhs)));
         // @{ x; y; z }
         // TODO: Come up with a better syntax
-        let block = just(Token::At)
-            .ignore_then(nested_parser(
-                stmt
-                    .then_ignore(just(Token::Semicolon))
-                    .repeated()
-                    .then(expr.clone()
-                        .map_with_span(SrcNode::new)
-                        .or_not())
-                    .map_with_span(|(init, end), span| {
-                        let last = if let Some(end) = end {
-                            end
-                        } else {
-                            SrcNode::new(ast::Expr::Tuple(Vec::new()), span)
-                        };
-                        ast::Expr::Block(init, last)
-                    })
-                    .map(Some),
-                Delimiter::Brace,
-                |_| None,
-            ))
-            .map(|block| block.unwrap_or(ast::Expr::Error));
+        let block = just(Token::Do)
+            .ignore_then(stmt
+                .then_ignore(just(Token::Semicolon))
+                .repeated()
+                .then(expr.clone()
+                    .map_with_span(SrcNode::new)
+                    .or_not())
+                .map_with_span(|(init, end), span| {
+                    let last = if let Some(end) = end {
+                        end
+                    } else {
+                        SrcNode::new(ast::Expr::Tuple(Vec::new()), span)
+                    };
+                    ast::Expr::Block(init, last)
+                }))
+            .then_ignore(just(Token::End));
 
         let atom = litr
             .or(ident)
@@ -645,8 +642,8 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(func)
             .or(class_access)
             .or(intrinsic)
-            .or(do_)
-            .or(return_)
+            // .or(do_)
+            // .or(return_)
             .or(cons_unit)
             .or(block)
             .or(select! { Token::Error(_) => () }.map(|_| ast::Expr::Error))

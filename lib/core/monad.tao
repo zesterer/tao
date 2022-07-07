@@ -9,7 +9,7 @@ $[lang(io_bind)]
 fn io_bind A, B : IO A -> (A -> IO B) -> IO B = a, f, uni =>
     let (uni, a) = a(uni) in
     f(a, uni)
-
+#(
 fn when A : Bool -> IO A -> IO (Maybe A) =
     | True, m => do { let x <- m; return Just x }
     \ False, _ => return None
@@ -42,3 +42,4 @@ fn fold_for_each A, B, S < Stream B : A -> (A -> B -> IO A) -> S -> IO A = a, f,
 
 fn for_each A, S < Stream A : (A -> IO ()) -> S -> IO () = f =>
     fold_for_each((), fn () => f)
+)#

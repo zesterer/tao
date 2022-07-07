@@ -14,7 +14,10 @@ fn __input : IO Str = uni => @input(uni)
 
 # High-level effect IO operations
 
-def input : input ~ Str = @{ @suspend(()) }
+def input : input ~ Str = do
+    @suspend(())
+end
 
-fn print : Str -> print ~ () =
-    s => @{ @suspend(s) }
+fn print : Str -> print ~ () = s => do
+    @suspend(s)
+end

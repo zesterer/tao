@@ -96,6 +96,7 @@ pub enum Token {
     In,
     Of,
     Do,
+    End,
     At,
     Tilde,
     Dollar,
@@ -150,6 +151,7 @@ impl fmt::Display for Token {
             Token::In => write!(f, "in"),
             Token::Of => write!(f, "of"),
             Token::Do => write!(f, "do"),
+            Token::End => write!(f, "end"),
             Token::Return => write!(f, "return"),
             Token::With => write!(f, "with"),
             Token::Effect => write!(f, "effect"),
@@ -272,6 +274,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         "in" => Token::In,
         "of" => Token::Of,
         "do" => Token::Do,
+        "end" => Token::End,
         "return" => Token::Return,
         "with" => Token::With,
         "effect" => Token::Effect,
@@ -291,9 +294,8 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
 
     let comments = just('#')
         .then_ignore(just('(')
-            .ignore_then(none_of(')').ignored().repeated())
-            .then_ignore(just(")#"))
-            .or(none_of('\n').ignored().repeated()))
+            .ignore_then(take_until(just(")#")).ignored())
+            .or(none_of('\n').ignored().repeated().ignored()))
         .padded()
         .ignored()
         .repeated();

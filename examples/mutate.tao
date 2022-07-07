@@ -6,12 +6,13 @@ effect mut A = (A -> A) => ()
 
 ## TODO: Have the compiler auto-generate this bit instead of
 ## forcing the effect user to deal with intrinsics.
-fn mut A : (A -> A) -> mut A ~ () =
-    f => @{ @suspend(f) }
+fn mut A : (A -> A) -> mut A ~ () = f => do
+    @suspend(f)
+end
 
 ## Apply a series of mutations to a value
-fn apply_to A : A -> mut A ~ () -> A =
-    x, m => let (_, x) = (m, x)
+fn apply A : mut A ~ () -> A -> A =
+    m, x => let (_, x) = (m, x)
         handle mut A with f, x => ((), x -> f)
     in x
 
@@ -21,13 +22,15 @@ fn push A : A -> mut [A] ~ () =
 
 ## Example usage
 
-def numbers = @{
+def numbers = do
     push(1)!;
     push(2)!;
     push(3)!;
     push(4)!;
-} -> apply_to(default) ## The default value of a list is just an empty list
+end
 
-def main : io ~ () =
-    ## Debug-prints '[1, 2, 3, 4]' to the console
-    print(numbers -> debug)
+## Debug-prints '[1, 2, 3, 4]' to the console
+def main : io ~ () = []
+    -> apply(numbers)
+    -> debug
+    -> print

@@ -1,7 +1,7 @@
 import "../lib/main.tao"
 
-def main : io ~ () = @{
+def main : io ~ () = do
     print("Enter your name")!;
     let name = input!;
     print("Hello " ++ name)!;
-}
+end
