@@ -326,13 +326,13 @@ impl Error {
                     format!("Nat + Nat").fg(Color::Blue),
                 )],
             ),
-            Error::NotExhaustive(span, example, is_match) => (
-                format!("{} is not exhaustive", if is_match { "Pattern match"} else { "Let" }),
-                vec![(span, format!("Pattern {} not covered", example.display(ctx, is_match).fg(Color::Red)), Color::Red)],
-                if is_match {
+            Error::NotExhaustive(span, example, hidden_outer) => (
+                format!("{} is not exhaustive", if hidden_outer { "Pattern match"} else { "Let" }),
+                vec![(span, format!("Pattern {} not covered", example.display(ctx, hidden_outer).fg(Color::Red)), Color::Red)],
+                if hidden_outer {
                     vec![format!(
                         "Add another arm like {} to ensure that this case is covered",
-                        format!("| {} => ...", example.display(ctx, is_match)).fg(Color::Blue),
+                        format!("| {} => ...", example.display(ctx, hidden_outer)).fg(Color::Blue),
                     )]
                 } else {
                     vec![format!("Let patterns must be exhaustive")]

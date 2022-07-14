@@ -472,10 +472,23 @@ impl Context {
 
         // Define datas
         for (attr, data, data_id) in datas {
-            let gen_scope = this.datas.name_gen_scope(*data.name);
+            let gen_scope_id = this.datas.name_gen_scope(*data.name);
 
-            let mut infer = Infer::new(&mut this, Some(gen_scope))
+            let mut infer = Infer::new(&mut this, Some(gen_scope_id))
                 .with_gen_scope_implied();
+
+            // Generate `Self` type
+            let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope_id);
+            let gen_tys = (0..gen_scope.len())
+                .map(|idx| {
+                    let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope_id);
+                    let span = gen_scope.get(idx).name.span();
+                    infer.insert(span, TyInfo::Gen(idx, gen_scope_id, span))
+                })
+                .collect();
+            let self_ty = infer.insert(data.name.span(), TyInfo::Data(data_id, gen_tys));
+            let mut infer = infer.with_self_var(self_ty);
+
             let variants = data.variants
                 .iter()
                 .map(|(name, ty)| {
@@ -498,7 +511,7 @@ impl Context {
                 Data {
                     name: data.name.clone(),
                     attr: attr.to_vec(),
-                    gen_scope,
+                    gen_scope: gen_scope_id,
                     cons,
                 },
             ) {

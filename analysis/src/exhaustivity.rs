@@ -215,6 +215,14 @@ impl AbstractPat {
                     }
                 }
                 for (cons, cons_ty) in &ctx.datas.get_data(data).cons {
+                    let variant_is_empty = || matches!(ctx.tys.get(ctx
+                        .datas
+                        .get_data(data)
+                        .cons
+                        .iter()
+                        .find(|(name, _)| **name == **cons)
+                        .unwrap().1), Ty::Record(fields, _) if fields.is_empty());
+
                     if let Some(variants) = variants.remove(&**cons) {
                         let get_gen_ty = |idx| match ctx.tys.get(gen_tys[idx]) {
                             Ty::Gen(idx, _) => get_gen_ty
@@ -222,13 +230,21 @@ impl AbstractPat {
                             _ => Some(gen_tys[idx]),
                         };
                         if let Some(pat) = Self::inexhaustive_pat(ctx, *cons_ty, &mut variants.into_iter(), Some(&get_gen_ty)) {
-                            return Some(ExamplePat::Variant(**cons, Box::new(pat)));
+                            return Some(ExamplePat::Variant(
+                                **cons,
+                                Box::new(pat),
+                                variant_is_empty(),
+                            ));
                         }
                     // TODO: This is ugly, but checks for inhabitants of sub-patterns, allowing things like `let Just x = Just 5`
                     } else if ctx.tys.has_inhabitants(&ctx.datas, *cons_ty, &mut |id| {
                         ctx.tys.has_inhabitants(&ctx.datas, gen_tys[id], &mut |_| true)
                     }) {
-                        return Some(ExamplePat::Variant(**cons, Box::new(ExamplePat::Wildcard)));
+                        return Some(ExamplePat::Variant(
+                            **cons,
+                            Box::new(ExamplePat::Wildcard),
+                            variant_is_empty(),
+                        ));
                     }
                 }
                 None
@@ -298,11 +314,10 @@ impl fmt::Display for ExamplePrim {
 pub enum ExamplePat {
     Wildcard,
     Prim(ExamplePrim),
-    Tuple(Vec<Self>),
     // (_, is_tuple)
     Record(Vec<(Ident, Self)>, bool),
     List(Vec<Self>),
-    Variant(Ident, Box<Self>),
+    Variant(Ident, Box<Self>, bool),
 }
 
 impl ExamplePat {
@@ -315,20 +330,12 @@ impl ExamplePat {
                 match &self.0 {
                     ExamplePat::Wildcard => write!(f, "_"),
                     ExamplePat::Prim(prim) => write!(f, "{}", prim),
-                    ExamplePat::Tuple(fields) if self.1 => write!(f, "{}", fields
-                        .iter()
-                        .map(|f| format!("{}", DisplayExamplePat(f, false, ctx)))
-                        .collect::<Vec<_>>()
-                        .join(", ")),
-                    ExamplePat::Tuple(fields) => write!(f, "({}{})", fields
-                        .iter()
-                        .map(|f| format!("{}", DisplayExamplePat(f, false, ctx)))
-                        .collect::<Vec<_>>()
-                        .join(", "), if fields.len() == 1 { "," } else { "" }),
+                    ExamplePat::Record(fields, true) if self.1 => write!(f, "{}", fields.iter().map(|(name, f)| format!("{}", DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(", ")),
                     ExamplePat::Record(fields, true) => write!(f, "({})", fields.iter().map(|(name, f)| format!("{},", DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(" ")),
                     ExamplePat::Record(fields, false) => write!(f, "{{ {} }}", fields.iter().map(|(name, f)| format!("{}: {},", name, DisplayExamplePat(f, false, ctx))).collect::<Vec<_>>().join(" ")),
                     ExamplePat::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExamplePat(i, false, ctx))).collect::<Vec<_>>().join(", ")),
-                    ExamplePat::Variant(name, inner) => write!(f, "{} {}", name, DisplayExamplePat(inner, false, ctx)),
+                    ExamplePat::Variant(name, inner, false) => write!(f, "{} {}", name, DisplayExamplePat(inner, false, ctx)),
+                    ExamplePat::Variant(name, inner, true) => write!(f, "{}", name),
                 }
             }
         }
