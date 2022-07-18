@@ -430,11 +430,11 @@ impl Error {
                 vec![format!("All lang items must be defined")],
             ),
             Error::NoBasin(span) => (
-                format!("Effect propagated, but no handler exists to catch it"/*, display(eff_ty).fg(Color::Yellow)*/),
+                format!("Effect propagated, but nothing catches it"/*, display(eff_ty).fg(Color::Yellow)*/),
                 vec![
                     (span, format!("Nothing catches this propagation"), Color::Red),
                 ],
-                vec![format!("Place this expression within a {} block", "@{ ... }".fg(Color::Blue))],
+                vec![format!("Place this expression within a {} block", "effect { ... }".fg(Color::Blue))],
             ),
         };
 
