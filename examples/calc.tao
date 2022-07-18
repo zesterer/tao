@@ -1,7 +1,7 @@
 import "../lib/main.tao"
 import "../lib/parse.tao"
 
-def prompt : io ~ () = do {
+def prompt : io ~ () = effect {
     let line = input!;
     if line = "q"
     then ()
@@ -10,10 +10,10 @@ def prompt : io ~ () = do {
             | Ok expr => print(expr->eval->show)!
             \ Err err => print("Failed to parse '" ++ line ++ "': " ++ err->show)!;
         prompt!;
-    }!
+    }
 }
 
-def main : io ~ () = do {
+def main : io ~ () = effect {
     print("Enter an expression (q to quit)")!;
     prompt!;
 }

@@ -31,7 +31,7 @@ fn describe : State -> io ~ () = state => do {
     print("You can go...")!;
     state.loc
         -> directions
-        -> fold(do {}, fn prev, (dir, _) => do {
+        -> fold(effect {}, fn prev, (dir, _) => do {
             prev!;
             print("- " ++ dir)!;
         })!;
@@ -60,18 +60,18 @@ fn game_loop : State -> io ~ () = state => do {
         | "help" => do {
             print("Commands: 'help', 'quit', 'look', 'grab'")!;
             Next None
-        }!
+        }
         | "look" => do {
             state->describe!;
             Next None
-        }!
+        }
         | "grab" => Next Just Grab
         \ other => match state.loc->directions->find_first(fn (name, _) => name = cmd) in
             | Just (_, loc) => Next Just MoveTo loc
             \ None => do {
                 print("Unknown command '" ++ cmd ++ "'")!;
                 Next None
-            }!
+            }
     );
     match res in
         | Next Just event => game_loop(state->apply(event)!)!
@@ -79,7 +79,7 @@ fn game_loop : State -> io ~ () = state => do {
         \ Done => ()
 }
 
-def main : io ~ () = do {
+def main : io ~ () = effect {
     print("Welcome to the adventure game!")!;
     print("Type 'help' to get started.")!;
     game_loop(default_state)!;

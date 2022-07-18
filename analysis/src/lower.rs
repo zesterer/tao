@@ -798,7 +798,11 @@ impl ToHir for ast::Expr {
             },
             ast::Expr::Func(arms) => {
                 // Effects cannot be propagated from function bodies to their environment
-                let scope = &scope.without_basin();
+                // let scope = &scope.without_basin();
+
+                let eff = infer.insert_effect(self.span(), EffectInfo::Open(Vec::new()));
+                // Collect effects into this basin
+                let scope = scope.with_basin(eff);
 
                 // TODO: Don't always refuse 0-branch functions? Can they be useful with never types?
                 if let Some(first_arm) = arms.first() {
@@ -835,7 +839,7 @@ impl ToHir for ast::Expr {
                         let arms = arms
                             .iter()
                             .map(|(bindings, body)| {
-                                let binding = tupleify_binding(bindings, cfg, infer, scope);
+                                let binding = tupleify_binding(bindings, cfg, infer, &scope);
                                 infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
                                 let body = body.to_hir(cfg, infer, &scope.with_many(&binding.get_binding_tys()));
                                 infer.make_flow(body.meta().1, output_ty, EqInfo::new(self.span(), format!("Branches must produce compatible values")));
@@ -844,11 +848,17 @@ impl ToHir for ast::Expr {
                             .collect();
 
                         let pred_meta = *pred.meta();
+
+                        let branches = InferNode::new(hir::Expr::Match(true, pred, arms), (self.span(), output_ty));
+
+                        let opaque = infer.opaque(self.span(), true /* false */); // TODO: `false` instead?
+                        let output = infer.insert(self.span(), TyInfo::Effect(eff, branches.meta().1, opaque));
+
                         let f = pseudos
                             .into_iter()
                             .rev()
                             .fold(
-                                InferNode::new(hir::Expr::Match(true, pred, arms), (self.span(), output_ty)),
+                                InferNode::new(hir::Expr::Basin(eff, branches), (self.span(), output)),
                                 |body, (pseudo, pseudo_ty)| {
                                     let f = infer.insert(self.span(), TyInfo::Func(pseudo_ty, body.meta().1));
                                     InferNode::new(hir::Expr::Func(InferNode::new(*pseudo, pred_meta), body), (self.span(), f))
@@ -1113,52 +1123,20 @@ impl ToHir for ast::Expr {
 
                 (TyInfo::Ref(record.meta().1), hir::Expr::Update(record, fields))
             },
-            ast::Expr::Block(init, last) => {
+            ast::Expr::Basin(init, last) => {
                 let eff = infer.insert_effect(self.span(), EffectInfo::Open(Vec::new()));
 
                 // Collect effects into this basin
                 let scope = scope.with_basin(eff);
 
-                fn gen_block(
-                    infer: &mut Infer,
-                    cfg: &<ast::Expr as ToHir>::Cfg,
-                    init: &[(Option<SrcNode<ast::Binding>>, SrcNode<ast::Expr>)],
-                    last: &SrcNode<ast::Expr>,
-                    scope: &Scope,
-                ) -> InferExpr {
-                    match init {
-                        [(lhs, rhs), init @ ..] => {
-                            let rhs = rhs.to_hir(cfg, infer, scope);
-
-                            let lhs = match lhs {
-                                None => InferNode::new(hir::Binding {
-                                        pat: SrcNode::new(hir::Pat::Wildcard, rhs.meta().0),
-                                        name: None,
-                                    }, *rhs.meta()),
-                                Some(lhs) => lhs.to_hir(cfg, infer, scope),
-                            };
-
-                            let lhs_bindings = lhs.get_binding_tys();
-                            let scope = scope.with_many(&lhs_bindings);
-
-                            infer.make_flow(rhs.meta().1, lhs.meta().1, EqInfo::default());
-
-                            let then = gen_block(infer, cfg, init, last, &scope);
-                            let then_meta = *then.meta();
-
-                            InferNode::new(hir::Expr::Match(false, rhs, vec![(
-                                lhs,
-                                then,
-                            )]), then_meta)
-                        },
-                        [] => last.to_hir(cfg, infer, scope),
-                    }
-                }
-
                 let expr = gen_block(infer, cfg, &init, last, &scope);
 
                 let opaque = infer.opaque(self.span(), true /* false */); // TODO: `false` instead?
                 (TyInfo::Effect(eff, expr.meta().1, opaque), hir::Expr::Basin(eff, expr))
+            },
+            ast::Expr::Block(init, last) => {
+                let expr = gen_block(infer, cfg, &init, last, &scope);
+                (TyInfo::Ref(expr.meta().1), expr.into_inner())
             },
             ast::Expr::Handle { expr, handlers } => {
                 let expr = expr.to_hir(cfg, infer, &scope);
@@ -1267,6 +1245,42 @@ impl ToHir for ast::Expr {
         };
 
         InferNode::new(expr, (span, infer.insert(span, info)))
+    }
+}
+
+fn gen_block(
+    infer: &mut Infer,
+    cfg: &<ast::Expr as ToHir>::Cfg,
+    init: &[(Option<SrcNode<ast::Binding>>, SrcNode<ast::Expr>)],
+    last: &SrcNode<ast::Expr>,
+    scope: &Scope,
+) -> InferExpr {
+    match init {
+        [(lhs, rhs), init @ ..] => {
+            let rhs = rhs.to_hir(cfg, infer, scope);
+
+            let lhs = match lhs {
+                None => InferNode::new(hir::Binding {
+                        pat: SrcNode::new(hir::Pat::Wildcard, rhs.meta().0),
+                        name: None,
+                    }, *rhs.meta()),
+                Some(lhs) => lhs.to_hir(cfg, infer, scope),
+            };
+
+            let lhs_bindings = lhs.get_binding_tys();
+            let scope = scope.with_many(&lhs_bindings);
+
+            infer.make_flow(rhs.meta().1, lhs.meta().1, EqInfo::default());
+
+            let then = gen_block(infer, cfg, init, last, &scope);
+            let then_meta = *then.meta();
+
+            InferNode::new(hir::Expr::Match(false, rhs, vec![(
+                lhs,
+                then,
+            )]), then_meta)
+        },
+        [] => last.to_hir(cfg, infer, scope),
     }
 }
 

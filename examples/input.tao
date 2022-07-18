@@ -1,6 +1,6 @@
 import "../lib/main.tao"
 
-def main : io ~ () = do {
+def main : io ~ () = effect {
     print("Enter your name")!;
     let name = input!;
     print("Hello " ++ name)!;

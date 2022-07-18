@@ -88,6 +88,7 @@ trait FlowInfer<'a>: AsRef<Infer<'a>> {
     fn set_unknown_flow(&mut self, x: TyVar, y: TyVar);
     fn emit_error(&mut self, err: InferError);
     fn make_check_eff(&mut self, x: (EffectVar, TyVar), y: (EffectVar, TyVar)) -> bool;
+    fn make_check_eff_empty(&mut self, x: (EffectVar, TyVar), other: TyVar) -> bool;
 }
 
 struct CheckFlow<'a, 'b>(&'b Infer<'a>, Option<bool>);
@@ -103,6 +104,7 @@ impl<'a, 'b> FlowInfer<'a> for CheckFlow<'a, 'b> {
     fn set_unknown_flow(&mut self, x: TyVar, y: TyVar) { if self.1 == Some(true) { self.1 = None; } }
     fn emit_error(&mut self, err: InferError) { self.1 = Some(false); }
     fn make_check_eff(&mut self, x: (EffectVar, TyVar), y: (EffectVar, TyVar)) -> bool { false }
+    fn make_check_eff_empty(&mut self, x: (EffectVar, TyVar), other: TyVar) -> bool { false }
 }
 
 // (_, widen_rhs)
@@ -124,6 +126,10 @@ impl<'a, 'b> FlowInfer<'a> for MakeFlow<'a, 'b> {
     }
     fn make_check_eff(&mut self, x: (EffectVar, TyVar), y: (EffectVar, TyVar)) -> bool {
         self.0.constraints.push_back(Constraint::CheckFlowEffect(x, y));
+        true
+    }
+    fn make_check_eff_empty(&mut self, x: (EffectVar, TyVar), other: TyVar) -> bool {
+        self.0.constraints.push_back(Constraint::CheckEffectEmpty(x, other));
         true
     }
 }
@@ -155,6 +161,7 @@ enum Constraint {
     ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     EffectSendRecv(EffectInstVar, TyVar, TyVar, Span),
     CheckFlowEffect((EffectVar, TyVar), (EffectVar, TyVar)),
+    CheckEffectEmpty((EffectVar, TyVar), TyVar),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -478,6 +485,8 @@ impl<'a> Infer<'a> {
             },
             Ty::Effect(eff, out) => match self.ctx.tys.get_effect(eff) {
                 Effect::Error => TyInfo::Error(ErrorReason::Invalid),
+                // Empty effect sets get flattened
+                Effect::Known(effs) if effs.is_empty() => return self.instantiate(out, span, f, self_ty),
                 Effect::Known(effs) => {
                     let eff_info = EffectInfo::Closed(effs
                         .into_iter()
@@ -784,6 +793,18 @@ impl<'a> Infer<'a> {
     }
 
     // TODO: Allow errors that mention effects instead of types
+    fn check_eff_empty(
+        &self,
+        (x, x_ty): (EffectVar, TyVar),
+    ) -> Option<bool> {
+        match self.follow_effect(x) {
+            EffectInfo::Ref(x) => self.check_eff_empty((x, x_ty)),
+            EffectInfo::Unknown => None,
+            EffectInfo::Open(x_effs) | EffectInfo::Closed(x_effs) => Some(x_effs.is_empty()),
+        }
+    }
+
+    // TODO: Allow errors that mention effects instead of types
     fn flow_effect<'b, I: FlowInfer<'b>>(
         infer: &mut I,
         (x, x_ty): (EffectVar, TyVar),
@@ -931,6 +952,18 @@ impl<'a> Infer<'a> {
                 let opaque_err = Self::flow_inner(infer, x_opaque, y_opaque).err().map(|_| (x, y));
                 o_err.or(eff_err).or(opaque_err).map(Err).unwrap_or(Ok(()))
             },
+            (TyInfo::Effect(x_eff, x_out, x_opaque), y_info) if !matches!(y_info, TyInfo::Unknown(_)) => {
+                infer.make_check_eff_empty((x_eff, x), y);
+                let o_err = Self::flow_inner(infer, x_out, y).err();
+                // TODO: opaque_err?
+                o_err.map(Err).unwrap_or(Ok(()))
+            },
+            (x_info, TyInfo::Effect(y_eff, y_out, y_opaque)) if !matches!(x_info, TyInfo::Unknown(_)) => {
+                infer.make_check_eff_empty((y_eff, y), x);
+                let o_err = Self::flow_inner(infer, x, y_out).err();
+                // TODO: opaque_err?
+                o_err.map(Err).unwrap_or(Ok(()))
+            },
             (TyInfo::Opaque(x_id, _), TyInfo::Opaque(y_id, _)) if x_id == y_id => Ok(()),
             (TyInfo::Opaque(x_id, relaxed_x), TyInfo::Opaque(y_id, relaxed_y)) if relaxed_x || relaxed_y => {
                 if relaxed_y {
@@ -999,6 +1032,7 @@ impl<'a> Infer<'a> {
                 let eff = match self.follow_effect(eff) {
                     EffectInfo::Unknown => eff,
                     EffectInfo::Ref(_) => unreachable!(), // `follow_effect` shouldn't ever return Ref
+                    // TODO: Is it sound to recreate the effects if effect sets can grow?
                     EffectInfo::Open(effs) => {
                         let effs = effs
                             .iter()
@@ -1056,6 +1090,16 @@ impl<'a> Infer<'a> {
                 Some(true)
             } else {
                 Some(false)
+            },
+            TyInfo::Effect(eff, out, _) => {
+                let res = self.resolve_access(out, field_name, field, flow_out);
+
+                // If projecting through the effect worked, make sure that the effect ends up being empty eventually
+                if res == Some(true) {
+                    self.constraints.push_back(Constraint::CheckEffectEmpty((eff, record), out));
+                }
+
+                res
             },
             // Field access through a data type
             TyInfo::Data(data, params) => {
@@ -1183,10 +1227,18 @@ impl<'a> Infer<'a> {
                 },
             },
             Constraint::CheckFlowEffect((x, x_ty), (y, y_ty)) => self.check_flow_eff((x, x_ty), (y, y_ty))
-                .map(|ok| if ok {
-                    Ok(())
+                .and_then(|ok| if ok {
+                    Some(Ok(()))
                 } else {
-                    Err(InferError::CannotCoerce(x_ty, y_ty, None, EqInfo::default()))
+                    None
+                    // Err(InferError::CannotCoerce(x_ty, y_ty, None, EqInfo::default()))
+                }),
+            Constraint::CheckEffectEmpty((x, x_ty), other) => self.check_eff_empty((x, x_ty))
+                .and_then(|ok| if ok {
+                    Some(Ok(()))
+                } else {
+                    None
+                    // Err(InferError::CannotCoerce(x_ty, other, None, EqInfo::default()))
                 }),
         }
     }
@@ -1351,6 +1403,9 @@ impl<'a> Infer<'a> {
             (TyInfo::Assoc(x, class_x, assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
                 if assoc_x == assoc_y => Some(self.var_covers_var(x, y)? && self.class_covers_class(class_x, class_y)?),
             (TyInfo::SelfType, TyInfo::SelfType) => Some(true),
+            // TODO: This probably isn't correct by itself, we need to enforce that `eff` is indeed empty for this to
+            // be valid
+            (TyInfo::Effect(_eff, out, _), _) => self.var_covers_var(out, ty),
             (_, _) => Some(false),
         }
     }
@@ -1412,6 +1467,11 @@ impl<'a> Infer<'a> {
                         .zip(args_y.into_iter())
                         .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, gens)?))?,
                 }),
+            // TODO: This probably isn't correct by itself, we need to enforce that `eff` is indeed empty for this to
+            // be valid
+            (TyInfo::Effect(_eff, out, _), _) => self.covers_var(out, ty, gens),
+            // (_, Ty::Effect(_eff, out)) => self.covers_var(var, out, gens),
+
             // Unknown types *could* match, maybe
             (TyInfo::Unknown(_), _) => Ok(false),
             _ => Err(()),
@@ -1759,6 +1819,7 @@ impl<'a> Infer<'a> {
                 },
                 Constraint::EffectSendRecv(eff, send, recv, span) => errors.push(InferError::CannotInferEffect(eff)),
                 Constraint::CheckFlowEffect((_, x_ty), (_, y_ty)) => errors.push(InferError::CannotCoerce(x_ty, y_ty, None, EqInfo::default())),
+                Constraint::CheckEffectEmpty((_, x_ty), other) => errors.push(InferError::CannotCoerce(x_ty, other, None, EqInfo::default())),
             }
         }
 
@@ -1848,7 +1909,10 @@ impl<'a> Checked<'a> {
                         .map(|arg| self.reify_inner(arg))
                         .collect()), assoc),
                 },
-                TyInfo::Effect(eff, out, _opaque) => Ty::Effect(self.reify_effect(eff), self.reify_inner(out)),
+                TyInfo::Effect(eff, out, _opaque) => match self.reify_effect(eff) {
+                    Some(eff) => Ty::Effect(eff, self.reify_inner(out)),
+                    None => return self.reify_inner(out),
+                },
             };
             self.infer.ctx.tys.insert(self.infer.span(var), ty)
         }
@@ -1872,13 +1936,14 @@ impl<'a> Checked<'a> {
     }
 
     // None means that there is no effect
-    pub fn reify_effect(&mut self, var: EffectVar) -> EffectId {
+    pub fn reify_effect(&mut self, var: EffectVar) -> Option<EffectId> {
         let eff = if let Some(eff) = self.eff_cache.get(&var) {
             *eff
         } else {
             let eff = match self.infer.follow_effect(var) {
                 EffectInfo::Unknown => Effect::Error,
                 EffectInfo::Ref(_) => unreachable!(),
+                EffectInfo::Open(effs) | EffectInfo::Closed(effs) if effs.is_empty() => return None,
                 EffectInfo::Open(effs) | EffectInfo::Closed(effs) => {
                     let mut effs = effs
                         .into_iter()
@@ -1905,7 +1970,7 @@ impl<'a> Checked<'a> {
             self.infer.ctx.tys.insert_effect(self.infer.effect_span(var), eff)
         };
         self.eff_cache.insert(var, eff);
-        eff
+        Some(eff)
     }
 
     pub fn reify_class(&mut self, class: ClassVar) -> Option<(ClassId, Vec<TyId>)> {

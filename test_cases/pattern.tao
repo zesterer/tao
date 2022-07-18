@@ -1,0 +1,23 @@
+import "../lib/main.tao"
+
+data Value U =
+    | Unknown U
+    | Nat Nat
+    \ List [Self]
+
+type KnownValue = Value Never
+type MaybeValue = Value ()
+
+member Value Never of Show =
+    => show = fn
+        | Nat x => x->show
+        \ List xs => "[" ++ xs->show ++ "]"
+
+for A member Value A of Show =
+    => show = fn
+        | Unknown _ => "unknown"
+        | Nat x => x->show
+        \ List xs => "[" ++ xs->show ++ "]"
+
+def main : io ~ () =
+    print((List [Nat 4, Nat 3]) -> show)

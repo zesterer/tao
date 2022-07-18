@@ -214,6 +214,7 @@ pub enum Expr {
     ClassAccess(SrcNode<Type>, SrcNode<Ident>),
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Update(SrcNode<Self>, Vec<(SrcNode<Ident>, SrcNode<Self>)>),
+    Basin(Vec<(Option<SrcNode<Binding>>, SrcNode<Self>)>, SrcNode<Self>),
     Block(Vec<(Option<SrcNode<Binding>>, SrcNode<Self>)>, SrcNode<Self>),
     Handle {
         expr: SrcNode<Self>,

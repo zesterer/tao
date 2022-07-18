@@ -611,8 +611,27 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .then(expr.clone().map_with_span(SrcNode::new))
             .map(|(lhs, rhs)| (Some(lhs), rhs))
             .or(expr.clone().map_with_span(SrcNode::new).map(|rhs| (None, rhs)));
-        // @{ x; y; z }
-        // TODO: Come up with a better syntax
+
+        let basin = just(Token::Effect)
+            .ignore_then(nested_parser(
+                stmt.clone()
+                    .then_ignore(just(Token::Semicolon))
+                    .repeated()
+                    .then(expr.clone()
+                        .map_with_span(SrcNode::new)
+                        .or_not())
+                    .map_with_span(|(init, end), span| {
+                        let last = if let Some(end) = end {
+                            end
+                        } else {
+                            SrcNode::new(ast::Expr::Tuple(Vec::new()), span)
+                        };
+                        ast::Expr::Basin(init, last)
+                    }),
+                Delimiter::Brace,
+                |_| ast::Expr::Error,
+            ));
+
         let block = just(Token::Do)
             .ignore_then(nested_parser(
                 stmt
@@ -648,6 +667,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             // .or(do_)
             // .or(return_)
             .or(cons_unit)
+            .or(basin)
             .or(block)
             .or(select! { Token::Error(_) => () }.map(|_| ast::Expr::Error))
             .map_with_span(SrcNode::new)

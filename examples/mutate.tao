@@ -6,9 +6,7 @@ effect mut A = (A -> A) => ()
 
 ## TODO: Have the compiler auto-generate this bit instead of
 ## forcing the effect user to deal with intrinsics.
-fn mut A : (A -> A) -> mut A ~ () = f => do {
-    @suspend(f)
-}
+fn mut A : (A -> A) -> mut A ~ () = f => @suspend(f)
 
 ## Apply a series of mutations to a value
 fn apply A : mut A ~ () -> A -> A =
@@ -18,11 +16,11 @@ fn apply A : mut A ~ () -> A -> A =
 
 ## A mutation that pushes an element to the end of a list
 fn push A : A -> mut [A] ~ () =
-    x => mut(fn xs => xs ++ [x])
+    x => mut(fn xs => xs ++ [x])!
 
 ## Example usage
 
-def numbers = do {
+def numbers = effect {
     push(1)!;
     push(2)!;
     push(3)!;

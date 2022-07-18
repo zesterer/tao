@@ -40,33 +40,25 @@ member State of Default =
     }
 
 fn exec : State -> Instr -> io ~ State =
-    | state, Left => do {
-        state with {
-            ptr: match state.ptr in
-                | 0 => 9999
-                \ l + 1 => l
-        }
+    | state, Left => state with {
+        ptr: match state.ptr in
+            | 0 => 9999
+            \ l + 1 => l
     }
-    | state, Right => do {
-        state with {
-            ptr: match state.ptr in
-                | 9999 => 0
-                \ l => l + 1
-        }
+    | state, Right => state with {
+        ptr: match state.ptr in
+            | 9999 => 0
+            \ l => l + 1
     }
-    | state, Incr => do {
-        state with {
-            tape: state.tape->swap(state.ptr, fn
-                | 255 => 0
-                \ n => n + 1)
-        }
+    | state, Incr => state with {
+        tape: state.tape->swap(state.ptr, fn
+            | 255 => 0
+            \ n => n + 1)
     }
-    | state, Decr => do {
-        state with {
-            tape: state.tape->swap(state.ptr, fn
-                | 0 => 255
-                \ n + 1 => n)
-        }
+    | state, Decr => state with {
+        tape: state.tape->swap(state.ptr, fn
+            | 0 => 255
+            \ n + 1 => n)
     }
     | state, Read => do {
         print("Read not supported yet")!;
@@ -80,27 +72,25 @@ fn exec : State -> Instr -> io ~ State =
         }
         | Just n + 32 => match " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
             -> nth(n) in
-            | Just c => do {
-                state with { stdout: state.stdout ++ [c] }
-            }
-            \ None => do { state }
-        \ _ => do { state }
+            | Just c => state with { stdout: state.stdout ++ [c] }
+            \ None => state
+        \ _ => state
     \ state, Loop xs => match state.tape->nth(state.ptr) in
-        | Just 0 => do { state }
+        | Just 0 => state
         | Just _ => do {
             let state = exec_all(state, xs)!;
             exec(state, Loop xs)!
         }
-        \ None => do { state }
+        \ None => state
 
 fn exec_all : State -> [Instr] -> io ~ State =
-    | state, [] => do { state }
+    | state, [] => state
     \ state, [x .. xs] => do {
         let state = exec(state, x)!;
         exec_all(state, xs)!
     }
 
-def main : io ~ () = do {
+def main : io ~ () = effect {
     let (xs, _) = "
         [sierpinski.b -- display Sierpinski triangle
         (c) 2016 Daniel B. Cristofani
