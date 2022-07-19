@@ -104,14 +104,32 @@ pub fn enforce_generic_obligations(
         Err(())
     } else {
         for member in gen_scope.implied_members.as_ref().expect("Implied members must be available").clone() {
-            let member_ty = infer.instantiate(*member.member, member.member.span(), &mut |idx, _, _| params.get(idx).copied(), self_ty);
+            let member_ty = infer.instantiate(
+                *member.member,
+                member.member.span(),
+                &mut |idx, _, _| params.get(idx).copied(),
+                &mut |idx, _| todo!(),
+                self_ty,
+            );
             let args = member.args
                 .iter()
-                .map(|arg| infer.instantiate(*arg, member.member.span(), &mut |idx, _, _| params.get(idx).copied(), self_ty))
+                .map(|arg| infer.instantiate(
+                    *arg,
+                    member.member.span(),
+                    &mut |idx, _, _| params.get(idx).copied(),
+                    &mut |idx, _| todo!(),
+                    self_ty,
+                ))
                 .collect();
             let assoc = match &member.items {
                 ImpliedItems::Eq(assoc) => assoc.iter()
-                    .map(|(name, assoc)| (name.clone(), infer.instantiate(*assoc, member.member.span(), &mut |idx, _, _| params.get(idx).copied(), self_ty)))
+                    .map(|(name, assoc)| (name.clone(), infer.instantiate(
+                        *assoc,
+                        member.member.span(),
+                        &mut |idx, _, _| params.get(idx).copied(),
+                        &mut |idx, _| todo!(),
+                        self_ty,
+                    )))
                     .collect(),
                 ImpliedItems::Real(_) => Vec::new(),
             };
@@ -220,7 +238,13 @@ impl ToHir for ast::Type {
                                     infer.ctx_mut().emit(err);
                                     TyInfo::Error(ErrorReason::Unknown)
                                 },
-                                Ok(()) => TyInfo::Ref(infer.instantiate(alias_ty, self.span(), &mut get_gen, None)),
+                                Ok(()) => TyInfo::Ref(infer.instantiate(
+                                    alias_ty,
+                                    self.span(),
+                                    &mut get_gen,
+                                    &mut |idx, _| todo!(),
+                                    None,
+                                )),
                             }
                         } else {
                             let err_ty = infer.insert(self.span(), TyInfo::Error(ErrorReason::Unknown));
@@ -298,41 +322,48 @@ impl ToHir for ast::Type {
                         .map(|param| param.to_hir(cfg, infer, scope).meta().1)
                         .collect::<Vec<_>>();
 
-                    match infer.ctx().effects.lookup(**name) {
-                        Some(Ok(eff_id)) => {
-                            let eff = infer.ctx().effects.get_decl(eff_id);
-                            let eff_gen_scope = eff.gen_scope;
-                            let eff_span = eff.name.span();
-                            eff_insts.push(match enforce_generic_obligations(
-                                infer,
-                                eff_gen_scope,
-                                &params,
-                                self.span(),
-                                eff_span,
-                                None,
-                            ) {
-                                Ok(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Known(eff_id, params)),
-                                Err(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Unknown),
-                            });
-                        },
-                        Some(Err(eff)) => {
-                            fn build_effect_set(infer: &mut Infer, eff_insts: &mut Vec<EffectInstVar>, eff: EffectAliasId) {
-                                match &infer.ctx().effects.get_alias(eff).effects {
-                                    Some(effs) => {
-                                        for (name, params) in effs.clone() {
-                                            eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Known(*name, Vec::new())));
-                                            assert_eq!(params.len(), 0);
-                                        }
-                                    },
-                                    None => todo!("Effect alias cycle, should generate an error"),
+                    if let Some((idx, _)) = infer
+                        .gen_scope()
+                        .and_then(|gen_scope_id| infer.ctx().tys.get_gen_scope(gen_scope_id).find_eff(**name))
+                    {
+                        eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Gen(idx)));
+                    } else {
+                        match infer.ctx().effects.lookup(**name) {
+                            Some(Ok(eff_id)) => {
+                                let eff = infer.ctx().effects.get_decl(eff_id);
+                                let eff_gen_scope = eff.gen_scope;
+                                let eff_span = eff.name.span();
+                                eff_insts.push(match enforce_generic_obligations(
+                                    infer,
+                                    eff_gen_scope,
+                                    &params,
+                                    self.span(),
+                                    eff_span,
+                                    None,
+                                ) {
+                                    Ok(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Known(eff_id, params)),
+                                    Err(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Error),
+                                });
+                            },
+                            Some(Err(eff)) => {
+                                fn build_effect_set(infer: &mut Infer, eff_insts: &mut Vec<EffectInstVar>, eff: EffectAliasId) {
+                                    match &infer.ctx().effects.get_alias(eff).effects {
+                                        Some(effs) => {
+                                            for (name, params) in effs.clone() {
+                                                eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Known(*name, Vec::new())));
+                                                assert_eq!(params.len(), 0);
+                                            }
+                                        },
+                                        None => todo!("Effect alias cycle, should generate an error"),
+                                    }
                                 }
-                            }
-                            build_effect_set(infer, &mut eff_insts, eff);
-                        },
-                        None => {
-                            infer.ctx_mut().emit(Error::NoSuchEffect(name.clone()));
-                            eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Unknown));
-                        },
+                                build_effect_set(infer, &mut eff_insts, eff);
+                            },
+                            None => {
+                                infer.ctx_mut().emit(Error::NoSuchEffect(name.clone()));
+                                eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Error));
+                            },
+                        }
                     }
                 }
                 TyInfo::Effect(infer.insert_effect(self.span(), EffectInfo::Closed(eff_insts)), out, opaque)
@@ -478,7 +509,13 @@ impl ToHir for ast::Binding {
                     let data_gen_scope = data.gen_scope;
                     let mut get_gen = |index, _, infer: &mut Infer| generic_tys.get(index).copied();
 
-                    infer.instantiate(inner_ty, inner.span(), &mut get_gen, None)
+                    infer.instantiate(
+                        inner_ty,
+                        inner.span(),
+                        &mut get_gen,
+                        &mut |idx, _| todo!(),
+                        None,
+                    )
                 };
 
                 let inner = inner.to_hir(cfg, infer, scope);
@@ -537,7 +574,13 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
             .map(|body| body.meta().1))
     {
         // Bit messy, makes sure that we don't accidentally infer a bad type backwards
-        let def_ty_actual = infer.instantiate(body_ty, span_override, &mut get_gen, None);
+        let def_ty_actual = infer.instantiate(
+            body_ty,
+            span_override,
+            &mut get_gen,
+            &mut |idx, _| todo!(),
+            None,
+        );
         let def_ty = infer.unknown(span);
         infer.make_flow(def_ty_actual, def_ty, EqInfo::from(inst_span));
         Some(def_ty)
@@ -921,7 +964,13 @@ impl ToHir for ast::Expr {
                     let data_gen_scope = data.gen_scope;
                     let mut get_gen = |index, _, infer: &mut Infer| generic_tys.get(index).copied();
 
-                    infer.instantiate(inner_ty, name.span(), &mut get_gen, None)
+                    infer.instantiate(
+                        inner_ty,
+                        name.span(),
+                        &mut get_gen,
+                        &mut |idx, _| todo!(),
+                        None,
+                    )
                 };
 
                 let inner = inner.to_hir(cfg, infer, scope);
@@ -1270,7 +1319,7 @@ fn gen_block(
             let lhs_bindings = lhs.get_binding_tys();
             let scope = scope.with_many(&lhs_bindings);
 
-            infer.make_flow(rhs.meta().1, lhs.meta().1, EqInfo::default());
+            infer.make_flow(rhs.meta().1, lhs.meta().1, EqInfo::from(rhs.meta().0));
 
             let then = gen_block(infer, cfg, init, last, &scope);
             let then_meta = *then.meta();

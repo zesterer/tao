@@ -26,7 +26,7 @@ impl Meta for TyMeta {
     type Class = Option<(ClassId, Vec<TyId>)>; // Required because we don't have proper error classes yet
     type Global = (DefId, Vec<Self>);
     type Effect = EffectId;
-    type EffectInst = Result<(EffectDeclId, Vec<Self::Ty>), ()>;
+    type EffectInst = Result<EffectInst, ()>;
 }
 
 impl Meta for ConMeta {

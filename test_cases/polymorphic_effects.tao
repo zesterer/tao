@@ -1,0 +1,10 @@
+import "../lib/main.tao"
+
+fn map_eff A, B, e : (A -> e ~ B) -> [A] -> [B] =
+    | _, [] => []
+    \ f, [x .. xs] => [x->f! .. xs->map_eff(f)!]
+
+def main : io ~ () = do {
+    [1, 2, 3]->map_eff(fn x => x->show)!;
+    print("Hello, world!")!;
+}

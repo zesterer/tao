@@ -20,7 +20,7 @@ fn push A : A -> mut [A] ~ () =
 
 ## Example usage
 
-def numbers = effect {
+def numbers = do {
     push(1)!;
     push(2)!;
     push(3)!;
@@ -31,4 +31,4 @@ def numbers = effect {
 def main : io ~ () = []
     -> apply(numbers)
     -> debug
-    -> print
+    -> print!

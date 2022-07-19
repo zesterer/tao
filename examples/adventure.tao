@@ -79,7 +79,7 @@ fn game_loop : State -> io ~ () = state => do {
         \ Done => ()
 }
 
-def main : io ~ () = effect {
+def main : io ~ () = do {
     print("Welcome to the adventure game!")!;
     print("Type 'help' to get started.")!;
     game_loop(default_state)!;

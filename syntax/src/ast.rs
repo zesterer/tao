@@ -243,15 +243,22 @@ pub struct GenericTy {
     pub name: SrcNode<Ident>,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct GenericEffect {
+    pub name: SrcNode<Ident>,
+}
+
 #[derive(Debug, PartialEq, Default)]
 pub struct Generics {
     pub tys: Vec<GenericTy>,
+    pub effs: Vec<GenericEffect>,
     pub implied_members: Vec<SrcNode<ImpliedMember>>,
 }
 
 impl Generics {
     pub fn from_tys_and_implied(
         tys: Vec<(ast::GenericTy, Vec<SrcNode<ast::ImpliedMember>>)>,
+        effs: Vec<ast::GenericEffect>,
         mut implied_members: Vec<SrcNode<ast::ImpliedMember>>,
     ) -> Self {
         Self {
@@ -262,6 +269,7 @@ impl Generics {
                     ty
                 })
                 .collect(),
+            effs,
             implied_members,
         }
     }

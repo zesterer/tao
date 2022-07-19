@@ -90,7 +90,7 @@ fn exec_all : State -> [Instr] -> io ~ State =
         exec_all(state, xs)!
     }
 
-def main : io ~ () = effect {
+def main : io ~ () = do {
     let (xs, _) = "
         [sierpinski.b -- display Sierpinski triangle
         (c) 2016 Daniel B. Cristofani

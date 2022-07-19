@@ -53,9 +53,15 @@ pub enum Ty {
 pub type TyId = Id<(Span, Ty)>;
 
 #[derive(Clone, Debug)]
+pub enum EffectInst {
+    Concrete(EffectDeclId, Vec<TyId>),
+    Gen(usize),
+}
+
+#[derive(Clone, Debug)]
 pub enum Effect {
     Error,
-    Known(Vec<Result<(EffectDeclId, Vec<TyId>), ()>>),
+    Known(Vec<Result<EffectInst, ()>>),
 }
 
 pub type EffectId = Id<(Span, Effect)>;
@@ -106,13 +112,16 @@ impl Types {
             (Effect::Known(xs), Effect::Known(ys)) => xs.len().cmp(&ys.len()).then_with(|| xs
                 .into_iter()
                 .zip(ys)
-                .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| x.cmp(&y).then_with(|| match (x, y) {
-                    (Ok((x, xs)), Ok((y, ys))) => xs
-                        .into_iter()
-                        .zip(ys)
-                        .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y))),
-                    (_, _) => Ordering::Equal, // Errors always equal (bad?)
-                })))),
+                .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| match (x, y) {
+                    (Ok(EffectInst::Concrete(x_decl, x_args)), Ok(EffectInst::Concrete(y_decl, y_args))) => x_decl
+                        .cmp(&y_decl)
+                        .then_with(|| x_args
+                            .into_iter()
+                            .zip(y_args)
+                            .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y)))),
+                    (Ok(EffectInst::Gen(x)), Ok(EffectInst::Gen(y))) => x.cmp(&y),
+                    _ => Ordering::Equal, // Errors always equal (bad?)
+                }))),
         }
     }
 
@@ -293,7 +302,8 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                         write!(f, "{}", effs
                             .iter()
                             .map(|eff| match eff {
-                                Ok((decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
+                                Ok(EffectInst::Gen(idx)) => format!("$e{}", idx),
+                                Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
                                     .iter()
                                     .map(|arg| format!(" {}", self.with_ty(*arg, true)))
                                     .collect::<String>()),
@@ -338,12 +348,17 @@ pub struct GenTy {
     pub name: SrcNode<Ident>,
 }
 
+pub struct GenEff {
+    pub name: SrcNode<Ident>,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GenScopeId(usize);
 
 pub struct GenScope {
     pub item_span: Span,
     types: Vec<GenTy>,
+    effects: Vec<GenEff>,
     // TODO: Don't store this here, it's silly
     pub ast_implied_members: Vec<SrcNode<ast::ImpliedMember>>,
     pub implied_members: Option<Vec<SrcNode<TyImpliedMember>>>,
@@ -364,9 +379,11 @@ impl GenScope {
             item_span,
             types: generics.tys
                 .iter()
-                .map(|gen_ty| GenTy {
-                    name: gen_ty.name.clone(),
-                })
+                .map(|gen_ty| GenTy { name: gen_ty.name.clone() })
+                .collect(),
+            effects: generics.effs
+                .iter()
+                .map(|gen_eff| GenEff { name: gen_eff.name.clone() })
                 .collect(),
             ast_implied_members: generics.implied_members.clone(),
             implied_members: None,
@@ -374,12 +391,21 @@ impl GenScope {
     }
 
     pub fn len(&self) -> usize { self.types.len() }
+    pub fn len_eff(&self) -> usize { self.effects.len() }
 
     pub fn get(&self, index: usize) -> &GenTy {
         &self.types[index]
     }
 
+    pub fn get_eff(&self, index: usize) -> &GenEff {
+        &self.effects[index]
+    }
+
     pub fn find(&self, name: Ident) -> Option<(usize, &GenTy)> {
         self.types.iter().enumerate().find(|(_, ty)| &*ty.name == &name)
+    }
+
+    pub fn find_eff(&self, name: Ident) -> Option<(usize, &GenEff)> {
+        self.effects.iter().enumerate().find(|(_, eff)| &*eff.name == &name)
     }
 }

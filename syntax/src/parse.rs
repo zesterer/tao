@@ -913,7 +913,7 @@ pub fn implied_member_parser() -> impl Parser<(SrcNode<ast::ClassInst>, Vec<(Src
             .map(|xs| xs.unwrap_or_default()))
 }
 
-pub fn generics_parser() -> impl Parser<Vec<(ast::GenericTy, Vec<SrcNode<ast::ImpliedMember>>)>> {
+pub fn generics_parser() -> impl Parser<(Vec<(ast::GenericTy, Vec<SrcNode<ast::ImpliedMember>>)>, Vec<ast::GenericEffect>)> {
     type_ident_parser()
         .map_with_span(SrcNode::new)
         .then(just(Token::Op(Op::Less)).ignore_then(implied_member_parser()
@@ -932,8 +932,24 @@ pub fn generics_parser() -> impl Parser<Vec<(ast::GenericTy, Vec<SrcNode<ast::Im
                 }, span))
                 .collect(),
         ))
+        .map(Ok)
+        .or(term_ident_parser()
+            .map_with_span(SrcNode::new)
+            .map(|name| ast::GenericEffect { name })
+            .map(Err))
         .separated_by(just(Token::Comma))
         .allow_trailing()
+        .map(|tys_or_effs| {
+            let mut tys = Vec::new();
+            let mut effs = Vec::new();
+            for ty_or_eff in tys_or_effs {
+                match ty_or_eff {
+                    Ok(ty) => tys.push(ty),
+                    Err(eff) => effs.push(eff),
+                }
+            }
+            (tys, effs)
+        })
 }
 
 pub fn where_parser() -> impl Parser<Vec<SrcNode<ast::ImpliedMember>>> {
@@ -995,7 +1011,7 @@ pub fn data_parser() -> impl Parser<ast::Data> {
             .map_with_span(SrcNode::new))
         .then(generics_parser()
             .then(where_parser())
-            .map(|(tys, implied)| ast::Generics::from_tys_and_implied(tys, implied)))
+            .map(|((tys, effs), implied)| ast::Generics::from_tys_and_implied(tys, effs, implied)))
         .then(just(Token::Op(Op::Eq))
             // TODO: Don't use `Result`
             .ignore_then(type_parser().map_with_span(SrcNode::new).map(Err)
@@ -1018,7 +1034,7 @@ pub fn alias_parser() -> impl Parser<ast::Alias> {
             .map_with_span(SrcNode::new))
         .then(generics_parser()
             .then(where_parser())
-            .map(|(tys, implied)| ast::Generics::from_tys_and_implied(tys, implied)))
+            .map(|((tys, effs), implied)| ast::Generics::from_tys_and_implied(tys, effs, implied)))
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(type_parser().map_with_span(SrcNode::new))
         .map(|((name, generics), ty)| ast::Alias {
@@ -1049,8 +1065,8 @@ pub fn fn_parser() -> impl Parser<ast::Def> {
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(branches(branch)
             .map_with_span(|branches, span| SrcNode::new(ast::Expr::Func(SrcNode::new(branches, span)), span)))
-        .map(|((((name, generics), ty_hint), where_clauses), body)| ast::Def {
-            generics: ast::Generics::from_tys_and_implied(generics, where_clauses),
+        .map(|((((name, (generic_tys, generic_effs)), ty_hint), where_clauses), body)| ast::Def {
+            generics: ast::Generics::from_tys_and_implied(generic_tys, generic_effs, where_clauses),
             ty_hint: ty_hint.unwrap_or_else(|| SrcNode::new(ast::Type::Unknown, name.span())),
             name,
             body,
@@ -1066,11 +1082,14 @@ pub fn def_parser() -> impl Parser<ast::Def> {
         .then(where_parser())
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(expr_parser().map_with_span(SrcNode::new))
-        .map(|((((name, generics), ty_hint), where_clauses), body)| ast::Def {
-            generics: ast::Generics::from_tys_and_implied(generics, where_clauses),
+        .map(|((((name, (generic_tys, generic_effs)), ty_hint), where_clauses), body)| ast::Def {
+            generics: ast::Generics::from_tys_and_implied(generic_tys, generic_effs, where_clauses),
             ty_hint: ty_hint.unwrap_or_else(|| SrcNode::new(ast::Type::Unknown, name.span())),
             name,
-            body,
+            body: {
+                let body_span = body.span();
+                SrcNode::new(ast::Expr::Basin(Vec::new(), body), body_span)
+            },
         })
         .boxed()
 }
@@ -1103,7 +1122,7 @@ pub fn class_parser() -> impl Parser<ast::Class> {
         .then(obligation_parser().or_not())
         .then(generics_parser()
             .then(where_parser())
-            .map(|(tys, implied)| ast::Generics::from_tys_and_implied(tys, implied)))
+            .map(|((tys, effs), implied)| ast::Generics::from_tys_and_implied(tys, effs, implied)))
         .then(just(Token::Op(Op::Eq))
             .ignore_then(item.repeated())
             .or_not())
@@ -1162,14 +1181,18 @@ pub fn member_parser() -> impl Parser<ast::Member> {
             .then(just(Token::Op(Op::Eq))
                 .ignore_then(item.repeated())
                 .or_not()))
-        .map(|(generic_tys, (((member, class), implied), items))| ast::Member {
-            generics: ast::Generics::from_tys_and_implied(
-                generic_tys.unwrap_or_default(),
-                implied,
-            ),
-            member,
-            class,
-            items: items.unwrap_or_default(),
+        .map(|(generics, (((member, class), implied), items))| {
+            let (generic_tys, generic_effs) = generics.unwrap_or_default();
+            ast::Member {
+                generics: ast::Generics::from_tys_and_implied(
+                    generic_tys,
+                    generic_effs,
+                    implied,
+                ),
+                member,
+                class,
+                items: items.unwrap_or_default(),
+            }
         })
         .boxed()
 }
@@ -1182,7 +1205,7 @@ pub fn effect_parser() -> impl Parser<ast::Effect> {
         .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
         .then(generics_parser()
             .then(where_parser())
-            .map(|(tys, implied)| ast::Generics::from_tys_and_implied(tys, implied)))
+            .map(|((tys, effs), implied)| ast::Generics::from_tys_and_implied(tys, effs, implied)))
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(ty.clone())
         .then_ignore(just(Token::Op(Op::RFlow)))
@@ -1207,7 +1230,7 @@ pub fn effect_alias_parser() -> impl Parser<ast::EffectAlias> {
         .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
         .then(generics_parser()
             .then(where_parser())
-            .map(|(tys, implied)| ast::Generics::from_tys_and_implied(tys, implied)))
+            .map(|((tys, effs), implied)| ast::Generics::from_tys_and_implied(tys, effs, implied)))
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(effect.separated_by(just(Token::Op(Op::Add))))
         .map(|((name, generics), effects)| ast::EffectAlias {

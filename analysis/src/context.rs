@@ -563,6 +563,7 @@ impl Context {
                     *member_obl.member,
                     member_obl.member.span(),
                     &mut |idx, _, _| member_args.get(idx).copied(),
+                    &mut |idx, _| todo!(),
                     Some(member_ty),
                 );
                 let obl_member_args = member_obl.args
@@ -571,6 +572,7 @@ impl Context {
                         *arg,
                         member_obl.member.span(),
                         &mut |idx, _, _| member_args.get(idx).copied(),
+                        &mut |idx, _| todo!(),
                         Some(member_ty),
                     ))
                     .collect();
@@ -582,6 +584,7 @@ impl Context {
                             *assoc,
                             name.span(),
                             &mut |idx, _, _| member_args.get(idx).copied(),
+                            &mut |idx, _| todo!(),
                             Some(member_ty),
                         )))
                         .collect(),
@@ -662,6 +665,7 @@ impl Context {
                                     *field_ty,
                                     Some(name.span()),
                                     &mut |idx, _, _| args.get(idx).copied(),
+                                    &mut |idx, _| todo!(),
                                     Some(self_ty),
                                 );
                                 infer.make_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
