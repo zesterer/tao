@@ -39,7 +39,6 @@ impl TyInfo {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EffectInfo {
-    Unknown,
     Ref(EffectVar),
     Open(Vec<EffectInstVar>),
     Closed(Vec<EffectInstVar>),
@@ -631,10 +630,6 @@ impl<'a> Infer<'a> {
         id
     }
 
-    pub fn unknown_effect(&mut self, span: Span) -> EffectVar {
-        self.insert_effect(span, EffectInfo::Unknown)
-    }
-
     pub fn make_effect_send_recv(&mut self, eff: EffectInstVar, send: TyVar, recv: TyVar, span: Span) {
         self.constraints.push_back(Constraint::EffectSendRecv(eff, send, recv, span));
     }
@@ -676,7 +671,6 @@ impl<'a> Infer<'a> {
                     },
                 // Opaque type is not checked, it's always opaque... hopefully
                 TyInfo::Effect(eff, out, _opaque) => self.occurs_in_inner(x, out, seen) || match self.follow_effect(eff) {
-                        EffectInfo::Unknown => false,
                         EffectInfo::Ref(_) => unreachable!(),
                         EffectInfo::Open(effs) | EffectInfo::Closed(effs) => effs
                             .iter()
@@ -799,7 +793,6 @@ impl<'a> Infer<'a> {
     ) -> Option<bool> {
         match self.follow_effect(x) {
             EffectInfo::Ref(x) => self.check_eff_empty((x, x_ty)),
-            EffectInfo::Unknown => None,
             EffectInfo::Open(x_effs) | EffectInfo::Closed(x_effs) => Some(x_effs.is_empty()),
         }
     }
@@ -815,8 +808,6 @@ impl<'a> Infer<'a> {
             (EffectInfo::Ref(x), _) => Self::flow_effect(infer, (x, x_ty), (y, y_ty)),
             (_, EffectInfo::Ref(y)) => Self::flow_effect(infer, (x, x_ty), (y, y_ty)),
 
-            (EffectInfo::Unknown, _) => Ok(infer.set_effect_info(x, EffectInfo::Ref(y))),
-            (_, EffectInfo::Unknown) => Ok(infer.set_effect_info(y, EffectInfo::Ref(x))),
             // TODO: Factor into independent check_flow method, given that this only happens when checking!
             (EffectInfo::Open(x_effs) | EffectInfo::Closed(x_effs), EffectInfo::Open(y_effs) | EffectInfo::Closed(y_effs)) if infer.is_check() => {
                 if x_effs
@@ -1030,7 +1021,6 @@ impl<'a> Infer<'a> {
             },
             TyInfo::Effect(eff, out, opaque) => {
                 let eff = match self.follow_effect(eff) {
-                    EffectInfo::Unknown => eff,
                     EffectInfo::Ref(_) => unreachable!(), // `follow_effect` shouldn't ever return Ref
                     // TODO: Is it sound to recreate the effects if effect sets can grow?
                     EffectInfo::Open(effs) => {
@@ -1777,17 +1767,6 @@ impl<'a> Infer<'a> {
             }
         }
 
-        // Report errors for effects that cannot be inferred
-        /*
-        // Unknown effects are inferred as empty effects!
-        let effects = self.iter_effects().collect::<Vec<_>>();
-        for (eff, info) in effects {
-            if let EffectInfo::Unknown = info {
-                errors.push(InferError::CannotInferEffect(eff));
-            }
-        }
-        */
-
         // Generate errors for all remaining constraints
         for c in std::mem::take(&mut self.constraints) {
             match c {
@@ -1941,7 +1920,6 @@ impl<'a> Checked<'a> {
             *eff
         } else {
             let eff = match self.infer.follow_effect(var) {
-                EffectInfo::Unknown => Effect::Error,
                 EffectInfo::Ref(_) => unreachable!(),
                 EffectInfo::Open(effs) | EffectInfo::Closed(effs) if effs.is_empty() => return None,
                 EffectInfo::Open(effs) | EffectInfo::Closed(effs) => {

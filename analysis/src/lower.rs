@@ -646,7 +646,7 @@ impl ToHir for ast::Expr {
                     eff
                 } else {
                     infer.ctx_mut().errors.push(Error::NoBasin(op.span()));
-                    infer.insert_effect(a.meta().0, EffectInfo::Unknown) // TODO: EffectInfo::Error instead
+                    infer.insert_effect(a.meta().0, EffectInfo::Open(Vec::new())) // TODO: EffectInfo::Error instead
                 };
 
                 let opaque = infer.unknown(a.meta().0);
