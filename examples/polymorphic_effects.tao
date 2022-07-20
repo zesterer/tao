@@ -1,0 +1,22 @@
+import "../lib/main.tao"
+
+## A function that maps elements of a list using a function.
+## The mapping function, `f`, may have a side-effect, `e`.
+## This side-effect is propagated to the returned list
+fn lmap A, B, e : (A -> e ~ B) -> [A] -> e ~ [B] =
+    | _, [] => []
+    \ f, [x .. xs] => [x->f! .. xs->lmap(f)!]
+
+def main : io ~ () = do {
+    ## Square every number in a list (i.e: no side effect)
+    let x = [1, 2, 3]->lmap(fn x => x * x);
+    print("Squared list = " + x)!;
+
+    ## Print every number in a list and double it as we do so
+    let y = [1, 2, 3]
+        -> lmap(fn x => do {
+            print(x->show)!; ## This is effectful!
+            x + x
+        })!;
+    print("Doubled list = " + y)!;
+}

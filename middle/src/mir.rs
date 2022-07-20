@@ -617,7 +617,7 @@ impl Expr {
                     Expr::Intrinsic(LenList, args) => write!(f, "@len_list({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(SkipList, args) => write!(f, "@skip_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(TrimList, args) => write!(f, "@trim_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(Suspend(_), args) => write!(f, "@suspend({})", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(Suspend(eff), args) => write!(f, "@suspend::<{:?}>({})", eff.0, DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(Propagate(_), args) => write!(f, "{}!", DisplayExpr(&args[0], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
@@ -634,7 +634,7 @@ impl Expr {
                         }
                         Ok(())
                     },
-                    Expr::Basin(eff, inner) => write!(f, "{{\n{}\n{}}}", DisplayExpr(inner, self.1 + 1, true), "    ".repeat(self.1)),
+                    Expr::Basin(eff, inner) => write!(f, "effect {{\n{}\n{}}}", DisplayExpr(inner, self.1 + 1, true), "    ".repeat(self.1)),
                     Expr::Handle { expr, handlers } => write!(
                         f,
                         "{}\n{}",

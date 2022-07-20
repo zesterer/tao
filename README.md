@@ -15,6 +15,7 @@ For more example programs, see...
 - `examples/adventure.tao`: A text adventure game
 - `examples/brainfuck.tao`: A brainfuck interpreter
 - `examples/mutate.tao`: Mutation expressed as a side effect
+- `examples/polymorphic_effects.tao`: Example of a higher-order function that's polymorphic over a side effect
 
 ## Goals
 
@@ -77,8 +78,9 @@ have a few goals for the language itself:
     - [x] `do` notation
 - [x] Algebraic effects
     - [x] Effect objects (independent of functions, unlike some languages)
-    - [x] Basin and propagation syntax (equivalent to Haskell's `do` notation, or Rust's `async` blocks)
+    - [x] Basin and propagation syntax (equivalent to Haskell's `do` notation, or Rust's `async`/`try` blocks)
     - [x] Generic effects
+    - [x] Polymorphic effects (no more `try_x` or `async_x` functions!)
     - [x] Effect sets (i.e: can express values that have multiple side effects)
     - [x] Effect aliases
     - [x] Effect handlers (including stateful handlers, allowing expressing effect-driven IO in terms of monadic IO)
@@ -102,12 +104,14 @@ have a few goals for the language itself:
 - [ ] Arithmetic patterns (only nat addition is currently implemented)
 - [ ] Typeclasses
     - [ ] Coherence checker
+    - [ ] Visible member semantics to relax orphan rules
 - [ ] MIR optimiser
     - [ ] Unboxing
     - [ ] Automatic repr changes for recursive types
         - [ ] Transform `data Nat = Succ Nat | Zero` into a runtime integer
         - [ ] Transform `data List A = Cons (A, List A) | Nil` into a vector
 - [ ] Algebraic effects
+    - [ ] Polymorphic effects
     - [ ] Higher-ranked effects (needed for async, etc.)
     - [ ] Arbitrary resuming/suspending of effect objects
     - [ ] Full monomorphisation of effect objects

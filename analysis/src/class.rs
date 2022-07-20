@@ -189,6 +189,8 @@ impl Classes {
                     .into_iter()
                     .zip(y.0.1.iter())
                     .all(|(x, y)| covers(hir, ctx, x, *y, gens)),
+                // Flatten empty effects
+                (_, ConTy::Effect(eff, ty)) if eff.is_empty() => covers(hir, ctx, member, *ty, gens),
                 _ => false,
             }
         }

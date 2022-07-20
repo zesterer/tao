@@ -15,7 +15,7 @@ impl Meta for InferMeta {
     type Ty = TyVar;
     type Data = SrcNode<DataId>;
     type Class = ClassVar;
-    type Global = (DefId, Vec<Self>);
+    type Global = (DefId, Vec<Self>, Vec<EffectVar>);
     type Effect = EffectVar;
     type EffectInst = EffectInstVar;
 }
@@ -24,7 +24,7 @@ impl Meta for TyMeta {
     type Ty = TyId;
     type Data = SrcNode<DataId>;
     type Class = Option<(ClassId, Vec<TyId>)>; // Required because we don't have proper error classes yet
-    type Global = (DefId, Vec<Self>);
+    type Global = (DefId, Vec<Self>, Vec<Option<EffectId>>);
     type Effect = EffectId;
     type EffectInst = Result<EffectInst, ()>;
 }

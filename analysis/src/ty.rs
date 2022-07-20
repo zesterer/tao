@@ -55,7 +55,7 @@ pub type TyId = Id<(Span, Ty)>;
 #[derive(Clone, Debug)]
 pub enum EffectInst {
     Concrete(EffectDeclId, Vec<TyId>),
-    Gen(usize),
+    Gen(usize, GenScopeId),
 }
 
 #[derive(Clone, Debug)]
@@ -119,7 +119,7 @@ impl Types {
                             .into_iter()
                             .zip(y_args)
                             .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y)))),
-                    (Ok(EffectInst::Gen(x)), Ok(EffectInst::Gen(y))) => x.cmp(&y),
+                    (Ok(EffectInst::Gen(x, _)), Ok(EffectInst::Gen(y, _))) => x.cmp(&y),
                     _ => Ordering::Equal, // Errors always equal (bad?)
                 }))),
         }
@@ -302,7 +302,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                         write!(f, "{}", effs
                             .iter()
                             .map(|eff| match eff {
-                                Ok(EffectInst::Gen(idx)) => format!("$e{}", idx),
+                                Ok(EffectInst::Gen(idx, scope)) => format!("{}", **self.ctx.tys.get_gen_scope(*scope).get_eff(*idx).name),
                                 Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
                                     .iter()
                                     .map(|arg| format!(" {}", self.with_ty(*arg, true)))

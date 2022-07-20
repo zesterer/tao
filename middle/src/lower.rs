@@ -311,11 +311,12 @@ impl Context {
                             self.lower_expr(hir, con, &args[1], stack),
                         ])
                     },
-                    hir::Intrinsic::Propagate => {
-                        let ConTy::Effect(effs, _) = con.get_ty(*args[0].meta()) else { unreachable!() };
-                        mir::Expr::Intrinsic(mir::Intrinsic::Propagate(effs.clone()), vec![
+                    hir::Intrinsic::Propagate => match con.get_ty(*args[0].meta()) {
+                        ConTy::Effect(effs, _) => mir::Expr::Intrinsic(mir::Intrinsic::Propagate(effs.clone()), vec![
                             self.lower_expr(hir, con, &args[0], stack),
-                        ])
+                        ]),
+                        _ => unreachable!(),
+                        // _ => self.lower_expr(hir, con, &args[0], stack).into_inner(),
                     },
                     hir::Intrinsic::Dispatch => panic!("Type dispatching should have occurred during concretisation!"),
                 }

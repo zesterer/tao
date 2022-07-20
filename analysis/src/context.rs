@@ -725,8 +725,15 @@ impl Context {
                     (span, infer.insert(span, TyInfo::Gen(i, gen_scope, span)))
                 })
                 .collect();
+            let gen_effs = (0..infer.ctx().tys.get_gen_scope(gen_scope).len_eff())
+                .map(|i| {
+                    let span = infer.ctx().tys.get_gen_scope(gen_scope).get_eff(i).name.span();
+                    let eff_inst = infer.insert_effect_inst(span, EffectInstInfo::Gen(i, gen_scope));
+                    infer.insert_effect(span, EffectInfo::Closed(vec![eff_inst], None))
+                })
+                .collect();
 
-            let body = def.body.to_hir(&(), &mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys));
+            let body = def.body.to_hir(&(), &mut infer, &Scope::Recursive(def.name.clone(), ty_hint.meta().1, id, gen_tys, gen_effs));
             infer.make_flow(body.meta().1, ty_hint.meta().1, body.meta().0);
 
             let (mut checked, mut errs) = infer.into_checked();

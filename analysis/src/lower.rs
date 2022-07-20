@@ -13,7 +13,7 @@ fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
 
 pub enum Scope<'a> {
     Empty,
-    Recursive(SrcNode<Ident>, TyVar, DefId, Vec<(Span, TyVar)>),
+    Recursive(SrcNode<Ident>, TyVar, DefId, Vec<(Span, TyVar)>, Vec<EffectVar>),
     Binding(&'a Scope<'a>, SrcNode<Ident>, TyVar),
     Many(&'a Scope<'a>, &'a [(SrcNode<Ident>, TyVar)]),
     // `None` is no basin, i.e: in a function
@@ -40,11 +40,11 @@ impl<'a> Scope<'a> {
     }
 
     // bool = is_local
-    fn find(&self, infer: &mut Infer, span: Span, name: &Ident) -> Option<(TyVar, Option<(DefId, Vec<(Span, TyVar)>)>)> {
+    fn find(&self, infer: &mut Infer, span: Span, name: &Ident) -> Option<(TyVar, Option<(DefId, Vec<(Span, TyVar)>, Vec<EffectVar>)>)> {
         match self {
             Self::Empty => None,
-            Self::Recursive(def, ty, def_id, tys) => if &**def == name {
-                Some((infer.reinstantiate(span, *ty), Some((*def_id, tys.clone()))))
+            Self::Recursive(def, ty, def_id, tys, effs) => if &**def == name {
+                Some((infer.reinstantiate(span, *ty), Some((*def_id, tys.clone(), effs.clone()))))
             } else {
                 None
             },
@@ -62,7 +62,7 @@ impl<'a> Scope<'a> {
     fn last_basin(&self) -> Option<EffectVar> {
         match self {
             Self::Empty => None,
-            Self::Recursive(_, _, _, _) => None,
+            Self::Recursive(_, _, _, _, _) => None,
             Self::Binding(parent, _, _) => parent.last_basin(),
             Self::Many(parent, _) => parent.last_basin(),
             Self::Basin(_, eff) => *eff,
@@ -322,11 +322,11 @@ impl ToHir for ast::Type {
                         .map(|param| param.to_hir(cfg, infer, scope).meta().1)
                         .collect::<Vec<_>>();
 
-                    if let Some((idx, _)) = infer
+                    if let Some((gen_scope_id, (idx, _))) = infer
                         .gen_scope()
-                        .and_then(|gen_scope_id| infer.ctx().tys.get_gen_scope(gen_scope_id).find_eff(**name))
+                        .and_then(|gen_scope_id| Some((gen_scope_id, infer.ctx().tys.get_gen_scope(gen_scope_id).find_eff(**name)?)))
                     {
-                        eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Gen(idx)));
+                        eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Gen(idx, gen_scope_id)));
                     } else {
                         match infer.ctx().effects.lookup(**name) {
                             Some(Ok(eff_id)) => {
@@ -366,7 +366,7 @@ impl ToHir for ast::Type {
                         }
                     }
                 }
-                TyInfo::Effect(infer.insert_effect(self.span(), EffectInfo::Closed(eff_insts)), out, opaque)
+                TyInfo::Effect(infer.insert_effect(self.span(), EffectInfo::Closed(eff_insts, None)), out, opaque)
             },
         };
 
@@ -473,8 +473,8 @@ impl ToHir for ast::Binding {
             ast::Pat::Deconstruct(name, inner) => if let Some(data) = infer.ctx().datas.lookup_cons(**name) {
                 let gen_scope_id = infer.ctx().datas.get_data(data).gen_scope;
                 let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope_id);
-                let generics_count = gen_scope.len();
-                let generic_tys = (0..generics_count)
+                let generic_ty_count = gen_scope.len();
+                let generic_tys = (0..generic_ty_count)
                     .map(|i| gen_scope.get(i).name.span())
                     .collect::<Vec<_>>()
                     .into_iter()
@@ -545,12 +545,19 @@ impl ToHir for ast::Binding {
 
 fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: Option<Span>, inst_span: Span) -> (TyInfo, hir::Expr<InferMeta>) {
     let scope = infer.ctx().tys.get_gen_scope(infer.ctx().defs.get(def_id).gen_scope);
-    let generics_count = scope.len();
-    let generic_tys = (0..generics_count)
+    let generic_ty_count = scope.len();
+    let generic_eff_count = scope.len_eff();
+    let generic_tys = (0..generic_ty_count)
         .map(|i| TyInfo::Unknown(Some(scope.get(i).name.span())))
         .collect::<Vec<_>>()
         .into_iter()
         .map(|info| (span, infer.insert(span, info)))
+        .collect::<Vec<_>>();
+    let generic_effs = (0..generic_eff_count)
+        .map(|i| EffectInfo::Open(Vec::new()))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|info| infer.insert_effect(span, info))
         .collect::<Vec<_>>();
 
     // Enforce class obligations
@@ -567,7 +574,8 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     let def = infer.ctx().defs.get(def_id);
     let def_gen_scope = def.gen_scope;
     let def_name = def.name.clone();
-    let mut get_gen = |index: usize, _, infer: &mut Infer| generic_tys.get(index).map(|(_, ty)| *ty);
+    let mut gen_ty = |index: usize, _, infer: &mut Infer| generic_tys.get(index).map(|(_, ty)| *ty);
+    let mut gen_eff = |index: usize, infer: &mut Infer| generic_effs.get(index).copied();
     let ty = if let Some(body_ty) = def.ty_hint
         .or_else(|| def.body
             .as_ref()
@@ -577,8 +585,8 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
         let def_ty_actual = infer.instantiate(
             body_ty,
             span_override,
-            &mut get_gen,
-            &mut |idx, _| todo!(),
+            &mut gen_ty,
+            &mut gen_eff,
             None,
         );
         let def_ty = infer.unknown(span);
@@ -589,7 +597,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
     };
 
     if let Some(ty) = ty {
-        (TyInfo::Ref(ty), hir::Expr::Global((def_id, generic_tys)))
+        (TyInfo::Ref(ty), hir::Expr::Global((def_id, generic_tys, generic_effs)))
     } else {
         infer.ctx_mut().emit(Error::DefTypeNotSpecified(SrcNode::new(def_id, def_name.span()), span, *def_name));
         (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
@@ -618,8 +626,8 @@ impl ToHir for ast::Expr {
             },
             ast::Expr::Local(local) => {
                 if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
-                    if let Some((def_id, gens)) = rec {
-                        (TyInfo::Ref(ty), hir::Expr::Global((def_id, gens)))
+                    if let Some((def_id, gen_tys, gen_effs)) = rec {
+                        (TyInfo::Ref(ty), hir::Expr::Global((def_id, gen_tys, gen_effs)))
                     } else {
                         (TyInfo::Ref(ty), hir::Expr::Local(*local))
                     }
@@ -928,8 +936,8 @@ impl ToHir for ast::Expr {
             },
             ast::Expr::Cons(name, inner) => if let Some(data) = infer.ctx().datas.lookup_cons(**name) {
                 let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().datas.get_data(data).gen_scope);
-                let generics_count = gen_scope.len();
-                let generic_tys = (0..generics_count)
+                let generic_ty_count = gen_scope.len();
+                let generic_tys = (0..generic_ty_count)
                     .map(|i| gen_scope.get(i).name.span())
                     .collect::<Vec<_>>()
                     .into_iter()
@@ -1269,7 +1277,7 @@ impl ToHir for ast::Expr {
                     .collect::<Result<Vec<_>, _>>()
                     .map(|handlers| {
                         let opaque = infer.unknown(expr.meta().0);
-                        let eff_set = infer.insert_effect(self.span(), EffectInfo::Closed(handlers.iter().map(|(ty, _)| *ty).collect()));
+                        let eff_set = infer.insert_effect(self.span(), EffectInfo::Closed(handlers.iter().map(|(ty, _)| *ty).collect(), None));
                         let eff_obj_ty = infer.insert(self.span(), TyInfo::Effect(eff_set, out_ty, opaque));
 
                         let overall_ty = if let Some(state_ty) = state_ty {
