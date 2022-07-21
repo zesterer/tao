@@ -2,21 +2,21 @@ import "../lib/main.tao"
 
 ## Mutations take a function that maps a value to another of the same type
 ## They don't output anything (unlike an effect such as 'get some user input')
-effect mut A = (A -> A) => ()
+effect mutate A = (A -> A) => ()
 
 ## TODO: Have the compiler auto-generate this bit instead of
 ## forcing the effect user to deal with intrinsics.
-fn mut A : (A -> A) -> mut A ~ () = f => @suspend(f)
+fn mutate A : (A -> A) -> mutate A ~ () = f => @suspend(f)
 
 ## Apply a series of mutations to a value
-fn apply A : mut A ~ () -> A -> A =
+fn apply_mutation A : mutate A ~ () -> A -> A =
     m, x => let (_, x) = (m, x)
-        handle mut A with f, x => ((), x -> f)
+        handle mutate A with f, x => ((), x -> f)
     in x
 
 ## A mutation that pushes an element to the end of a list
-fn push A : A -> mut [A] ~ () =
-    x => mut(fn xs => xs ++ [x])!
+fn push A : A -> mutate [A] ~ () =
+    x => mutate(fn xs => xs ++ [x])!
 
 ## Example usage
 
@@ -29,6 +29,6 @@ def numbers = do {
 
 ## Debug-prints '[1, 2, 3, 4]' to the console
 def main : io ~ () = []
-    -> apply(numbers)
+    -> apply_mutation(numbers)
     -> debug
     -> print!

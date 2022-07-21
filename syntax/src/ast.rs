@@ -115,6 +115,11 @@ impl fmt::Debug for Literal {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct EffectSet {
+    pub effs: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     // Generated only by parser errors.
     Error,
@@ -127,7 +132,7 @@ pub enum Type {
     // TODO: Replace name with `Item` when ready
     Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Assoc(SrcNode<Self>, Option<SrcNode<ClassInst>>, SrcNode<Ident>),
-    Effect(Vec<(SrcNode<Ident>, Vec<SrcNode<Self>>)>, SrcNode<Self>),
+    Effect(SrcNode<EffectSet>, SrcNode<Self>),
 }
 
 impl Type {
@@ -147,7 +152,7 @@ impl Type {
                 .iter()
                 .all(|arg| arg.is_fully_specified()),
             Self::Assoc(inner, _, _) => inner.is_fully_specified(),
-            Self::Effect(effs, out) => effs
+            Self::Effect(set, out) => set.effs
                 .iter()
                 .all(|(_, args)| args
                     .iter()
@@ -159,7 +164,8 @@ impl Type {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClassInst {
     pub name: SrcNode<Ident>,
-    pub params: Vec<SrcNode<Type>>,
+    pub gen_tys: Vec<SrcNode<Type>>,
+    pub gen_effs: Vec<SrcNode<EffectSet>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -225,7 +231,7 @@ pub enum Expr {
 #[derive(Debug, PartialEq)]
 pub struct Handler {
     pub eff_name: SrcNode<Ident>,
-    pub eff_args: Vec<SrcNode<Type>>,
+    pub eff_gen_tys: Vec<SrcNode<Type>>,
     pub send: SrcNode<Binding>,
     pub state: Option<SrcNode<Binding>>,
     pub recv: SrcNode<Expr>,

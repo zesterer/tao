@@ -46,7 +46,7 @@ pub enum Ty {
     Data(DataId, Vec<TyId>),
     Gen(usize, GenScopeId),
     SelfType,
-    Assoc(TyId, (ClassId, Vec<TyId>), SrcNode<Ident>),
+    Assoc(TyId, (ClassId, Vec<TyId>, Vec<Option<EffectId>>), SrcNode<Ident>),
     Effect(EffectId, TyId),
 }
 
@@ -149,14 +149,16 @@ impl Types {
                 todo!("ordering of generic types in different scopes... does reordering need to occur with every reinstantiation?!")
             },
             (Ty::SelfType, Ty::SelfType) => Ordering::Equal,
-            (Ty::Assoc(x_ty, (x_class_id, x_args), x_name), Ty::Assoc(y_ty, (y_class_id, y_args), y_name)) => self.cmp_ty(x_ty, y_ty)
+            // TODO: Check equality of effect parameters?
+            (Ty::Assoc(x_ty, (x_class_id, x_gen_tys, x_gen_effs), x_name), Ty::Assoc(y_ty, (y_class_id, y_gen_tys, y_gen_effs), y_name)) => self.cmp_ty(x_ty, y_ty)
                 .then_with(|| x_class_id.cmp(&y_class_id))
                 .then_with(|| x_name.cmp(&y_name))
-                .then_with(|| x_args
+                .then_with(|| x_gen_tys
                     .into_iter()
-                    .zip(y_args)
+                    .zip(y_gen_tys)
                     .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y)))),
             (Ty::Effect(x, x_out), Ty::Effect(y, y_out)) =>
+                // TODO: Actually compare effects
                 x.cmp(&y).then_with(|| self.cmp_ty(x_out, y_out)),
             (x, y) => {
                 // Generate an ordering for all other types, fairly arbitrary
@@ -253,6 +255,22 @@ impl<'a> fmt::Display for TyDisplay<'a> {
             return sub(f);
         }
 
+        let show_eff = |eff| match self.ctx.tys.get_effect(eff) {
+            Effect::Error => format!("!"),
+            Effect::Known(effs) => effs
+                .iter()
+                .map(|eff| match eff {
+                    Ok(EffectInst::Gen(idx, scope)) => format!("{}", **self.ctx.tys.get_gen_scope(*scope).get_eff(*idx).name),
+                    Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
+                        .iter()
+                        .map(|arg| format!(" {}", self.with_ty(*arg, true)))
+                        .collect::<String>()),
+                    Err(()) => format!("!"),
+                })
+                .collect::<Vec<_>>()
+                .join(" + "),
+        };
+
         match self.ctx.tys.get(self.ty) {
             Ty::Error(ErrorReason::Unknown) => write!(f, "?"),
             Ty::Error(ErrorReason::Recursive) => write!(f, "..."),
@@ -284,10 +302,16 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 .collect::<String>()),
             Ty::Gen(index, scope) => write!(f, "{}", **self.ctx.tys.get_gen_scope(scope).get(index).name),
             // TODO: Include class_id?
-            Ty::Assoc(inner, (class_id, args), assoc) => {
-                let class = format!("{}{}", *self.ctx.classes.get(class_id).name, args
+            Ty::Assoc(inner, (class_id, gen_tys, gen_effs), assoc) => {
+                let class = format!("{}{}", *self.ctx.classes.get(class_id).name, gen_tys
                     .iter()
-                    .map(|arg| format!(" {}", self.with_ty(*arg, true)))
+                    .map(|ty| format!(" {}", self.with_ty(*ty, true)))
+                    .chain(gen_effs
+                        .iter()
+                        .map(|eff| match *eff {
+                            Some(eff) => format!(" {}", show_eff(eff)),
+                            None => format!(" !"),
+                        }))
                     .collect::<String>());
                 write!(f, "<{} as {}>.{}", self.with_ty(inner, true), class, *assoc)
             },
@@ -296,23 +320,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 if self.lhs_exposed {
                     write!(f, "(")?;
                 }
-                match self.ctx.tys.get_effect(eff) {
-                    Effect::Error => write!(f, "!")?,
-                    Effect::Known(effs) => {
-                        write!(f, "{}", effs
-                            .iter()
-                            .map(|eff| match eff {
-                                Ok(EffectInst::Gen(idx, scope)) => format!("{}", **self.ctx.tys.get_gen_scope(*scope).get_eff(*idx).name),
-                                Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
-                                    .iter()
-                                    .map(|arg| format!(" {}", self.with_ty(*arg, true)))
-                                    .collect::<String>()),
-                                Err(()) => format!("!"),
-                            })
-                            .collect::<Vec<_>>()
-                            .join(" + "))?;
-                    },
-                }
+                write!(f, "{}", show_eff(eff))?;
                 write!(f, " ~ {}", self.with_ty(out, true))?;
                 if self.lhs_exposed {
                     write!(f, ")")?;
@@ -337,7 +345,8 @@ pub type InferImpliedItems = ImpliedItems<InferMeta>;
 pub struct ImpliedMember<M: Meta> {
     pub member: SrcNode<M::Ty>,
     pub class: SrcNode<ClassId>,
-    pub args: Vec<M::Ty>,
+    pub gen_tys: Vec<M::Ty>,
+    pub gen_effs: Vec<M::Effect>,
     pub items: ImpliedItems<M>,
 }
 

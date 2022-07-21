@@ -2,20 +2,20 @@
 
 import "math.tao"
 
-class Map B =
+class Map B, e =
     => Item
     => Output
-    => map : (Self.Item -> B) -> Self -> Self.Output
+    => map : (Self.Item -> e ~ B) -> Self -> e ~ Self.Output
 
-def map V < Map B, B : (V.Item -> B) -> V -> V.Output = V.map
+def map V < Map B e, B, e : (V.Item -> e ~ B) -> V -> e ~ V.Output = V.map
 
 class Iter =
     => Item
     => next : Self -> Maybe (Self.Item, Self)
 
-fn fold A, I < Iter : A -> (A -> I.Item -> A) -> I -> A = a, f, xs => match I.next(xs) in
+fn fold A, I < Iter, e : A -> (A -> I.Item -> e ~ A) -> I -> e ~ A = a, f, xs => match I.next(xs) in
     | None => a
-    \ Just (x, xs) => fold(f(a, x), f, xs)
+    \ Just (x, xs) => fold(f(a, x)!, f, xs)!
 
 def sum C, A : C -> A where
     C < Iter with { Item = A },

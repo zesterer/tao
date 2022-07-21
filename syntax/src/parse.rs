@@ -38,6 +38,23 @@ pub fn nested_parser<'a, T: 'a>(parser: impl Parser<T> + 'a, delimiter: Delimite
         .boxed()
 }
 
+pub fn effect_set_parser(ty: impl Parser<SrcNode<ast::Type>> + 'static) -> impl Parser<ast::EffectSet> {
+    let effect_insts = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
+        .map_with_span(SrcNode::new)
+        .then(ty.repeated())
+        .separated_by(just(Token::Op(Op::Add)))
+        .at_least(1)
+        .allow_leading();
+
+    nested_parser(
+        effect_insts.clone(),
+        Delimiter::Paren,
+        |_| Vec::new()
+    )
+        .or(effect_insts)
+        .map(|effs| ast::EffectSet { effs })
+}
+
 pub fn type_parser() -> impl Parser<ast::Type> {
     recursive(|ty| {
         let data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready
@@ -114,9 +131,10 @@ pub fn type_parser() -> impl Parser<ast::Type> {
                 .then(just(Token::Op(Op::Dot)).ignore_then(type_ident_parser().map_with_span(SrcNode::new)))
                 .repeated())
             .foldl(|inner, (class, assoc)| {
-                let class = class.map(|class| class.map(|(name, params)| ast::ClassInst {
+                let class = class.map(|class| class.map(|(name, gen_tys)| ast::ClassInst {
                     name,
-                    params,
+                    gen_tys,
+                    gen_effs: Vec::new(), // TODO: Allow specifying effects in explicit form
                 }));
                 let span = inner.span().union(assoc.span());
                 SrcNode::new(ast::Type::Assoc(inner, class, assoc), span)
@@ -125,23 +143,13 @@ pub fn type_parser() -> impl Parser<ast::Type> {
         let data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready
             .map_with_span(SrcNode::new)
             .then(assoc.clone().repeated().at_least(1))
-            .map(|(data, params)| ast::Type::Data(data, params))
+            .map(|(data, gen_tys)| ast::Type::Data(data, gen_tys))
             .map_with_span(SrcNode::new)
             .or(assoc)
             .boxed();
 
-        let effect_insts = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
+        let effect = effect_set_parser(data.clone())
             .map_with_span(SrcNode::new)
-            .then(data.clone().repeated())
-            .separated_by(just(Token::Op(Op::Add)))
-            .allow_leading();
-
-        let effect = nested_parser(
-            effect_insts.clone(),
-            Delimiter::Paren,
-            |_| Vec::new()
-        )
-            .or(effect_insts)
             .then_ignore(just(Token::Tilde))
             .then(data.clone())
             .map(|(effs, out)| ast::Type::Effect(effs, out))
@@ -168,10 +176,25 @@ pub fn class_inst_parser() -> impl Parser<ast::ClassInst> {
         .map_with_span(SrcNode::new)
         .then(type_parser()
             .map_with_span(SrcNode::new)
+            .map(Ok)
+            .or(effect_set_parser(type_parser().map_with_span(SrcNode::new))
+                .map_with_span(SrcNode::new)
+                .map(Err))
             .repeated())
-        .map(|(name, params)| ast::ClassInst {
-            name,
-            params,
+        .map(|(name, gens)| {
+            let mut gen_tys = Vec::new();
+            let mut gen_effs = Vec::new();
+            for gen in gens {
+                match gen {
+                    Ok(gen_ty) => gen_tys.push(gen_ty),
+                    Err(gen_eff) => gen_effs.push(gen_eff),
+                }
+            }
+            ast::ClassInst {
+                name,
+                gen_tys,
+                gen_effs,
+            }
         })
 }
 
@@ -867,9 +890,9 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                     expr,
                     handlers: handlers
                         .into_iter()
-                        .map(|((((eff_name, eff_args), send), state), recv)| ast::Handler {
+                        .map(|((((eff_name, eff_gen_tys), send), state), recv)| ast::Handler {
                             eff_name,
-                            eff_args,
+                            eff_gen_tys,
                             send,
                             state,
                             recv,

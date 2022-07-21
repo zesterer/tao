@@ -170,7 +170,13 @@ impl Classes {
         self.members[id.0].fields = Some(fields);
     }
 
-    pub fn lookup_member(&self, hir: &Context, ctx: &ConContext, ty: ConTyId, (class, args): (ClassId, Vec<ConTyId>)) -> Option<MemberId> {
+    pub fn lookup_member(
+        &self,
+        hir: &Context,
+        ctx: &ConContext,
+        ty: ConTyId,
+        (class, gen_tys, gen_effs): (ClassId, Vec<ConTyId>, Vec<Vec<ConEffectId>>),
+    ) -> Option<MemberId> {
         // Returns true if member covers ty
         fn covers(hir: &Context, ctx: &ConContext, member: TyId, ty: ConTyId, gens: &mut HashMap<usize, ConTyId>) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
@@ -203,9 +209,13 @@ impl Classes {
                     .filter(|m| {
                         let member = self.get_member(**m);
                         let mut gens = HashMap::new();
-                        covers(hir, ctx, member.member, ty, &mut gens) && member.args.iter()
-                            .zip(args.iter())
-                            .all(|(member_arg, arg)| covers(hir, ctx, *member_arg, *arg, &mut gens))
+                        // assert_eq!(gen_effs.len(), 0, "check effect coverage");
+                        if gen_effs.len() > 0 {
+                            println!("Reminder: check gen_effs during monomorphisation lookup");
+                        }
+                        covers(hir, ctx, member.member, ty, &mut gens) && member.gen_tys.iter()
+                            .zip(gen_tys.iter())
+                            .all(|(member_gen_ty, gen_ty)| covers(hir, ctx, *member_gen_ty, *gen_ty, &mut gens))
                     })
                     .collect::<Vec<_>>();
 
@@ -233,7 +243,7 @@ impl Classes {
                                 },
                                 hir.tys.display(hir, c.member),
                                 **self.get(class).name,
-                                c.args
+                                c.gen_tys
                                     .iter()
                                     .map(|ty| format!(" {}", hir.tys.display(hir, *ty)))
                                     .collect::<String>(),
@@ -274,7 +284,8 @@ pub struct Member {
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub member: TyId,
     pub class: ClassId,
-    pub args: Vec<TyId>,
+    pub gen_tys: Vec<TyId>,
+    pub gen_effs: Vec<Option<EffectId>>,
     pub assoc: Option<HashMap<Ident, TyId>>,
     pub fields: Option<HashMap<Ident, TyExpr>>,
 }

@@ -31,10 +31,7 @@ fn describe : State -> io ~ () = state => do {
     print("You can go...")!;
     state.loc
         -> directions
-        -> fold(effect {}, fn prev, (dir, _) => do {
-            prev!;
-            print("- " ++ dir)!;
-        })!;
+        -> map(fn dir => print("- " ++ dir.0)!)!;
 }
 
 data Event =
@@ -66,7 +63,10 @@ fn game_loop : State -> io ~ () = state => do {
             Next None
         }
         | "grab" => Next Just Grab
-        \ other => match state.loc->directions->find_first(fn (name, _) => name = cmd) in
+        \ other => match state.loc
+            -> directions
+            -> find_first(fn (name, _) => name = cmd)
+        in
             | Just (_, loc) => Next Just MoveTo loc
             \ None => do {
                 print("Unknown command '" ++ cmd ++ "'")!;

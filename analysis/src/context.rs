@@ -146,16 +146,23 @@ impl Context {
                 gen_scope,
                 |infer| {
                     let self_ty = infer.set_self_unknown(class.name.span());
-                    let args = (0..infer.ctx().tys.get_gen_scope(gen_scope).len())
+                    let gen_tys = (0..infer.ctx().tys.get_gen_scope(gen_scope).len())
                         .map(|idx| {
                             let span = infer.ctx().tys.get_gen_scope(gen_scope).get(idx).name.span();
                             infer.insert(span, TyInfo::Gen(idx, gen_scope, span))
                         })
                         .collect::<Vec<_>>();
+                    let gen_effs = (0..infer.ctx().tys.get_gen_scope(gen_scope).len_eff())
+                        .map(|idx| {
+                            let span = infer.ctx().tys.get_gen_scope(gen_scope).get_eff(idx).name.span();
+                            infer.insert_gen_eff(span, idx, gen_scope)
+                        })
+                        .collect::<Vec<_>>();
                     infer.add_implied_member_single(ImpliedMember {
                         member: SrcNode::new(self_ty, class.name.span()),
                         class: SrcNode::new(*class_id, class.name.span()),
-                        args,
+                        gen_tys,
+                        gen_effs,
                         items: ImpliedItems::Eq(Vec::new()),
                     });
                 },
@@ -213,18 +220,23 @@ impl Context {
 
             let mut infer = infer.with_self_var(member_ty.meta().1);
 
-            let args = member.class.params
+            let gen_tys = member.class.gen_tys
                 .iter()
-                .map(|arg| arg.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty))
+                .map(|ty| ty.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty))
+                .collect::<Vec<_>>();
+            let gen_effs = member.class.gen_effs
+                .iter()
+                .map(|eff| lower::lower_effect_set(eff, &TypeLowerCfg::member(), &mut infer, &Scope::Empty))
                 .collect::<Vec<_>>();
 
             let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class_id).gen_scope);
-            if class_gen_scope.len() != args.len() {
+            if class_gen_scope.len() != gen_tys.len() || class_gen_scope.len_eff() != gen_effs.len() {
                 let item_span = class_gen_scope.item_span;
                 let class_gen_scope_len = class_gen_scope.len();
+                // TODO: Proper error for effects
                 infer.ctx_mut().emit(Error::WrongNumberOfGenerics(
                     member.class.span(),
-                    args.len(),
+                    gen_tys.len(),
                     item_span,
                     class_gen_scope_len,
                 ));
@@ -234,9 +246,13 @@ impl Context {
             errors.append(&mut errs);
 
             let member_ty = checked.reify(member_ty.meta().1);
-            let args = args
+            let gen_tys = gen_tys
                 .iter()
-                .map(|arg| checked.reify(arg.meta().1))
+                .map(|ty| checked.reify(ty.meta().1))
+                .collect::<Vec<_>>();
+            let gen_effs = gen_effs
+                .iter()
+                .map(|eff| checked.reify_effect(*eff))
                 .collect::<Vec<_>>();
 
             let member_id = this.classes.declare_member(*class_id, Member {
@@ -244,7 +260,8 @@ impl Context {
                 attr: attr.to_vec(),
                 member: member_ty,
                 class: *class_id,
-                args,
+                gen_tys,
+                gen_effs,
                 fields: None,
                 assoc: None,
             });
@@ -369,16 +386,23 @@ impl Context {
                     ast::ClassItem::Value { name, ty } => {
                         let mut infer = Infer::new(&mut this, Some(*gen_scope));
                         let self_ty = infer.set_self_unknown(class.name.span());
-                        let args = (0..infer.ctx().tys.get_gen_scope(*gen_scope).len())
+                        let gen_tys = (0..infer.ctx().tys.get_gen_scope(*gen_scope).len())
                             .map(|idx| {
                                 let span = infer.ctx().tys.get_gen_scope(*gen_scope).get(idx).name.span();
                                 infer.insert(span, TyInfo::Gen(idx, *gen_scope, span))
                             })
                             .collect::<Vec<_>>();
+                        let gen_effs = (0..infer.ctx().tys.get_gen_scope(*gen_scope).len_eff())
+                            .map(|idx| {
+                                let span = infer.ctx().tys.get_gen_scope(*gen_scope).get(idx).name.span();
+                                infer.insert_gen_eff(span, idx, *gen_scope)
+                            })
+                            .collect::<Vec<_>>();
                         infer.add_implied_member(ImpliedMember {
                             member: SrcNode::new(self_ty, class.name.span()),
                             class: SrcNode::new(*class_id, class.name.span()),
-                            args,
+                            gen_tys,
+                            gen_effs,
                             items: ImpliedItems::Eq(Vec::new()),
                         });
                         let mut infer = infer.with_gen_scope_implied();
@@ -413,14 +437,19 @@ impl Context {
                     let member_ty = this.classes.get_member(*member_id).member;
                     let mut infer = Infer::new(&mut this, Some(*gen_scope))
                         .with_self_type(member_ty, member.member.span());
-                    let args = member.class.params
+                    let gen_tys = member.class.gen_tys
                         .iter()
                         .map(|ty| ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                        .collect();
+                    let gen_effs = member.class.gen_effs
+                        .iter()
+                        .map(|eff| lower::lower_effect_set(eff, &TypeLowerCfg::other(), &mut infer, &Scope::Empty))
                         .collect();
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
-                        args,
+                        gen_tys,
+                        gen_effs,
                         items: ImpliedItems::Real(*member_id),
                     });
                     let mut infer = infer.with_gen_scope_implied();
@@ -526,7 +555,7 @@ impl Context {
 
             let member_ty = infer.instantiate_local(*member_ty, member.member.span());
 
-            let member_args = member.class.params
+            let member_gen_tys = member.class.gen_tys
                 .iter()
                 .map(|arg| member.member.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
                 .collect::<Vec<_>>();
@@ -562,20 +591,31 @@ impl Context {
                 let obl_member_ty = infer.instantiate(
                     *member_obl.member,
                     member_obl.member.span(),
-                    &mut |idx, _, _| member_args.get(idx).copied(),
+                    &mut |idx, _, _| member_gen_tys.get(idx).copied(),
                     &mut |idx, _| todo!(),
                     Some(member_ty),
                 );
-                let obl_member_args = member_obl.args
+                let obl_member_gen_tys = member_obl.gen_tys
                     .iter()
-                    .map(|arg| infer.instantiate(
-                        *arg,
+                    .map(|ty| infer.instantiate(
+                        *ty,
                         member_obl.member.span(),
-                        &mut |idx, _, _| member_args.get(idx).copied(),
+                        &mut |idx, _, _| member_gen_tys.get(idx).copied(),
                         &mut |idx, _| todo!(),
                         Some(member_ty),
                     ))
                     .collect();
+                // TODO
+                let obl_member_gen_effs = Vec::new()/*member_obl.gen_effs
+                    .iter()
+                    .map(|ty| infer.instantiate(
+                        *ty,
+                        member_obl.member.span(),
+                        &mut |idx, _, _| member_gen_tys.get(idx).copied(),
+                        &mut |idx, _| todo!(),
+                        Some(member_ty),
+                    ))
+                    .collect()*/;
                 let obl_assoc = match &member_obl.items {
                     ImpliedItems::Real(_) => Vec::new(),
                     ImpliedItems::Eq(assoc) => assoc
@@ -583,13 +623,19 @@ impl Context {
                         .map(|(name, assoc)| (name.clone(), infer.instantiate(
                             *assoc,
                             name.span(),
-                            &mut |idx, _, _| member_args.get(idx).copied(),
+                            &mut |idx, _, _| member_gen_tys.get(idx).copied(),
                             &mut |idx, _| todo!(),
                             Some(member_ty),
                         )))
                         .collect(),
                 };
-                infer.make_impl(obl_member_ty, (*member_obl.class, obl_member_args), member_obl.class.span(), obl_assoc, member.class.span());
+                infer.make_impl(
+                    obl_member_ty,
+                    (*member_obl.class, obl_member_gen_tys, obl_member_gen_effs),
+                    member_obl.class.span(),
+                    obl_assoc,
+                    member.class.span(),
+                );
             }
 
             let (mut checked, mut errs) = infer.into_checked();
@@ -640,14 +686,23 @@ impl Context {
                         .with_self_type(*member_ty, member.member.span())
                         .with_gen_scope_implied();
                     let self_ty = infer.self_type().unwrap();
-                    let args = member.class.params
+                    let gen_tys = member.class.gen_tys
                         .iter()
                         .map(|ty| ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
                         .collect::<Vec<_>>();
+                    let gen_effs = member.class.gen_effs
+                        .iter()
+                        .enumerate()
+                        .map(|(i, eff)| infer.insert_gen_eff(eff.span(), i, *gen_scope))
+                        .collect::<Vec<_>>();
+
+                    // TODO: Report error on `gen_tys`/`gen_effs` length mismatch with class?
+
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
-                        args: args.clone(),
+                        gen_tys: gen_tys.clone(),
+                        gen_effs: gen_effs.clone(),
                         items: ImpliedItems::Real(*member_id),
                     });
 
@@ -664,8 +719,8 @@ impl Context {
                                 let val_ty = infer.instantiate(
                                     *field_ty,
                                     Some(name.span()),
-                                    &mut |idx, _, _| args.get(idx).copied(),
-                                    &mut |idx, _| todo!(),
+                                    &mut |idx, _, _| gen_tys.get(idx).copied(),
+                                    &mut |idx, _| gen_effs.get(idx).copied(),
                                     Some(self_ty),
                                 );
                                 infer.make_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
@@ -728,8 +783,7 @@ impl Context {
             let gen_effs = (0..infer.ctx().tys.get_gen_scope(gen_scope).len_eff())
                 .map(|i| {
                     let span = infer.ctx().tys.get_gen_scope(gen_scope).get_eff(i).name.span();
-                    let eff_inst = infer.insert_effect_inst(span, EffectInstInfo::Gen(i, gen_scope));
-                    infer.insert_effect(span, EffectInfo::Closed(vec![eff_inst], None))
+                    infer.insert_gen_eff(span, i, gen_scope)
                 })
                 .collect();
 
@@ -773,7 +827,7 @@ impl Context {
 
         loop {
             match self.tys.get(ty) {
-                Ty::Data(data, args) => if already_seen.contains(&data) {
+                Ty::Data(data, _gen_tys) => if already_seen.contains(&data) {
                     // We've already seen this data type, it must be recursive. Give up, it has no fields.
                     break None
                 } else {
@@ -821,9 +875,13 @@ impl Context {
                 };
 
                 let ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
-                let args = member.class.params
+                let gen_tys = member.class.gen_tys
                     .iter()
-                    .map(|arg| arg.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                    .map(|ty| ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                    .collect::<Vec<_>>();
+                let gen_effs = member.class.gen_effs
+                    .iter()
+                    .map(|eff| lower::lower_effect_set(eff, &TypeLowerCfg::other(), &mut infer, &Scope::Empty))
                     .collect::<Vec<_>>();
                 let items = member.assoc
                     .iter()
@@ -831,12 +889,13 @@ impl Context {
                     .collect::<Vec<_>>();
 
                 let gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class).gen_scope);
-                if gen_scope.len() != args.len() {
+                if gen_scope.len() != gen_tys.len() || gen_scope.len_eff() != gen_effs.len() {
+                    // TODO: Proper error for effect length mismatch
                     let item_span = gen_scope.item_span;
                     let gen_scope_len = gen_scope.len();
                     infer.ctx_mut().emit(Error::WrongNumberOfGenerics(
                         member.span(),
-                        args.len(),
+                        gen_tys.len(),
                         item_span,
                         gen_scope_len,
                     ));
@@ -845,11 +904,12 @@ impl Context {
                 infer.add_implied_member_single(ImpliedMember {
                     member: SrcNode::new(ty.meta().1, ty.meta().0),
                     class: class.clone(),
-                    args: args.clone(),
+                    gen_tys: gen_tys.clone(),
+                    gen_effs: gen_effs.clone(),
                     items: ImpliedItems::Eq(items.clone()),
                 });
 
-                Some((ty, class, args, items, member.span()))
+                Some((ty, class, gen_tys, gen_effs, items, member.span()))
             })
             .collect::<Vec<_>>();
 
@@ -858,12 +918,16 @@ impl Context {
 
         let implied_members = infer_members
             .into_iter()
-            .map(|(ty, class, args, items, span)| {
+            .map(|(ty, class, gen_tys, gen_effs, items, span)| {
                 SrcNode::new(TyImpliedMember {
                     member: SrcNode::new(checked.reify(ty.meta().1), ty.meta().0),
-                    args: args
+                    gen_tys: gen_tys
                         .iter()
-                        .map(|arg| checked.reify(*arg))
+                        .map(|ty| checked.reify(*ty))
+                        .collect(),
+                    gen_effs: gen_effs
+                        .iter()
+                        .map(|eff| checked.reify_effect(*eff))
                         .collect(),
                     class,
                     items: ImpliedItems::Eq(items

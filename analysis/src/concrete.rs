@@ -29,7 +29,7 @@ pub struct ConEffect {
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ConProc {
     Def(DefId, Vec<ConTyId>, Vec<Vec<ConEffectId>>),
-    Field(ConTyId, MemberId, Vec<ConTyId>, Ident),
+    Field(ConTyId, MemberId, Vec<ConTyId>, Vec<Vec<ConEffectId>>, Ident),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -47,9 +47,12 @@ impl fmt::Debug for ConProcId {
                     .map(|e| format!("{:?}", e)))
                 .collect::<Vec<_>>()
                 .join(", ")),
-            ConProc::Field(ty, member, args, field) => write!(f, "<{:?} as {:?} {}>.{}", ty, member, args
+            ConProc::Field(ty, member, gen_tys, gen_effs, field) => write!(f, "<{:?} as {:?} {}>.{}", ty, member, gen_tys
                 .iter()
-                .map(|a| format!("{:?}", a))
+                .map(|ty| format!("{:?}", ty))
+                .chain(gen_effs
+                    .iter()
+                    .map(|eff| format!("{:?}", eff)))
                 .collect::<Vec<_>>()
                 .join(", "), field),
         }
@@ -233,17 +236,16 @@ impl ConContext {
         eff_link_gen: &mut impl FnMut(usize, Vec<ConEffectId>),
     ) {
         // TODO: link gen for effects when polymorphic effects are added
-        match hir.tys.get_effect(member) /*self.get_effect(eff)*/ {
+        match (hir.tys.get_effect(member), effs) {
             // Assumption here is that canonical ordering has been generated!
-            Effect::Known(effects) => effects
+            (Effect::Known(member_effs), _) if effs.len() <= 1 => member_effs
                 .iter()
-                .zip(effs)
-                .for_each(|(effect, eff)| match effect.as_ref().expect("effect instance cannot be an error") {
+                .for_each(|effect| match effect.as_ref().expect("effect instance cannot be an error") {
                     EffectInst::Concrete(_, args) => args
                         .iter()
-                        .zip(&eff.1)
+                        .zip(&effs[0].1)
                         .for_each(|(x, y)| self.derive_links(hir, *x, *y, ty_link_gen, eff_link_gen)),
-                    EffectInst::Gen(_, _) => todo!("Derive links for generic effects"),
+                    EffectInst::Gen(idx, _) => eff_link_gen(*idx, effs.to_vec()),
                 }),
             x => todo!("{:?}", x),
         }
@@ -303,20 +305,24 @@ impl ConContext {
             },
             Ty::Gen(idx, _) => return ty_insts.gen_tys[idx],
             Ty::SelfType => return ty_insts.self_ty.expect("Self type required during concretization but none was provided"),
-            Ty::Assoc(ty, (class_id, args), assoc) => {
+            Ty::Assoc(ty, (class_id, gen_tys, gen_effs), assoc) => {
                 let self_ty = self.lower_ty(hir, ty, ty_insts);
-                let args = args
+                let gen_tys = gen_tys
                     .into_iter()
-                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                    .map(|ty| self.lower_ty(hir, ty, ty_insts))
+                    .collect::<Vec<_>>();
+                let gen_effs = gen_effs
+                    .into_iter()
+                    .map(|eff| self.lower_effect(hir, eff.expect("Error effect instance should not exist during concretization"), ty_insts))
                     .collect::<Vec<_>>();
                 let member = hir.classes
-                    .lookup_member(hir, self, self_ty, (class_id, args.clone()))
+                    .lookup_member(hir, self, self_ty, (class_id, gen_tys.clone(), gen_effs.clone()))
                     .map(|m| hir.classes.get_member(m))
                     .unwrap_or_else(|| panic!(
                         "Could not select member candidate for {} as {}{}",
                         self.display(hir, self_ty),
                         *hir.classes.get(class_id).name,
-                        args.iter().map(|arg| format!(" {}", self.display(hir, *arg))).collect::<String>(),
+                        gen_tys.iter().map(|ty| format!(" {}", self.display(hir, *ty))).collect::<String>(),
                     ));
                 let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
@@ -330,13 +336,13 @@ impl ConContext {
                     &mut |gen_idx, eff| { eff_links.insert(gen_idx, eff); },
                 );
                 assert_eq!(
-                    args.len(),
-                    member.args.len(),
+                    (gen_tys.len(), gen_effs.len()),
+                    (member.gen_tys.len(), member.gen_effs.len()),
                     "Member and instance args must be the same length in member {} of {}",
                     hir.tys.display(hir, member.member),
                     *hir.classes.get(class_id).name,
                 );
-                for (member_arg, arg) in member.args.iter().zip(args.iter()) {
+                for (member_arg, arg) in member.gen_tys.iter().zip(gen_tys.iter()) {
                     self.derive_links(
                         hir,
                         *member_arg,
@@ -349,7 +355,8 @@ impl ConContext {
                     .map(|idx| *ty_links.get(&idx).expect("Generic type not mentioned in member"))
                     .collect::<Vec<_>>();
                 let gen_effs = (0..member_gen_scope.len_eff())
-                    .map(|idx| eff_links.get(&idx).expect("Generic effect not mentioned in member").clone())
+                    // TODO: Is reverting to an empty effect set valid here?
+                    .map(|idx| eff_links.get(&idx).cloned().unwrap_or_default())
                     .collect::<Vec<_>>();
 
                 let assoc = member
@@ -436,7 +443,7 @@ impl ConContext {
                         .unwrap(),
                     &TyInsts { self_ty: None, gen_tys, gen_effs },
                 ),
-                ConProc::Field(self_ty, member_id, args, field) => {
+                ConProc::Field(self_ty, member_id, gen_tys, gen_effs, field) => {
                     let member = hir.classes.get_member(*member_id);
                     let member_gen_scope = hir.tys.get_gen_scope(member.gen_scope);
 
@@ -450,17 +457,26 @@ impl ConContext {
                         &mut |gen_idx, eff| { eff_links.insert(gen_idx, eff); },
                     );
                     assert_eq!(
-                        args.len(),
-                        member.args.len(),
+                        (gen_tys.len(), gen_effs.len()),
+                        (member.gen_tys.len(), member.gen_effs.len()),
                         "Member and instance args must be the same length in member {} of {}",
                         hir.tys.display(hir, member.member),
                         *hir.classes.get(hir.classes.get_member(*member_id).class).name,
                     );
-                    for (member_arg, arg) in member.args.iter().zip(args.iter()) {
+                    for (member_ty, ty) in member.gen_tys.iter().zip(gen_tys.iter()) {
                         self.derive_links(
                             hir,
-                            *member_arg,
-                            *arg,
+                            *member_ty,
+                            *ty,
+                            &mut |gen_idx, ty| { ty_links.insert(gen_idx, ty); },
+                            &mut |gen_idx, eff| { eff_links.insert(gen_idx, eff); },
+                        );
+                    }
+                    for (member_eff, eff) in member.gen_effs.iter().zip(gen_effs.iter()) {
+                        self.derive_links_effect(
+                            hir,
+                            member_eff.expect("Error effect found during concretization"),
+                            eff,
                             &mut |gen_idx, ty| { ty_links.insert(gen_idx, ty); },
                             &mut |gen_idx, eff| { eff_links.insert(gen_idx, eff); },
                         );
@@ -469,7 +485,8 @@ impl ConContext {
                         .map(|idx| *ty_links.get(&idx).expect("Generic type not mentioned in member"))
                         .collect::<Vec<_>>();
                     let gen_effs = (0..member_gen_scope.len_eff())
-                        .map(|idx| eff_links.get(&idx).expect("Generic type not mentioned in member").clone())
+                        // TODO: Is reverting to an empty effect set valid here?
+                        .map(|idx| eff_links.get(&idx).cloned().expect("Effect not found in generic scope"))
                         .collect::<Vec<_>>();
                     self.lower_expr(
                         hir,
@@ -580,21 +597,27 @@ impl ConContext {
             },
             hir::Expr::ClassAccess(ty, class, field) => {
                 let self_ty = self.lower_ty(hir, ty.1, ty_insts);
-                let (class_id, args) = class.as_ref().expect("Uninferred class during concretization");
-                let args = args
+                let (class_id, gen_tys, gen_effs) = class.as_ref().expect("Uninferred class during concretization");
+                let gen_tys = gen_tys
                     .iter()
-                    .map(|arg| self.lower_ty(hir, *arg, ty_insts))
+                    .map(|ty| self.lower_ty(hir, *ty, ty_insts))
+                    .collect::<Vec<_>>();
+                let gen_effs = gen_effs
+                    .iter()
+                    .map(|eff| eff
+                        .map(|eff| self.lower_effect(hir, eff, ty_insts))
+                        .expect("Error effect during concretization"))
                     .collect::<Vec<_>>();
                 let member_id = hir.classes
-                    .lookup_member(hir, self, self_ty, (*class_id, args.clone()))
+                    .lookup_member(hir, self, self_ty, (*class_id, gen_tys.clone(), gen_effs.clone()))
                     .unwrap_or_else(|| panic!(
                         "Could not select member candidate for '{}' as '{}{}'",
                         self.display(hir, self_ty),
                         *hir.classes.get(*class_id).name,
-                        args.iter().map(|arg| format!(" {}", self.display(hir, *arg))).collect::<String>(),
+                        gen_tys.iter().map(|ty| format!(" {}", self.display(hir, *ty))).collect::<String>(),
                     ));
 
-                let id = ConProcId(Intern::new(ConProc::Field(self_ty, member_id, args, **field)));
+                let id = ConProcId(Intern::new(ConProc::Field(self_ty, member_id, gen_tys, gen_effs, **field)));
                 self.lower_proc(hir, id);
                 hir::Expr::Global(id)
             },
@@ -634,15 +657,12 @@ impl ConContext {
                 .map(|(name, field)| (name.clone(), self.lower_expr(hir, field, ty_insts)))
                 .collect()),
             hir::Expr::Basin(eff, inner) => {
-                let effs = self.lower_effect(hir, *eff, ty_insts);
+                let effs = self.lower_effect(hir, eff.expect("Error effect instance should not exist during concretization"), ty_insts);
                 // Flatten empty effect
                 if effs.is_empty() {
                     self.lower_expr(hir, inner, ty_insts).into_inner()
                 } else {
-                    hir::Expr::Basin(
-                        self.lower_effect(hir, *eff, ty_insts),
-                        self.lower_expr(hir, inner, ty_insts),
-                    )
+                    hir::Expr::Basin(effs, self.lower_expr(hir, inner, ty_insts))
                 }
             },
             hir::Expr::Suspend(eff, inner) => hir::Expr::Suspend(
@@ -651,19 +671,29 @@ impl ConContext {
                     .expect("Generic effect used in suspend?!"),
                 self.lower_expr(hir, inner, ty_insts),
             ),
-            hir::Expr::Handle { expr, handlers } => hir::Expr::Handle {
-                expr: self.lower_expr(hir, expr, ty_insts),
-                handlers: handlers
-                    .iter()
-                    .map(|hir::Handler { eff, send, state, recv }| hir::Handler {
-                        eff: self.lower_effect_inst(hir, eff.clone().expect("Error effect instance should not exist during concretization"), ty_insts)
-                            .ok()
-                            .expect("Generic effect used in handler?!"),
-                        send: ConNode::new(**send, self.lower_ty(hir, send.meta().1, ty_insts)),
-                        state: state.as_ref().map(|state| ConNode::new(**state, self.lower_ty(hir, state.meta().1, ty_insts))),
-                        recv: self.lower_expr(hir, recv, ty_insts),
-                    })
-                    .collect(),
+            hir::Expr::Handle { expr, handlers } => {
+                let expr = self.lower_expr(hir, expr, ty_insts);
+                if let ConTy::Record(fields) = self.get_ty(*expr.meta())
+                    && let Some(ConTy::Effect(effs, _)) = fields.get(&Ident::new("0")).map(|f| self.get_ty(*f))
+                    && let true = !effs.is_empty()
+                {
+                    hir::Expr::Handle {
+                        expr,
+                        handlers: handlers
+                            .iter()
+                            .map(|hir::Handler { eff, send, state, recv }| hir::Handler {
+                                eff: self.lower_effect_inst(hir, eff.clone().expect("Error effect instance should not exist during concretization"), ty_insts)
+                                    .ok()
+                                    .expect("Generic effect used in handler?!"),
+                                send: ConNode::new(**send, self.lower_ty(hir, send.meta().1, ty_insts)),
+                                state: state.as_ref().map(|state| ConNode::new(**state, self.lower_ty(hir, state.meta().1, ty_insts))),
+                                recv: self.lower_expr(hir, recv, ty_insts),
+                            })
+                            .collect(),
+                    }
+                } else {
+                    expr.into_inner()
+                }
             },
         };
 

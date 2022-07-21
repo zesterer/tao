@@ -4,12 +4,12 @@ import "../core/ops.tao"
 import "value.tao"
 import "container.tao"
 
-for A, B member [A] of Map B =
+for A, B, e member [A] of Map B e =
     => Item = A
     => Output = [B]
     => map = fn
         | _, [] => []
-        \ f, [x .. xs] => [x->f .. xs->Self.map(f)]
+        \ f, [x .. xs] => [x->f! .. xs->Self.map(f)!]
 
 for A member [A] of Iter =
     => Item = A

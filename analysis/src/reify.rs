@@ -106,7 +106,7 @@ impl Reify for hir::Expr<InferMeta> {
                 .map(|(name, field)| (name, field.reify(infer)))
                 .collect()),
             hir::Expr::Basin(eff, inner) => match infer.reify_effect(eff) {
-                Some(eff) => hir::Expr::Basin(eff, inner.reify(infer)),
+                Some(eff) => hir::Expr::Basin(Some(eff), inner.reify(infer)),
                 None => inner.reify(infer).into_inner(),
             },
             hir::Expr::Suspend(eff, inner) => hir::Expr::Suspend(infer.reify_effect_inst(eff), inner.reify(infer)),

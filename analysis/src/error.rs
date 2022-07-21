@@ -15,8 +15,8 @@ pub enum Error {
     WrongNumberOfParams(Span, usize, Span, usize),
     NoBranches(Span),
     // (obligation, type, obligation_origin, generic_definition
-    TypeDoesNotFulfil(Option<(ClassId, Vec<TyId>)>, TyId, Span, Option<Span>, Span),
-    CycleWhenResolving(TyId, (ClassId, Vec<TyId>), Span),
+    TypeDoesNotFulfil(Option<(ClassId, Vec<TyId>, Vec<Option<EffectId>>)>, TyId, Span, Option<Span>, Span),
+    CycleWhenResolving(TyId, (ClassId, Vec<TyId>, Vec<Option<EffectId>>), Span),
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
     NoSuchClass(SrcNode<Ident>),
@@ -55,10 +55,18 @@ impl Error {
 
         let display = |id| ctx.tys.display(ctx, id);
 
-        let display_class = |class_id, args: &[_]| format!(
+        let display_eff = |id| format!("<todo: display effects>");
+
+        let display_class = |class_id, gen_tys: &[_], gen_effs: &[_]| format!(
             "{}{}",
             *ctx.classes.get(class_id).name,
-            args.iter().map(|arg| format!(" {}", display(*arg))).collect::<String>(),
+            gen_tys
+                .iter()
+                .map(|ty| format!(" {}", display(*ty)))
+                .chain(gen_effs
+                    .iter()
+                    .map(|eff| format!(" {}", display_eff(*eff))))
+                .collect::<String>(),
         );
 
         let (msg, spans, notes) = match self {
@@ -163,8 +171,8 @@ impl Error {
                 vec![],
             ),
             Error::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span) => {
-                let class = if let Some((class_id, args)) = class {
-                    display_class(class_id, &args)
+                let class = if let Some((class_id, gen_tys, gen_effs)) = class {
+                    display_class(class_id, &gen_tys, &gen_effs)
                 } else {
                     format!("?")
                 };
@@ -190,8 +198,12 @@ impl Error {
                     vec![format!("Types must fulfil their class obligations")],
                 )
             },
-            Error::CycleWhenResolving(ty, (class_id, args), cycle_span) => (
-                format!("Proving that type {} is a member of {} leads to cyclical reasoning", display(ty).fg(Color::Red), display_class(class_id, &args).fg(Color::Cyan)),
+            Error::CycleWhenResolving(ty, (class_id, gen_tys, gen_effs), cycle_span) => (
+                format!(
+                    "Proving that type {} is a member of {} leads to cyclical reasoning",
+                    display(ty).fg(Color::Red),
+                    display_class(class_id, &gen_tys, &gen_effs).fg(Color::Cyan),
+                ),
                 vec![
                     (cycle_span, format!("This bound causes cyclical reasoning"), Color::Red),
                     (ctx.tys.get_span(ty), format!(
