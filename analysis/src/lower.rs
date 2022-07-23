@@ -734,8 +734,8 @@ impl ToHir for ast::Expr {
                     infer.insert_effect(a.meta().0, EffectInfo::Open(Vec::new())) // TODO: EffectInfo::Error instead
                 };
 
-                let opaque = infer.unknown(a.meta().0);
-                let eff_obj_ty = infer.insert(a.meta().0, TyInfo::Effect(eff, out_ty, opaque));
+                let opaque = infer.unknown(op.span());
+                let eff_obj_ty = infer.insert(op.span(), TyInfo::Effect(eff, out_ty, opaque));
                 infer.make_flow(a.meta().1, eff_obj_ty, EqInfo::from(op.span()));
 
                 (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))

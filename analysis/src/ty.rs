@@ -208,7 +208,16 @@ impl Types {
     pub fn display<'a>(&'a self, ctx: &'a Context, ty: TyId) -> TyDisplay<'a> {
         TyDisplay {
             ctx,
-            ty,
+            ty: Ok(ty),
+            lhs_exposed: false,
+            substitutes: Vec::new(),
+        }
+    }
+
+    pub fn display_eff<'a>(&'a self, ctx: &'a Context, eff: EffectId) -> TyDisplay<'a> {
+        TyDisplay {
+            ctx,
+            ty: Err(eff),
             lhs_exposed: false,
             substitutes: Vec::new(),
         }
@@ -223,6 +232,7 @@ impl Types {
     }
 
     pub fn insert_effect(&mut self, span: Span, eff: Effect) -> EffectId {
+        if matches!(eff, Effect::Known(ref effs) if effs.iter().any(|e| matches!(e, Err(_)))) { panic!("HERE: {:?}", eff); }
         self.effects.add((span, eff))
     }
 }
@@ -230,14 +240,18 @@ impl Types {
 #[derive(Clone)]
 pub struct TyDisplay<'a> {
     ctx: &'a Context,
-    ty: TyId,
+    ty: Result<TyId, EffectId>,
     lhs_exposed: bool,
     substitutes: Vec<(TyId, Rc<dyn Fn(&mut fmt::Formatter) -> fmt::Result + 'a>)>,
 }
 
 impl<'a> TyDisplay<'a> {
     fn with_ty(&self, ty: TyId, lhs_exposed: bool) -> Self {
-        Self { ty, lhs_exposed, ..self.clone() }
+        Self { ty: Ok(ty), lhs_exposed, ..self.clone() }
+    }
+
+    fn with_eff(&self, eff: EffectId, lhs_exposed: bool) -> Self {
+        Self { ty: Err(eff), lhs_exposed, ..self.clone() }
     }
 
     pub fn substitute(mut self, ty: TyId, sub: impl Fn(&mut fmt::Formatter) -> fmt::Result + 'a) -> Self {
@@ -250,82 +264,89 @@ impl<'a> fmt::Display for TyDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some((_, sub)) = self.substitutes
             .iter()
-            .find(|(ty, _)| *ty == self.ty)
+            .find(|(ty, _)| Ok(*ty) == self.ty)
         {
             return sub(f);
         }
 
-        let show_eff = |eff| match self.ctx.tys.get_effect(eff) {
-            Effect::Error => format!("!"),
-            Effect::Known(effs) => effs
-                .iter()
-                .map(|eff| match eff {
-                    Ok(EffectInst::Gen(idx, scope)) => format!("{}", **self.ctx.tys.get_gen_scope(*scope).get_eff(*idx).name),
-                    Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
-                        .iter()
-                        .map(|arg| format!(" {}", self.with_ty(*arg, true)))
-                        .collect::<String>()),
-                    Err(()) => format!("!"),
-                })
-                .collect::<Vec<_>>()
-                .join(" + "),
-        };
-
-        match self.ctx.tys.get(self.ty) {
-            Ty::Error(ErrorReason::Unknown) => write!(f, "?"),
-            Ty::Error(ErrorReason::Recursive) => write!(f, "..."),
-            Ty::Error(ErrorReason::Invalid) => write!(f, "!"),
-            Ty::Prim(prim) => write!(f, "{}", prim),
-            Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
-            Ty::Record(fields, is_tuple) => if is_tuple {
-                write!(f, "({})", fields
-                    .values()
-                    .map(|field| format!("{}", self.with_ty(*field, false)))
-                    .collect::<Vec<_>>()
-                    .join(", "))
-            } else {
-                write!(f, "{{ {} }}", fields
-                    .into_iter()
-                    .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
-                    .collect::<Vec<_>>()
-                    .join(", "))
-            },
-            Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-            Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-            Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", *self.ctx.datas.get_data(name).name, params
-                .iter()
-                .map(|param| format!(" {}", self.with_ty(*param, true)))
-                .collect::<String>()),
-            Ty::Data(name, params) => write!(f, "{}{}", *self.ctx.datas.get_data(name).name, params
-                .iter()
-                .map(|param| format!(" {}", self.with_ty(*param, true)))
-                .collect::<String>()),
-            Ty::Gen(index, scope) => write!(f, "{}", **self.ctx.tys.get_gen_scope(scope).get(index).name),
-            // TODO: Include class_id?
-            Ty::Assoc(inner, (class_id, gen_tys, gen_effs), assoc) => {
-                let class = format!("{}{}", *self.ctx.classes.get(class_id).name, gen_tys
+        match self.ty {
+            Ok(ty) => match self.ctx.tys.get(ty) {
+                Ty::Error(ErrorReason::Unknown) => write!(f, "?"),
+                Ty::Error(ErrorReason::Recursive) => write!(f, "..."),
+                Ty::Error(ErrorReason::Invalid) => write!(f, "!"),
+                Ty::Prim(prim) => write!(f, "{}", prim),
+                Ty::List(item) => write!(f, "[{}]", self.with_ty(item, false)),
+                Ty::Record(fields, is_tuple) => if is_tuple {
+                    write!(f, "({})", fields
+                        .values()
+                        .map(|field| format!("{}", self.with_ty(*field, false)))
+                        .collect::<Vec<_>>()
+                        .join(", "))
+                } else {
+                    write!(f, "{{ {} }}", fields
+                        .into_iter()
+                        .map(|(name, field)| format!("{}: {}", name, self.with_ty(field, false)))
+                        .collect::<Vec<_>>()
+                        .join(", "))
+                },
+                Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
+                Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
+                Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", *self.ctx.datas.get_data(name).name, params
                     .iter()
-                    .map(|ty| format!(" {}", self.with_ty(*ty, true)))
-                    .chain(gen_effs
+                    .map(|param| format!(" {}", self.with_ty(*param, true)))
+                    .collect::<String>()),
+                Ty::Data(name, params) => write!(f, "{}{}", *self.ctx.datas.get_data(name).name, params
+                    .iter()
+                    .map(|param| format!(" {}", self.with_ty(*param, true)))
+                    .collect::<String>()),
+                Ty::Gen(index, scope) => write!(f, "{}", **self.ctx.tys.get_gen_scope(scope).get(index).name),
+                // TODO: Include class_id?
+                Ty::Assoc(inner, (class_id, gen_tys, gen_effs), assoc) => {
+                    let class = format!("{}{}", *self.ctx.classes.get(class_id).name, gen_tys
                         .iter()
-                        .map(|eff| match *eff {
-                            Some(eff) => format!(" {}", show_eff(eff)),
-                            None => format!(" !"),
-                        }))
-                    .collect::<String>());
-                write!(f, "<{} as {}>.{}", self.with_ty(inner, true), class, *assoc)
+                        .map(|ty| format!(" {}", self.with_ty(*ty, true)))
+                        .chain(gen_effs
+                            .iter()
+                            .map(|eff| match *eff {
+                                Some(eff) => format!(" {}", self.with_eff(eff, true)),
+                                None => format!(" !"),
+                            }))
+                        .collect::<String>());
+                    write!(f, "<{} as {}>.{}", self.with_ty(inner, true), class, *assoc)
+                },
+                Ty::SelfType => write!(f, "Self"),
+                Ty::Effect(eff, out) => {
+                    if self.lhs_exposed {
+                        write!(f, "(")?;
+                    }
+                    write!(f, "{}", self.with_eff(eff, true))?;
+                    write!(f, " ~ {}", self.with_ty(out, true))?;
+                    if self.lhs_exposed {
+                        write!(f, ")")?;
+                    }
+                    Ok(())
+                },
             },
-            Ty::SelfType => write!(f, "Self"),
-            Ty::Effect(eff, out) => {
-                if self.lhs_exposed {
-                    write!(f, "(")?;
-                }
-                write!(f, "{}", show_eff(eff))?;
-                write!(f, " ~ {}", self.with_ty(out, true))?;
-                if self.lhs_exposed {
-                    write!(f, ")")?;
-                }
-                Ok(())
+            Err(eff) => match self.ctx.tys.get_effect(eff) {
+                Effect::Error => write!(f, "!"),
+                Effect::Known(effs) => {
+                    let effs = effs
+                        .iter()
+                        .map(|eff| match eff {
+                            Ok(EffectInst::Gen(idx, scope)) => format!("{}", **self.ctx.tys.get_gen_scope(*scope).get_eff(*idx).name),
+                            Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
+                                .iter()
+                                .map(|arg| format!(" {}", self.with_ty(*arg, true)))
+                                .collect::<String>()),
+                            Err(()) => format!("!"),
+                        })
+                        .collect::<Vec<_>>();
+                    if effs.is_empty() {
+                        write!(f, "pure")
+                    } else {
+                        write!(f, "{}", effs.join(" + "))
+                    }
+                },
             },
         }
     }

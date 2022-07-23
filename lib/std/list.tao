@@ -17,9 +17,10 @@ for A member [A] of Iter =
         | [] => None
         \ [x .. xs] => Just (x, xs)
 
-# fn map A, B : (A -> B) -> [A] -> [B] =
-#     | _, [] => []
-#     \ f, [x .. xs] => [x->f .. xs->map(f)]
+# TODO: Get rid of this
+fn lmap A, B : (A -> B) -> [A] -> [B] =
+    | _, [] => []
+    \ f, [x .. xs] => [x->f .. xs->lmap(f)]
 
 fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
@@ -69,3 +70,11 @@ fn rev A : [A] -> [A] =
 #     A < One + Mul A with { Output = A }
 # =
     # fold(A.one, fn x, y => A.mul(x, y))
+
+fn find_index_start A < Eq : Nat -> A -> [A] -> Maybe Nat =
+	| idx, c, [head .. tail] => if c = head
+		then Just idx
+		else tail->find_index_start(idx + 1, c)
+	\ idx, c, [] => None
+
+def find_index A < Eq : A -> [A] -> Maybe Nat = find_index_start(0)

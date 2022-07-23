@@ -55,7 +55,11 @@ impl Error {
 
         let display = |id| ctx.tys.display(ctx, id);
 
-        let display_eff = |id| format!("<todo: display effects>");
+        let display_eff = |id| if let Some(eff) = id {
+            ctx.tys.display_eff(ctx, eff).to_string()
+        } else {
+            format!("!")
+        };
 
         let display_class = |class_id, gen_tys: &[_], gen_effs: &[_]| format!(
             "{}{}",

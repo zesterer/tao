@@ -204,7 +204,7 @@ impl Context {
             );
         }
 
-        for (_, _, gen_scope_id) in &defs_init {
+        for (_, def, gen_scope_id) in &defs_init {
             this.reify_gen_scope(
                 *gen_scope_id,
                 |infer| {},
@@ -718,7 +718,7 @@ impl Context {
                             if let Some(field_ty) = class.field(**name).cloned() {
                                 let val_ty = infer.instantiate(
                                     *field_ty,
-                                    Some(name.span()),
+                                    None,
                                     &mut |idx, _, _| gen_tys.get(idx).copied(),
                                     &mut |idx, _| gen_effs.get(idx).copied(),
                                     Some(self_ty),

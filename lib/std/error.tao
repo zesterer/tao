@@ -1,4 +1,5 @@
 import "value.tao"
+import "fmt.tao"
 
 data Result A, E =
     | Ok A
@@ -11,3 +12,24 @@ for A member Result A Never of From A =
 
 for A member A of From (Result A Never) =
     => from = fn Ok x => x
+
+for A < Show, E < Show member Result A E of Show =
+    => show = fn
+        | Ok x => x->show
+        \ Err e => "error: " ++ e->show
+
+for A < Debug, E < Debug member Result A E of Debug =
+    => debug = fn
+        | Ok x => "Ok " ++ x->debug
+        \ Err e => "Err " ++ e->debug
+
+for A, B, E, e member Result A E of Map B e =
+    => Item = A
+    => Output = Result B E
+    => map = fn
+        | f, Ok a => Ok a->f!
+        \ _, Err e => Err e
+
+fn map_err A, E, F : (E -> F) -> Result A E -> Result A F =
+    | _, Ok x => Ok x
+    \ f, Err e => Err e->f

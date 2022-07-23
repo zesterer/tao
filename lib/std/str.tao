@@ -8,3 +8,31 @@ type Str = [Char]
 for B < Show member [Char] of Add B =
     => Output = Str
     => add = fn s, b => s ++ b->show
+
+fn codepoint : Char -> Nat = c => @codepoint_char(c)
+
+class FromStr =
+    => Err
+    => from_str : Str -> Result Self Self.Err
+
+def parse A < FromStr : Str -> Result A A.Err = A.from_str
+
+data NatParseError =
+    | MissingDigits
+    \ NotADigit
+
+member NatParseError of Show =
+    => show = fn
+        | MissingDigits => "missing digits"
+        \ NotADigit => "not a digit"
+
+member Nat of FromStr =
+    => Err = NatParseError
+    => from_str = fn
+        | [] => Err MissingDigits
+        \ s => s
+            -> lmap(fn c => "0123456789"->find_index(c))
+            -> fold(Ok 0, fn
+                | Ok a, Just x => Ok a * 10 + x
+                | Err e, _ => Err e
+                \ _, _ => Err NotADigit)
