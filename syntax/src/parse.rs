@@ -722,12 +722,17 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             Field(SrcNode<ast::Ident>),
             Infix(SrcNode<ast::Expr>),
             Apply(Option<Vec<SrcNode<ast::Expr>>>, Span),
+            Propagate(SrcNode<ast::UnaryOp>),
         }
 
         let field = term_ident_parser().or(select! { Token::Nat(x) => ast::Ident::new(format!("{}", x)) });
         let chain = just(Token::Op(Op::Dot))
             .ignore_then(field.map_with_span(SrcNode::new))
             .map(Chain::Field)
+            .or(just(Token::Op(Op::Not))
+                .to(ast::UnaryOp::Propagate)
+                .map_with_span(SrcNode::new)
+                .map(Chain::Propagate))
             .or(just(Token::Op(Op::RArrow)).ignore_then(direct.clone())
                 .map(Chain::Infix))
             .or(paren_exp_list
@@ -760,17 +765,10 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                             SrcNode::new(ast::Expr::Apply(f, arg), span)
                         })
                 },
-            })
-            .boxed();
-
-        // Propagated effects
-        let op = just(Token::Op(Op::Not)).to(ast::UnaryOp::Propagate)
-            .map_with_span(SrcNode::new);
-        let propagated = chained.clone()
-            .then(op.repeated())
-            .foldl(|a, op| {
-                let span = a.span().union(op.span());
-                SrcNode::new(ast::Expr::Unary(op, a), span)
+                Chain::Propagate(op) => {
+                    let span = expr.span().union(op.span());
+                    SrcNode::new(ast::Expr::Unary(op, expr), span)
+                },
             })
             .boxed();
 
@@ -779,7 +777,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(just(Token::Op(Op::Not)).to(ast::UnaryOp::Not))
             .map_with_span(SrcNode::new);
         let unary = op.repeated()
-            .then(propagated.labelled("unary operand"))
+            .then(chained.labelled("unary operand"))
             .foldr(|op, expr| {
                 let span = op.span().union(expr.span());
                 SrcNode::new(ast::Expr::Unary(op, expr), span)

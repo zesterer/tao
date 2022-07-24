@@ -219,11 +219,12 @@ impl Classes {
             gen_eff_links: &mut HashMap<usize, ConEffectId>,
         ) -> bool {
             match (hir.tys.get_effect(member), effs) {
-                (Effect::Known(member_effs), effs) => effs
+                (Effect::Known(member_effs), effs) if member_effs.len() <= 1 || effs.len() <= 1  => effs
                     .iter()
                     .all(|eff| member_effs
                         .iter()
                         .any(|member_eff| match (member_eff, eff) {
+                            (Ok(EffectInst::Gen(idx, _)), eff) => gen_eff_links.entry(*idx).or_insert(*eff) == eff,
                             (x, y) => todo!("You know, you should really impl effect-polymorphic class monomorphisation: {:?} covers {:?}", x, y),
                         })),
                 (Effect::Error, _) => panic!("Error eff during monomorphisation"),

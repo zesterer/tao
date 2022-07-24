@@ -528,11 +528,7 @@ impl<'a> Infer<'a> {
                                     opener = opener.or(Some(eff));
                                     return None;
                                 },
-                                None => {
-                                    // println!("Generic effect length mismatch! Tried to get idx = {}", idx);
-                                    // TODO: Is this right?! If a generic effect isn't mentioned, can we just ignore it? Seems incorrect
-                                    return None
-                                },
+                                None => todo!("Tried to instantiate effect that wasn't present in signature, a free effect set should be generated instead"),
                             },
                             Ok(EffectInst::Concrete(decl, args)) => {
                                 let args = args
@@ -918,7 +914,7 @@ impl<'a> Infer<'a> {
         match check.1 {
             Some(true) => Some(res.is_ok()),
             None => if !res.is_ok() { Some(false) } else { None },
-            Some(false) => Some(false)
+            Some(false) => Some(false),
         }
     }
 
@@ -1164,13 +1160,13 @@ impl<'a> Infer<'a> {
                 let opaque_err = Self::flow_inner(infer, x_opaque, y_opaque).err().map(|_| (x, y));
                 o_err.or(eff_err).or(opaque_err).map(Err).unwrap_or(Ok(()))
             },
-            (TyInfo::Effect(x_eff, x_out, x_opaque), y_info) if !matches!(y_info, TyInfo::Unknown(_)) => {
+            (TyInfo::Effect(x_eff, x_out, x_opaque), y_info) => {
                 infer.make_check_eff_empty((x_eff, x), y);
                 let o_err = Self::flow_inner(infer, x_out, y).err();
                 // TODO: opaque_err?
                 o_err.map(Err).unwrap_or(Ok(()))
             },
-            (x_info, TyInfo::Effect(y_eff, y_out, y_opaque)) if !matches!(x_info, TyInfo::Unknown(_)) => {
+            (x_info, TyInfo::Effect(y_eff, y_out, y_opaque)) => {
                 infer.make_check_eff_empty((y_eff, x), y);
                 let o_err = Self::flow_inner(infer, x, y_out).err();
                 // TODO: opaque_err?
@@ -1478,20 +1474,31 @@ impl<'a> Infer<'a> {
 
     fn check(&mut self, c: Check) -> Result<(), InferError> {
         match c {
-            Check::CheckFlowEffect((x, x_ty), (y, y_ty), _) => self.check_flow_eff((x, x_ty), (y, y_ty))
+            Check::CheckFlowEffect((x, x_ty), (y, y_ty), eq_info) => self.check_flow_eff((x, x_ty), (y, y_ty))
                 .and_then(|ok| if ok {
                     Some(())
                 } else {
                     None
                 })
-                .ok_or_else(|| InferError::CannotCoerce(x_ty, y_ty, None, EqInfo::default())),
-            Check::CheckEffectEmpty((x, x_ty), other, _) => self.check_eff_empty((x, x_ty))
+                .ok_or_else(|| {
+                    println!("{:?} into {:?}", self.follow_effect(x), self.follow_effect(y));
+                    if let EffectInfo::Open(xs) = self.follow_effect(x) {
+                        for x in xs {
+                            println!("lhs eff: {:?}", self.follow_effect_inst(x));
+                        }
+                    }
+                    InferError::CannotCoerce(x_ty, y_ty, None, eq_info)
+                }),
+            Check::CheckEffectEmpty((x, x_ty), other, eq_info) => self.check_eff_empty((x, x_ty))
                 .and_then(|ok| if ok {
                     Some(())
                 } else {
                     None
                 })
-                .ok_or_else(|| InferError::CannotCoerce(x_ty, other, None, EqInfo::default())),
+                .ok_or_else(|| {
+                    println!("HERE");
+                    InferError::CannotCoerce(x_ty, other, None, eq_info)
+                }),
         }
     }
 
@@ -1675,7 +1682,11 @@ impl<'a> Infer<'a> {
             // TODO: This probably isn't correct by itself, we need to enforce that `eff` is indeed empty for this to
             // be valid
             (TyInfo::Effect(_eff, out, _), _) => self.var_covers_var(out, ty),
-            (_, _) => Some(false),
+            (_, TyInfo::Effect(_eff, out, _)) => self.var_covers_var(var, out),
+            (x, y) => {
+                // dbg!("{:?} covers {:?}", x, y);
+                Some(false)
+            },
         }
     }
 
@@ -1710,7 +1721,7 @@ impl<'a> Infer<'a> {
         {
             Some(true)
         } else {
-            println!("{:?} covers {:?}", self.follow_effect(var), self.follow_effect(eff));
+            dbg!("{:?} covers {:?}", self.follow_effect(var), self.follow_effect(eff));
             None
         };
 
@@ -1723,10 +1734,9 @@ impl<'a> Infer<'a> {
                 self.eff_covers_eff(x_opener, y_opener)
             },
             (x, y) => {
-                println!("{:?} covers {:?}", x, y);
+                dbg!("{:?} covers {:?}", x, y);
                 None
             },
-            (_, _) => None, // TODO: Other cases
         }
     }
 
@@ -1742,7 +1752,10 @@ impl<'a> Infer<'a> {
                     .into_iter()
                     .zip(y_gen_effs.into_iter())
                     .fold(Some(true), |a, (x, y)| Some(a? && self.eff_covers_eff(x, y)?))?),
-            (_, _) => Some(false),
+            (x, y) => {
+                dbg!("{:?} covers {:?}", x, y);
+                Some(false)
+            },
         }
     }
 
@@ -1801,6 +1814,7 @@ impl<'a> Infer<'a> {
             // TODO: This probably isn't correct by itself, we need to enforce that `eff` is indeed empty for this to
             // be valid
             (TyInfo::Effect(_eff, out, _), _) => self.covers_var(out, ty, ty_gens, eff_gens),
+            (_, Ty::Effect(_eff, out)) => self.covers_var(var, out, ty_gens, eff_gens),
             // (_, Ty::Effect(_eff, out)) => self.covers_var(var, out, gens),
 
             // Unknown types *could* match, maybe
@@ -1842,12 +1856,15 @@ impl<'a> Infer<'a> {
                                 .zip(y_gen_tys.into_iter())
                                 .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, *y, ty_gens, eff_gens)?))
                                 .unwrap_or_else(|()| false),
-                            (_, _) => false,
+                            (x, y) => {
+                                dbg!("{:?} covers {:?}", x, y);
+                                false
+                            },
                         }))
                 {
                     Ok(true)
                 } else {
-                    println!("{:?} covers {:?}", self.follow_effect(var), self.ctx.tys.get_effect(eff));
+                    dbg!("{:?} covers {:?}", self.follow_effect(var), self.ctx.tys.get_effect(eff));
                     Err(())
                 }
             },
@@ -1855,7 +1872,7 @@ impl<'a> Infer<'a> {
                 self.covers_var_eff((opener, var_ty), eff, ty_gens, eff_gens)
             },
             (x, y) => {
-                println!("{:?} covers {:?}", x, y);
+                dbg!("{:?} covers {:?}", x, y);
                 Err(())
             }, // TODO: Other cases
         }
@@ -2228,7 +2245,9 @@ impl<'a> Infer<'a> {
                                         covering_gen_eff,
                                         use_span,
                                         &mut |idx, _, _| ty_links.get(&idx).copied(),
-                                        &mut |idx, _| eff_links.get(&idx).copied(),
+                                        &mut |idx, infer| Some(*eff_links
+                                            .entry(idx)
+                                            .or_insert_with(|| infer.insert_effect(use_span, EffectInfo::Open(Vec::new())))),
                                         Some(ty),
                                     ) {
                                         Ok(Some(eff)) => eff,
