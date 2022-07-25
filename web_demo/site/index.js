@@ -1,9 +1,9 @@
-import * as wasm from "tao_web_demo";
-import {basicSetup} from "codemirror";
-import {EditorState} from "@codemirror/state"
-import {EditorView, keymap} from "@codemirror/view"
-import {indentWithTab} from "@codemirror/commands"
-import {indentUnit} from "@codemirror/language"
+import * as wasm from "./node_modules/tao_web_demo/tao_web_demo.js";
+import {basicSetup} from "./node_modules/codemirror";
+import {EditorState} from "./node_modules/@codemirror/state"
+import {EditorView, keymap} from "./node_modules/@codemirror/view"
+import {indentWithTab} from "./node_modules/@codemirror/commands"
+import {indentUnit} from "./node_modules/@codemirror/language"
 
 var example_filenames = [
     "hello.tao",

@@ -25,7 +25,7 @@
   "bugs": {
     "url": "https://github.com/rustwasm/create-wasm-app/issues"
   },
-  "homepage": "https://github.com/rustwasm/create-wasm-app#readme",
+  "homepage": "./",
   "dependencies": {
     "codemirror": "^6.0.1",
     "tao_web_demo": "file:../pkg"
