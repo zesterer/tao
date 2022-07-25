@@ -1,5 +1,7 @@
 # Tao
 
+[You can now test Tao in the browser!](https://tao.jsbarretto.com/)
+
 A statically-typed functional language with polymorphism, typeclasses, sum types, pattern-matching, first-class
 functions, currying, good diagnostics, and much more!
 
