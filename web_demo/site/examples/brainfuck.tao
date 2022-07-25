@@ -1,4 +1,4 @@
-import "../lib/main.tao"
+import "main.tao"
 
 data Instr =
     | Left
@@ -92,16 +92,12 @@ fn exec_all : State -> [Instr] -> io ~ State =
 
 def main : io ~ () = do {
     let (xs, _) = "
-        [sierpinski.b -- display Sierpinski triangle
-        (c) 2016 Daniel B. Cristofani
-        http://brainfuck.org/]
-        ++++++++[>+>++++<<-]>++>>+<[-[>>+<<-]+>>]>+[
-            -<<<[
-                ->[+[-]+>++>>>-<<]<[<]>>++++++[<<+++++>>-]+<<++.[-]<<
-            ]>.>+[>>]>+
-        ]
-        [Shows an ASCII representation of the Sierpinski triangle
-        (iteration 5).]
-    "->parse_bf;
+    ++++++++[>++++[
+    >++>+++>+++>+<<
+    <<-]>+>+>->>+[<
+    ]<-]>>.>---.+++
+    ++++..+++.>>.<-
+    .<.+++.------.-
+    -------.>>+.>++."->parse_bf;
     exec_all(default, xs)!;
 }

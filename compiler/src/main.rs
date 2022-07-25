@@ -1,4 +1,5 @@
-use tao::{Options, SrcId, run};
+use tao::{Options, SrcId, compile};
+use tao_vm::{exec, Stdio};
 use structopt::StructOpt;
 use std::{fs, path::PathBuf};
 
@@ -16,7 +17,7 @@ fn main() {
     let src = fs::read_to_string(&args.file)
         .expect("Failed to read file");
     let src_id = SrcId::from_path(args.file);
-    run(
+    let prog = compile(
         src,
         src_id,
         args.options,
@@ -29,4 +30,8 @@ fn main() {
             Some(SrcId::from_path(path.canonicalize().ok()?))
         },
     );
+
+    if let Some(prog) = prog {
+        exec(&prog, &mut Stdio::default());
+    }
 }

@@ -1,0 +1,4 @@
+import "main.tao"
+
+def main: io ~ () =
+    print("Hello, world!")!

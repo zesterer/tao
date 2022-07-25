@@ -232,7 +232,6 @@ impl Types {
     }
 
     pub fn insert_effect(&mut self, span: Span, eff: Effect) -> EffectId {
-        if matches!(eff, Effect::Known(ref effs) if effs.iter().any(|e| matches!(e, Err(_)))) { panic!("HERE: {:?}", eff); }
         self.effects.add((span, eff))
     }
 }

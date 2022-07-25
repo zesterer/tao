@@ -6,7 +6,7 @@ pub use tao_middle::OptMode;
 use tao_syntax::{parse_module, ast, SrcNode, Error as SyntaxError};
 use tao_analysis::Context as HirContext;
 use tao_middle::Context;
-use tao_vm::{Program, exec};
+use tao_vm::Program;
 use ariadne::sources;
 use structopt::StructOpt;
 use internment::Intern;
@@ -18,7 +18,7 @@ use std::{
 };
 use error::Error;
 
-#[derive(Clone, Debug, StructOpt)]
+#[derive(Clone, Debug, Default, StructOpt)]
 pub struct Options {
     /// Add a debugging layer to stdout (tokens, ast, hir, mir, bytecode)
     #[structopt(long)]
@@ -28,14 +28,14 @@ pub struct Options {
     pub opt: OptMode,
 }
 
-pub fn run<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<SrcId>>(
+pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<SrcId>>(
     src: String,
     src_id: SrcId,
     options: Options,
     mut writer: impl Write,
     mut get_file: F,
     mut make_src: G,
-) {
+) -> Option<Program> {
     let (mut ast, mut syntax_errors) = parse_module(&src, src_id);
 
     // TODO: Write a proper module system you lazy git
@@ -83,7 +83,7 @@ pub fn run<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<Sr
         for e in import_errors {
             e.write(&mut srcs, &mut writer);
         }
-        return;
+        return None;
     }
 
     let mut syntax_error = false;
@@ -109,6 +109,7 @@ pub fn run<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<Sr
             for e in analysis_errors {
                 e.write(&ctx, &mut srcs, src_id, &mut writer);
             }
+            None
         } else {
             let (concrete, mut con_errors) = ctx.concretize();
 
@@ -116,6 +117,7 @@ pub fn run<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<Sr
                 for e in con_errors {
                     e.write(&ctx, &mut srcs, src_id, &mut writer);
                 }
+                None
             } else {
                 let mut ctx = Context::from_concrete(&ctx, &concrete);
 
@@ -133,10 +135,10 @@ pub fn run<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Option<Sr
                     prog.write(&mut writer);
                 }
 
-                if let Some(result) = exec(&prog) {
-                    writeln!(writer, "{}", result).unwrap();
-                }
+                Some(prog)
             }
         }
+    } else {
+        None
     }
 }

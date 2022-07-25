@@ -1,4 +1,4 @@
-import "../lib/main.tao"
+import "main.tao"
 
 def main : io ~ () = do {
     print("Enter your name")!;

@@ -82,7 +82,7 @@ impl fmt::Display for Value {
     }
 }
 
-pub fn exec(prog: &Program) -> Option<Value> {
+pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
     let mut addr = prog.entry;
     let mut universe_counter = 0;
 
@@ -304,20 +304,15 @@ pub fn exec(prog: &Program) -> Option<Value> {
                 let universe = stack.pop().unwrap().universe();
                 assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
                 universe_counter += 1;
-                println!("{}", s.into_iter().map(|c| c.char()).collect::<String>());
+                env.print(s.into_iter().map(|c| c.char()).collect::<String>());
                 stack.push(Value::Universe(universe_counter))
             },
             Instr::Input => {
-                use std::io::{stdin, stdout, Write};
-
                 let universe = stack.pop().unwrap().universe();
                 assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
                 universe_counter += 1;
 
-                let mut s = String::new();
-                print!("> ");
-                stdout().flush().expect("IO error");
-                stdin().read_line(&mut s).expect("IO error");
+                let s = env.input();
 
                 stack.push(Value::List(vector![
                     Value::Universe(universe_counter),
@@ -389,5 +384,29 @@ pub fn exec(prog: &Program) -> Option<Value> {
         tick += 1;
 
         addr = next_addr;
+    }
+}
+
+pub trait Env {
+    fn input(&mut self) -> String;
+    fn print(&mut self, s: String);
+}
+
+#[derive(Default)]
+pub struct Stdio;
+
+impl Env for Stdio {
+    fn input(&mut self) -> String {
+        use std::io::{stdin, stdout, Write};
+
+        let mut s = String::new();
+        print!("> ");
+        stdout().flush().expect("IO error");
+        stdin().read_line(&mut s).expect("IO error");
+        s
+    }
+
+    fn print(&mut self, s: String) {
+        println!("{}", s);
     }
 }

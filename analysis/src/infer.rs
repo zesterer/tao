@@ -1480,25 +1480,14 @@ impl<'a> Infer<'a> {
                 } else {
                     None
                 })
-                .ok_or_else(|| {
-                    println!("{:?} into {:?}", self.follow_effect(x), self.follow_effect(y));
-                    if let EffectInfo::Open(xs) = self.follow_effect(x) {
-                        for x in xs {
-                            println!("lhs eff: {:?}", self.follow_effect_inst(x));
-                        }
-                    }
-                    InferError::CannotCoerce(x_ty, y_ty, None, eq_info)
-                }),
+                .ok_or_else(|| InferError::CannotCoerce(x_ty, y_ty, None, eq_info)),
             Check::CheckEffectEmpty((x, x_ty), other, eq_info) => self.check_eff_empty((x, x_ty))
                 .and_then(|ok| if ok {
                     Some(())
                 } else {
                     None
                 })
-                .ok_or_else(|| {
-                    println!("HERE");
-                    InferError::CannotCoerce(x_ty, other, None, eq_info)
-                }),
+                .ok_or_else(|| InferError::CannotCoerce(x_ty, other, None, eq_info)),
         }
     }
 

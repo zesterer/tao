@@ -6,6 +6,7 @@ members = [
     "middle",
     "vm",
     "util",
+    "web_demo",
 ]
 
 [profile.dev]

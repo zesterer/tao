@@ -1,0 +1,25 @@
+.flex-container {
+  display: flex;
+  flex-direction: row;
+}
+
+#buttons {
+    margin: 1em;
+}
+
+#editor {
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 90vh;
+    font-family: monospace;
+    overflow: scroll;
+}
+
+#output {
+    width: 40%;
+    margin: 10px;
+    white-space:  pre;
+    font-family: monospace;
+}
+

@@ -83,6 +83,12 @@ pub enum OptMode {
     Fast,
 }
 
+impl Default for OptMode {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 impl FromStr for OptMode {
     type Err = &'static str;
 
