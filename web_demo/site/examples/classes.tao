@@ -1,0 +1,24 @@
+import "main.tao"
+
+# A typeclass for pretty-printing values
+class Pretty =
+    => pretty : Nat -> Self -> Str
+
+member Nat of Pretty =
+    => pretty = fn indent, x => x->show
+
+for A < Pretty, B < Pretty member (A, B) of Pretty =
+    => pretty = fn indent, (a, b) => "(\n"
+        ++ "  "->repeat(indent + 1) ++ a->A.pretty(indent + 1) ++ ",\n"
+        ++ "  "->repeat(indent + 1) ++ b->B.pretty(indent + 1) ++ ",\n"
+        ++ "  "->repeat(indent) ++ ")"
+
+for A < Pretty member [A] of Pretty =
+    => pretty = fn indent, xs => "[\n"
+        ++ xs->fold("", fn s, x => s ++ "  "->repeat(indent + 1) ++ x->A.pretty(indent + 1) ++ ",\n")
+        ++ "  "->repeat(indent) ++ "]"
+
+def pretty A < Pretty : A -> Str = A.pretty(0)
+
+def main: io ~ () =
+    print((1, (2, [3, 4, 5]))->pretty)!

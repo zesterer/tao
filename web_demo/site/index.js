@@ -1,4 +1,4 @@
-import * as wasm from "./node_modules/tao_web_demo/tao_web_demo.js";
+import * as wasm from "./node_modules/tao_web_demo";
 import {basicSetup} from "./node_modules/codemirror";
 import {EditorState} from "./node_modules/@codemirror/state"
 import {EditorView, keymap} from "./node_modules/@codemirror/view"
@@ -8,6 +8,7 @@ import {indentUnit} from "./node_modules/@codemirror/language"
 var example_filenames = [
     "hello.tao",
     "input.tao",
+    "classes.tao",
     "brainfuck.tao",
 ];
 
