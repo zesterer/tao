@@ -3,6 +3,7 @@ import {basicSetup} from "codemirror";
 import {EditorState} from "@codemirror/state"
 import {EditorView, keymap} from "@codemirror/view"
 import {indentWithTab} from "@codemirror/commands"
+import {indentUnit} from "@codemirror/language"
 
 var example_filenames = [
     "hello.tao",
@@ -14,7 +15,7 @@ wasm.tao_init();
 
 const initialState = EditorState.create({
   doc: '',
-  extensions: [basicSetup, keymap.of([indentWithTab])],
+  extensions: [basicSetup, keymap.of([indentWithTab]), indentUnit.of("    ")],
 });
 
 const input = new EditorView({

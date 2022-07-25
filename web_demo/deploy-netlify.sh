@@ -4,3 +4,4 @@ cd site
 npm install --save-dev webpack
 npm run build
 cd ..
+cp -r site/examples site/dist/examples
