@@ -1390,13 +1390,13 @@ impl<'a> Infer<'a> {
 
                                             let mut ty_links = HashMap::new();
                                             let mut eff_links = HashMap::new();
-                                            self.derive_links(member_member, ty, Some(ty), &mut ty_links, &mut eff_links);
+                                            self.derive_links(member_member, ty, Some(ty), use_span, &mut ty_links, &mut eff_links);
                                             for (member_gen_ty, gen_ty) in member_gen_tys.iter().zip(gen_tys.iter()) {
-                                                self.derive_links(*member_gen_ty, *gen_ty, Some(ty), &mut ty_links, &mut eff_links);
+                                                self.derive_links(*member_gen_ty, *gen_ty, Some(ty), use_span, &mut ty_links, &mut eff_links);
                                             }
                                             for (member_gen_eff, gen_eff) in member_gen_effs.iter().zip(gen_effs.iter()) {
                                                 if let Some(member_gen_eff) = *member_gen_eff {
-                                                    self.derive_links_eff(member_gen_eff, *gen_eff, Some(ty), &mut ty_links, &mut eff_links);
+                                                    self.derive_links_eff(member_gen_eff, *gen_eff, Some(ty), use_span, &mut ty_links, &mut eff_links);
                                                 }
                                             }
 
@@ -1877,6 +1877,7 @@ impl<'a> Infer<'a> {
         member: TyId,
         ty: TyVar,
         self_ty: Option<TyVar>,
+        use_span: Span,
         ty_links: &mut HashMap<usize, TyVar>,
         eff_links: &mut HashMap<usize, EffectVar>,
     ) {
@@ -1886,34 +1887,34 @@ impl<'a> Infer<'a> {
             // current context, generating free type variables for any as-yet unseen generics. This allows
             // maybe-covering impls to work.
             // TODO: This can potentially result in orphaned free type variables that never get inferred, despite the
-            // program being well-typed, which could cause phantom errors.
-            (_, TyInfo::Unknown(_)) => {
+            // program being well-typed, which could cause phantom errors, or maybe this is fine?
+            (_, TyInfo::Unknown(inst_span)) => {
                 let span = self.ctx().tys.get_span(member);
                 let inst_ty = self.instantiate(
                     member,
                     span,
-                    &mut |idx, _, this: &mut Self| Some(*ty_links.entry(idx).or_insert_with(|| this.unknown(span))),
-                    &mut |idx, this: &mut Self| Some(*eff_links.entry(idx).or_insert_with(|| this.insert_effect(span, EffectInfo::Open(Vec::new())))),
+                    &mut |idx, _, this: &mut Self| Some(*ty_links.entry(idx).or_insert_with(|| this.insert(use_span, TyInfo::Unknown(Some(this.span(ty)))))),
+                    &mut |idx, this: &mut Self| Some(*eff_links.entry(idx).or_insert_with(|| this.insert_effect(use_span, EffectInfo::Open(Vec::new())))),
                     self_ty,
                 );
-                self.make_flow(ty, inst_ty, span);
+                self.make_flow(ty, inst_ty, use_span);
             },
-            (Ty::List(x), TyInfo::List(y)) => self.derive_links(x, y, self_ty, ty_links, eff_links),
+            (Ty::List(x), TyInfo::List(y)) => self.derive_links(x, y, self_ty, use_span, ty_links, eff_links),
             (Ty::Record(xs, _), TyInfo::Record(ys, _)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .for_each(|((_, x), (_, y))| self.derive_links(x, y, self_ty, ty_links, eff_links)),
+                .for_each(|((_, x), (_, y))| self.derive_links(x, y, self_ty, use_span, ty_links, eff_links)),
             (Ty::Func(x_i, x_o), TyInfo::Func(y_i, y_o)) => {
-                self.derive_links(x_i, y_i, self_ty, ty_links, eff_links);
-                self.derive_links(x_o, y_o, self_ty, ty_links, eff_links);
+                self.derive_links(x_i, y_i, self_ty, use_span, ty_links, eff_links);
+                self.derive_links(x_o, y_o, self_ty, use_span, ty_links, eff_links);
             },
             (Ty::Data(_, xs), TyInfo::Data(_, ys)) => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .for_each(|(x, y)| self.derive_links(x, y, self_ty, ty_links, eff_links)),
+                .for_each(|(x, y)| self.derive_links(x, y, self_ty, use_span, ty_links, eff_links)),
             (Ty::Assoc(x, (class_id_x, x_gen_tys, x_gen_effs), assoc_x), TyInfo::Assoc(y, class_y, assoc_y))
                 if assoc_x == assoc_y => {
-                    self.derive_links(x, y, self_ty, ty_links, eff_links);
+                    self.derive_links(x, y, self_ty, use_span, ty_links, eff_links);
                     match self.follow_class(class_y) {
                         ClassInfo::Unknown => panic!("Deriving links for unknown class!"),
                         ClassInfo::Ref(_) => unreachable!(),
@@ -1922,13 +1923,13 @@ impl<'a> Infer<'a> {
                             x_gen_tys
                                 .into_iter()
                                 .zip(y_gen_tys.into_iter())
-                                .for_each(|(x, y)| self.derive_links(x, y, self_ty, ty_links, eff_links));
+                                .for_each(|(x, y)| self.derive_links(x, y, self_ty, use_span, ty_links, eff_links));
                             x_gen_effs
                                 .into_iter()
                                 .zip(y_gen_effs.into_iter())
                                 .for_each(|(x, y)| {
                                     if let Some(x) = x {
-                                        self.derive_links_eff(x, y, self_ty, ty_links, eff_links)
+                                        self.derive_links_eff(x, y, self_ty, use_span, ty_links, eff_links)
                                     }
                                 });
                         },
@@ -1937,15 +1938,15 @@ impl<'a> Infer<'a> {
             (Ty::Effect(_, _), TyInfo::Effect(_, _, _)) => todo!(),
             (Ty::Effect(eff, out), _) => {
                 let eff_var = self.insert_effect(self.span(ty), EffectInfo::Closed(Vec::new(), None));
-                self.derive_links_eff(eff, eff_var, self_ty, ty_links, eff_links);
-                self.derive_links(out, ty, self_ty, ty_links, eff_links)
+                self.derive_links_eff(eff, eff_var, self_ty, use_span, ty_links, eff_links);
+                self.derive_links(out, ty, self_ty, use_span, ty_links, eff_links)
             },
             (_, TyInfo::Effect(eff, out, _)) => {
                 // Make sure we actually can see through this effect!
                 // TODO: Make this generate better errors
                 self.checks.push_back(Check::CheckEffectEmpty((eff, ty), ty, EqInfo::default()));
 
-                self.derive_links(member, out, self_ty, ty_links, eff_links)
+                self.derive_links(member, out, self_ty, use_span, ty_links, eff_links)
             },
             (_, TyInfo::SelfType) => panic!("Self type not permitted here"),
             _ => {}, // Only type constructors and generic types generate obligations
@@ -1957,6 +1958,7 @@ impl<'a> Infer<'a> {
         member: EffectId,
         eff: EffectVar,
         self_ty: Option<TyVar>,
+        use_span: Span,
         ty_links: &mut HashMap<usize, TyVar>,
         eff_links: &mut HashMap<usize, EffectVar>,
     ) {
@@ -1970,13 +1972,13 @@ impl<'a> Infer<'a> {
                         (Ok(EffectInst::Concrete(x, x_gen_tys)), EffectInstInfo::Known(y, y_gen_tys)) if *x == y => x_gen_tys
                             .into_iter()
                             .zip(y_gen_tys.into_iter())
-                            .for_each(|(x, y)| self.derive_links(*x, y, self_ty, ty_links, eff_links)),
+                            .for_each(|(x, y)| self.derive_links(*x, y, self_ty, use_span, ty_links, eff_links)),
                         (x, y) => todo!("Derive links between {:?} and {:?}", x, y),
                     }
                 }
             }
             (_, EffectInfo::Closed(member_effs, Some(opener))) if member_effs.is_empty() => {
-                self.derive_links_eff(member, opener, self_ty, ty_links, eff_links)
+                self.derive_links_eff(member, opener, self_ty, use_span, ty_links, eff_links)
             },
             (x, y) => todo!("Derive links between {:?} and {:?} (effs_of(y) = {:?})", x, y, self.effs_of(y.clone())),
         }
@@ -2018,7 +2020,7 @@ impl<'a> Infer<'a> {
                             // Try to select an implied member where the real member is known
                             // TODO: Is multiple covering impls an error? Should coherence prevent this case?
                             selected = Some(selected
-                                .zip_with(Some(member), |s: &InferImpliedMember, m| if matches!(&s.items, ImpliedItems::Real(_)) {
+                                .zip_with(Some(member), |s: &InferImpliedMember, m| if matches!(&s.items, ImpliedItems::Eq(_)) {
                                     s
                                 } else {
                                     m
@@ -2032,13 +2034,13 @@ impl<'a> Infer<'a> {
 
                     // Check constrained associated types
                     let class = self.insert_class(obl_span, ClassInfo::Known(class_id, class_gen_tys.clone(), class_gen_effs.clone()));
-                    if let ImpliedItems::Eq(assoc_set) = &items {
-                        for (assoc, assoc_ty) in assoc {
-                            if let Some((name, ty)) = assoc_set.iter().find(|(name, _)| **name == *assoc) {
-                                self.make_flow(*ty, assoc_ty, name.span());
-                            }
-                        }
-                    }
+                    // if let ImpliedItems::Eq(assoc_set) = &items {
+                    //     for (assoc, assoc_ty) in assoc {
+                    //         if let Some((name, ty)) = assoc_set.iter().find(|(name, _)| **name == *assoc) {
+                    //             self.make_flow(*ty, assoc_ty, name.span());
+                    //         }
+                    //     }
+                    // }
 
                     Some(Ok(Ok(items)))
                 } else {
@@ -2106,9 +2108,14 @@ impl<'a> Infer<'a> {
                             // Derive generic types that need substituting from the member
                             let mut ty_links = HashMap::new();
                             let mut eff_links = HashMap::new();
-                            self.derive_links(covering_member_member, ty, Some(ty), &mut ty_links, &mut eff_links);
+                            self.derive_links(covering_member_member, ty, Some(ty), use_span, &mut ty_links, &mut eff_links);
                             for (member_gen_ty, gen_ty) in covering_member_gen_tys.iter().zip(class_gen_tys.iter()) {
-                                self.derive_links(*member_gen_ty, *gen_ty, Some(ty), &mut ty_links, &mut eff_links);
+                                self.derive_links(*member_gen_ty, *gen_ty, Some(ty), use_span, &mut ty_links, &mut eff_links);
+                            }
+                            for (member_gen_eff, gen_eff) in covering_member_gen_effs.iter().zip(class_gen_effs.iter()) {
+                                if let Some(member_gen_eff) = member_gen_eff {
+                                    self.derive_links_eff(*member_gen_eff, *gen_eff, Some(ty), use_span, &mut ty_links, &mut eff_links);
+                                }
                             }
 
                             let covering_gen_scope = self.ctx.tys.get_gen_scope(covering_member_gen_scope);

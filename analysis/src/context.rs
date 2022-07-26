@@ -57,6 +57,30 @@ impl Context {
                 Ok(class_id) => classes.push((attr, class, class_id, gen_scope)),
             }
         }
+        // Class associated types
+        for (attr, class, class_id, gen_scope) in &classes {
+            let mut existing_tys = HashMap::new();
+            let assoc = class.items
+                .iter()
+                .filter_map(|item| match item {
+                    ast::ClassItem::Type { name, obligations } => {
+                        if !obligations.is_empty() {
+                            errors.push(Error::Unsupported(obligations.span(), "obligations on associated types"));
+                        }
+
+                        if let Some(old) = existing_tys.get(&**name) {
+                            errors.push(Error::DuplicateClassItem(**name, *old, name.span()));
+                            None
+                        } else {
+                            existing_tys.insert(**name, name.span());
+                            Some(ClassAssoc { name: name.clone() })
+                        }
+                    },
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            this.classes.define_assoc(*class_id, assoc);
+        }
         for (attr, eff) in module.effects() {
             let (gen_scope, mut errs) = GenScope::from_ast(&eff.generics, eff.name.span());
             errors.append(&mut errs);
@@ -353,30 +377,6 @@ impl Context {
             this.effects.define_send_recv(eff_id, send, recv);
         }
 
-        // Class associated types
-        for (attr, class, class_id, gen_scope) in &classes {
-            let mut existing_tys = HashMap::new();
-            let assoc = class.items
-                .iter()
-                .filter_map(|item| match item {
-                    ast::ClassItem::Type { name, obligations } => {
-                        if !obligations.is_empty() {
-                            errors.push(Error::Unsupported(obligations.span(), "obligations on associated types"));
-                        }
-
-                        if let Some(old) = existing_tys.get(&**name) {
-                            errors.push(Error::DuplicateClassItem(**name, *old, name.span()));
-                            None
-                        } else {
-                            existing_tys.insert(**name, name.span());
-                            Some(ClassAssoc { name: name.clone() })
-                        }
-                    },
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            this.classes.define_assoc(*class_id, assoc);
-        }
         // Class fields
         for (attr, class, class_id, gen_scope) in &classes {
             let mut existing_fields = HashMap::new();

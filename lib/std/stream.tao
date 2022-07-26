@@ -24,10 +24,26 @@ for A member [A] of Stream =
 
 data Mapped S < Stream, B = (S, S.Item -> B)
 
+for S < Stream, B member Mapped S B of Stream =
+    => Item = B
+    => next = fn Mapped (s, f) => match s->S.next in
+        | None => None
+        \ Just (s, x) => Just (Mapped (s, f), x->f)
+
 fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
     S < ToStream,
     S.Stream < Stream,
 =
     f, s => Mapped (S.to_stream(s), f)
 
-def x = [1, 2, 3]->smap(fn x => x * x)
+class FromStream S < Stream =
+    => from_stream : S -> Self
+
+for A, S member [A] of FromStream S where
+    S < Stream with { Item = A },
+=
+    => from_stream = fn s => match s->S.next in
+        | None => []
+        \ Just (s, x) => [x .. s->collect]
+
+def collect A < FromStream S, S : S -> A = A.from_stream
