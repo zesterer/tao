@@ -1,5 +1,9 @@
 import "main.tao"
 
+# Generate n levels of indentation
+fn indent : Nat -> Str =
+    n => "    "->repeat(n)
+
 # A typeclass for pretty-printing values
 class Pretty =
     => pretty : Nat -> Self -> Str
@@ -7,18 +11,21 @@ class Pretty =
 member Nat of Pretty =
     => pretty = fn indent, x => x->show
 
+member Bool of Pretty =
+    => pretty = fn indent, x => x->show
+
 for A < Pretty, B < Pretty member (A, B) of Pretty =
-    => pretty = fn indent, (a, b) => "(\n"
-        ++ "  "->repeat(indent + 1) ++ a->A.pretty(indent + 1) ++ ",\n"
-        ++ "  "->repeat(indent + 1) ++ b->B.pretty(indent + 1) ++ ",\n"
-        ++ "  "->repeat(indent) ++ ")"
+    => pretty = fn depth, (a, b) => "(\n"
+        ++ indent(depth + 1) ++ a->A.pretty(depth + 1) ++ ",\n"
+        ++ indent(depth + 1) ++ b->B.pretty(depth + 1) ++ ",\n"
+        ++ indent(depth) ++ ")"
 
 for A < Pretty member [A] of Pretty =
-    => pretty = fn indent, xs => "[\n"
-        ++ xs->fold("", fn s, x => s ++ "  "->repeat(indent + 1) ++ x->A.pretty(indent + 1) ++ ",\n")
-        ++ "  "->repeat(indent) ++ "]"
+    => pretty = fn depth, xs => "[\n"
+        ++ xs->fold("", fn s, x => s ++ indent(depth + 1) ++ x->A.pretty(depth + 1) ++ ",\n")
+        ++ indent(depth) ++ "]"
 
 def pretty A < Pretty : A -> Str = A.pretty(0)
 
 def main: io ~ () =
-    print((1, (2, [3, 4, 5]))->pretty)!
+    print((1, ((2, 3), [(4, True), (5, False), (6, True)]))->pretty)!

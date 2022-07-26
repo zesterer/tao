@@ -2,8 +2,8 @@
 
 [You can now test Tao in the browser!](https://tao.jsbarretto.com/)
 
-A statically-typed functional language with polymorphism, typeclasses, sum types, pattern-matching, first-class
-functions, currying, good diagnostics, and much more!
+A statically-typed functional language with polymorphism, typeclasses, algebraic effects, sum types, pattern-matching,
+first-class functions, currying, good diagnostics, and much more!
 
 <a href = "https://www.github.com/zesterer/tao">
     <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/example.png" alt="Demo of Tao's features"/>

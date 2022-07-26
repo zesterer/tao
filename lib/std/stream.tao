@@ -4,68 +4,30 @@
 
 import "value.tao"
 
-# type Sum = (Nat | Num)
-# fn foo : Sum = &5
+class Stream =
+    => Item
+    => next : Self -> Maybe (Self, Self.Item)
 
-class Stream A =
-    => next : Self -> (Maybe A, Self)
+class ToStream =
+    => Stream
+    => to_stream : Self -> Self.Stream
 
-class IntoStream =
-   => Stream
-   => into : Self -> Self.Stream
+for A member [A] of ToStream =
+    => Stream = [A]
+    => to_stream = fn xs => xs
 
-for A member [A] of Stream A =
+for A member [A] of Stream =
+    => Item = A
     => next = fn
-        | [x .. xs] => (Just x, xs)
-        \ [] => (None, [])
+        | [] => None
+        \ [x .. xs] => Just (xs, x)
 
-data Take S = {
-    s: S,
-    n: Nat,
-}
+data Mapped S < Stream, B = (S, S.Item -> B)
 
-for A, S < Stream A member Take S of Stream A =
-    => next = fn
-        | self ~ Take { s, n ~ 0 } => (None, self)
-        \ Take { s, n ~ n + 1 } =>
-            let (x, s) = S.next(s) in
-            (x, Take { s, n })
+fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
+    S < ToStream,
+    S.Stream < Stream,
+=
+    f, s => Mapped (S.to_stream(s), f)
 
-fn take S =
-    \ n, s : S => Take { s, n }
-
-data Mapped A, S = {
-    s: S,
-    f: A -> A,
-}
-
-for A, S < Stream A member Mapped A S of Stream A =
-    => next = fn Mapped { s, f } => match S.next(s) in
-        | (Just x, s) => (Just x->f, Mapped { s, f })
-        \ (None, s) => (None, Mapped { s, f })
-
-fn mapped A, S : (A -> A) -> S -> Mapped A S =
-    f, s : S => Mapped { s, f }
-
-# TODO: Have trait selection instantiate!
-# for A, S < Stream A member S of Map A =
-#     => Item = A
-#     => Output = Mapped A S
-#     => map = fn f, s => let m : Mapped A S = Mapped { s, f } in m
-
-# for A, B, S < Stream B member S of Fold A =
-#     => Item = B
-#     => fold = fn a, f, s => match S.next(s) in
-#         | (None, _) => a
-#         \ (Just x, s) => Self.fold(f(a, x), f, s)
-
-## Collect the elements of a stream into a list
-# fn collect S < Stream = s => match S.next(s) in
-#     | (Just x, s) => [x .. s->collect]
-#     \ (None, _) => []
-
-# fn stream_nth S < Stream : Nat -> S -> Maybe S.Item =
-#     | 0, s =>
-#         let (x, _) = S.next(s) in x
-#     \ n + 1, s =>
-#         let (_, s) = S.next(s) in s->stream_nth(n)
+def x = [1, 2, 3]->smap(fn x => x * x)

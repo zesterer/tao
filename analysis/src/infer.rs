@@ -183,7 +183,7 @@ pub struct EffectInstVar(usize);
 pub struct Infer<'a> {
     ctx: &'a mut Context,
     gen_scope: Option<GenScopeId>,
-    vars: Vec<(Span, TyInfo, Result<(), ()>)>,
+    vars: Vec<(Span, TyInfo, Result<(), ()>, std::panic::Location<'static>)>,
     class_vars: Vec<(Span, ClassInfo)>,
     effect_vars: Vec<(Span, EffectInfo)>,
     effect_inst_vars: Vec<(Span, EffectInstInfo)>,
@@ -458,10 +458,11 @@ impl<'a> Infer<'a> {
         }
     }
 
+    #[track_caller]
     pub fn insert(&mut self, span: Span, info: TyInfo) -> TyVar {
         let id = TyVar(self.vars.len());
         let err = if matches!(&info, TyInfo::Error(_)) { Err(()) } else { Ok(()) };
-        self.vars.push((span, info, err));
+        self.vars.push((span, info, err, *std::panic::Location::caller()));
         id
     }
 
@@ -620,6 +621,7 @@ impl<'a> Infer<'a> {
         self.insert(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), info)
     }
 
+    #[track_caller]
     pub fn unknown(&mut self, span: Span) -> TyVar {
         self.insert(span, TyInfo::Unknown(None))
     }
@@ -1494,7 +1496,7 @@ impl<'a> Infer<'a> {
     fn try_resolve_class_from_assoc(&mut self, ty: TyVar, class_var: ClassVar, assoc: SrcNode<Ident>, assoc_ty: TyVar, span: Span) -> Option<Result<(), InferError>> {
         let (class_id, gen_tys, gen_effs) = match self.select_member_from_item(ty, class_var, assoc.clone(), assoc_ty, span, true) {
             Some(Ok(Some((class_id, gen_tys, gen_effs)))) => (class_id, gen_tys, gen_effs),
-            Some(Ok(None)) => return Some(Ok(())),
+            Some(Ok(None)) => return None,
             Some(Err(err)) => return Some(Err(err)),
             None => return None,
         };
@@ -2321,6 +2323,7 @@ impl<'a> Infer<'a> {
         for (ty, info) in tys {
             if let TyInfo::Unknown(origin) = info {
                 if !self.is_error(ty) {
+                    // println!("Uninferred type generated at {:?}", self.vars[ty.0].3);
                     errors.push(InferError::CannotInfer(ty, origin));
                     self.set_error(ty);
                 }

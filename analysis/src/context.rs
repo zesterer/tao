@@ -874,7 +874,7 @@ impl Context {
                     return None;
                 };
 
-                let ty = member.member.to_hir(&TypeLowerCfg::member(), &mut infer, &Scope::Empty);
+                let ty = member.member.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty);
                 let gen_tys = member.class.gen_tys
                     .iter()
                     .map(|ty| ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
