@@ -2104,6 +2104,7 @@ impl<'a> Infer<'a> {
                             let covering_member_gen_tys = covering_member.gen_tys.clone();
                             let covering_member_gen_effs = covering_member.gen_effs.clone();
                             let covering_member_gen_scope = covering_member.gen_scope;
+                            let covering_member_assoc = covering_member.assoc.clone();
 
                             // Derive generic types that need substituting from the member
                             let mut ty_links = HashMap::new();
@@ -2237,6 +2238,7 @@ impl<'a> Infer<'a> {
                                 );
                                 self.make_flow(*gen_ty, covering_gen_ty, EqInfo::from(use_span));
                             }
+
                             for (gen_eff, covering_gen_eff) in class_gen_effs.iter().zip(covering_member_gen_effs.iter()) {
                                 if let Some(covering_gen_eff) = *covering_gen_eff {
                                     let covering_gen_eff = match self.instantiate_eff(
@@ -2255,6 +2257,24 @@ impl<'a> Infer<'a> {
                                     self.make_flow_effect((*gen_eff, member_ty), (covering_gen_eff, member_ty), EqInfo::from(use_span));
                                 }
                             }
+
+                            // TODO: This is currently done by the caller, I think
+                            // if let Some(covering_member_assoc) = covering_member_assoc {
+                            //     for (assoc, assoc_ty) in assoc {
+                            //         if let Some((name, covering_assoc)) = covering_member_assoc.iter().find(|(name, _)| **name == *assoc) {
+                            //             let covering_assoc = self.instantiate(
+                            //                 *covering_assoc,
+                            //                 use_span,
+                            //                 &mut |idx, _, _| ty_links.get(&idx).copied(),
+                            //                 &mut |idx, _| eff_links.get(&idx).copied(),
+                            //                 Some(ty),
+                            //             );
+                            //             self.make_flow(covering_assoc, assoc_ty, EqInfo::from(use_span));
+                            //         }
+                            //     }
+                            // } else {
+                            //     println!("Covering member assoc not defined...");
+                            // }
 
                             Some(Ok(Ok(ImpliedItems::Real(covering_member_id))))
                         },

@@ -351,7 +351,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ImpliedItems<M: Meta> {
     // Items are derived from a real member
     Real(MemberId),

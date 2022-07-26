@@ -445,12 +445,22 @@ impl Context {
                         .iter()
                         .map(|eff| lower::lower_effect_set(eff, &TypeLowerCfg::other(), &mut infer, &Scope::Empty))
                         .collect();
+                    let assoc_tys = member.items
+                        .iter()
+                        .filter_map(|item| match item {
+                             ast::MemberItem::Type { name, ty } => Some((
+                                 name.clone(),
+                                  ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1,
+                              )),
+                             _ => None,
+                        })
+                        .collect();
                     infer.add_implied_member(ImpliedMember {
                         member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
                         class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
                         gen_tys,
                         gen_effs,
-                        items: ImpliedItems::Real(*member_id),
+                        items: ImpliedItems::Eq(assoc_tys),
                     });
                     let mut infer = infer.with_gen_scope_implied();
 
@@ -698,13 +708,14 @@ impl Context {
 
                     // TODO: Report error on `gen_tys`/`gen_effs` length mismatch with class?
 
-                    infer.add_implied_member(ImpliedMember {
-                        member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
-                        class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
-                        gen_tys: gen_tys.clone(),
-                        gen_effs: gen_effs.clone(),
-                        items: ImpliedItems::Real(*member_id),
-                    });
+                    // TODO: This seems to break things, unsure why
+                    // infer.add_implied_member(ImpliedMember {
+                    //     member: SrcNode::new(infer.self_type().unwrap(), member.member.span()),
+                    //     class: SrcNode::new(*class_id, infer.ctx().classes.get(*class_id).name.span()),
+                    //     gen_tys: gen_tys.clone(),
+                    //     gen_effs: gen_effs.clone(),
+                    //     items: ImpliedItems::Real(*member_id),
+                    // });
 
                     let class = infer.ctx().classes.get(*class_id);
 
