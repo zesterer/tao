@@ -8,13 +8,21 @@ class Stream =
     => Item
     => next : Self -> Maybe (Self, Self.Item)
 
-class ToStream =
+class ToStream where
+    Self.Stream < Stream
+=
     => Stream
     => to_stream : Self -> Self.Stream
 
 for A member [A] of ToStream =
     => Stream = [A]
     => to_stream = fn xs => xs
+
+for A member Maybe A of Stream =
+    => Item = A
+    => next = fn
+        | None => None
+        \ Just x => Just (None, x)
 
 for A member [A] of Stream =
     => Item = A
@@ -36,14 +44,18 @@ fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
 =
     f, s => Mapped (S.to_stream(s), f)
 
-class FromStream S < Stream =
-    => from_stream : S -> Self
+class FromStream A =
+    => from_stream : [A] -> Self
 
-for A, S member [A] of FromStream S where
-    S < Stream with { Item = A },
-=
-    => from_stream = fn s => match s->S.next in
+for A, S member [A] of FromStream A where =
+    => from_stream = fn xs => xs
+
+for A, S member Maybe A of FromStream A =
+    => from_stream = fn
+        | [] => None
+        \ [x ..] => Just x
+
+fn collect B < FromStream S.Item, S < Stream : S -> B =
+    s => let xs = s->fix(fn rec, s => match s->S.next in
         | None => []
-        \ Just (s, x) => [x .. s->collect]
-
-def collect A < FromStream S, S : S -> A = A.from_stream
+        \ Just (s, x) => [x .. rec(s)]) in xs->B.from_stream
