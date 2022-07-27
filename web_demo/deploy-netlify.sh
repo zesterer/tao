@@ -1,3 +1,4 @@
+cd web_demo
 mkdir site/dist
 cp -r site/*.html site/dist/.
 cp -r site/*.js site/dist/.

@@ -119,6 +119,24 @@ pub struct EffectSet {
     pub effs: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>)>,
 }
 
+impl EffectSet {
+    pub fn mentions_ty(&self, name: Ident) -> bool {
+        self.effs
+            .iter()
+            .any(|(_, params)| params
+                .iter()
+                .any(|p| p.mentions_ty(name)))
+    }
+
+    pub fn mentions_eff(&self, name: Ident) -> bool {
+        self.effs
+            .iter()
+            .any(|(eff, params)| **eff == name || params
+                .iter()
+                .any(|p| p.mentions_eff(name)))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     // Generated only by parser errors.
@@ -136,28 +154,63 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn is_fully_specified(&self) -> bool {
+    pub fn for_children(&self, mut f: impl FnMut(&Self)) {
         match self {
-            Self::Error | Self::Universe => true,
-            Self::Unknown => false,
-            Self::List(item) => item.is_fully_specified(),
+            Self::Error | Self::Universe | Self::Unknown => {},
+            Self::List(x) => f(x),
             Self::Tuple(fields) => fields
                 .iter()
-                .all(|field| field.is_fully_specified()),
+                .for_each(|field| f(field)),
             Self::Record(fields) => fields
                 .iter()
-                .all(|(_, field)| field.is_fully_specified()),
-            Self::Func(i, o) => i.is_fully_specified() && o.is_fully_specified(),
-            Self::Data(_, args) => args
+                .for_each(|(_, field)| f(field)),
+            Self::Func(i, o) => {
+                f(i);
+                f(o);
+            },
+            Self::Data(data, args) => args
                 .iter()
-                .all(|arg| arg.is_fully_specified()),
-            Self::Assoc(inner, _, _) => inner.is_fully_specified(),
-            Self::Effect(set, out) => set.effs
-                .iter()
-                .all(|(_, args)| args
+                .for_each(|arg| f(arg)),
+            // TODO: Recurse into class inst?
+            Self::Assoc(inner, _, _) => f(inner),
+            Self::Effect(set, out) => {
+                f(out);
+                set.effs
                     .iter()
-                    .all(|arg| arg.is_fully_specified())) && out.is_fully_specified(),
+                    .for_each(|(_, args)| args
+                        .iter()
+                        .for_each(|arg| f(arg)));
+            },
         }
+    }
+
+    pub fn is_fully_specified(&self) -> bool {
+        let mut specified = match self {
+            Self::Unknown => false,
+            _ => true,
+        };
+        self.for_children(|ty| specified &= ty.is_fully_specified());
+        specified
+    }
+
+    pub fn mentions_ty(&self, name: Ident) -> bool {
+        let mut mentions = match self {
+            Self::Data(data, _) => **data == name,
+            _ => false,
+        };
+        self.for_children(|ty| mentions |= ty.mentions_ty(name));
+        mentions
+    }
+
+    pub fn mentions_eff(&self, name: Ident) -> bool {
+        let mut mentions = match self {
+            Self::Effect(set, _) => set.effs
+                .iter()
+                .any(|(eff, _)| **eff == name),
+            _ => false,
+        };
+        self.for_children(|ty| mentions |= ty.mentions_eff(name));
+        mentions
     }
 }
 

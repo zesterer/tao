@@ -47,6 +47,7 @@ pub enum Error {
     Unsupported(Span, &'static str),
     MissingLangItem(&'static str),
     NoBasin(Span),
+    NotMentioned(SrcNode<Ident>),
 }
 
 impl Error {
@@ -451,6 +452,13 @@ impl Error {
                     (span, format!("Nothing catches this propagation"), Color::Red),
                 ],
                 vec![format!("Place this expression within a {} block", "effect { ... }".fg(Color::Blue))],
+            ),
+            Error::NotMentioned(param) => (
+                format!("Generic parameter {} not mentioned in item", (*param).fg(Color::Red)),
+                vec![
+                    (param.span(), format!("The item this generic parameterises does not mention it"), Color::Red),
+                ],
+                vec![format!("Generic parameters must always be mentioned by the thing they parameterise")],
             ),
         };
 

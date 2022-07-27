@@ -394,7 +394,12 @@ pub struct GenScope {
 }
 
 impl GenScope {
-    pub fn from_ast(generics: &ast::Generics, item_span: Span) -> (Self, Vec<Error>) {
+    pub fn from_ast(
+        generics: &ast::Generics,
+        item_span: Span,
+        mut mentions_ty: impl FnMut(Ident) -> bool,
+        mut mentions_eff: impl FnMut(Ident) -> bool,
+    ) -> (Self, Vec<Error>) {
         let mut existing = HashMap::new();
 
         let mut errors = Vec::new();
@@ -408,11 +413,21 @@ impl GenScope {
             item_span,
             types: generics.tys
                 .iter()
-                .map(|gen_ty| GenTy { name: gen_ty.name.clone() })
+                .map(|gen_ty| {
+                    if !mentions_ty(*gen_ty.name) {
+                        errors.push(Error::NotMentioned(gen_ty.name.clone()));
+                    }
+                    GenTy { name: gen_ty.name.clone() }
+                })
                 .collect(),
             effects: generics.effs
                 .iter()
-                .map(|gen_eff| GenEff { name: gen_eff.name.clone() })
+                .map(|gen_eff| {
+                    if !mentions_eff(*gen_eff.name) {
+                        errors.push(Error::NotMentioned(gen_eff.name.clone()));
+                    }
+                    GenEff { name: gen_eff.name.clone() }
+                })
                 .collect(),
             ast_implied_members: generics.implied_members.clone(),
             implied_members: None,

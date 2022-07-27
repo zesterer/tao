@@ -38,6 +38,10 @@ for S < Stream, B member Mapped S B of Stream =
         | None => None
         \ Just (s, x) => Just (Mapped (s, f), x->f)
 
+for S < Stream, B member Mapped S B of ToStream =
+    => Stream = Self
+    => to_stream = fn s => s
+
 fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
     S < ToStream,
     S.Stream < Stream,
@@ -47,10 +51,10 @@ fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
 class FromStream A =
     => from_stream : [A] -> Self
 
-for A, S member [A] of FromStream A where =
+for A member [A] of FromStream A where =
     => from_stream = fn xs => xs
 
-for A, S member Maybe A of FromStream A =
+for A member Maybe A of FromStream A =
     => from_stream = fn
         | [] => None
         \ [x ..] => Just x

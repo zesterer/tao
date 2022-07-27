@@ -605,6 +605,9 @@ impl<'a> Infer<'a> {
                     })
                     .collect();
                 let assoc_ty = self.unknown(span);
+                if **self.ctx.classes.get(class_id).name == "GathersInto" {
+                    // panic!("HERE");
+                }
                 self.make_impl(inner, (class_id, gen_tys, gen_effs), span, vec![(assoc, assoc_ty)], span);
                 TyInfo::Ref(assoc_ty)
             },
@@ -641,6 +644,7 @@ impl<'a> Infer<'a> {
     }
 
     // `unchecked_assoc` allows unification of type variables with an instance's associated type
+    #[track_caller]
     pub fn make_impl(
         &mut self,
         ty: TyVar,
@@ -2088,6 +2092,13 @@ impl<'a> Infer<'a> {
                             } else {
                                 None
                             };
+                            // panic!(
+                            //     "Failed to prove that {:?} is a member of {}{}{}!",
+                            //     self.follow_info(ty),
+                            //     *self.ctx.classes.get(class_id).name,
+                            //     class_gen_tys.iter().map(|ty| format!(" {:?}", self.follow_info(*ty))).collect::<String>(),
+                            //     class_gen_effs.iter().map(|eff| format!(" {:?}", self.follow_effect(*eff))).collect::<String>(),
+                            // );
                             Some(Err(InferError::TypeDoesNotFulfil(self.insert_class(obl_span, ClassInfo::Known(class_id, class_gen_tys, class_gen_effs)), ty, obl_span, gen_span, use_span)))
                             // None
                         },
@@ -2174,10 +2185,11 @@ impl<'a> Infer<'a> {
                                     return Some(Err(InferError::CycleWhenResolving(ty, (class_id, class_gen_tys.clone(), class_gen_effs.clone()), member.span())));
                                 } else {
                                     // println!(
-                                    //     "Trying to prove that {:?} is a member of {}{}!",
+                                    //     "Trying to prove that {:?} is a member of {}{}{}!",
                                     //     self.follow_info(member_ty),
                                     //     *self.ctx.classes.get(*member.class).name,
-                                    //     member_args.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
+                                    //     member_gen_tys.iter().map(|ty| format!(" {:?}", self.follow_info(*ty))).collect::<String>(),
+                                    //     member_gen_effs.iter().map(|eff| format!(" {:?}", self.follow_effect(*eff))).collect::<String>(),
                                     // );
                                     proof_stack.push(proof_key);
                                     let res = self.resolve_obligation(

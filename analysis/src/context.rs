@@ -33,7 +33,13 @@ impl Context {
         let mut defs_init = Vec::new();
         // Declare items before declaration
         for (attr, class) in module.classes() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&class.generics, class.name.span());
+            let (gen_scope, mut errs) = GenScope::from_ast(
+                &class.generics,
+                class.name.span(),
+                // Classes implicitly mention their generic parameters
+                |_| true,
+                |_| true,
+            );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             match this.classes.declare(class.name.clone(), Class {
@@ -82,7 +88,12 @@ impl Context {
             this.classes.define_assoc(*class_id, assoc);
         }
         for (attr, eff) in module.effects() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&eff.generics, eff.name.span());
+            let (gen_scope, mut errs) = GenScope::from_ast(
+                &eff.generics,
+                eff.name.span(),
+                |_| true,
+                |_| true,
+            );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             match this.effects.declare(EffectDecl {
@@ -101,7 +112,13 @@ impl Context {
             }
         }
         for (attr, alias) in module.effect_aliases() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics, alias.name.span());
+            let (gen_scope, mut errs) = GenScope::from_ast(
+                &alias.generics,
+                alias.name.span(),
+                // TODO: Check mentions of generics
+                |_| true,
+                |_| true,
+            );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             match this.effects.declare_alias(EffectAlias {
@@ -119,7 +136,12 @@ impl Context {
             }
         }
         for (attr, alias) in module.aliases() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&alias.generics, alias.name.span());
+            let (gen_scope, mut errs) = GenScope::from_ast(
+                &alias.generics,
+                alias.name.span(),
+                |name| alias.ty.mentions_ty(name),
+                |name| alias.ty.mentions_eff(name),
+            );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             match this.datas.declare_alias(*alias.name, alias.name.span(), gen_scope) {
@@ -131,7 +153,15 @@ impl Context {
             }
         }
         for (attr, data) in module.datas() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&data.generics, data.name.span());
+            let (gen_scope, mut errs) = GenScope::from_ast(
+                &data.generics,
+                data.name.span(),
+                // TODO: Uncomment this when some PhantomData equivalent exists!
+                // |name| data.variants.iter().any(|(_, ty)| ty.mentions_ty(name)),
+                // |name| data.variants.iter().any(|(_, ty)| ty.mentions_eff(name)),
+                |_| true,
+                |_| true,
+            );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             match this.datas.declare_data(data.name.clone(), gen_scope, &attr) {
@@ -150,13 +180,27 @@ impl Context {
                 continue;
             };
 
-            let (gen_scope, mut errs) = GenScope::from_ast(&member.generics, member.member.span());
+            let (gen_scope, mut errs) = GenScope::from_ast(
+                &member.generics,
+                member.member.span(),
+                |name| member.member.mentions_ty(name)
+                    || member.class.gen_tys.iter().any(|ty| ty.mentions_ty(name))
+                    || member.class.gen_effs.iter().any(|ty| ty.mentions_ty(name)),
+                |name| member.member.mentions_eff(name)
+                    || member.class.gen_tys.iter().any(|ty| ty.mentions_eff(name))
+                    || member.class.gen_effs.iter().any(|ty| ty.mentions_eff(name)),
+            );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             members_init.push((attr, member, class_id, gen_scope));
         }
         for (attr, def) in module.defs() {
-            let (gen_scope, mut errs) = GenScope::from_ast(&def.generics, def.name.span());
+            let (gen_scope, mut errs) = GenScope::from_ast(
+                &def.generics,
+                def.name.span(),
+                |_| true,
+                |_| true,
+            );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
             defs_init.push((attr, def, gen_scope));
@@ -567,7 +611,11 @@ impl Context {
 
             let member_gen_tys = member.class.gen_tys
                 .iter()
-                .map(|arg| member.member.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                .map(|arg| arg.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                .collect::<Vec<_>>();
+            let member_gen_effs = member.class.gen_effs
+                .iter()
+                .map(|eff| lower::lower_effect_set(eff, &TypeLowerCfg::other(), &mut infer, &Scope::Empty))
                 .collect::<Vec<_>>();
 
             // infer.add_implied_member(ImpliedMember {
@@ -611,7 +659,7 @@ impl Context {
                         *ty,
                         member_obl.member.span(),
                         &mut |idx, _, _| member_gen_tys.get(idx).copied(),
-                        &mut |idx, _| todo!(),
+                        &mut |idx, _| member_gen_effs.get(idx).copied(),
                         Some(member_ty),
                     ))
                     .collect();
@@ -634,7 +682,7 @@ impl Context {
                             *assoc,
                             name.span(),
                             &mut |idx, _, _| member_gen_tys.get(idx).copied(),
-                            &mut |idx, _| todo!(),
+                            &mut |idx, _| member_gen_effs.get(idx).copied(),
                             Some(member_ty),
                         )))
                         .collect(),

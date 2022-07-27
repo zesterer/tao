@@ -1,0 +1,45 @@
+import "../lib/main.tao"
+
+class ShapeTag
+
+class GathersInto S where
+    Self.Output < FromStream Self
+=
+    => Output
+
+class ShapedStream < Stream where
+    Self.Shape < ShapeTag,
+    Self.Item < GathersInto Self.Shape,
+=
+    => Shape
+    => gather : Self -> Self.Item.Output
+
+data ListShape
+member ListShape of ShapeTag
+for A member A of GathersInto ListShape =
+    => Output = [A]
+
+for A member [A] of ShapedStream =
+    => Shape = ListShape
+    => gather = fn xs => xs
+
+data MaybeShape
+member MaybeShape of ShapeTag
+for A member A of GathersInto MaybeShape =
+    => Output = Maybe A
+for A member Maybe A of ShapedStream =
+    => Shape = MaybeShape
+    => gather = fn xs => xs
+
+for S < Stream + ShapedStream, B < GathersInto S.Shape member Mapped S B of ShapedStream =
+    => Shape = S.Shape
+    => gather = fn s => s->collect
+
+def gather S < Stream + ShapedStream : S -> S.Item.Output = S.gather
+
+def main : io ~ () = [1, 2, 3]
+    -> smap(fn x => x + x)
+    -> smap(fn x => x + x)
+    -> gather
+    -> show
+    -> print!

@@ -17,11 +17,6 @@ for A member [A] of Iter =
         | [] => None
         \ [x .. xs] => Just (x, xs)
 
-# TODO: Get rid of this
-fn lmap A, B : (A -> B) -> [A] -> [B] =
-    | _, [] => []
-    \ f, [x .. xs] => [x->f .. xs->lmap(f)]
-
 fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
     \ f, [x .. xs] => (if x->f then [x] else []) ++ xs->filter(f)
