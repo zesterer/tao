@@ -44,6 +44,10 @@ pub enum EffectInfo {
     Closed(Vec<EffectInstVar>, Option<EffectVar>),
 }
 
+impl EffectInfo {
+    pub fn free() -> Self { Self::Open(Vec::new()) }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum EffectInstInfo {
     Unknown,
@@ -245,7 +249,7 @@ impl<'a> Infer<'a> {
                     .iter()
                     .map(|eff| match eff.map(|eff| self.instantiate_local_eff(eff, member.member.span())) {
                         Some(Ok(Some(eff))) => eff,
-                        _ => self.insert_effect(member.member.span(), EffectInfo::Open(Vec::new())),
+                        _ => self.insert_effect(member.member.span(), EffectInfo::free()),
                     })
                     .collect();
                 let items = match &member.items {
@@ -324,7 +328,7 @@ impl<'a> Infer<'a> {
                     ))
                 {
                     Some(Ok(Some(eff))) => eff,
-                    _ => self.insert_effect(new_member.member.span(), EffectInfo::Open(Vec::new())),
+                    _ => self.insert_effect(new_member.member.span(), EffectInfo::free()),
                 })
                 .collect();
             let items = match &new_member.items {
@@ -624,7 +628,7 @@ impl<'a> Infer<'a> {
                     .iter()
                     .map(|eff| match eff.map(|eff| self.instantiate_eff(eff, span, gen_ty, gen_eff, self_ty)) {
                         Some(Ok(Some(eff))) => eff,
-                        _ => self.insert_effect(span, EffectInfo::Open(Vec::new())),
+                        _ => self.insert_effect(span, EffectInfo::free()),
                     })
                     .collect();
                 let assoc_ty = self.unknown(span);
@@ -695,7 +699,7 @@ impl<'a> Infer<'a> {
             .collect::<Vec<_>>();
         let gen_effs = gen_effs
             .into_iter()
-            .map(|origin| self.insert_effect(inst_span, EffectInfo::Open(Vec::new())))
+            .map(|origin| self.insert_effect(inst_span, EffectInfo::free()))
             .collect::<Vec<_>>();
 
         // TODO: Move this function?
@@ -1010,6 +1014,7 @@ impl<'a> Infer<'a> {
         (x, x_ty): (EffectVar, TyVar),
         (y, y_ty): (EffectVar, TyVar),
     ) -> Result<(), (TyVar, TyVar)> {
+        if x == y { return Ok(()) }
         match (infer.as_ref().follow_effect(x), infer.as_ref().follow_effect(y)) {
             (EffectInfo::Ref(_), _) => unreachable!(),
             (_, EffectInfo::Ref(_)) => unreachable!(),
@@ -1043,9 +1048,9 @@ impl<'a> Infer<'a> {
             },
             // Grow open into one-another
             (EffectInfo::Open(mut x_effs), EffectInfo::Open(mut y_effs)) => {
-                let mut all_effs = y_effs.clone();
-                all_effs.append(&mut x_effs);
-                infer.set_effect_info(y, EffectInfo::Open(all_effs));
+                x_effs.append(&mut y_effs);
+                infer.set_effect_info(x, EffectInfo::Open(x_effs));
+                infer.set_effect_info(y, EffectInfo::Ref(x));
                 Ok(())
             },
             // Grow closed into open
@@ -1936,7 +1941,7 @@ impl<'a> Infer<'a> {
                     member,
                     span,
                     &mut |idx, _, this: &mut Self| Some(*ty_links.entry(idx).or_insert_with(|| this.insert(use_span, TyInfo::Unknown(Some(this.span(ty)))))),
-                    &mut |idx, this: &mut Self| Some(*eff_links.entry(idx).or_insert_with(|| this.insert_effect(use_span, EffectInfo::Open(Vec::new())))),
+                    &mut |idx, this: &mut Self| Some(*eff_links.entry(idx).or_insert_with(|| this.insert_effect(use_span, EffectInfo::free()))),
                     self_ty,
                 );
                 self.make_flow(ty, inst_ty, use_span);
@@ -2200,7 +2205,7 @@ impl<'a> Infer<'a> {
                                     {
                                         Some(Ok(Some(eff))) => eff,
                                         // TODO: Make sure this is fine in all other cases. It should be?
-                                        _ => self.insert_effect(member.member.span(), EffectInfo::Open(Vec::new())),
+                                        _ => self.insert_effect(member.member.span(), EffectInfo::free()),
                                     })
                                     .collect::<Vec<_>>();
 
@@ -2297,12 +2302,12 @@ impl<'a> Infer<'a> {
                                         &mut |idx, _, _| ty_links.get(&idx).copied(),
                                         &mut |idx, infer| Some(*eff_links
                                             .entry(idx)
-                                            .or_insert_with(|| infer.insert_effect(use_span, EffectInfo::Open(Vec::new())))),
+                                            .or_insert_with(|| infer.insert_effect(use_span, EffectInfo::free()))),
                                         Some(ty),
                                     ) {
                                         Ok(Some(eff)) => eff,
                                         // TODO: Make sure this is fine in all other cases. It should be?
-                                        _ => self.insert_effect(use_span, EffectInfo::Open(Vec::new())),
+                                        _ => self.insert_effect(use_span, EffectInfo::free()),
                                     };
                                     self.make_flow_effect((*gen_eff, member_ty), (covering_gen_eff, member_ty), EqInfo::from(use_span));
                                 }

@@ -136,7 +136,7 @@ pub fn enforce_generic_obligations(
                     .flatten()
                     // Is it correct to use a free effect variable on error? Probably...
                     // TODO: This might need to be a closed set, not all other cases are actually errors!
-                    .unwrap_or_else(|| infer.insert_effect(member.member.span(), EffectInfo::Open(Vec::new()))))
+                    .unwrap_or_else(|| infer.insert_effect(member.member.span(), EffectInfo::free())))
                 .collect::<Vec<_>>();
             let assoc = match &member.items {
                 ImpliedItems::Eq(assoc) => assoc.iter()
@@ -511,7 +511,7 @@ impl ToHir for ast::Binding {
                     .collect::<Vec<_>>();
                 let gen_effs = gen_effs
                     .into_iter()
-                    .map(|origin| infer.insert_effect(self.span(), EffectInfo::Open(Vec::new())))
+                    .map(|origin| infer.insert_effect(self.span(), EffectInfo::free()))
                     .collect::<Vec<_>>();
 
                 if let Err(()) = enforce_generic_obligations(
@@ -582,7 +582,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
         .map(|i| TyInfo::Unknown(Some(scope.get(i).name.span())))
         .collect::<Vec<_>>();
     let gen_effs = (0..scope.len_eff())
-        .map(|i| EffectInfo::Open(Vec::new()))
+        .map(|i| EffectInfo::free())
         .collect::<Vec<_>>();
     let gen_tys = gen_tys
         .into_iter()
@@ -731,16 +731,10 @@ impl ToHir for ast::Expr {
                     basin_eff
                 } else {
                     infer.ctx_mut().errors.push(Error::NoBasin(op.span()));
-                    infer.insert_effect(a.meta().0, EffectInfo::Open(Vec::new())) // TODO: EffectInfo::Error instead
+                    infer.insert_effect(a.meta().0, EffectInfo::free()) // TODO: EffectInfo::Error instead
                 };
 
-                // TODO: Allow open effects to refer to each other recursively, permitting this:
-                // infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span());
-
-                // TODO: Get rid of these lines in favour of the former
-                let opaque = infer.unknown(op.span());
-                let eff_obj_ty = infer.insert(op.span(), TyInfo::Effect(basin_eff, out_ty, opaque));
-                infer.make_flow(a.meta().1, eff_obj_ty, EqInfo::from(op.span()));
+                infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span());
 
                 (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))
             } else {
@@ -889,7 +883,7 @@ impl ToHir for ast::Expr {
                 // Effects cannot be propagated from function bodies to their environment
                 // let scope = &scope.without_basin();
 
-                let eff = infer.insert_effect(self.span(), EffectInfo::Open(Vec::new()));
+                let eff = infer.insert_effect(self.span(), EffectInfo::free());
                 // Collect effects into this basin
                 let scope = scope.with_basin(eff);
 
@@ -986,7 +980,7 @@ impl ToHir for ast::Expr {
                     .collect::<Vec<_>>();
                 let gen_effs = gen_effs
                     .into_iter()
-                    .map(|_origin| infer.insert_effect(self.span(), EffectInfo::Open(Vec::new())))
+                    .map(|_origin| infer.insert_effect(self.span(), EffectInfo::free()))
                     .collect::<Vec<_>>();
 
                 if let Err(()) = enforce_generic_obligations(
@@ -1226,7 +1220,7 @@ impl ToHir for ast::Expr {
                 (TyInfo::Ref(record.meta().1), hir::Expr::Update(record, fields))
             },
             ast::Expr::Basin(init, last) => {
-                let eff = infer.insert_effect(self.span(), EffectInfo::Open(Vec::new()));
+                let eff = infer.insert_effect(self.span(), EffectInfo::free());
 
                 // Collect effects into this basin
                 let scope = scope.with_basin(eff);
