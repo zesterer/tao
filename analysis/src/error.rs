@@ -7,6 +7,7 @@ pub enum Error {
     CannotCoerce(TyId, TyId, Option<(TyId, TyId)>, EqInfo),
     CannotInfer(TyId, Option<Span>),
     CannotInferEffect(Span, Result<EffectInst, ()>),
+    NotEffectful(TyId, Span, Span),
     Recursive(TyId, Span, Span),
     AliasNotPermitted(AliasId, Span),
     NoSuchItem(TyId, Span, SrcNode<Ident>),
@@ -116,6 +117,14 @@ impl Error {
                 format!("Cannot infer effect"),
                 vec![(span, format!("Cannot be inferred"), Color::Red)],
                 vec![],
+            ),
+            Error::NotEffectful(ty, obj_span, span) => (
+                format!("Type {} has no effects to be propagated", display(ty).fg(Color::Yellow)),
+                vec![
+                    (span, format!("Propagation is attempted here"), Color::Red),
+                    (obj_span, format!("This is of type {} and so has no effects to propagate", display(ty).fg(Color::Yellow)), Color::Yellow),
+                ],
+                vec![format!("Only values with types like {} can have their effects propagated to the enclosing scope", "e ~ T".fg(Color::Cyan))],
             ),
             Error::Recursive(a, span, part) => (
                 format!("Self-referencing type {} expands to have infinite size", display(a).fg(Color::Red)),
@@ -470,9 +479,10 @@ impl Error {
             .with_code(3)
             .with_message(msg);
 
-        for (span, msg, col) in spans {
+        for (i, (span, msg, col)) in spans.into_iter().enumerate() {
             report = report.with_label(Label::new(span)
                 .with_message(msg)
+                .with_order(i as i32)
                 .with_color(col));
         }
 

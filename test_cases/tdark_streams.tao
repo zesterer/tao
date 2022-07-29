@@ -7,7 +7,8 @@ class GathersInto S where
 =
     => Output
 
-class ShapedStream < Stream where
+class ShapedStream where
+    Self < Stream,
     Self.Shape < ShapeTag,
     Self.Item < GathersInto Self.Shape,
 =
@@ -15,7 +16,9 @@ class ShapedStream < Stream where
     => gather : Self -> Self.Item.Output
 
 data ListShape
+
 member ListShape of ShapeTag
+
 for A member A of GathersInto ListShape =
     => Output = [A]
 
@@ -24,22 +27,30 @@ for A member [A] of ShapedStream =
     => gather = fn xs => xs
 
 data MaybeShape
+
 member MaybeShape of ShapeTag
+
 for A member A of GathersInto MaybeShape =
     => Output = Maybe A
+
 for A member Maybe A of ShapedStream =
     => Shape = MaybeShape
     => gather = fn xs => xs
 
-for S < Stream + ShapedStream, B < GathersInto S.Shape member Mapped S B of ShapedStream =
+for S, B member Mapped S B of ShapedStream where
+    S < Stream + ShapedStream,
+    B < GathersInto S.Shape,
+=
     => Shape = S.Shape
     => gather = fn s => s->collect
 
-def gather S < Stream + ShapedStream : S -> S.Item.Output = S.gather
+def gather S : S -> S.Item.Output where
+    S < Stream + ShapedStream,
+= S.gather
 
 def main : io ~ () = [1, 2, 3]
-    -> smap(fn x => x + x)
-    -> smap(fn x => x + x)
+    -> smap(fn x => x + 1)
+    -> smap(fn x => x * x)
     -> gather
     -> show
     -> print!

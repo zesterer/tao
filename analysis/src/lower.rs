@@ -727,16 +727,14 @@ impl ToHir for ast::Expr {
                 let a = a.to_hir(cfg, infer, scope);
                 let out_ty = infer.unknown(self.span());
 
-                let eff = if let Some(eff) = scope.last_basin() {
-                    eff
+                let basin_eff = if let Some(basin_eff) = scope.last_basin() {
+                    basin_eff
                 } else {
                     infer.ctx_mut().errors.push(Error::NoBasin(op.span()));
                     infer.insert_effect(a.meta().0, EffectInfo::Open(Vec::new())) // TODO: EffectInfo::Error instead
                 };
 
-                let opaque = infer.unknown(op.span());
-                let eff_obj_ty = infer.insert(op.span(), TyInfo::Effect(eff, out_ty, opaque));
-                infer.make_flow(a.meta().1, eff_obj_ty, EqInfo::from(op.span()));
+                infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span());
 
                 (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))
             } else {
@@ -1033,7 +1031,7 @@ impl ToHir for ast::Expr {
             },
             ast::Expr::ClassAccess(ty, field) => {
                 let ty = ty.to_hir(&TypeLowerCfg::other(), infer, scope);
-                let field_ty = infer.unknown(field.span());
+                let field_ty = infer.unknown(self.span());
                 let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, self.span());
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },

@@ -149,6 +149,7 @@ pub enum InferError {
     PatternNotSupported(TyVar, SrcNode<ast::BinaryOp>, TyVar, Span),
     AmbiguousClassItem(SrcNode<Ident>, Vec<ClassId>),
     CycleWhenResolving(TyVar, (ClassId, Vec<TyVar>, Vec<EffectVar>), Span),
+    NotEffectful(TyVar, Span, Span),
 }
 
 #[derive(Clone, Debug)]
@@ -160,6 +161,7 @@ enum Constraint {
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     EffectSendRecv(EffectInstVar, TyVar, TyVar, Span),
+    EffectPropagate(TyVar, EffectVar, TyVar, Span, Span),
 }
 
 #[derive(Clone, Debug)]
@@ -243,7 +245,6 @@ impl<'a> Infer<'a> {
                     .iter()
                     .map(|eff| match eff.map(|eff| self.instantiate_local_eff(eff, member.member.span())) {
                         Some(Ok(Some(eff))) => eff,
-                        // TODO: Make sure this is fine in all other cases. It should be?
                         _ => self.insert_effect(member.member.span(), EffectInfo::Open(Vec::new())),
                     })
                     .collect();
@@ -295,62 +296,58 @@ impl<'a> Infer<'a> {
             .expect("Implied members must be known!")
             .clone()
         {
-            // TODO: Consider class args too when deciding to recurse!
-            if !searched.contains(&*new_member.class) {
-                let member_ty = self.instantiate(
-                    *new_member.member,
+            let member_ty = self.instantiate(
+                *new_member.member,
+                new_member.member.span(),
+                &mut |idx, _, _| member.gen_tys.get(idx).copied(),
+                &mut |idx, _| todo!(),
+                Some(*member.member),
+            );
+            let member_gen_tys = new_member.gen_tys
+                .iter()
+                .map(|ty| self.instantiate(
+                    *ty,
                     new_member.member.span(),
                     &mut |idx, _, _| member.gen_tys.get(idx).copied(),
                     &mut |idx, _| todo!(),
                     Some(*member.member),
-                );
-                let member_gen_tys = new_member.gen_tys
-                    .iter()
-                    .map(|ty| self.instantiate(
-                        *ty,
+                ))
+                .collect();
+            let member_gen_effs = new_member.gen_effs
+                .iter()
+                .map(|eff| match eff.map(|eff| self.instantiate_eff(
+                        eff,
                         new_member.member.span(),
                         &mut |idx, _, _| member.gen_tys.get(idx).copied(),
-                        &mut |idx, _| todo!(),
+                        &mut |idx, _| member.gen_effs.get(idx).copied(),
                         Some(*member.member),
                     ))
-                    .collect();
-                let member_gen_effs = new_member.gen_effs
+                {
+                    Some(Ok(Some(eff))) => eff,
+                    _ => self.insert_effect(new_member.member.span(), EffectInfo::Open(Vec::new())),
+                })
+                .collect();
+            let items = match &new_member.items {
+                ImpliedItems::Real(member) => ImpliedItems::Real(*member),
+                ImpliedItems::Eq(assoc) => ImpliedItems::Eq(assoc
                     .iter()
-                    .map(|eff| match eff.map(|eff| self.instantiate_eff(
-                            eff,
-                            new_member.member.span(),
-                            &mut |idx, _, _| member.gen_tys.get(idx).copied(),
-                            &mut |idx, _| member.gen_effs.get(idx).copied(),
-                            Some(*member.member),
-                        ))
-                    {
-                        Some(Ok(Some(eff))) => eff,
-                        // TODO: Make sure this is fine in all other cases. It should be?
-                        _ => self.insert_effect(new_member.member.span(), EffectInfo::Open(Vec::new())),
-                    })
-                    .collect();
-                let items = match &new_member.items {
-                    ImpliedItems::Real(member) => ImpliedItems::Real(*member),
-                    ImpliedItems::Eq(assoc) => ImpliedItems::Eq(assoc
-                        .iter()
-                        .map(|(name, assoc)| (name.clone(), self.instantiate(
-                            *assoc,
-                            name.span(),
-                            &mut |idx, _, _| member.gen_tys.get(idx).copied(),
-                            &mut |idx, _| member.gen_effs.get(idx).copied(),
-                            Some(*member.member),
-                        )))
-                        .collect()),
-                };
+                    .map(|(name, assoc)| (name.clone(), self.instantiate(
+                        *assoc,
+                        name.span(),
+                        &mut |idx, _, _| member.gen_tys.get(idx).copied(),
+                        &mut |idx, _| member.gen_effs.get(idx).copied(),
+                        Some(*member.member),
+                    )))
+                    .collect()),
+            };
 
-                self.add_implied_member_inner(searched, InferImpliedMember {
-                    member: SrcNode::new(member_ty, member.member.span()),
-                    class: new_member.class.clone(),
-                    gen_tys: member_gen_tys,
-                    gen_effs: member_gen_effs,
-                    items,
-                });
-            }
+            self.add_implied_member_inner(searched, InferImpliedMember {
+                member: SrcNode::new(member_ty, member.member.span()),
+                class: new_member.class.clone(),
+                gen_tys: member_gen_tys,
+                gen_effs: member_gen_effs,
+                items,
+            });
         }
 
         self.implied_members.push(member);
@@ -424,9 +421,7 @@ impl<'a> Infer<'a> {
                 TyInfo::Data(_, args) => args
                     .into_iter()
                     .for_each(|arg| self.set_error(arg)),
-                // Type is projected, so error does not propagate backwards
-                // TODO: Should it?
-                TyInfo::Assoc(_, _, _) => {},
+                TyInfo::Assoc(_, _, assoc) => {}, // Type is projected, so error does not propagate backwards
                 TyInfo::Effect(_eff, out, opaque) => {
                     // TODO: Set error for eff
                     self.set_error(out);
@@ -436,10 +431,42 @@ impl<'a> Infer<'a> {
         }
     }
 
+    fn set_error_class(&mut self, class: ClassVar) {
+        match self.follow_class(class) {
+            ClassInfo::Ref(_) => unreachable!(),
+            ClassInfo::Unknown => {},
+            ClassInfo::Known(_, gen_tys, gen_effs) => {
+                for ty in gen_tys {
+                    self.set_error(ty);
+                }
+            },
+        }
+    }
+
     fn is_error(&self, ty: TyVar) -> bool {
-        match self.vars[ty.0].1.clone() {
+        self.vars[ty.0].2.is_err() || match self.vars[ty.0].1.clone() {
             TyInfo::Ref(x) => self.is_error(x),
-            _ => self.vars[ty.0].2.is_err(),
+            TyInfo::Effect(_, out, _) => self.is_error(out),
+            _ => false,
+        }
+    }
+
+    fn is_unknown(&self, ty: TyVar) -> bool {
+        match self.vars[ty.0].1.clone() {
+            TyInfo::Ref(x) => self.is_unknown(x),
+            TyInfo::Unknown(_) => true,
+            TyInfo::Effect(_, out, _) => self.is_unknown(out),
+            _ => false,
+        }
+    }
+
+    fn is_error_class(&mut self, class: ClassVar) -> bool {
+        match self.follow_class(class) {
+            ClassInfo::Ref(_) => unreachable!(),
+            ClassInfo::Unknown => false,
+            ClassInfo::Known(_, gen_tys, gen_effs) => gen_tys
+                .into_iter()
+                .any(|ty| self.is_error(ty)),
         }
     }
 
@@ -525,7 +552,7 @@ impl<'a> Infer<'a> {
                         let inst = match eff {
                             Ok(EffectInst::Gen(idx, _)) => match gen_eff(idx, self) {
                                 Some(eff) => {
-                                    // TODO: This seems dumb
+                                    // TODO: This seems dumb, what about in the multiple generics case?
                                     opener = opener.or(Some(eff));
                                     return None;
                                 },
@@ -570,15 +597,12 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .map(|param| self.instantiate(param, span, gen_ty, gen_eff, self_ty))
                 .collect()),
-             // TODO: Check scope is valid for recursive scopes
+             // TODO: Check scope is valid for nested scopes
             Ty::Gen(index, scope) => match gen_ty(index, scope, self) {
                 Some(ty) => TyInfo::Ref(ty),
                 None => {
-                    println!("Generic type length mismatch! Tried to get idx = {}", index);
+                    println!("Generic type length mismatch! Tried to get idx = {}. Implies that the caller isn't checking that all generics are present.", index);
                     let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
-                    // TODO: A better error, if this occurs? (it shouldn't)
-                    self.ctx.emit(Error::WrongNumberOfGenerics(span, 999, span, index));
-                    // TODO: Can only occur if there's a mismatch in generic parameters, for which we already report an error
                     TyInfo::Error(ErrorReason::Invalid)
                 },
             },
@@ -600,7 +624,6 @@ impl<'a> Infer<'a> {
                     .iter()
                     .map(|eff| match eff.map(|eff| self.instantiate_eff(eff, span, gen_ty, gen_eff, self_ty)) {
                         Some(Ok(Some(eff))) => eff,
-                        // TODO: Make sure this is fine in all other cases. It should be?
                         _ => self.insert_effect(span, EffectInfo::Open(Vec::new())),
                     })
                     .collect();
@@ -613,7 +636,6 @@ impl<'a> Infer<'a> {
             },
             Ty::Effect(eff, out) => match self.instantiate_eff(eff, span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), gen_ty, gen_eff, self_ty) {
                 Ok(Some(eff)) => {
-                    // TODO: Should this be strict instead of relaxed?
                     let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), true);
                     TyInfo::Effect(eff, self.instantiate(out, span, gen_ty, gen_eff, self_ty), opaque)
                 },
@@ -774,6 +796,10 @@ impl<'a> Infer<'a> {
         self.constraints.push_back(Constraint::EffectSendRecv(eff, send, recv, span));
     }
 
+    pub fn make_effect_propagate(&mut self, obj: TyVar, basin_eff: EffectVar, out: TyVar, obj_span: Span, span: Span) {
+        self.constraints.push_back(Constraint::EffectPropagate(obj, basin_eff, out, obj_span, span));
+    }
+
     pub fn emit(&mut self, err: InferError) {
         self.errors.push(err);
     }
@@ -891,10 +917,6 @@ impl<'a> Infer<'a> {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
                 self.set_error(b);
-                // TODO: Don't put this here, it's a bit silly
-                if let (TyInfo::Effect(_, _, _), TyInfo::Effect(_, _, _)) = (self.info(a), self.info(b)) {
-                    eq_info.reason = Some("Effect objects have unique types and cannot be substituted for one-another".to_string());
-                }
                 self.errors.push(InferError::CannotCoerce(x.1, y.1, Some((a, b)), eq_info));
             }
         }
@@ -1076,7 +1098,7 @@ impl<'a> Infer<'a> {
                 let co_error = Self::flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
                 let contra_error = Self::flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
 
-                // TODO: What about effects? I guess invariant too...
+                // Effects are also invariant
                 let e_co_error = Self::flow_many_effect(infer, (e_xs.iter().copied(), x_ty), (e_ys.iter().copied(), y_ty)).err();
                 let e_contra_error = Self::flow_many_effect(infer, (e_ys, y_ty), (e_xs, x_ty)).err();
                 co_error
@@ -1101,7 +1123,7 @@ impl<'a> Infer<'a> {
             (TyInfo::Unknown(_), y_info) => if infer.as_ref().occurs_in(x, y) {
                 infer.emit_error(InferError::Recursive(y, infer.as_ref().follow(x)));
                 infer.set_info(x, TyInfo::Error(ErrorReason::Recursive));
-                Ok(infer.set_error(x)) // TODO: Not actually ok
+                Ok(infer.set_error(x))
             } else {
                 infer.set_unknown_flow(x, y);
                 Ok(infer.set_info(x, TyInfo::Ref(y)))
@@ -1109,7 +1131,7 @@ impl<'a> Infer<'a> {
             (x_info, TyInfo::Unknown(_)) => if infer.as_ref().occurs_in(y, x) {
                 infer.emit_error(InferError::Recursive(x, infer.as_ref().follow(y)));
                 infer.set_info(y, TyInfo::Error(ErrorReason::Recursive));
-                Ok(infer.set_error(y)) // TODO: Not actually ok
+                Ok(infer.set_error(y))
             } else {
                 infer.set_unknown_flow(x, y);
                 Ok(infer.set_info(y, TyInfo::Ref(x)))
@@ -1137,8 +1159,7 @@ impl<'a> Infer<'a> {
                 let o_err = Self::flow_inner(infer, x_o, y_o).err();
                 i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
-            (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data &&
-                xs.len() == ys.len() /* TODO: Assert this! */ => {
+            (TyInfo::Data(x_data, xs), TyInfo::Data(y_data, ys)) if x_data == y_data => {
                 // TODO: Unnecessarily conservative, variance of data type generics should be determined
                 let co_error = Self::flow_many(infer, xs.iter().copied(), ys.iter().copied()).err();
                 let contra_error = Self::flow_many(infer, ys, xs).err().map(|(a, b)| (b, a));
@@ -1166,16 +1187,16 @@ impl<'a> Infer<'a> {
                 let opaque_err = Self::flow_inner(infer, x_opaque, y_opaque).err().map(|_| (x, y));
                 o_err.or(eff_err).or(opaque_err).map(Err).unwrap_or(Ok(()))
             },
-            (TyInfo::Effect(x_eff, x_out, x_opaque), y_info) => {
+            (TyInfo::Effect(x_eff, x_out, _x_opaque), y_info) => {
+                // Opaque gets ignored, it doesn't matter if the effect is empty anyway!
                 infer.make_check_eff_empty((x_eff, x), y);
                 let o_err = Self::flow_inner(infer, x_out, y).err();
-                // TODO: opaque_err?
                 o_err.map(Err).unwrap_or(Ok(()))
             },
-            (x_info, TyInfo::Effect(y_eff, y_out, y_opaque)) => {
+            (x_info, TyInfo::Effect(y_eff, y_out, _y_opaque)) => {
+                // Opaque gets ignored, it doesn't matter if the effect is empty anyway!
                 infer.make_check_eff_empty((y_eff, x), y);
                 let o_err = Self::flow_inner(infer, x, y_out).err();
-                // TODO: opaque_err?
                 o_err.map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Opaque(x_id, _), TyInfo::Opaque(y_id, _)) if x_id == y_id => Ok(()),
@@ -1214,7 +1235,6 @@ impl<'a> Infer<'a> {
                     .collect();
                 self.insert_effect(span, EffectInfo::Open(effs))
             },
-            // TODO: Is Closed even required?
             EffectInfo::Closed(effs, opener) => {
                 let effs = effs
                     .iter()
@@ -1303,6 +1323,7 @@ impl<'a> Infer<'a> {
     }
 
     fn resolve_access(&mut self, record: TyVar, field_name: &SrcNode<Ident>, field: TyVar, flow_out: bool) -> Option<bool> {
+        // TODO: Allow chaining accesses
         match self.follow_info(record) {
             _ if self.is_error(record) => {
                 self.set_error(field);
@@ -1469,12 +1490,27 @@ impl<'a> Infer<'a> {
                         &mut |idx, _| todo!(),
                         None,
                     );
-                    // TODO: The variance here is a bit fucked, this needs to swap when we're
+                    // The variance here is a bit fucked, this needs to swap when we're
                     // inferring flow into (from a handler) vs flow out of (via a propagation)
+                    // For now, just assume invariance. Easy peasy!
                     self.make_flow(recv, recv_ty, self.span(recv));
+                    self.make_flow(recv_ty, recv, self.span(recv));
                     Some(Ok(()))
                 },
             },
+            Constraint::EffectPropagate(obj, basin_eff, out_ty, obj_span, span) => match self.follow_info(obj) {
+                TyInfo::Effect(eff, out, _) => {
+                    self.make_flow(out, out_ty, EqInfo::from(span));
+
+                    // Generating a whole new type variable for this is stupid, it should be possible to flow effects without tying them to a ty
+                    let fake_opaque = self.opaque(span, true);
+                    let fake_basin_ty = self.insert(self.effect_span(basin_eff), TyInfo::Effect(basin_eff, out_ty, fake_opaque));
+
+                    self.make_flow_effect((eff, obj), (basin_eff, fake_basin_ty), EqInfo::from(span));
+                    Some(Ok(()))
+                },
+                _ => None,
+            }
         }
     }
 
@@ -1532,13 +1568,12 @@ impl<'a> Infer<'a> {
             .unwrap();
         let inst_field_ty = self.instantiate(
             field_ty_id,
-            field.span(),
+            span,
             &mut |idx, _, _| gen_tys.get(idx).copied(),
             &mut |idx, _| gen_effs.get(idx).copied(),
             Some(ty),
         );
 
-        // TODO: Check soundness of flow relationship
         self.make_flow(inst_field_ty, field_ty, field.span());
 
         Some(Ok(()))
@@ -1567,20 +1602,20 @@ impl<'a> Infer<'a> {
                     Some(Ok(Some((*member.class, member.gen_tys, member.gen_effs))))
                 },
                 // Exactly one external candidate was found, so instantiate it
+                // TODO: Should we even make use of external member information? It implies that adding new members is
+                // a breaking change... Alternatively, we could have a DAG-based member 'visibility' system for
+                // external member candidates between dependencies
                 (0, 1) => {
                     // Can't fail
                     let class_id = external_candidates.into_iter().next().unwrap();
-                    // TODO: Should we make use of member information? external_candidates should probably be HashSet<MemberId>
                     let (gen_tys, gen_effs) = self.instantiate_class(class_id, item.span(), Some(ty));
                     Some(Ok(Some((class_id, gen_tys, gen_effs))))
                 },
                 // No implied or external candidates were found, so we can't resolve the member
                 (0, 0) => {
                     // No external candidates match either, so bail
-                    // TODO: Should this really generate an error? It might be that we just need more info
                     self.set_error(item_ty);
                     Some(Err(InferError::NoSuchItem(ty, self.span(ty), item)))
-                    // None
                 },
                 (_, _) => {
                     self.set_error(item_ty);
@@ -1608,6 +1643,7 @@ impl<'a> Infer<'a> {
         {
             if self.var_covers_var(ty, *member.member)? {
                 // TODO: Only replace if the new member has 'better' information than the previous one
+                // TODO: Figure out what 'better' means. Heck, we could even try to combine them together!
                 implied_candidates.insert(*member.class, member);
             }
         }
@@ -1653,8 +1689,9 @@ impl<'a> Infer<'a> {
     // TODO: Flip arg order
     fn var_covers_var(&self, var: TyVar, ty: TyVar) -> Option<bool> {
         match (self.follow_info(var), self.follow_info(ty)) {
+            (TyInfo::Error(_), _) | (_, TyInfo::Error(_)) => Some(true), // Errors always cover
             (TyInfo::Unknown(_), _) => None,
-            (_, TyInfo::Unknown(_)) => Some(false), // TODO: Why does this need to be Some(false)?
+            (_, TyInfo::Unknown(_)) => None, // TODO: Should this be Some(false)?
             (TyInfo::Gen(x, _, _), TyInfo::Gen(y, _, _)) if x == y => Some(true),
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Some(true),
             (TyInfo::List(x), TyInfo::List(y)) => self.var_covers_var(x, y),
@@ -1703,8 +1740,8 @@ impl<'a> Infer<'a> {
             .all(|eff| effs_of
                 .iter()
                 .any(|var| match (self.follow_effect_inst(*var), self.follow_effect_inst(eff)) {
-                    (EffectInstInfo::Unknown, _) => false,
-                    (_, EffectInstInfo::Unknown) => false,
+                    (EffectInstInfo::Error, _) | (_, EffectInstInfo::Error) => true, // Errors always cover
+                    (EffectInstInfo::Unknown, _) | (_, EffectInstInfo::Unknown) => false,
                     (EffectInstInfo::Gen(x, _), EffectInstInfo::Gen(y, _)) if x == y => true,
                     (EffectInstInfo::Known(x, x_gen_tys), EffectInstInfo::Known(y, y_gen_tys)) if x == y => x_gen_tys
                         .into_iter()
@@ -1770,6 +1807,7 @@ impl<'a> Infer<'a> {
         eff_gens: &mut HashMap<usize, (EffectVar, TyVar)>,
     ) -> Result<bool, ()> {
         match (self.follow_info(var), self.ctx.tys.get(ty)) {
+            (TyInfo::Error(_), _) => Ok(true), // Errors always cover
             // Blanket impls match everything
             // TODO: Match instantiations of each generic type with one-another
             (_, Ty::Gen(idx, _)) => {
@@ -2099,8 +2137,8 @@ impl<'a> Infer<'a> {
                             //     class_gen_tys.iter().map(|ty| format!(" {:?}", self.follow_info(*ty))).collect::<String>(),
                             //     class_gen_effs.iter().map(|eff| format!(" {:?}", self.follow_effect(*eff))).collect::<String>(),
                             // );
-                            Some(Err(InferError::TypeDoesNotFulfil(self.insert_class(obl_span, ClassInfo::Known(class_id, class_gen_tys, class_gen_effs)), ty, obl_span, gen_span, use_span)))
-                            // None
+                            //Some(Err(InferError::TypeDoesNotFulfil(self.insert_class(obl_span, ClassInfo::Known(class_id, class_gen_tys, class_gen_effs)), ty, obl_span, gen_span, use_span)))
+                            None
                         },
                         // Exactly one definitely covering member, one one possible-covering member: great, we know
                         // what to substitute!
@@ -2357,31 +2395,18 @@ impl<'a> Infer<'a> {
 
         let mut errors = std::mem::take(&mut self.errors);
 
-        // Report errors for types that cannot be inferred
-        let tys = self.iter().collect::<Vec<_>>();
-        for (ty, info) in tys {
-            if let TyInfo::Unknown(origin) = info {
-                if !self.is_error(ty) {
-                    // println!("Uninferred type generated at {:?}", self.vars[ty.0].3);
-                    errors.push(InferError::CannotInfer(ty, origin));
-                    self.set_error(ty);
-                }
-            }
-        }
-        for (span, info) in self.effect_inst_vars.clone() {
-            if let EffectInstInfo::Unknown = info {
-                self.ctx.emit(Error::CannotInferEffect(span, Err(())));
-            }
-        }
-
         // Generate errors for all remaining constraints
         for c in std::mem::take(&mut self.constraints) {
             match c {
                 Constraint::Access(record, field_name, _field) => {
-                    errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
+                    if !self.is_error(record) {
+                        errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()));
+                    }
                 },
                 Constraint::Update(record, field_name, _field) => {
-                    errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()))
+                    if !self.is_error(record) {
+                        errors.push(InferError::NoSuchItem(record, self.span(record), field_name.clone()));
+                    }
                 },
                 Constraint::Impl(ty, class, obl_span, assoc, use_span) => {
                     let gen_span = if let TyInfo::Gen(gen_idx, gen_scope, _) = self.follow_info(ty) {
@@ -2389,11 +2414,15 @@ impl<'a> Infer<'a> {
                     } else {
                         None
                     };
-                    // Propagate errors to associated types to avoid spurious errors
-                    for (_, ty) in assoc {
+                    if !self.is_error(ty) && !self.is_error_class(class) && !self.is_unknown(ty) {
+                        // Propagate errors to avoid spurious errors
                         self.set_error(ty);
+                        self.set_error_class(class);
+                        for (_, assoc_ty) in assoc {
+                            self.set_error(assoc_ty);
+                        }
+                        errors.push(InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span));
                     }
-                    errors.push(InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span));
                 },
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span) => {
                     errors.push(InferError::AmbiguousClassItem(field, Vec::new()))
@@ -2404,6 +2433,33 @@ impl<'a> Infer<'a> {
                     }
                 },
                 Constraint::EffectSendRecv(eff, send, recv, span) => errors.push(InferError::CannotInferEffect(eff)),
+                Constraint::EffectPropagate(obj, _, out_ty, obj_span, span) => {
+                    self.set_error(out_ty);
+                    if !self.is_error(obj) {
+                        errors.push(InferError::NotEffectful(obj, obj_span, span))
+                    }
+                },
+            }
+        }
+
+        // Only emit inference errors if we have no other errors
+        if errors.is_empty() {
+            // Report errors for types that cannot be inferred
+            let tys = self.iter().collect::<Vec<_>>();
+            for (ty, info) in tys {
+                let ty = self.follow(ty);
+                if let TyInfo::Unknown(origin) = self.follow_info(ty) {
+                    if !self.is_error(ty) {
+                        // println!("Uninferred type generated at {:?}", self.vars[ty.0].3);
+                        errors.push(InferError::CannotInfer(ty, origin));
+                        self.set_error(ty);
+                    }
+                }
+            }
+            for (span, info) in self.effect_inst_vars.clone() {
+                if let EffectInstInfo::Unknown = info {
+                    self.ctx.emit(Error::CannotInferEffect(span, Err(())));
+                }
             }
         }
 
@@ -2461,6 +2517,7 @@ impl<'a> Infer<'a> {
                     ),
                     cycle_span,
                 ),
+                InferError::NotEffectful(ty, obj_span, span) => Error::NotEffectful(checked.reify(ty), obj_span, span),
             })
             .collect();
 
