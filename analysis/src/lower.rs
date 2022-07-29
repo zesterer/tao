@@ -734,7 +734,13 @@ impl ToHir for ast::Expr {
                     infer.insert_effect(a.meta().0, EffectInfo::Open(Vec::new())) // TODO: EffectInfo::Error instead
                 };
 
-                infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span());
+                // TODO: Allow open effects to refer to each other recursively, permitting this:
+                // infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span());
+
+                // TODO: Get rid of these lines in favour of the former
+                let opaque = infer.unknown(op.span());
+                let eff_obj_ty = infer.insert(op.span(), TyInfo::Effect(basin_eff, out_ty, opaque));
+                infer.make_flow(a.meta().1, eff_obj_ty, EqInfo::from(op.span()));
 
                 (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))
             } else {
