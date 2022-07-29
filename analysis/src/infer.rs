@@ -129,11 +129,11 @@ impl<'a, 'b> FlowInfer<'a> for MakeFlow<'a, 'b> {
         self.0.errors.push(err);
     }
     fn make_check_eff(&mut self, x: (EffectVar, TyVar), y: (EffectVar, TyVar)) -> bool {
-        self.0.checks.push_back(Check::CheckFlowEffect(x, y, self.1.clone()));
+        self.0.checks.push_back(Check::FlowEffect(x, y, self.1.clone()));
         true
     }
     fn make_check_eff_empty(&mut self, x: (EffectVar, TyVar), other: TyVar) -> bool {
-        self.0.checks.push_back(Check::CheckEffectEmpty(x, other, self.1.clone()));
+        self.0.checks.push_back(Check::EffectEmpty(x, other, self.1.clone()));
         true
     }
 }
@@ -170,8 +170,9 @@ enum Constraint {
 
 #[derive(Clone, Debug)]
 pub enum Check {
-    CheckFlowEffect((EffectVar, TyVar), (EffectVar, TyVar), EqInfo),
-    CheckEffectEmpty((EffectVar, TyVar), TyVar, EqInfo),
+    FlowEffect((EffectVar, TyVar), (EffectVar, TyVar), EqInfo),
+    EffectEmpty((EffectVar, TyVar), TyVar, EqInfo),
+    EffectNonEmpty(TyVar, EffectVar, Span),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1048,9 +1049,9 @@ impl<'a> Infer<'a> {
             },
             // Grow open into one-another
             (EffectInfo::Open(mut x_effs), EffectInfo::Open(mut y_effs)) => {
-                x_effs.append(&mut y_effs);
-                infer.set_effect_info(x, EffectInfo::Open(x_effs));
-                infer.set_effect_info(y, EffectInfo::Ref(x));
+                y_effs.append(&mut x_effs);
+                infer.set_effect_info(y, EffectInfo::Open(y_effs));
+                infer.set_effect_info(x, EffectInfo::Ref(y));
                 Ok(())
             },
             // Grow closed into open
@@ -1348,7 +1349,7 @@ impl<'a> Infer<'a> {
 
                 // If projecting through the effect worked, make sure that the effect ends up being empty eventually
                 if res == Some(true) {
-                    self.checks.push_back(Check::CheckEffectEmpty((eff, record), out, EqInfo::from(field_name.span())));
+                    self.checks.push_back(Check::EffectEmpty((eff, record), out, EqInfo::from(field_name.span())));
                 }
 
                 res
@@ -1507,6 +1508,14 @@ impl<'a> Infer<'a> {
                 TyInfo::Effect(eff, out, _) => {
                     self.make_flow(out, out_ty, EqInfo::from(span));
 
+                    // If we're propagating the effect, it can't be empty
+                    // TODO: Make this actually work (right now, the effect grows backwards as well as forwards)
+                    // One solution might be to replace `EffectInfo::Open/Closed` with something that allows specifying
+                    // whether the effect can grow or shrink in input or output position, like
+                    // `EffectInfo::Set(grow: bool, grow_rev: bool, Vec<EffectInstInfo>)`. `Open` then becomes
+                    // `Set(true, true, ...)` and `Closed` becomes `Set(false, false, ...)`.
+                    self.checks.push_back(Check::EffectNonEmpty(obj, eff, span));
+
                     // Generating a whole new type variable for this is stupid, it should be possible to flow effects without tying them to a ty
                     let fake_opaque = self.opaque(span, true);
                     let fake_basin_ty = self.insert(self.effect_span(basin_eff), TyInfo::Effect(basin_eff, out_ty, fake_opaque));
@@ -1521,20 +1530,25 @@ impl<'a> Infer<'a> {
 
     fn check(&mut self, c: Check) -> Result<(), InferError> {
         match c {
-            Check::CheckFlowEffect((x, x_ty), (y, y_ty), eq_info) => self.check_flow_eff((x, x_ty), (y, y_ty))
+            Check::FlowEffect((x, x_ty), (y, y_ty), eq_info) => self.check_flow_eff((x, x_ty), (y, y_ty))
                 .and_then(|ok| if ok {
                     Some(())
                 } else {
                     None
                 })
                 .ok_or_else(|| InferError::CannotCoerce(x_ty, y_ty, None, eq_info)),
-            Check::CheckEffectEmpty((x, x_ty), other, eq_info) => self.check_eff_empty((x, x_ty))
+            Check::EffectEmpty((x, x_ty), other, eq_info) => self.check_eff_empty((x, x_ty))
                 .and_then(|ok| if ok {
                     Some(())
                 } else {
                     None
                 })
                 .ok_or_else(|| InferError::CannotCoerce(x_ty, other, None, eq_info)),
+            Check::EffectNonEmpty(ty, eff, span) => if self.collect_eff_insts(eff).is_empty() {
+                Err(InferError::NotEffectful(ty, self.span(ty), span))
+            } else {
+                Ok(())
+            },
         }
     }
 
@@ -1991,7 +2005,7 @@ impl<'a> Infer<'a> {
             (_, TyInfo::Effect(eff, out, _)) => {
                 // Make sure we actually can see through this effect!
                 // TODO: Make this generate better errors
-                self.checks.push_back(Check::CheckEffectEmpty((eff, ty), ty, EqInfo::default()));
+                self.checks.push_back(Check::EffectEmpty((eff, ty), ty, EqInfo::default()));
 
                 self.derive_links(member, out, self_ty, use_span, ty_links, eff_links)
             },
@@ -2658,8 +2672,12 @@ impl<'a> Checked<'a> {
                         .map(|eff| self.reify_effect_inst(eff))
                         .chain(opener)
                         .collect::<Vec<_>>();
-                    sort_and_order(self, &mut effs);
-                    Effect::Known(effs)
+                    if effs.is_empty() {
+                        return None
+                    } else {
+                        sort_and_order(self, &mut effs);
+                        Effect::Known(effs)
+                    }
                 },
             };
             self.infer.ctx.tys.insert_effect(self.infer.effect_span(var), eff)
