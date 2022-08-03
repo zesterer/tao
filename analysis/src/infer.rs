@@ -102,8 +102,8 @@ impl<'a, 'b> FlowInfer<'a> for CheckFlow<'a, 'b> {
     fn infer(&self) -> &Infer<'_> { self.0 }
     fn is_check(&self) -> bool { true }
     fn set_info(&mut self, x: TyVar, info: TyInfo) {}
-    fn set_effect_info(&mut self, x: EffectVar, info: EffectInfo) {}
-    fn set_effect_inst_info(&mut self, x: EffectInstVar, info: EffectInstInfo) {}
+    fn set_effect_info(&mut self, x: EffectVar, info: EffectInfo) { self.1 = Some(false); }
+    fn set_effect_inst_info(&mut self, x: EffectInstVar, info: EffectInstInfo) { self.1 = Some(false); }
     fn set_class_info(&mut self, x: ClassVar, info: ClassInfo) {}
     fn set_error(&mut self, x: TyVar) { self.1 = Some(false); }
     fn set_unknown_flow(&mut self, x: TyVar, y: TyVar) { if self.1 == Some(true) { self.1 = None; } }
@@ -558,6 +558,7 @@ impl<'a> Infer<'a> {
                             Ok(EffectInst::Gen(idx, _)) => match gen_eff(idx, self) {
                                 Some(eff) => {
                                     // TODO: This seems dumb, what about in the multiple generics case?
+                                    assert!(opener.is_none(), "TODO: Two openers in effect instantiation");
                                     opener = opener.or(Some(eff));
                                     return None;
                                 },
@@ -597,7 +598,10 @@ impl<'a> Infer<'a> {
                 .into_iter()
                 .map(|(name, field)| (name, self.instantiate(field, span, gen_ty, gen_eff, self_ty)))
                 .collect(), is_tuple),
-            Ty::Func(i, o) => TyInfo::Func(self.instantiate(i, span, gen_ty, gen_eff, self_ty), self.instantiate(o, span, gen_ty, gen_eff, self_ty)),
+            Ty::Func(i, o) => TyInfo::Func(
+                self.instantiate(i, span, gen_ty, gen_eff, self_ty),
+                self.instantiate(o, span, gen_ty, gen_eff, self_ty),
+            ),
             Ty::Data(data, params) => TyInfo::Data(data, params
                 .into_iter()
                 .map(|param| self.instantiate(param, span, gen_ty, gen_eff, self_ty))
@@ -641,8 +645,9 @@ impl<'a> Infer<'a> {
             },
             Ty::Effect(eff, out) => match self.instantiate_eff(eff, span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), gen_ty, gen_eff, self_ty) {
                 Ok(Some(eff)) => {
+                    let out = self.instantiate(out, span, gen_ty, gen_eff, self_ty);
                     let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), true);
-                    TyInfo::Effect(eff, self.instantiate(out, span, gen_ty, gen_eff, self_ty), opaque)
+                    TyInfo::Effect(eff, out, opaque)
                 },
                 Ok(None) => return self.instantiate(out, span, gen_ty, gen_eff, self_ty),
                 Err(()) => TyInfo::Error(ErrorReason::Invalid),
@@ -764,6 +769,14 @@ impl<'a> Infer<'a> {
     fn iter_effects(&self) -> impl Iterator<Item = (EffectVar, EffectInfo)> + '_ {
         (0..self.effect_vars.len())
             .map(|i| (EffectVar(i), self.effect_vars[i].1.clone()))
+    }
+
+    fn info_effect(&self, eff: EffectVar) -> EffectInfo {
+        self.effect_vars[eff.0].1.clone()
+    }
+
+    fn info_effect_inst(&self, eff: EffectInstVar) -> EffectInstInfo {
+        self.effect_inst_vars[eff.0].1.clone()
     }
 
     fn follow_effect(&self, eff: EffectVar) -> EffectInfo {
@@ -980,7 +993,9 @@ impl<'a> Infer<'a> {
         (x, x_ty): (EffectInstVar, TyVar),
         (y, y_ty): (EffectInstVar, TyVar),
     ) -> Result<(), (TyVar, TyVar)> {
-        match (infer.as_ref().follow_effect_inst(x), infer.as_ref().follow_effect_inst(y)) {
+        match (infer.as_ref().info_effect_inst(x), infer.as_ref().info_effect_inst(y)) {
+            (EffectInstInfo::Ref(x), _) => Self::flow_effect_inst(infer, (x, x_ty), (y, y_ty)),
+            (_, EffectInstInfo::Ref(y)) => Self::flow_effect_inst(infer, (x, x_ty), (y, y_ty)),
             (EffectInstInfo::Error, _) => Ok(()),
             (_, EffectInstInfo::Error) => Ok(()),
             (EffectInstInfo::Unknown, _) => Ok(infer.set_effect_inst_info(x, EffectInstInfo::Ref(y))),
@@ -1003,7 +1018,7 @@ impl<'a> Infer<'a> {
         (x, x_ty): (EffectVar, TyVar),
     ) -> Option<bool> {
         match self.follow_effect(x) {
-            EffectInfo::Ref(x) => self.check_eff_empty((x, x_ty)),
+            EffectInfo::Ref(x) => unreachable!(),
             EffectInfo::Open(x_effs) | EffectInfo::Closed(x_effs, None) => Some(x_effs.is_empty()),
             EffectInfo::Closed(x_effs, Some(opener)) => Some(x_effs.is_empty() && self.check_eff_empty((opener, x_ty))?),
         }
@@ -1016,9 +1031,9 @@ impl<'a> Infer<'a> {
         (y, y_ty): (EffectVar, TyVar),
     ) -> Result<(), (TyVar, TyVar)> {
         if x == y { return Ok(()) }
-        match (infer.as_ref().follow_effect(x), infer.as_ref().follow_effect(y)) {
-            (EffectInfo::Ref(_), _) => unreachable!(),
-            (_, EffectInfo::Ref(_)) => unreachable!(),
+        match (infer.as_ref().info_effect(x), infer.as_ref().info_effect(y)) {
+            (EffectInfo::Ref(x), _) => Self::flow_effect(infer, (x, x_ty), (y, y_ty)),
+            (_, EffectInfo::Ref(y)) => Self::flow_effect(infer, (x, x_ty), (y, y_ty)),
 
             // Closed with opener into closed
             (EffectInfo::Closed(x_effs, Some(x_opener)), EffectInfo::Closed(y_effs, None) | EffectInfo::Open(y_effs)) if x_effs.is_empty() => {
@@ -1049,31 +1064,44 @@ impl<'a> Infer<'a> {
             },
             // Grow open into one-another
             (EffectInfo::Open(mut x_effs), EffectInfo::Open(mut y_effs)) => {
-                y_effs.append(&mut x_effs);
-                infer.set_effect_info(y, EffectInfo::Open(y_effs));
-                infer.set_effect_info(x, EffectInfo::Ref(y));
-                Ok(())
+                if infer.is_check() {
+                    infer.make_check_eff((x, x_ty), (y, y_ty));
+                    Ok(())
+                } else {
+                    y_effs.append(&mut x_effs);
+                    infer.set_effect_info(y, EffectInfo::Open(y_effs));
+                    infer.set_effect_info(x, EffectInfo::Ref(y));
+                    Ok(())
+                }
             },
             // Grow closed into open
             (EffectInfo::Closed(mut x_effs, opener), EffectInfo::Open(mut y_effs)) => {
                 y_effs.append(&mut x_effs);
-                y_effs.append(&mut opener.map(|opener| infer.infer().collect_eff_insts(opener)).unwrap_or_default());
                 infer.set_effect_info(y, EffectInfo::Open(y_effs));
+                if let Some(opener) = opener {
+                    Self::flow_effect(infer, (opener, x_ty), (y, y_ty))?;
+                }
                 Ok(())
             },
             // Defer check open into closed
             (EffectInfo::Open(mut x_effs), EffectInfo::Closed(mut y_effs, None)) => {
-                if x_effs
-                    .iter()
-                    .all(|x| y_effs
+                if infer.is_check() {
+                    if x_effs
                         .iter()
-                        .any(|y| Self::flow_effect_inst(infer, (*x, x_ty), (*y, y_ty)) == Ok(())))
-                {
-                    // If the rhs is closed, flow backwards
-                    // TODO: This is done to avoid a backend problem where an empty effect set accidentally gets
-                    // flattened when a caller expects it to not be flattener, and should probably be fixed
-                    x_effs.append(&mut y_effs);
-                    infer.set_effect_info(x, EffectInfo::Open(x_effs));
+                        .all(|x| y_effs
+                            .iter()
+                            .any(|y| Self::flow_effect_inst(infer, (*x, x_ty), (*y, y_ty)) == Ok(())))
+                    {
+                        Ok(())
+                    } else {
+                        Err((x_ty, y_ty))
+                    }
+                } else if y_effs.len() == 1 {
+                     x_effs
+                        .iter()
+                        .map(|x| Self::flow_effect_inst(infer, (*x, x_ty), (y_effs[0], y_ty)))
+                        .collect::<Result<_, _>>()?;
+                    infer.set_effect_info(x, EffectInfo::Ref(y));
                     Ok(())
                 } else if infer.make_check_eff((x, x_ty), (y, y_ty)) {
                     // If the rhs is closed, flow backwards
@@ -1193,13 +1221,13 @@ impl<'a> Infer<'a> {
                 let opaque_err = Self::flow_inner(infer, x_opaque, y_opaque).err().map(|_| (x, y));
                 o_err.or(eff_err).or(opaque_err).map(Err).unwrap_or(Ok(()))
             },
-            (TyInfo::Effect(x_eff, x_out, _x_opaque), y_info) => {
+            (TyInfo::Effect(x_eff, x_out, _x_opaque), _y_info) if !infer.is_check() => {
                 // Opaque gets ignored, it doesn't matter if the effect is empty anyway!
                 infer.make_check_eff_empty((x_eff, x), y);
                 let o_err = Self::flow_inner(infer, x_out, y).err();
                 o_err.map(Err).unwrap_or(Ok(()))
             },
-            (x_info, TyInfo::Effect(y_eff, y_out, _y_opaque)) => {
+            (_x_info, TyInfo::Effect(y_eff, y_out, _y_opaque)) if !infer.is_check() => {
                 // Opaque gets ignored, it doesn't matter if the effect is empty anyway!
                 infer.make_check_eff_empty((y_eff, x), y);
                 let o_err = Self::flow_inner(infer, x, y_out).err();
@@ -1514,7 +1542,7 @@ impl<'a> Infer<'a> {
                     // whether the effect can grow or shrink in input or output position, like
                     // `EffectInfo::Set(grow: bool, grow_rev: bool, Vec<EffectInstInfo>)`. `Open` then becomes
                     // `Set(true, true, ...)` and `Closed` becomes `Set(false, false, ...)`.
-                    self.checks.push_back(Check::EffectNonEmpty(obj, eff, span));
+                    // self.checks.push_back(Check::EffectNonEmpty(obj, eff, span));
 
                     // Generating a whole new type variable for this is stupid, it should be possible to flow effects without tying them to a ty
                     let fake_opaque = self.opaque(span, true);
@@ -1691,7 +1719,8 @@ impl<'a> Infer<'a> {
                 // TODO: Deal with maybe covering?
                 // Checking these cases isn't essential for now, we can be as coarse as we like. We're only generating
                 // a candidate list: checking of the finally selected member will occur later.
-                if matches!(self.covers_var(ty, member.member, &mut ty_gens, &mut eff_gens), Ok(_)) {
+                let mut todo = Vec::new();
+                if matches!(self.covers_var(ty, member.member, &mut ty_gens, &mut eff_gens, &mut todo), Ok(_)) && todo.is_empty() {
                     covers = true;
                 }
             }
@@ -1824,6 +1853,7 @@ impl<'a> Infer<'a> {
         ty: TyId,
         ty_gens: &mut HashMap<usize, TyVar>,
         eff_gens: &mut HashMap<usize, (EffectVar, TyVar)>,
+        todo: &mut Vec<Check>,
     ) -> Result<bool, ()> {
         match (self.follow_info(var), self.ctx.tys.get(ty)) {
             (TyInfo::Error(_), _) => Ok(true), // Errors always cover
@@ -1839,35 +1869,35 @@ impl<'a> Infer<'a> {
                 }
             },
             (TyInfo::Prim(x), Ty::Prim(y)) if x == y => Ok(true),
-            (TyInfo::List(x), Ty::List(y)) => self.covers_var(x, y, ty_gens, eff_gens),
+            (TyInfo::List(x), Ty::List(y)) => self.covers_var(x, y, ty_gens, eff_gens, todo),
             // TODO: Care about field names!
             (TyInfo::Record(xs, _), Ty::Record(ys, _)) if xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .try_fold(true, |a, ((_, x), (_, y))| Ok(a && self.covers_var(x, y, ty_gens, eff_gens)?)),
+                .try_fold(true, |a, ((_, x), (_, y))| Ok(a && self.covers_var(x, y, ty_gens, eff_gens, todo)?)),
             (TyInfo::Func(x_i, x_o), Ty::Func(y_i, y_o)) => {
-                Ok(self.covers_var(x_i, y_i, ty_gens, eff_gens)? && self.covers_var(x_o, y_o, ty_gens, eff_gens)?)
+                Ok(self.covers_var(x_i, y_i, ty_gens, eff_gens, todo)? && self.covers_var(x_o, y_o, ty_gens, eff_gens, todo)?)
             },
             (TyInfo::Data(x, xs), Ty::Data(y, ys)) if x == y && xs.len() == ys.len() => xs
                 .into_iter()
                 .zip(ys.into_iter())
-                .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, ty_gens, eff_gens)?)),
+                .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, ty_gens, eff_gens, todo)?)),
             (TyInfo::Assoc(x, class_x, assoc_x), Ty::Assoc(y, (class_id_y, y_gen_tys, y_gen_effs), assoc_y))
-                if assoc_x == assoc_y => Ok(self.covers_var(x, y, ty_gens, eff_gens)? && match self.follow_class(class_x) {
+                if assoc_x == assoc_y => Ok(self.covers_var(x, y, ty_gens, eff_gens, todo)? && match self.follow_class(class_x) {
                     ClassInfo::Ref(_) => unreachable!(),
                     ClassInfo::Unknown => false, // TODO: correct?
                     ClassInfo::Known(class_id_x, x_gen_tys, x_gen_effs) => class_id_x == class_id_y && x_gen_tys
                         .into_iter()
                         .zip(y_gen_tys.into_iter())
-                        .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, ty_gens, eff_gens)?))?,
+                        .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, y, ty_gens, eff_gens, todo)?))?,
                 }),
             (TyInfo::Effect(x_eff, x_out, _), Ty::Effect(y_eff, y_out)) =>
-                Ok(self.covers_var(x_out, y_out, ty_gens, eff_gens)? && self.covers_var_eff((x_eff, var), y_eff, ty_gens, eff_gens)?),
-            // TODO: This probably isn't correct by itself, we need to enforce that `eff` is indeed empty for this to
-            // be valid
-            (TyInfo::Effect(_eff, out, _), _) => self.covers_var(out, ty, ty_gens, eff_gens),
-            (_, Ty::Effect(_eff, out)) => self.covers_var(var, out, ty_gens, eff_gens),
-            // (_, Ty::Effect(_eff, out)) => self.covers_var(var, out, gens),
+                Ok(self.covers_var(x_out, y_out, ty_gens, eff_gens, todo)? && self.covers_var_eff((x_eff, var), y_eff, ty_gens, eff_gens, todo)?),
+            (TyInfo::Effect(eff, out, _), _) => {
+                // This only covers if the effect is empty!
+                todo.push(Check::EffectEmpty((eff, var), var, EqInfo::default()));
+                self.covers_var(out, ty, ty_gens, eff_gens, todo)
+            },
 
             // Unknown types *could* match, maybe
             (TyInfo::Unknown(_), _) => Ok(false),
@@ -1881,6 +1911,7 @@ impl<'a> Infer<'a> {
         eff: EffectId,
         ty_gens: &mut HashMap<usize, TyVar>,
         eff_gens: &mut HashMap<usize, (EffectVar, TyVar)>,
+        todo: &mut Vec<Check>,
     ) -> Result<bool, ()> {
         match (self.follow_effect(var), self.ctx.tys.get_effect(eff)) {
             (EffectInfo::Open(var_effs) | EffectInfo::Closed(var_effs, None), Effect::Known(effs)) => {
@@ -1906,7 +1937,7 @@ impl<'a> Infer<'a> {
                             (EffectInstInfo::Known(x, x_gen_tys), Ok(EffectInst::Concrete(y, y_gen_tys))) if x == *y => x_gen_tys
                                 .into_iter()
                                 .zip(y_gen_tys.into_iter())
-                                .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, *y, ty_gens, eff_gens)?))
+                                .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, *y, ty_gens, eff_gens, todo)?))
                                 .unwrap_or_else(|()| false),
                             (x, y) => {
                                 dbg!("{:?} covers {:?}", x, y);
@@ -1921,7 +1952,7 @@ impl<'a> Infer<'a> {
                 }
             },
             (EffectInfo::Closed(var_effs, Some(opener)), _) if var_effs.is_empty() => {
-                self.covers_var_eff((opener, var_ty), eff, ty_gens, eff_gens)
+                self.covers_var_eff((opener, var_ty), eff, ty_gens, eff_gens, todo)
             },
             (x, y) => {
                 dbg!("{:?} covers {:?}", x, y);
@@ -1997,11 +2028,13 @@ impl<'a> Infer<'a> {
                     }
                 },
             (Ty::Effect(_, _), TyInfo::Effect(_, _, _)) => todo!(),
+            /*
             (Ty::Effect(eff, out), _) => {
                 let eff_var = self.insert_effect(self.span(ty), EffectInfo::Closed(Vec::new(), None));
                 self.derive_links_eff(eff, eff_var, self_ty, use_span, ty_links, eff_links);
                 self.derive_links(out, ty, self_ty, use_span, ty_links, eff_links)
             },
+            */
             (_, TyInfo::Effect(eff, out, _)) => {
                 // Make sure we actually can see through this effect!
                 // TODO: Make this generate better errors
@@ -2093,6 +2126,16 @@ impl<'a> Infer<'a> {
                 } {
                     let items = member.items.clone();
 
+                    let member = member.clone();
+
+                    self.make_flow(ty, *member.member, EqInfo::from(obl_span));
+                    for (member_gen_ty, gen_ty) in member.gen_tys.iter().zip(class_gen_tys.iter()) {
+                        self.make_flow(*gen_ty, *member_gen_ty, EqInfo::from(obl_span));
+                    }
+                    for (member_gen_eff, gen_eff) in member.gen_effs.iter().zip(class_gen_effs.iter()) {
+                        self.make_flow_effect((*gen_eff, ty), (*member_gen_eff, *member.member), EqInfo::from(obl_span));
+                    }
+
                     // Check constrained associated types
                     let class = self.insert_class(obl_span, ClassInfo::Known(class_id, class_gen_tys.clone(), class_gen_effs.clone()));
                     // if let ImpliedItems::Eq(assoc_set) = &items {
@@ -2112,15 +2155,16 @@ impl<'a> Infer<'a> {
                         // println!("Checking coverage of {:?} by {} via member {}", self.follow_info(ty), *self.ctx.classes.get(class_id).name, self.ctx.tys.display(&self.ctx, member.member));
                         let mut ty_gens = HashMap::new();
                         let mut eff_gens = HashMap::new();
+                        let mut todo = Vec::new();
                         // TODO: Instantiation should occur here, in a temporary inference context, to allow type projections to occur
-                        let (covers, maybe_covers) = match Self::covers_var(self, ty, member.member, &mut ty_gens, &mut eff_gens)
+                        let (covers, maybe_covers) = match Self::covers_var(self, ty, member.member, &mut ty_gens, &mut eff_gens, &mut todo)
                             .and_then(|covers| Ok(covers && class_gen_tys.iter()
                                 .zip(member.gen_tys.iter())
-                                .try_fold(true, |a, (ty, arg)| Ok(a && Self::covers_var(self, *ty, *arg, &mut ty_gens, &mut eff_gens)?))?))
+                                .try_fold(true, |a, (ty, arg)| Ok(a && Self::covers_var(self, *ty, *arg, &mut ty_gens, &mut eff_gens, &mut todo)?))?))
                             .and_then(|covers| Ok(covers && class_gen_effs.iter()
                                 .zip(member.gen_effs.iter())
                                 .try_fold(true, |a, (eff, arg)| if let Some(arg) = *arg {
-                                    Ok(a && Self::covers_var_eff(self, (*eff, ty), arg, &mut ty_gens, &mut eff_gens)?)
+                                    Ok(a && Self::covers_var_eff(self, (*eff, ty), arg, &mut ty_gens, &mut eff_gens, &mut todo)?)
                                 } else {
                                     // Errors always fail
                                     Err(())
@@ -2131,8 +2175,8 @@ impl<'a> Infer<'a> {
                             Err(()) => (false, false),
                         };
 
-                        if covers { covering_members.push((member_id, member)); }
-                        if maybe_covers { maybe_covering_members.push((member_id, member)); }
+                        if covers { covering_members.push((member_id, member, todo.clone())); }
+                        if maybe_covers { maybe_covering_members.push((member_id, member, todo)); }
                     }
 
                     match (covering_members.len(), maybe_covering_members.len()) {
@@ -2163,10 +2207,12 @@ impl<'a> Infer<'a> {
                         // what to substitute!
                         (1, _) | (0, 1) => {
                             // Can't fail
-                            let (covering_member_id, covering_member) = covering_members
+                            let (covering_member_id, covering_member, todo) = covering_members
                                 .into_iter().next()
                                 .or(maybe_covering_members.into_iter().next())
                                 .unwrap();
+
+                            self.checks.extend(todo);
 
                             let covering_member_member = covering_member.member;
                             let covering_member_gen_tys = covering_member.gen_tys.clone();
@@ -2359,7 +2405,7 @@ impl<'a> Infer<'a> {
                                 class_gen_tys.iter().map(|arg| format!(" {:?}", self.follow_info(*arg))).collect::<String>(),
                             );
                             println!("Members are:");
-                            for (member_id, member) in covering_members {
+                            for (member_id, member, _) in covering_members {
                                 println!(
                                     "{} < {}{} (in {})",
                                     self.ctx().tys.display(self.ctx(), member.member),
@@ -2453,8 +2499,8 @@ impl<'a> Infer<'a> {
                 },
                 Constraint::EffectSendRecv(eff, send, recv, span) => errors.push(InferError::CannotInferEffect(eff)),
                 Constraint::EffectPropagate(obj, _, out_ty, obj_span, span) => {
-                    self.set_error(out_ty);
                     if !self.is_error(obj) {
+                        self.set_error(out_ty);
                         errors.push(InferError::NotEffectful(obj, obj_span, span))
                     }
                 },
@@ -2663,14 +2709,11 @@ impl<'a> Checked<'a> {
                     Effect::Known(effs)
                 },
                 EffectInfo::Closed(effs, Some(opener)) => {
-                    let opener = self.infer.collect_eff_insts(opener)
-                        .into_iter()
-                        .map(|eff| self.reify_effect_inst(eff))
-                        .collect::<Vec<_>>();
+                    let opener = self.infer.collect_eff_insts(opener);
                     let mut effs = effs
                         .into_iter()
-                        .map(|eff| self.reify_effect_inst(eff))
                         .chain(opener)
+                        .map(|eff| self.reify_effect_inst(eff))
                         .collect::<Vec<_>>();
                     if effs.is_empty() {
                         return None
