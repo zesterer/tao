@@ -224,7 +224,12 @@ impl Classes {
                     .all(|eff| member_effs
                         .iter()
                         .any(|member_eff| match (member_eff, eff) {
-                            (Ok(EffectInst::Gen(idx, _)), eff) => gen_eff_links.entry(*idx).or_insert(*eff) == eff,
+                            (Ok(EffectInst::Gen(idx, _)), eff) => {
+                                // println!("Compare {:?} with {:?}", gen_eff_links.get(idx), eff);
+                                // gen_eff_links.entry(*idx).or_insert(*eff) == eff
+                                // TODO: Is this correct? Can all generics be assumed to match?!
+                                true
+                            },
                             (x, y) => todo!("You know, you should really impl effect-polymorphic class monomorphisation: {:?} covers {:?}", x, y),
                         })),
                 (Effect::Error, _) => panic!("Error eff during monomorphisation"),

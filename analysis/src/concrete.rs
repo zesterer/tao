@@ -238,7 +238,7 @@ impl ConContext {
         // TODO: link gen for effects when polymorphic effects are added
         match (hir.tys.get_effect(member), effs) {
             // Assumption here is that canonical ordering has been generated!
-            (Effect::Known(member_effs), _) if effs.len() <= 1 => member_effs
+            (Effect::Known(member_effs), _) if member_effs.len() <= 1 => member_effs
                 .iter()
                 .for_each(|effect| match effect.as_ref().expect("effect instance cannot be an error") {
                     EffectInst::Concrete(_, args) => args
@@ -611,10 +611,11 @@ impl ConContext {
                 let member_id = hir.classes
                     .lookup_member(hir, self, self_ty, (*class_id, gen_tys.clone(), gen_effs.clone()))
                     .unwrap_or_else(|| panic!(
-                        "Could not select member candidate for '{}' as '{}{}'",
+                        "Could not select member candidate for {} as {}{}{}",
                         self.display(hir, self_ty),
                         *hir.classes.get(*class_id).name,
                         gen_tys.iter().map(|ty| format!(" {}", self.display(hir, *ty))).collect::<String>(),
+                        gen_effs.iter().map(|eff| format!(" {:?}", eff)).collect::<String>(),
                     ));
 
                 let id = ConProcId(Intern::new(ConProc::Field(self_ty, member_id, gen_tys, gen_effs, **field)));
