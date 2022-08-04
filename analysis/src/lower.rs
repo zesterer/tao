@@ -112,6 +112,7 @@ pub fn enforce_generic_obligations(
                 &mut |idx, _, _| gen_tys.get(idx).copied(),
                 &mut |idx, _| gen_effs.get(idx).copied(),
                 self_ty,
+                invariant(),
             );
             let member_gen_tys = member.gen_tys
                 .iter()
@@ -121,6 +122,7 @@ pub fn enforce_generic_obligations(
                     &mut |idx, _, _| gen_tys.get(idx).copied(),
                     &mut |idx, _| gen_effs.get(idx).copied(),
                     self_ty,
+                    invariant(),
                 ))
                 .collect::<Vec<_>>();
             let member_gen_effs = member.gen_effs
@@ -132,6 +134,7 @@ pub fn enforce_generic_obligations(
                         &mut |idx, _, _| gen_tys.get(idx).copied(),
                         &mut |idx, _| gen_effs.get(idx).copied(),
                         self_ty,
+                        invariant(),
                     ).ok())
                     .flatten()
                     // Is it correct to use a free effect variable on error? Probably...
@@ -146,6 +149,7 @@ pub fn enforce_generic_obligations(
                         &mut |idx, _, _| gen_tys.get(idx).copied(),
                         &mut |idx, _| gen_effs.get(idx).copied(),
                         self_ty,
+                        invariant(),
                     )))
                     .collect(),
                 ImpliedItems::Real(_) => Vec::new(),
@@ -316,6 +320,7 @@ impl ToHir for ast::Type {
                                     &mut get_gen,
                                     &mut |idx, _| todo!(),
                                     None,
+                                    invariant(),
                                 )),
                             }
                         } else {
@@ -548,6 +553,7 @@ impl ToHir for ast::Binding {
                         &mut |index, _, infer: &mut Infer| gen_tys.get(index).copied(),
                         &mut |index, infer: &mut Infer| gen_effs.get(index).copied(),
                         None,
+                        invariant(),
                     )
                 };
 
@@ -622,6 +628,7 @@ fn instantiate_def(def_id: DefId, span: Span, infer: &mut Infer, span_override: 
             &mut gen_ty,
             &mut gen_eff,
             None,
+            covariant(),
         );
         let def_ty = infer.unknown(span);
         infer.make_flow(def_ty_actual, def_ty, EqInfo::from(inst_span));
@@ -734,7 +741,7 @@ impl ToHir for ast::Expr {
                     infer.insert_effect(a.meta().0, EffectInfo::free()) // TODO: EffectInfo::Error instead
                 };
 
-                infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span());
+                infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span(), self.span());
 
                 (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))
             } else {
@@ -1017,6 +1024,7 @@ impl ToHir for ast::Expr {
                         &mut |index, _, infer: &mut Infer| gen_tys.get(index).copied(),
                         &mut |idx, _| todo!(),
                         None,
+                        invariant(),
                     )
                 };
 
@@ -1227,7 +1235,7 @@ impl ToHir for ast::Expr {
 
                 let expr = gen_block(infer, cfg, &init, last, &scope);
 
-                let opaque = infer.opaque(self.span(), true /* false */); // TODO: `false` instead?
+                let opaque = infer.opaque(self.span(), false);
                 (TyInfo::Effect(eff, expr.meta().1, opaque), hir::Expr::Basin(eff, expr))
             },
             ast::Expr::Block(init, last) => {

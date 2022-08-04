@@ -7,6 +7,29 @@ use std::{
 pub type InferMeta = (Span, TyVar);
 pub type InferNode<T> = Node<T, InferMeta>;
 
+#[derive(Copy, Clone)]
+pub enum Variance {
+    In,
+    Out,
+    InOut,
+}
+
+impl Variance {
+    pub fn flip(self) -> Self {
+        match self {
+            Self::In => Self::Out,
+            Self::Out => Self::In,
+            Self::InOut => Self::InOut,
+        }
+    }
+
+    fn is_out(&self) -> bool { matches!(self, Self::Out | Self::InOut) }
+}
+
+pub fn covariant() -> Variance { Variance::Out }
+pub fn contravariant() -> Variance { Variance::In }
+pub fn invariant() -> Variance { Variance::InOut }
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum TyInfo {
     Ref(TyVar),
@@ -165,7 +188,8 @@ enum Constraint {
     ClassField(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     ClassAssoc(TyVar, ClassVar, SrcNode<Ident>, TyVar, Span),
     EffectSendRecv(EffectInstVar, TyVar, TyVar, Span),
-    EffectPropagate(TyVar, EffectVar, TyVar, Span, Span),
+    // (_, _, _, obj_span, op_span, out_span)
+    EffectPropagate(TyVar, EffectVar, TyVar, Span, Span, Span),
 }
 
 #[derive(Clone, Debug)]
@@ -307,6 +331,7 @@ impl<'a> Infer<'a> {
                 &mut |idx, _, _| member.gen_tys.get(idx).copied(),
                 &mut |idx, _| todo!(),
                 Some(*member.member),
+                invariant(),
             );
             let member_gen_tys = new_member.gen_tys
                 .iter()
@@ -316,6 +341,7 @@ impl<'a> Infer<'a> {
                     &mut |idx, _, _| member.gen_tys.get(idx).copied(),
                     &mut |idx, _| todo!(),
                     Some(*member.member),
+                    invariant(),
                 ))
                 .collect();
             let member_gen_effs = new_member.gen_effs
@@ -326,6 +352,7 @@ impl<'a> Infer<'a> {
                         &mut |idx, _, _| member.gen_tys.get(idx).copied(),
                         &mut |idx, _| member.gen_effs.get(idx).copied(),
                         Some(*member.member),
+                        invariant(),
                     ))
                 {
                     Some(Ok(Some(eff))) => eff,
@@ -342,6 +369,7 @@ impl<'a> Infer<'a> {
                         &mut |idx, _, _| member.gen_tys.get(idx).copied(),
                         &mut |idx, _| member.gen_effs.get(idx).copied(),
                         Some(*member.member),
+                        invariant(),
                     )))
                     .collect()),
             };
@@ -526,12 +554,12 @@ impl<'a> Infer<'a> {
 
     pub fn instantiate_local(&mut self, ty: TyId, span: Span) -> TyVar {
         let (mut gen_ty, mut gen_eff) = self.instantiate_local_helpers();
-        self.instantiate(ty, span, &mut gen_ty, &mut gen_eff, self.self_type)
+        self.instantiate(ty, span, &mut gen_ty, &mut gen_eff, self.self_type, invariant())
     }
 
     pub fn instantiate_local_eff(&mut self, eff: EffectId, span: Span) -> Result<Option<EffectVar>, ()> {
         let (mut gen_ty, mut gen_eff) = self.instantiate_local_helpers();
-        self.instantiate_eff(eff, span, &mut gen_ty, &mut gen_eff, self.self_type)
+        self.instantiate_eff(eff, span, &mut gen_ty, &mut gen_eff, self.self_type, invariant())
     }
 
     // Ok(Some(eff)) => lowered effect
@@ -544,6 +572,7 @@ impl<'a> Infer<'a> {
         gen_ty: &mut impl FnMut(usize, GenScopeId, &mut Self) -> Option<TyVar>,
         gen_eff: &mut impl FnMut(usize, &mut Self) -> Option<EffectVar>,
         self_ty: Option<TyVar>,
+        vari: Variance,
     ) -> Result<Option<EffectVar>, ()> {
         match self.ctx.tys.get_effect(eff) {
             Effect::Error => Err(()),
@@ -567,7 +596,7 @@ impl<'a> Infer<'a> {
                             Ok(EffectInst::Concrete(decl, args)) => {
                                 let args = args
                                     .iter()
-                                    .map(|param| self.instantiate(*param, span, gen_ty, gen_eff, self_ty))
+                                    .map(|param| self.instantiate(*param, span, gen_ty, gen_eff, self_ty, vari))
                                     .collect();
                                 EffectInstInfo::Known(decl, args)
                             },
@@ -588,23 +617,25 @@ impl<'a> Infer<'a> {
         gen_ty: &mut impl FnMut(usize, GenScopeId, &mut Self) -> Option<TyVar>,
         gen_eff: &mut impl FnMut(usize, &mut Self) -> Option<EffectVar>,
         self_ty: Option<TyVar>,
+        vari: Variance,
     ) -> TyVar {
         let span = span.into();
         let info = match self.ctx.tys.get(ty) {
             Ty::Error(reason) => TyInfo::Error(reason),
             Ty::Prim(prim) => TyInfo::Prim(prim),
-            Ty::List(item) => TyInfo::List(self.instantiate(item, span, gen_ty, gen_eff, self_ty)),
+            Ty::List(item) => TyInfo::List(self.instantiate(item, span, gen_ty, gen_eff, self_ty, vari)),
             Ty::Record(fields, is_tuple) => TyInfo::Record(fields
                 .into_iter()
-                .map(|(name, field)| (name, self.instantiate(field, span, gen_ty, gen_eff, self_ty)))
+                .map(|(name, field)| (name, self.instantiate(field, span, gen_ty, gen_eff, self_ty, vari)))
                 .collect(), is_tuple),
             Ty::Func(i, o) => TyInfo::Func(
-                self.instantiate(i, span, gen_ty, gen_eff, self_ty),
-                self.instantiate(o, span, gen_ty, gen_eff, self_ty),
+                self.instantiate(i, span, gen_ty, gen_eff, self_ty, vari.flip()),
+                self.instantiate(o, span, gen_ty, gen_eff, self_ty, vari),
             ),
             Ty::Data(data, params) => TyInfo::Data(data, params
                 .into_iter()
-                .map(|param| self.instantiate(param, span, gen_ty, gen_eff, self_ty))
+                // TODO: Derive variance from definition instead of assuming invariance
+                .map(|param| self.instantiate(param, span, gen_ty, gen_eff, self_ty, invariant()))
                 .collect()),
              // TODO: Check scope is valid for nested scopes
             Ty::Gen(index, scope) => match gen_ty(index, scope, self) {
@@ -624,32 +655,29 @@ impl<'a> Infer<'a> {
             },
             Ty::Assoc(inner, (class_id, gen_tys, gen_effs), assoc) => {
                 let span = span.unwrap_or_else(|| self.ctx.tys.get_span(ty));
-                let inner = self.instantiate(inner, span, gen_ty, gen_eff, self_ty);
+                let inner = self.instantiate(inner, span, gen_ty, gen_eff, self_ty, vari);
                 let gen_tys = gen_tys
                     .iter()
-                    .map(|ty| self.instantiate(*ty, span, gen_ty, gen_eff, self_ty))
+                    .map(|ty| self.instantiate(*ty, span, gen_ty, gen_eff, self_ty, invariant()))
                     .collect();
                 let gen_effs = gen_effs
                     .iter()
-                    .map(|eff| match eff.map(|eff| self.instantiate_eff(eff, span, gen_ty, gen_eff, self_ty)) {
+                    .map(|eff| match eff.map(|eff| self.instantiate_eff(eff, span, gen_ty, gen_eff, self_ty, invariant())) {
                         Some(Ok(Some(eff))) => eff,
                         _ => self.insert_effect(span, EffectInfo::free()),
                     })
                     .collect();
                 let assoc_ty = self.unknown(span);
-                if **self.ctx.classes.get(class_id).name == "GathersInto" {
-                    // panic!("HERE");
-                }
                 self.make_impl(inner, (class_id, gen_tys, gen_effs), span, vec![(assoc, assoc_ty)], span);
                 TyInfo::Ref(assoc_ty)
             },
-            Ty::Effect(eff, out) => match self.instantiate_eff(eff, span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), gen_ty, gen_eff, self_ty) {
+            Ty::Effect(eff, out) => match self.instantiate_eff(eff, span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), gen_ty, gen_eff, self_ty, vari) {
                 Ok(Some(eff)) => {
-                    let out = self.instantiate(out, span, gen_ty, gen_eff, self_ty);
-                    let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), true);
+                    let out = self.instantiate(out, span, gen_ty, gen_eff, self_ty, vari);
+                    let opaque = self.opaque(span.unwrap_or_else(|| self.ctx.tys.get_span(ty)), !vari.is_out());
                     TyInfo::Effect(eff, out, opaque)
                 },
-                Ok(None) => return self.instantiate(out, span, gen_ty, gen_eff, self_ty),
+                Ok(None) => return self.instantiate(out, span, gen_ty, gen_eff, self_ty, vari),
                 Err(()) => TyInfo::Error(ErrorReason::Invalid),
             },
         };
@@ -814,8 +842,8 @@ impl<'a> Infer<'a> {
         self.constraints.push_back(Constraint::EffectSendRecv(eff, send, recv, span));
     }
 
-    pub fn make_effect_propagate(&mut self, obj: TyVar, basin_eff: EffectVar, out: TyVar, obj_span: Span, span: Span) {
-        self.constraints.push_back(Constraint::EffectPropagate(obj, basin_eff, out, obj_span, span));
+    pub fn make_effect_propagate(&mut self, obj: TyVar, basin_eff: EffectVar, out: TyVar, obj_span: Span, op_span: Span, out_span: Span) {
+        self.constraints.push_back(Constraint::EffectPropagate(obj, basin_eff, out, obj_span, op_span, out_span));
     }
 
     pub fn emit(&mut self, err: InferError) {
@@ -1350,7 +1378,7 @@ impl<'a> Infer<'a> {
             TyInfo::Effect(eff, out, opaque) => {
                 let eff = self.reinstantiate_eff(self.span(ty), eff);
                 let out = self.reinstantiate(span, out);
-                let opaque = self.reinstantiate(span, opaque);
+                //let opaque = self.reinstantiate(span, opaque);
                 self.insert(self.span(ty), TyInfo::Effect(eff, out, opaque))
             },
         }
@@ -1397,6 +1425,7 @@ impl<'a> Infer<'a> {
                                 &mut |index, _, _| params.get(index).copied(),
                                 &mut |idx, _| todo!(),
                                 Some(record),
+                                invariant(),
                             );
                             if flow_out {
                                 self.make_flow(field_ty, field, field_name.span());
@@ -1467,6 +1496,7 @@ impl<'a> Infer<'a> {
                                                     &mut |idx, gen_scope, ctx| ty_links.get(&idx).copied(),
                                                     &mut |idx, ctx| eff_links.get(&idx).copied(),
                                                     Some(ty),
+                                                    invariant(),
                                                 );
                                                 // TODO: Check ordering for soundness
                                                 self.make_flow(assoc_ty_inst, assoc_ty, obl_span);
@@ -1515,6 +1545,7 @@ impl<'a> Infer<'a> {
                         &mut |idx, _gen_scope, _ctx| args.get(idx).copied(),
                         &mut |idx, _| todo!(),
                         None,
+                        invariant(),
                     );
                     self.make_flow(send, send_ty, span);
                     let recv_ty = self.instantiate(
@@ -1523,6 +1554,7 @@ impl<'a> Infer<'a> {
                         &mut |idx, _gen_scope, _ctx| args.get(idx).copied(),
                         &mut |idx, _| todo!(),
                         None,
+                        invariant(),
                     );
                     // The variance here is a bit fucked, this needs to swap when we're
                     // inferring flow into (from a handler) vs flow out of (via a propagation)
@@ -1532,9 +1564,9 @@ impl<'a> Infer<'a> {
                     Some(Ok(()))
                 },
             },
-            Constraint::EffectPropagate(obj, basin_eff, out_ty, obj_span, span) => match self.follow_info(obj) {
+            Constraint::EffectPropagate(obj, basin_eff, out_ty, obj_span, op_span, out_span) => match self.follow_info(obj) {
                 TyInfo::Effect(eff, out, _) => {
-                    self.make_flow(out, out_ty, EqInfo::from(span));
+                    self.make_flow(out, out_ty, EqInfo::from(out_span));
 
                     // If we're propagating the effect, it can't be empty
                     // TODO: Make this actually work (right now, the effect grows backwards as well as forwards)
@@ -1545,10 +1577,10 @@ impl<'a> Infer<'a> {
                     // self.checks.push_back(Check::EffectNonEmpty(obj, eff, span));
 
                     // Generating a whole new type variable for this is stupid, it should be possible to flow effects without tying them to a ty
-                    let fake_opaque = self.opaque(span, true);
+                    let fake_opaque = self.opaque(op_span, true);
                     let fake_basin_ty = self.insert(self.effect_span(basin_eff), TyInfo::Effect(basin_eff, out_ty, fake_opaque));
 
-                    self.make_flow_effect((eff, obj), (basin_eff, fake_basin_ty), EqInfo::from(span));
+                    self.make_flow_effect((eff, obj), (basin_eff, fake_basin_ty), EqInfo::from(op_span));
                     Some(Ok(()))
                 },
                 _ => None,
@@ -1619,6 +1651,7 @@ impl<'a> Infer<'a> {
             &mut |idx, _, _| gen_tys.get(idx).copied(),
             &mut |idx, _| gen_effs.get(idx).copied(),
             Some(ty),
+            covariant(),
         );
 
         self.make_flow(inst_field_ty, field_ty, field.span());
@@ -1988,6 +2021,7 @@ impl<'a> Infer<'a> {
                     &mut |idx, _, this: &mut Self| Some(*ty_links.entry(idx).or_insert_with(|| this.insert(use_span, TyInfo::Unknown(Some(this.span(ty)))))),
                     &mut |idx, this: &mut Self| Some(*eff_links.entry(idx).or_insert_with(|| this.insert_effect(use_span, EffectInfo::free()))),
                     self_ty,
+                    invariant(),
                 );
                 self.make_flow(ty, inst_ty, use_span);
             },
@@ -2242,6 +2276,7 @@ impl<'a> Infer<'a> {
                                     &mut |idx, _, _| ty_links.get(&idx).copied(),
                                     &mut |idx, _| eff_links.get(&idx).copied(),
                                     Some(ty),
+                                    invariant(),
                                 );
                                 let member_gen_tys = member.gen_tys
                                     .iter()
@@ -2251,6 +2286,7 @@ impl<'a> Infer<'a> {
                                         &mut |idx, _, _| ty_links.get(&idx).copied(),
                                         &mut |idx, _| eff_links.get(&idx).copied(),
                                         Some(ty),
+                                    invariant(),
                                     ))
                                     .collect::<Vec<_>>();
                                 let member_gen_effs = member.gen_effs
@@ -2261,6 +2297,7 @@ impl<'a> Infer<'a> {
                                             &mut |idx, _, _| ty_links.get(&idx).copied(),
                                             &mut |idx, _| eff_links.get(&idx).copied(),
                                             Some(ty),
+                                            invariant(),
                                         ))
                                     {
                                         Some(Ok(Some(eff))) => eff,
@@ -2278,6 +2315,7 @@ impl<'a> Infer<'a> {
                                             &mut |idx, _, _| ty_links.get(&idx).copied(),
                                             &mut |idx, _| eff_links.get(&idx).copied(),
                                             Some(ty),
+                                            invariant(),
                                         )))
                                         .collect::<Vec<_>>(),
                                     ImpliedItems::Real(_) => Vec::new(),
@@ -2341,6 +2379,7 @@ impl<'a> Infer<'a> {
                                 &mut |idx, _, _| ty_links.get(&idx).copied(),
                                 &mut |idx, _| eff_links.get(&idx).copied(),
                                 Some(ty),
+                                invariant(),
                             );
                             self.make_flow(ty, member_ty, EqInfo::from(use_span));
                             for (gen_ty, covering_gen_ty) in class_gen_tys.iter().zip(covering_member_gen_tys.iter()) {
@@ -2350,7 +2389,9 @@ impl<'a> Infer<'a> {
                                     &mut |idx, _, _| ty_links.get(&idx).copied(),
                                     &mut |idx, _| eff_links.get(&idx).copied(),
                                     Some(ty),
+                                    invariant(),
                                 );
+                                // TODO: Invariance
                                 self.make_flow(*gen_ty, covering_gen_ty, EqInfo::from(use_span));
                             }
 
@@ -2364,11 +2405,13 @@ impl<'a> Infer<'a> {
                                             .entry(idx)
                                             .or_insert_with(|| infer.insert_effect(use_span, EffectInfo::free()))),
                                         Some(ty),
+                                        invariant(),
                                     ) {
                                         Ok(Some(eff)) => eff,
                                         // TODO: Make sure this is fine in all other cases. It should be?
                                         _ => self.insert_effect(use_span, EffectInfo::free()),
                                     };
+                                    // TODO: Invariance
                                     self.make_flow_effect((*gen_eff, member_ty), (covering_gen_eff, member_ty), EqInfo::from(use_span));
                                 }
                             }
@@ -2383,6 +2426,7 @@ impl<'a> Infer<'a> {
                             //                 &mut |idx, _, _| ty_links.get(&idx).copied(),
                             //                 &mut |idx, _| eff_links.get(&idx).copied(),
                             //                 Some(ty),
+                            //                 invariant(),
                             //             );
                             //             self.make_flow(covering_assoc, assoc_ty, EqInfo::from(use_span));
                             //         }
@@ -2498,10 +2542,10 @@ impl<'a> Infer<'a> {
                     }
                 },
                 Constraint::EffectSendRecv(eff, send, recv, span) => errors.push(InferError::CannotInferEffect(eff)),
-                Constraint::EffectPropagate(obj, _, out_ty, obj_span, span) => {
+                Constraint::EffectPropagate(obj, _, out_ty, obj_span, op_span, _) => {
                     if !self.is_error(obj) {
                         self.set_error(out_ty);
-                        errors.push(InferError::NotEffectful(obj, obj_span, span))
+                        errors.push(InferError::NotEffectful(obj, obj_span, op_span))
                     }
                 },
             }

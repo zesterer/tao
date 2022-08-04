@@ -652,6 +652,7 @@ impl Context {
                     &mut |idx, _, _| member_gen_tys.get(idx).copied(),
                     &mut |idx, _| todo!(),
                     Some(member_ty),
+                    invariant(),
                 );
                 let obl_member_gen_tys = member_obl.gen_tys
                     .iter()
@@ -661,6 +662,7 @@ impl Context {
                         &mut |idx, _, _| member_gen_tys.get(idx).copied(),
                         &mut |idx, _| member_gen_effs.get(idx).copied(),
                         Some(member_ty),
+                        invariant(),
                     ))
                     .collect();
                 // TODO
@@ -672,6 +674,7 @@ impl Context {
                         &mut |idx, _, _| member_gen_tys.get(idx).copied(),
                         &mut |idx, _| todo!(),
                         Some(member_ty),
+                        invariant(),
                     ))
                     .collect()*/;
                 let obl_assoc = match &member_obl.items {
@@ -684,6 +687,7 @@ impl Context {
                             &mut |idx, _, _| member_gen_tys.get(idx).copied(),
                             &mut |idx, _| member_gen_effs.get(idx).copied(),
                             Some(member_ty),
+                            invariant(),
                         )))
                         .collect(),
                 };
@@ -781,6 +785,7 @@ impl Context {
                                     &mut |idx, _, _| gen_tys.get(idx).copied(),
                                     &mut |idx, _| gen_effs.get(idx).copied(),
                                     Some(self_ty),
+                                    invariant(),
                                 );
                                 infer.make_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
                             }
