@@ -1,4 +1,4 @@
-import "../core/monad.tao"
+type IO A = @ -> (@, A)
 
 effect input = () => Str
 effect print = Str => ()

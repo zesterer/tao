@@ -657,14 +657,6 @@ impl ToHir for ast::Expr {
                 let ty_info = litr_ty_info(litr, infer, span);
                 (TyInfo::Ref(infer.insert(span, ty_info)), hir::Expr::Literal(*litr))
             },
-            ast::Expr::LangDef(def) => {
-                let def = match def {
-                    ast::LangDef::IoUnit => infer.ctx().defs.lang.io_unit.unwrap(),
-                    ast::LangDef::IoBind => infer.ctx().defs.lang.io_bind.unwrap(),
-                };
-
-                instantiate_def(def, self.span(), infer, Some(self.span()), self.span())
-            },
             ast::Expr::Local(local) => {
                 if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
                     if let Some((def_id, gen_tys, gen_effs)) = rec {

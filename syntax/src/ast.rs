@@ -245,19 +245,12 @@ pub struct Binding {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum LangDef {
-    IoUnit,
-    IoBind,
-}
-
-#[derive(Debug, PartialEq)]
 pub enum Expr {
     // Generated only by parser errors.
     Error,
     Literal(Literal),
     // TODO: replace with `Item` when scoping is added
     Local(Ident),
-    LangDef(LangDef),
     Tuple(Vec<SrcNode<Self>>),
     List(Vec<SrcNode<Self>>, Vec<SrcNode<Self>>),
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),

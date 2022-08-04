@@ -19,8 +19,7 @@ impl fmt::Debug for DefId {
 
 #[derive(Default)]
 pub struct Lang {
-    pub io_unit: Option<DefId>,
-    pub io_bind: Option<DefId>,
+    // pub io_unit: Option<DefId>,
 }
 
 #[derive(Default)]
@@ -58,12 +57,9 @@ impl Defs {
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
             {
-                if lang.iter().find(|a| &**a.name == "io_unit").is_some() {
-                    self.lang.io_unit = Some(id);
-                }
-                if lang.iter().find(|a| &**a.name == "io_bind").is_some() {
-                    self.lang.io_bind = Some(id);
-                }
+                // if lang.iter().find(|a| &**a.name == "io_unit").is_some() {
+                //     self.lang.io_unit = Some(id);
+                // }
             }
 
             self.defs.push(def);
@@ -74,8 +70,7 @@ impl Defs {
     pub fn check_lang_items(&self) -> Vec<Error> {
         let mut errors = Vec::new();
 
-        if self.lang.io_unit.is_none() { errors.push(Error::MissingLangItem("io_unit")); }
-        if self.lang.io_bind.is_none() { errors.push(Error::MissingLangItem("io_bind")); }
+        // if self.lang.io_unit.is_none() { errors.push(Error::MissingLangItem("io_unit")); }
 
         errors
     }

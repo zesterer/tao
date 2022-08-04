@@ -1,4 +1,3 @@
 import "core/bool.tao"
 import "core/ops.tao"
-import "core/monad.tao"
 import "core/tail.tao"
