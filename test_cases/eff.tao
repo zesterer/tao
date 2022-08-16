@@ -41,8 +41,8 @@ member Greet of Effect =
         \ GotName (uni, name) => (uni, SayHello name)
 
 fn eval : Greet.Waiting -> @ -> (@, Str) =
-    \ waiting, uni => match Greet.pull(uni, waiting) in
-        | Next ready => match Greet.push(ready) in
+    \ waiting, uni => when Greet.pull(uni, waiting) is
+        | Next ready => when Greet.push(ready) is
             \ (uni, waiting) => eval(waiting, uni)
         \ Done (uni, name) => (uni, name)
 

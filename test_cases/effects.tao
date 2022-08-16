@@ -90,7 +90,7 @@ data Reactor = {
 fn main : @ -> @ is uni =>
     with Reactor { uni }
         handle async in
-            => await F < Future is reactor, fut => match F.poll(fut, reactor) in
+            => await F < Future is reactor, fut => when F.poll(fut, reactor) is
                 | (reactor, Ready x) => (reactor, x)
                 \ (reactor, Pending) => ...
     on
@@ -108,7 +108,7 @@ fn process_event : Event -> @ -> Rt -> (Rt, @) is
     ...
 
 fn process_events : Rt -> @ -> @ is rt, uni =>
-    match @wait_event(uni) in
+    when @wait_event(uni) is
         | (Shutdown, uni) => (rt, uni)
         \ (event, uni) =>
             let (rt, uni) = rt->process_event(event, uni) in
@@ -131,7 +131,7 @@ fn main : @ -> @ is uni =>
 fn main : @ -> (@, ()) is
     let eff = ... in
     fix(
-        fn rec, uni, eff => match @pull(~print, eff) in
+        fn rec, uni, eff => when @pull(~print, eff) is
             | Next (waiting, f) =>
                 let (uni, r) = uni->f in
                 rec(uni, @push(~print, waiting, r))

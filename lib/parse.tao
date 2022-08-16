@@ -25,7 +25,7 @@ data ParseErr I =
 for I < Show member ParseErr I of Show =
     => show = fn
         | UnexpectedEnd => "unexpected end of input"
-        | ExpectedFound (expected, found) => "expected " ++ (match expected in
+        | ExpectedFound (expected, found) => "expected " ++ (when expected is
             | Just expected => "'" ++ expected->show ++ "'"
             \ None => "end of input") ++ " found '" ++ found->show ++ "'"
         | ExpectedPat pat => "expected " ++ pat
@@ -43,28 +43,28 @@ fn just : Char -> ? =
         else Err ExpectedFound (Just c, head))
 
 fn and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
-	b, a, xs => match xs->a in
+	b, a, xs => when xs->a is
 		| Err err => Err err
-		\ Ok (a, xs) => match xs->b in
+		\ Ok (a, xs) => when xs->b is
 			| Err err => Err err
 			\ Ok (b, xs) => Ok ((a, b), xs)
 
 fn or_else I, O : Parser I O -> Parser I O -> Parser I O =
-	a, b, xs => match xs->a in
+	a, b, xs => when xs->a is
 		| ok ~ Ok _ => ok
-		\ Err _ => match xs->b in
+		\ Err _ => when xs->b is
 			| ok ~ Ok _ => ok
 			\ err ~ Err _ => err
 
 fn repeated I, O : Parser I O -> Parser I [O] =
-	a, xs => match xs->a in
-		| Ok (out, tail) => match tail->repeated(a) in
+	a, xs => when xs->a is
+		| Ok (out, tail) => when tail->repeated(a) is
 			| Ok (items, tail) => Ok ([out .. items], tail)
 			\ err ~ Err _ => Ok ([], tail)
 		\ Err err => Ok ([], xs)
 
 fn repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
-	n, a, xs => match xs->repeated(a) in
+	n, a, xs => when xs->repeated(a) is
 		| ok ~ Ok (out, tail) => if out->len >= n
 			then ok
 			else Err ExpectedMore
@@ -93,7 +93,7 @@ fn padded O : Parser Char O -> Parser Char O =
     -> ignore_then(a)
     -> then_ignore(whitespaces)
 
-fn recurse I, O : Parser I O -> Parser I O = f, xs => match xs->f in
+fn recurse I, O : Parser I O -> Parser I O = f, xs => when xs->f is
     | Ok (out, tail) => Ok (out, tail)
     \ Err e => Err e
 
@@ -114,7 +114,7 @@ fn eoi I : Parser I () =
 
 fn char_to_num = c => "0123456789"->find(c)
 
-def digit = filter_tok(fn c => match c->char_to_num in
+def digit = filter_tok(fn c => when c->char_to_num is
 	| Ok n => Ok n
 	\ Err NotFound => Err ExpectedPat "digit")
 
@@ -168,7 +168,7 @@ def sum_parser = product_parser
 def expr_parser : Parser Char Expr = sum_parser
 
 fn parse I, O : Parser I O -> [I] -> Result O (ParseErr I) = parser, input =>
-    match input->(parser->and_then(eoi)) in
+    when input->(parser->and_then(eoi)) is
         | Ok ((o, _), _) => Ok o
         \ Err e => Err e
 

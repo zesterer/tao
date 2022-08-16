@@ -7,7 +7,7 @@ def main : IO () = while(do {
         print("Ok, goodbye");
         return False
     } else do {
-        match text->parse(expr_parser) in
+        when text->parse(expr_parser) is
             | Ok expr => print(expr->eval->display)
             \ Err err => print("Failed to parse expression '" ++ text ++ "'")
         ;

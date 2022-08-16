@@ -34,7 +34,7 @@ data Mapped S < Stream, B = (S, S.Item -> B)
 
 for S < Stream, B member Mapped S B of Stream =
     => Item = B
-    => next = fn Mapped (s, f) => match s->S.next in
+    => next = fn Mapped (s, f) => when s->S.next is
         | None => None
         \ Just (s, x) => Just (Mapped (s, f), x->f)
 
@@ -60,6 +60,6 @@ for A member Maybe A of FromStream A =
         \ [x ..] => Just x
 
 fn collect B < FromStream S.Item, S < Stream : S -> B =
-    s => let xs = s->fix(fn rec, s => match s->S.next in
+    s => let xs = s->fix(fn rec, s => when s->S.next is
         | None => []
         \ Just (s, x) => [x .. rec(s)]) in xs->B.from_stream

@@ -21,7 +21,7 @@ fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
     \ f, [x .. xs] => (if x->f then [x] else []) ++ xs->filter(f)
 
-fn find_first A : (A -> Bool) -> [A] -> Maybe A = f, xs => match xs->filter(f) in
+fn find_first A : (A -> Bool) -> [A] -> Maybe A = f, xs => when xs->filter(f) is
     | [] => None
     \ [x ..] => Just x
 
@@ -35,11 +35,11 @@ fn repeat A : Nat -> [A] -> [A] =
     | 0, _ => []
     \ n + 1, x => x ++ x->repeat(n)
 
-fn swap A : Nat -> (A -> A) -> [A] -> [A] = n, f, xs => match @skip_list(xs, n) in
+fn swap A : Nat -> (A -> A) -> [A] -> [A] = n, f, xs => when @skip_list(xs, n) is
     | [] => xs
     \ [x .. tail] => @trim_list(xs, n) ++ [x->f .. tail]
 
-fn nth A : Nat -> [A] -> Maybe A = n, xs => match @skip_list(xs, n) in
+fn nth A : Nat -> [A] -> Maybe A = n, xs => when @skip_list(xs, n) is
     | [x ..] => Just x
     \ [] => None
 

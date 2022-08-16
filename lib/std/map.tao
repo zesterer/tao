@@ -21,7 +21,7 @@ for K < Debug, V < Debug member Map K V of Debug =
 
 fn insert K < Ord, V : K -> V -> Map K V -> Map K V =
     | k, v, MEmpty => MLeaf (k, v)
-    | k, v, MLeaf (k_old, v_old) => match K.cmp(k, k_old) in
+    | k, v, MLeaf (k_old, v_old) => when K.cmp(k, k_old) is
         | Less => MBranch (k_old, MLeaf (k, v), MLeaf (k_old, v_old))
         | More => MBranch (k, MLeaf (k_old, v_old), MLeaf (k, v))
         \ Equal => MLeaf (k, v)
@@ -39,7 +39,7 @@ fn get K < Ord, V : K -> Map K V -> Maybe V =
         else b->get(k)
 
 fn contains K < Ord, V : K -> Map K V -> Bool =
-    k, m => match m->get(k) in
+    k, m => when m->get(k) is
         | Just _ => True
         \ None => False
 

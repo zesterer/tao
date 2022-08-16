@@ -93,15 +93,15 @@ fn parse_char =
 
 fn parse_str =
     | [] => Ok []
-    \ [c .. cs] => match c -> parse_char in
-        | Ok c => match cs -> parse_str in
+    \ [c .. cs] => when c -> parse_char is
+        | Ok c => when cs -> parse_str is
             | Ok cs => Ok [c .. cs]
             \ Err e => Err e
         \ Err e => Err e
 
 fn shift_char =
     | 0, c => c
-    \ n + 1, c => match c in
+    \ n + 1, c => when c is
         | A => B -> shift_char(n)
         | B => C -> shift_char(n)
         | C => D -> shift_char(n)
@@ -135,7 +135,7 @@ fn shift_str =
 def main : io ~ () = @{
     let text = "hello";
     print("Input = " ++ text)!;
-    match text -> parse_str in
+    when text -> parse_str is
     | Ok s => @{
         print("Parsed = " + s)!;
         let n = 1;

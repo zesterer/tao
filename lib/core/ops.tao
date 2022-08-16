@@ -153,7 +153,7 @@ member Char of Ord =
 
 for A < Ord member [A] of Ord =
     => cmp = fn
-        | [x .. xs], [y .. ys] => match cmp(x, y) in
+        | [x .. xs], [y .. ys] => when cmp(x, y) is
             | Less => Less
             | More => More
             \ Equal => cmp(xs, ys)
@@ -169,16 +169,16 @@ class OrdExt < Ord =
     => more_eq : Self -> Self -> Bool
 
 for A < Ord member A of OrdExt =
-    => less = fn x, y => match A.cmp(x, y) in
+    => less = fn x, y => when A.cmp(x, y) is
         | Less => True
         \ _ => False
-    => less_eq = fn x, y => match A.cmp(x, y) in
+    => less_eq = fn x, y => when A.cmp(x, y) is
         | More => False
         \ _ => True
-    => more = fn x, y => match A.cmp(x, y) in
+    => more = fn x, y => when A.cmp(x, y) is
         | More => True
         \ _ => False
-    => more_eq = fn x, y => match A.cmp(x, y) in
+    => more_eq = fn x, y => when A.cmp(x, y) is
         | Less => False
         \ _ => True
 

@@ -1,5 +1,5 @@
 import "../lib/parse.tao"
 
-def main : IO () = match "(4 + 5) * 3"->parse(expr_parser) in
+def main : IO () = when "(4 + 5) * 3"->parse(expr_parser) is
     | Ok expr => print(expr->eval->display)
     \ Err err => print("Failed to parse expression")

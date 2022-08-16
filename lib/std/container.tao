@@ -13,7 +13,7 @@ class Iter =
     => Item
     => next : Self -> Maybe (Self.Item, Self)
 
-fn fold A, I < Iter, e : A -> (A -> I.Item -> e ~ A) -> I -> e ~ A = a, f, xs => match I.next(xs) in
+fn fold A, I < Iter, e : A -> (A -> I.Item -> e ~ A) -> I -> e ~ A = a, f, xs => when I.next(xs) is
     | None => a
     \ Just (x, xs) => fold(f(a, x)!, f, xs)!
 

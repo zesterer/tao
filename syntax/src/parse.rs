@@ -526,12 +526,12 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .map(|((pred, a), b)| ast::Expr::If(pred, a, b))
             .boxed();
 
-        let match_ = just(Token::Match)
+        let match_ = just(Token::When)
             .ignore_then(expr.clone().map_with_span(SrcNode::new)
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
                 .map_with_span(SrcNode::new))
-            .then_ignore(just(Token::In))
+            .then_ignore(just(Token::Is))
             .then(pattern_branches)
             .map(|(inputs, branches)| ast::Expr::Match(inputs, branches))
             .boxed();

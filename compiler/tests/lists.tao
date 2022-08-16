@@ -62,7 +62,7 @@ fn nth2 A : Nat -> [A] -> Maybe A =
 $[main]
 def main =
 	let xs = [5, 7, 2, 3, 9, 8] in
-	match xs:nth2(0), xs:nth2(1), xs:nth2(5), xs:nth2(6) in
+	when xs:nth2(0), xs:nth2(1), xs:nth2(5), xs:nth2(6) is
 	| Just 5, Just 7, Just 8, None => True
 	\ _, _, _, _ => False
 

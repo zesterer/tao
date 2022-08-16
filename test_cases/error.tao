@@ -27,7 +27,7 @@ member CannotBeginWithZero of Display =
 
 fn parse_digits : Nat -> Str -> Result Nat InvalidCharacter =
     | n, [] => Ok n
-    | n, [c .. cs] => match c->parse_digit in
+    | n, [c .. cs] => when c->parse_digit is
         | Err e => Err e
         \ Ok x => cs->parse_digits(n * 10 + x)
     \ _, [c ..] => Err InvalidCharacter c
@@ -35,15 +35,15 @@ fn parse_digits : Nat -> Str -> Result Nat InvalidCharacter =
 fn parse_nat : Str -> Result Nat (NoCharacters | InvalidCharacter | CannotBeginWithZero) =
     | [] => Err ? NoCharacters
     | ['0', _ ..] => Err ? CannotBeginWithZero
-    \ cs => match cs->parse_digits(0) in
+    \ cs => when cs->parse_digits(0) is
         | Ok n => Ok n
         \ Err e => Err ?e
 
 def main : IO () = do {
     let nat <- input;
-    print(match nat->parse_nat in
+    print(when nat->parse_nat is
         | Ok n => "ok!"
-        \ Err e => match ?e in
+        \ Err e => when ?e is
             | ? (e : CannotBeginWithZero) => e->display
             | ? (e : NoCharacters) => e->display
             \ ? (e : InvalidCharacter) => e->display

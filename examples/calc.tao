@@ -6,7 +6,7 @@ def prompt : io ~ () = do {
     if line = "q"
     then ()
     else do {
-        match line->parse(expr_parser) in
+        when line->parse(expr_parser) is
             | Ok expr => print(expr->eval->show)!
             \ Err err => print("Failed to parse '" ++ line ++ "': " ++ err->show)!;
         prompt!;

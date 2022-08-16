@@ -41,12 +41,12 @@ member State of Default =
 
 fn exec : State -> Instr -> io ~ State =
     | state, Left => state with {
-        ptr: match state.ptr in
+        ptr: when state.ptr is
             | 0 => 9999
             \ l + 1 => l
     }
     | state, Right => state with {
-        ptr: match state.ptr in
+        ptr: when state.ptr is
             | 9999 => 0
             \ l => l + 1
     }
@@ -64,18 +64,17 @@ fn exec : State -> Instr -> io ~ State =
         print("Read not supported yet")!;
         state
     }
-    | state, Write => match state.tape->nth(state.ptr) in
+    | state, Write => when state.tape->nth(state.ptr) is
         # Newline
         | Just 10 => do {
             print(state.stdout)!;
             state with { stdout: "" }
         }
-        | Just n + 32 => match " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
-            -> nth(n) in
+        | Just n + 32 => when " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"->nth(n) is
             | Just c => state with { stdout: state.stdout ++ [c] }
             \ None => state
         \ _ => state
-    \ state, Loop xs => match state.tape->nth(state.ptr) in
+    \ state, Loop xs => when state.tape->nth(state.ptr) is
         | Just 0 => state
         | Just _ => do {
             let state = exec_all(state, xs)!;

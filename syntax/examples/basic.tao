@@ -39,11 +39,11 @@ def seven =
 
 def test =
 	let seven = seven in
-	match False in
+	when False is
 	| True => 5
 	| False => seven
 
-def main2 = match let x = life in life + 2, False in
+def main2 = when let x = life in life + 2, False is
 	| 44, False => "Hello, world!"
 	| _, _ => "something else"
 
@@ -52,6 +52,6 @@ def main3 =
 	let y = life in
 	x + y
 
-def main = match False, 40 + 1 in
+def main = when False, 40 + 1 is
 	| False, 42 => 1
 	| _, _ => 0

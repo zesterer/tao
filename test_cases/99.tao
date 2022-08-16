@@ -81,7 +81,7 @@ fn rle_modified A < Eq : [A] -> [Element A] =
             \ _, [] => (0, [])
         ) in
         let (l, xs) = monch(x, xs) in
-        let elem = match l in
+        let elem = when l is
             | 0 => Single x
             \ l => Multiple (1 + l, x)
         in
@@ -91,7 +91,7 @@ fn rle_modified A < Eq : [A] -> [Element A] =
 ## 11. Decode a modified run-length encoded list
 fn rle_decode A : [Element A] -> [A] =
     | [] => []
-    \ [x .. xs] => match x in
+    \ [x .. xs] => when x is
         | Multiple (n, x) => [x]->repeat(n) ++ xs->rle_decode
         \ Single x => [x .. xs->rle_decode]
 

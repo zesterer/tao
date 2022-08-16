@@ -52,7 +52,7 @@ fn apply : Event -> State -> io ~ State =
 fn game_loop : State -> io ~ () = state => do {
     let cmd = input!;
     let res = (
-        match cmd in
+        when cmd is
         | "quit" => Done
         | "help" => do {
             print("Commands: 'help', 'quit', 'look', 'grab'")!;
@@ -63,17 +63,17 @@ fn game_loop : State -> io ~ () = state => do {
             Next None
         }
         | "grab" => Next Just Grab
-        \ other => match state.loc
+        \ other => when state.loc
             -> directions
             -> find_first(fn (name, _) => name = cmd)
-        in
+        is
             | Just (_, loc) => Next Just MoveTo loc
             \ None => do {
                 print("Unknown command '" ++ cmd ++ "'")!;
                 Next None
             }
     );
-    match res in
+    when res is
         | Next Just event => game_loop(state->apply(event)!)!
         | Next None => game_loop(state)!
         \ Done => ()

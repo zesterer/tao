@@ -105,12 +105,12 @@ def main =
 def main =
 	let x = 5 in
 	# Branches, like function pattern matching
-	let desc = match x in
+	let desc = when x is
 		| 0 => "zero"
 		| 1 => "one"
 		| _ => "a big number"
 	in
-	let x = match desc in
+	let x = when desc is
 		| "zero" => Just 0
 		| "one" => Just 1
 		| _ => None

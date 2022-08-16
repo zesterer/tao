@@ -24,7 +24,7 @@ data Three A, B, C =
     \ Three C
 
 def main = fn x =>
-    match if x then One 5 else Two 3 in
+    when if x then One 5 else Two 3 is
         | One x => x
         | Two x => x
         \ Three x => x
