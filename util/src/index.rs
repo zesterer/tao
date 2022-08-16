@@ -27,6 +27,7 @@ impl<T> hash::Hash for Id<T> {
     fn hash<H: hash::Hasher>(&self, h: &mut H) { self.0.hash(h); }
 }
 
+#[derive(Clone)]
 pub struct Index<T> {
     items: Vec<T>,
 }

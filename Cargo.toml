@@ -4,6 +4,7 @@ members = [
     "syntax",
     "analysis",
     "middle",
+    "cir",
     "vm",
     "util",
     "web_demo",

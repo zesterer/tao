@@ -625,6 +625,7 @@ dependencies = [
  "internment",
  "structopt",
  "tao_analysis",
+ "tao_cir",
  "tao_middle",
  "tao_syntax",
  "tao_vm",
@@ -640,6 +641,13 @@ dependencies = [
  "ranges",
  "rustyline",
  "tao_syntax",
+ "tao_util",
+]
+
+[[package]]
+name = "tao_cir"
+version = "0.1.0"
+dependencies = [
  "tao_util",
 ]
 

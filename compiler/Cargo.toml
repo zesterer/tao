@@ -8,6 +8,7 @@ default-run = "tao"
 tao_syntax = { path = "../syntax" }
 tao_analysis = { path = "../analysis" }
 tao_middle = { path = "../middle" }
+tao_cir = { path = "../cir" }
 tao_vm = { path = "../vm" }
 internment = "0.5"
 

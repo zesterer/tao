@@ -1,0 +1,7 @@
+[package]
+name = "tao_cir"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tao_util = { path = "../util" }

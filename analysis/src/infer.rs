@@ -1378,7 +1378,7 @@ impl<'a> Infer<'a> {
             TyInfo::Effect(eff, out, opaque) => {
                 let eff = self.reinstantiate_eff(self.span(ty), eff);
                 let out = self.reinstantiate(span, out);
-                //let opaque = self.reinstantiate(span, opaque);
+                let opaque = self.reinstantiate(span, opaque);
                 self.insert(self.span(ty), TyInfo::Effect(eff, out, opaque))
             },
         }
