@@ -7,7 +7,6 @@ edition = "2021"
 tao_middle = { path = "../middle" }
 hashbrown = "0.11"
 im = "15.0"
-rand = "0.8"
 
 [dev-dependencies]
 tao_syntax = { path = "../syntax" }

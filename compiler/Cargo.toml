@@ -11,8 +11,12 @@ tao_middle = { path = "../middle" }
 tao_cir = { path = "../cir" }
 tao_vm = { path = "../vm" }
 internment = "0.5"
+rand = { version = "0.8", optional = true }
 
 #ariadne = "0.1"
 ariadne = { git = "https://github.com/zesterer/ariadne.git" }
 #ariadne = { path = "../../ariadne" }
 structopt = "0.3"
+
+[features]
+default = ["rand"]

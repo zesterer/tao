@@ -11,10 +11,11 @@ crate-type = ["cdylib", "rlib"]
 default = ["console_error_panic_hook"]
 
 [dependencies]
-tao = { path = "../compiler" }
+tao = { path = "../compiler", default-features = false }
 tao_vm = { path = "../vm" }
 strip-ansi-escapes = "0.1"
 include_dir = "0.7"
+rand = { version = "0.8", default-features = false, features = ["small_rng"] }
 
 wasm-bindgen = "0.2.81"
 web-sys = { version = "0.3.58", features = ["Window", "Document", "Element"] }

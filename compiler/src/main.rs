@@ -1,7 +1,8 @@
 use tao::{Options, SrcId, compile};
-use tao_vm::{exec, Stdio};
+use tao_vm::{exec, Env};
 use structopt::StructOpt;
 use std::{fs, path::PathBuf};
+use rand::prelude::*;
 
 #[derive(Clone, Debug, StructOpt)]
 pub struct Args {
@@ -10,6 +11,29 @@ pub struct Args {
     /// Specify the file to run
     #[structopt(name = "FILE", parse(from_os_str))]
     pub file: PathBuf,
+}
+
+#[derive(Default)]
+pub struct Stdio;
+
+impl Env for Stdio {
+    fn input(&mut self) -> String {
+        use std::io::{stdin, stdout, Write};
+
+        let mut s = String::new();
+        print!("> ");
+        stdout().flush().expect("IO error");
+        stdin().read_line(&mut s).expect("IO error");
+        s
+    }
+
+    fn print(&mut self, s: String) {
+        println!("{}", s);
+    }
+
+    fn rand(&mut self, max: i64) -> i64 {
+        thread_rng().gen_range(0..max)
+    }
 }
 
 fn main() {

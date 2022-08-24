@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 use include_dir::{include_dir, Dir};
+use rand::prelude::*;
 use tao::{compile, SrcId, Options};
 use tao_vm::{Program, Env, exec};
 use std::path::{PathBuf, Component};
@@ -17,8 +18,7 @@ extern {
     fn alert(s: String);
 }
 
-#[derive(Default)]
-struct WebEnv;
+struct WebEnv(rand::rngs::SmallRng);
 
 impl Env for WebEnv {
     fn input(&mut self) -> String { prompt("Provide input to program".to_string()) }
@@ -33,6 +33,7 @@ impl Env for WebEnv {
         output_buf += "\n";
         output.set_text_content(Some(&output_buf));
     }
+    fn rand(&mut self, max: i64) -> i64 { self.0.gen_range(0..max) }
 }
 
 #[wasm_bindgen]
@@ -74,7 +75,7 @@ pub fn run(src: &str) {
         .map(|s| s.to_string())
         .unwrap_or_else(|e| format!("Demo error: {}", e));
 
-    let mut env = WebEnv::default();
+    let mut env = WebEnv(rand::SeedableRng::seed_from_u64(42));
 
     env.print(output);
 

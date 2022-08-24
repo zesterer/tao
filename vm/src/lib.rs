@@ -4,7 +4,7 @@ pub mod lower;
 
 pub use crate::{
     code::{Instr, Program, Addr},
-    exec::{exec, Value, Env, Stdio},
+    exec::{exec, Value, Env},
 };
 use tao_middle::{
     mir,

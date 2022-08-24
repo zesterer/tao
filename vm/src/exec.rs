@@ -4,7 +4,6 @@ use std::{
     rc::Rc,
 };
 use im::{Vector, vector};
-use rand::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct Effect {
@@ -326,9 +325,11 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                 assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
                 universe_counter += 1;
 
+                let n = env.rand(max);
+
                 stack.push(Value::List(vector![
                     Value::Universe(universe_counter),
-                    Value::Int(thread_rng().gen_range(0..max)),
+                    Value::Int(n),
                 ]));
             },
             Instr::MakeEffect(i, n) => {
@@ -402,23 +403,5 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
 pub trait Env {
     fn input(&mut self) -> String;
     fn print(&mut self, s: String);
-}
-
-#[derive(Default)]
-pub struct Stdio;
-
-impl Env for Stdio {
-    fn input(&mut self) -> String {
-        use std::io::{stdin, stdout, Write};
-
-        let mut s = String::new();
-        print!("> ");
-        stdout().flush().expect("IO error");
-        stdin().read_line(&mut s).expect("IO error");
-        s
-    }
-
-    fn print(&mut self, s: String) {
-        println!("{}", s);
-    }
+    fn rand(&mut self, max: i64) -> i64;
 }
