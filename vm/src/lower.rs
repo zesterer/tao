@@ -318,6 +318,7 @@ impl Program {
                     Intrinsic::Join(_) => { self.push(Instr::JoinList); },
                     Intrinsic::Print => { self.push(Instr::Print); },
                     Intrinsic::Input => { self.push(Instr::Input); },
+                    Intrinsic::Rand => { self.push(Instr::Rand); },
                     Intrinsic::UpdateField(idx) => { self.push(Instr::SetList(*idx)); },
                     Intrinsic::LenList => { self.push(Instr::LenList); },
                     Intrinsic::SkipList => { self.push(Instr::SkipList); },

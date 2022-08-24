@@ -1095,9 +1095,12 @@ pub fn member_parser() -> impl Parser<ast::Member> {
         .then_ignore(just(Token::Op(Op::Eq)))
         .then(expr_parser()
             .map_with_span(SrcNode::new))
-        .map(|(name, val)| ast::MemberItem::Value {
-            val,
-            name,
+        .map(|(name, val)| {
+            let val_span = val.span();
+            ast::MemberItem::Value {
+                val: SrcNode::new(ast::Expr::Basin(Vec::new(), val), val_span),
+                name,
+            }
         });
 
     let assoc_type = type_ident_parser()

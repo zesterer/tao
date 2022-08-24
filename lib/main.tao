@@ -7,7 +7,10 @@ fn __start : @ -> (@, ()) = uni =>
         | print with s, uni =>
             let (uni, ()) = __print(s, uni) in
             ((), uni)
-        \ input with (), uni =>
+        | input with (), uni =>
             let (uni, s) = __input(uni) in
             (s, uni)
+        \ rand with max, uni =>
+            let (uni, x) = __rand(max, uni) in
+            (x, uni)
     in (uni, ())

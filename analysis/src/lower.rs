@@ -1131,6 +1131,19 @@ impl ToHir for ast::Expr {
 
                             (TyInfo::tuple(vec![universe, s]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Input, name.span()), args))
                         },
+                        "rand" if args.len() == 2 => {
+                            let a = &args[0];
+                            let b = &args[1];
+
+                            let universe = infer.insert(a.meta().0, TyInfo::Prim(Prim::Universe));
+                            infer.make_flow(a.meta().1, universe, EqInfo::from(name.span()));
+                            let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Nat));
+                            infer.make_flow(b.meta().1, nat, EqInfo::from(name.span()));
+
+                            let nat = infer.insert(a.meta().0, TyInfo::Prim(Prim::Nat));
+
+                            (TyInfo::tuple(vec![universe, nat]), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Rand, name.span()), args))
+                        },
                         "len_list" if args.len() == 1 => {
                             let item = infer.unknown(args[0].meta().0);
                             let list = infer.insert(args[0].meta().0, TyInfo::List(item));

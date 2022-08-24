@@ -4,6 +4,7 @@ use std::{
     rc::Rc,
 };
 use im::{Vector, vector};
+use rand::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct Effect {
@@ -317,6 +318,17 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                 stack.push(Value::List(vector![
                     Value::Universe(universe_counter),
                     Value::List(s.trim_end().chars().map(Value::Char).collect()),
+                ]));
+            },
+            Instr::Rand => {
+                let max = stack.pop().unwrap().int();
+                let universe = stack.pop().unwrap().universe();
+                assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
+                universe_counter += 1;
+
+                stack.push(Value::List(vector![
+                    Value::Universe(universe_counter),
+                    Value::Int(thread_rng().gen_range(0..max)),
                 ]));
             },
             Instr::MakeEffect(i, n) => {

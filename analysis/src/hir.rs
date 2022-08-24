@@ -139,6 +139,7 @@ pub enum Intrinsic {
     Go,
     Print,
     Input,
+    Rand,
     LenList,
     SkipList,
     TrimList,

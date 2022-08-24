@@ -1,0 +1,19 @@
+import "../lib/main.tao"
+
+class Arbitrary =
+    => gen : rand ~ Self
+
+member Nat of Arbitrary =
+    => gen = rand(1000)!
+
+for A < Arbitrary member [A] of Arbitrary =
+    => gen = range(0, rand(100)!)
+        -> collect_list
+        -> map(fn _ => arbitrary!)!
+        -> collect
+
+def arbitrary A < Arbitrary : rand ~ A = A.gen!
+
+def main : io ~ () =
+    let xs : [Nat] = arbitrary! in
+    print("Arbitrary list of numbers: " + xs)!

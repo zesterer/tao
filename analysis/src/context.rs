@@ -785,7 +785,7 @@ impl Context {
                                     &mut |idx, _, _| gen_tys.get(idx).copied(),
                                     &mut |idx, _| gen_effs.get(idx).copied(),
                                     Some(self_ty),
-                                    invariant(),
+                                    contravariant(),
                                 );
                                 infer.make_flow(val.meta().1, val_ty, EqInfo::new(name.span(), format!("Type of member item must match class")));
                             }

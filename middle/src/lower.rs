@@ -292,6 +292,10 @@ impl Context {
                     hir::Intrinsic::Input => mir::Expr::Intrinsic(mir::Intrinsic::Input, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                     ]),
+                    hir::Intrinsic::Rand => mir::Expr::Intrinsic(mir::Intrinsic::Rand, vec![
+                        self.lower_expr(hir, con, &args[0], stack),
+                        self.lower_expr(hir, con, &args[1], stack),
+                    ]),
                     hir::Intrinsic::LenList => mir::Expr::Intrinsic(mir::Intrinsic::LenList, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                     ]),

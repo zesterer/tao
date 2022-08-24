@@ -51,7 +51,7 @@ fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
 class FromStream A =
     => from_stream : [A] -> Self
 
-for A member [A] of FromStream A where =
+for A member [A] of FromStream A =
     => from_stream = fn xs => xs
 
 for A member Maybe A of FromStream A =
@@ -63,3 +63,22 @@ fn collect B < FromStream S.Item, S < Stream : S -> B =
     s => let xs = s->fix(fn rec, s => when s->S.next is
         | None => []
         \ Just (s, x) => [x .. rec(s)]) in xs->B.from_stream
+
+fn collect_list S < Stream : S -> [S.Item] =
+    s => s->fix(fn rec, s => when s->S.next is
+        | None => []
+        \ Just (s, x) => [x .. rec(s)])
+
+data Range A = (A, A)
+
+for A member Range A of Stream where
+    A < Eq + Add A with { Output = A } + One
+=
+    => Item = A
+    => next = fn Range (from, to) => if from = to
+        then None
+        else
+            let one : A = one in
+            Just (Range (from + one, to), from)
+
+fn range A : A -> A -> Range A = from, to => Range (from, to)

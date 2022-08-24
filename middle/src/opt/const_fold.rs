@@ -310,6 +310,7 @@ impl Intrinsic {
             Intrinsic::Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
             Intrinsic::Print => Partial::Unknown(None),
             Intrinsic::Input => Partial::Unknown(None),
+            Intrinsic::Rand => Partial::Unknown(None),
             Intrinsic::UpdateField(idx) => Partial::Unknown(None), // TODO
             Intrinsic::LenList => op!(List(xs) => Nat(xs.len() as u64)),
             Intrinsic::SkipList => op!(List(xs), Nat(i) => List(xs.clone().split_off((*i as usize).min(xs.len())))),

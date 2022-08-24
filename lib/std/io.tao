@@ -2,7 +2,8 @@ type IO A = @ -> (@, A)
 
 effect input = () => Str
 effect print = Str => ()
-effect io = input + print
+effect rand = Nat => Nat
+effect io = input + print + rand
 
 # Core monadic IO operations
 
@@ -12,8 +13,12 @@ fn __print : Str -> IO () = s, uni =>
 
 fn __input : IO Str = uni => @input(uni)
 
+fn __rand : Nat -> IO Nat = n, uni => @rand(uni, n)
+
 # High-level effect IO operations
 
 def input : input ~ Str = @suspend(())
 
 fn print : Str -> print ~ () = s => @suspend(s)
+
+fn rand : Nat -> rand ~ Nat = max => @suspend(max)
