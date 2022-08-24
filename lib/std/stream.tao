@@ -72,13 +72,13 @@ fn collect_list S < Stream : S -> [S.Item] =
 data Range A = (A, A)
 
 for A member Range A of Stream where
-    A < Eq + Add A with { Output = A } + One
+    A < Ord + Add A with { Output = A } + One
 =
     => Item = A
-    => next = fn Range (from, to) => if from = to
+    => next = fn Range (from, to) => if from >= to
         then None
         else
-            let one : A = one in
+            let one : A = one in # TODO: This line is silly, figure out why we can't infer this
             Just (Range (from + one, to), from)
 
 fn range A : A -> A -> Range A = from, to => Range (from, to)
