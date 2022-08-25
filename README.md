@@ -11,14 +11,14 @@ first-class functions, currying, good diagnostics, and much more!
 
 For more example programs, see...
 
-- `examples/hello.tao`: Hello world
-- `examples/input.tao`: Demonstrates a more complex example of IO effects
-- `examples/calc.tao`: A CLI calculator, demonstrating parser combinators
-- `examples/adventure.tao`: A text adventure game
-- `examples/brainfuck.tao`: A brainfuck interpreter
-- `examples/mutate.tao`: Mutation expressed as a side effect
-- `examples/polymorphic_effects.tao`: Example of a higher-order function that's polymorphic over a side effect
-- `examples/quickcheck.tao`: A very poor implementation of [`quickcheck`](https://en.wikipedia.org/wiki/QuickCheck) in Tao
+- [`hello.tao`](https://github.com/zesterer/tao/blob/master/examples/hello.tao): Hello world
+- [`input.tao`](https://github.com/zesterer/tao/blob/master/examples/input.tao): Demonstrates a more complex example of IO effects
+- [`calc.tao`](https://github.com/zesterer/tao/blob/master/examples/calc.tao): A CLI calculator, demonstrating parser combinators
+- [`adventure.tao`](https://github.com/zesterer/tao/blob/master/examples/adventure.tao): A text adventure game
+- [`brainfuck.tao`](https://github.com/zesterer/tao/blob/master/examples/brainfuck.tao): A brainfuck interpreter
+- [`mutate.tao`](https://github.com/zesterer/tao/blob/master/examples/mutate.tao): Mutation expressed as a side effect
+- [`polymorphic_effects.tao`](https://github.com/zesterer/tao/blob/master/examples/polymorphic_effects.tao): Example of a higher-order function that's polymorphic over a side effect
+- [`quickcheck.tao`](https://github.com/zesterer/tao/blob/master/examples/quickcheck.tao): A very poor implementation of [`quickcheck`](https://en.wikipedia.org/wiki/QuickCheck) in Tao
 
 ## Goals
 
