@@ -118,7 +118,7 @@ impl fmt::Display for Token {
             Token::Int(x) => write!(f, "{}i", x),
             Token::Real(x) => write!(f, "{}", x),
             Token::Char(c) => write!(f, "{}", c),
-            Token::Str(s) => write!(f, "{}", s),
+            Token::Str(s) => write!(f, "\"{}\"", s),
             Token::Open(Delimiter::Paren) => write!(f, "("),
             Token::Open(Delimiter::Brack) => write!(f, "["),
             Token::Open(Delimiter::Brace) => write!(f, "{{"),
