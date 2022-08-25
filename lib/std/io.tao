@@ -22,3 +22,5 @@ def input : input ~ Str = @suspend(())
 fn print : Str -> print ~ () = s => @suspend(s)
 
 fn rand : Nat -> rand ~ Nat = max => @suspend(max)
+
+def rand_bool : rand ~ Bool = rand(2)! = 0

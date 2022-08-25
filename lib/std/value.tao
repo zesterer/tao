@@ -49,6 +49,16 @@ data Maybe A =
 for A member Maybe A of Default =
     => default = None
 
-fn and_then_opt A, B, e : (A -> e ~ Maybe B) -> Maybe A -> e ~ Maybe B =
+fn flat_map A, B, e : (A -> e ~ Maybe B) -> Maybe A -> e ~ Maybe B =
     | _, None => None
     \ f, Just a => a->f!
+
+fn filter_opt A, e : (A -> e ~ Bool) -> Maybe A -> e ~ Maybe A =
+    | _, None => None
+    \ f, Just a => if a->f!
+        then Just a
+        else None
+
+fn unwrap_or A : A -> Maybe A -> A =
+    | a, None => a
+    \ _, Just a => a

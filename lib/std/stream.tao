@@ -81,4 +81,14 @@ for A member Range A of Stream where
             let one : A = one in # TODO: This line is silly, figure out why we can't infer this
             Just (Range (from + one, to), from)
 
+for A member Range A of Iter where
+    A < Ord + Add A with { Output = A } + One
+=
+    => Item = A
+    => next = fn Range (from, to) => if from >= to
+        then None
+        else
+            let one : A = one in # TODO: This line is silly, figure out why we can't infer this
+            Just (from, Range (from + one, to))
+
 fn range A : A -> A -> Range A = from, to => Range (from, to)

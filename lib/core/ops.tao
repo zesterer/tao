@@ -127,6 +127,10 @@ member Char of Eq =
     => eq = fn x, y => @eq_char(x, y)
     => ne = fn x, y => !Self.eq(x, y)
 
+for A < Eq, B < Eq member (A, B) of Eq =
+    => eq = fn (a0, b0), (a1, b1) => a0 = a1 and b0 = b1
+    => ne = fn (a0, b0), (a1, b1) => a0 != a1 or b0 != b1
+
 for A < Eq member [A] of Eq =
     => eq = fn
         | [], [] => True

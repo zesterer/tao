@@ -10,7 +10,10 @@ member Nat of Arbitrary =
     => gen = rand(1000)!
 
 member Bool of Arbitrary =
-    => gen = rand(2)! = 0
+    => gen = rand_bool!
+
+for A < Arbitrary, B < Arbitrary member (A, B) of Arbitrary =
+    => gen = (arbitrary!, arbitrary!)
 
 for A < Arbitrary member [A] of Arbitrary =
     => gen = range(0, rand(100)!)
@@ -32,6 +35,14 @@ member Nat of Minimise =
 member Bool of Minimise =
     => minimise = fn x => Just !x
 
+for A < Minimise, B < Minimise member (A, B) of Minimise =
+    => minimise = fn (a, b) => when a->minimise!, b->minimise! is
+        | None, None => None
+        \ a_min, b_min => Just (
+            if rand_bool! then a_min->unwrap_or(a) else a,
+            if rand_bool! then b_min->unwrap_or(b) else b,
+        )
+
 for A < Minimise member [A] of Minimise =
     => minimise = fn
         | [] => None
@@ -44,28 +55,20 @@ for A < Minimise member [A] of Minimise =
             | None => []
             \ Just xs => xs
 
-# Tries to minimise the input while ensuring that the minimised version still fails
-fn try_reduce A < Minimise, B : (A -> B) -> (A -> B -> Bool) -> Nat -> A -> rand ~ Maybe A =
-    | _, _, 0, _ => None
-    \ f, check, n + 1, x =>
-        when x->minimise! is
-        | None => None
-        \ Just x => if x->f->check(x)
-            then x->try_reduce(f, check, n)!
-            else Just x
-
 fn quickcheck A < Arbitrary + Minimise, B : (A -> B) -> (A -> B -> Bool) -> rand ~ Maybe A =
+    # Generate 100 arbitrary values
     f, check => range(0, 100)
         -> collect_list
         -> map(fn _ => arbitrary!)!
+        # Find the first value that fails to pass the check
         -> find_first(fn x => !x->f->check(x))
-        -> and_then_opt(fn x => range(0, 100)
-            -> collect_list
-            -> fold(Just x, fn
-                | None, _ => None
-                \ Just x, _ => when x->try_reduce(f, check, 10)! is
-                    | None => Just x
-                    \ Just x => Just x)!)!
+        # Try 100 times to minimise the value
+        -> flat_map(fn x => Just range(0, 100)
+            -> fold(x, fn x, _ => x
+                -> minimise!
+                # Only take minimised values that fail to pass the check
+                -> filter_opt(fn x => !x->f->check(x))
+                -> unwrap_or(x))!)!
 
 # This reverse function is broken and fails to reverse lists > 3 items long!
 fn reverse A : [A] -> [A] =
@@ -80,7 +83,7 @@ def main : io ~ () =
     let xs = quickcheck(
         # Show quickcheck how to transform an arbitrary list
         # You can change the type hint to `[Nat]`: everything still works!
-        fn xs : [Bool] => xs->reverse,
+        fn xs : [(Bool, Nat)] => xs->reverse,
         # Check the validity of the output (i.e: that reversing the reversed list yields the original list)
         fn old, new => new->reverse = old,
     )! in
