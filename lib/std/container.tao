@@ -7,6 +7,13 @@ class Map B, e =
     => Output
     => map : (Self.Item -> e ~ B) -> Self -> e ~ Self.Output
 
+for A, B, e member Maybe A of Map B e =
+    => Item = A
+    => Output = Maybe B
+    => map = fn
+        | _, None => None
+        \ f, Just a => Just a->f!
+
 def map V < Map B e, B, e : (V.Item -> e ~ B) -> V -> e ~ V.Output = V.map
 
 class Iter =

@@ -1261,7 +1261,8 @@ impl<'a> Infer<'a> {
                 let o_err = Self::flow_inner(infer, x, y_out).err();
                 o_err.map(Err).unwrap_or(Ok(()))
             },
-            (TyInfo::Opaque(x_id, _), TyInfo::Opaque(y_id, _)) if x_id == y_id => Ok(()),
+            // TODO: Don't ignore!!! But make `fix` work, somehow
+            (TyInfo::Opaque(x_id, _), TyInfo::Opaque(y_id, _)) /*if x_id == y_id*/ => Ok(()),
             (TyInfo::Opaque(x_id, relaxed_x), TyInfo::Opaque(y_id, relaxed_y)) if relaxed_x || relaxed_y => {
                 if relaxed_y {
                     infer.set_info(y, TyInfo::Ref(x));
@@ -2543,7 +2544,7 @@ impl<'a> Infer<'a> {
                 },
                 Constraint::EffectSendRecv(eff, send, recv, span) => errors.push(InferError::CannotInferEffect(eff)),
                 Constraint::EffectPropagate(obj, _, out_ty, obj_span, op_span, _) => {
-                    if !self.is_error(obj) {
+                    if !self.is_error(obj) && !self.is_unknown(obj) {
                         self.set_error(out_ty);
                         errors.push(InferError::NotEffectful(obj, obj_span, op_span))
                     }

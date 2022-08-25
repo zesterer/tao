@@ -1,10 +1,16 @@
 import "../lib/main.tao"
 
+# Allows generating arbitrary values of a type
 class Arbitrary =
     => gen : rand ~ Self
 
+def arbitrary A < Arbitrary : rand ~ A = A.gen!
+
 member Nat of Arbitrary =
     => gen = rand(1000)!
+
+member Bool of Arbitrary =
+    => gen = rand(2)! = 0
 
 for A < Arbitrary member [A] of Arbitrary =
     => gen = range(0, rand(100)!)
@@ -12,8 +18,70 @@ for A < Arbitrary member [A] of Arbitrary =
         -> map(fn _ => arbitrary!)!
         -> collect
 
-def arbitrary A < Arbitrary : rand ~ A = A.gen!
+# Allows values of a type to be minimised
+class Minimise =
+    => minimise : Self -> rand ~ Maybe Self
+
+def minimise A < Minimise : A -> rand ~ Maybe A = A.minimise
+
+member Nat of Minimise =
+    => minimise = fn
+        | 0 => None
+        \ n => Just rand(n)!
+
+member Bool of Minimise =
+    => minimise = fn x => Just !x
+
+for A < Minimise member [A] of Minimise =
+    => minimise = fn
+        | [] => None
+        \ [x .. xs] => Just (when rand(1 + xs->len)! is
+            | 0 => []
+            | 1 => when x->minimise! is
+                | None => []
+                \ Just x => [x]
+            \ _ => [x]) ++ when xs->minimise! is
+            | None => []
+            \ Just xs => xs
+
+# Tries to minimise the input while ensuring that the minimised version still fails
+fn try_reduce A < Minimise, B : (A -> B) -> (A -> B -> Bool) -> Nat -> A -> rand ~ Maybe A =
+    | _, _, 0, _ => None
+    \ f, check, n + 1, x =>
+        when x->minimise! is
+        | None => None
+        \ Just x => if x->f->check(x)
+            then x->try_reduce(f, check, n)!
+            else Just x
+
+fn quickcheck A < Arbitrary + Minimise, B : (A -> B) -> (A -> B -> Bool) -> rand ~ Maybe A =
+    f, check => range(0, 100)
+        -> collect_list
+        -> map(fn _ => arbitrary!)!
+        -> find_first(fn x => !x->f->check(x))
+        -> and_then_opt(fn x => range(0, 100)
+            -> collect_list
+            -> fold(Just x, fn
+                | None, _ => None
+                \ Just x, _ => when x->try_reduce(f, check, 10)! is
+                    | None => Just x
+                    \ Just x => Just x)!)!
+
+# This reverse function is broken and fails to reverse lists > 3 items long!
+fn reverse A : [A] -> [A] =
+    | [] => []
+    | [a] => [a]
+    | [a, b] => [b, a]
+    | [a, b, c] => [c, b, a]
+    \ [a, b .. xs] => xs->reverse ++ [a, b]
 
 def main : io ~ () =
-    let xs : [Nat] = arbitrary! in
-    print("Arbitrary list of numbers: " + xs)!
+    # Here we try to generate a simple test-case for which the reverse function fails
+    let xs = quickcheck(
+        # Show quickcheck how to transform an arbitrary list
+        # You can change the type hint to `[Nat]`: everything still works!
+        fn xs : [Bool] => xs->reverse,
+        # Check the validity of the output (i.e: that reversing the reversed list yields the original list)
+        fn old, new => new->reverse = old,
+    )! in
+    print("Failed case: " + xs->debug)!

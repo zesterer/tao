@@ -18,6 +18,7 @@ For more example programs, see...
 - `examples/brainfuck.tao`: A brainfuck interpreter
 - `examples/mutate.tao`: Mutation expressed as a side effect
 - `examples/polymorphic_effects.tao`: Example of a higher-order function that's polymorphic over a side effect
+- `examples/quickcheck.tao`: A very poor implementation of [`quickcheck`](https://en.wikipedia.org/wiki/QuickCheck) in Tao
 
 ## Goals
 

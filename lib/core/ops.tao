@@ -116,6 +116,13 @@ member Nat of Eq =
     => eq = fn x, y => @eq_nat(x, y)
     => ne = fn x, y => !Self.eq(x, y)
 
+member Bool of Eq =
+    => eq = fn
+        | True, True => True
+        | False, False => True
+        \ _, _ => False
+    => ne = fn x, y => !(x = y)
+
 member Char of Eq =
     => eq = fn x, y => @eq_char(x, y)
     => ne = fn x, y => !Self.eq(x, y)
