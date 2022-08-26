@@ -12,6 +12,11 @@ ariadne = { git = "https://github.com/zesterer/ariadne.git" }
 hashbrown = "0.11"
 internment = "0.5"
 ranges = { git = "https://gitlab.com/bit-refined/ranges.git" }
+dot = { version = "0.1", optional = true }
+
+[features]
+debug = ["dot"]
+default = ["debug"]
 
 [dev-dependencies]
 rustyline = "9.0"

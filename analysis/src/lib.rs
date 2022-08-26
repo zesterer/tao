@@ -4,6 +4,8 @@ pub mod class;
 pub mod concrete;
 pub mod context;
 pub mod data;
+#[cfg(feature = "debug")]
+pub mod debug;
 pub mod def;
 pub mod effect;
 pub mod error;

@@ -93,4 +93,4 @@ for A < One, N < VecData A member Vec A N of One =
 fn mul_add A < Num : A -> A -> A -> A =
     x, y, z => x * y + z
 
-def mul_add_demo : Vec Nat N3 = mul_add(zero, one, one)
+#def mul_add_demo : Vec Nat N3 = mul_add(zero, one, one)

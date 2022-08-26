@@ -52,8 +52,8 @@ for A < Minimise member [A] of Minimise =
                 | None => []
                 \ Just x => [x]
             \ _ => [x]) ++ when xs->minimise! is
-            | None => []
-            \ Just xs => xs
+                | None => []
+                \ Just xs => xs
 
 fn quickcheck A < Arbitrary + Minimise, B : (A -> B) -> (A -> B -> Bool) -> rand ~ Maybe A =
     # Generate 100 arbitrary values
@@ -83,7 +83,7 @@ def main : io ~ () =
     let xs = quickcheck(
         # Show quickcheck how to transform an arbitrary list
         # You can change the type hint to `[Nat]`: everything still works!
-        fn xs : [(Bool, Nat)] => xs->reverse,
+        fn xs : [Bool] => xs->reverse,
         # Check the validity of the output (i.e: that reversing the reversed list yields the original list)
         fn old, new => new->reverse = old,
     )! in

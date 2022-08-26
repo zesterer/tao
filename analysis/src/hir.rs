@@ -203,6 +203,59 @@ impl Expr<InferMeta> {
     }
 }
 
+impl<M: Meta> Expr<M> {
+    pub fn for_children(&self, mut f: impl FnMut(&Node<Self, M>)) {
+        match &self {
+            Expr::Literal(_)
+            | Expr::Error
+            | Expr::Local(_)
+            | Expr::ClassAccess(_, _, _)
+            | Expr::Global(_) => {},
+            Expr::List(items, tails) => {
+                items
+                    .iter()
+                    .for_each(|item| f(item));
+                tails
+                    .iter()
+                    .for_each(|tail| f(tail));
+            },
+            Expr::Record(fields, _) => fields
+                .iter()
+                .for_each(|(_, field)| f(field)),
+            Expr::Access(record, _) => f(&record),
+            Expr::Match(_, pred, arms) => {
+                f(&pred);
+                arms
+                    .iter()
+                    .for_each(|(_, arm)| f(arm));
+            },
+            Expr::Func(_, body) => f(&body),
+            Expr::Apply(func, arg) => {
+                f(&func);
+                f(&arg);
+            },
+            Expr::Cons(_, _, inner) => f(&inner),
+            Expr::Intrinsic(_, args) => args
+                .iter()
+                .for_each(|arg| f(arg)),
+            Expr::Update(record, fields) => {
+                f(&record);
+                fields
+                    .iter()
+                    .for_each(|(_, field)| f(field));
+            },
+            Expr::Basin(_, inner) => f(&inner),
+            Expr::Suspend(_, inner) => f(&inner),
+            Expr::Handle { expr, handlers } => {
+                f(&expr);
+                handlers
+                    .iter()
+                    .for_each(|handler| f(&handler.recv));
+            },
+        }
+    }
+}
+
 impl Expr<ConMeta> {
     fn required_locals_inner(&self, stack: &mut Vec<Ident>, required: &mut Vec<Ident>) {
         match self {

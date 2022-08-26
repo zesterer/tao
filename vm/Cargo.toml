@@ -10,4 +10,4 @@ im = "15.0"
 
 [dev-dependencies]
 tao_syntax = { path = "../syntax" }
-tao_analysis = { path = "../analysis" }
+tao_analysis = { path = "../analysis", default-features = false }

@@ -20,7 +20,7 @@ use error::Error;
 
 #[derive(Clone, Debug, Default, StructOpt)]
 pub struct Options {
-    /// Add a debugging layer to stdout (tokens, ast, hir, mir, bytecode)
+    /// Add a debugging layer to stdout (tokens, ast, hir, call_graph, mir, bytecode)
     #[structopt(long)]
     pub debug: Vec<String>,
     /// Specify an optimisation mode (none, fast, size)
@@ -103,6 +103,14 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
             for (_, def) in ctx.defs.iter() {
                 writeln!(writer, "{} = {:?}", *def.name, def.body).unwrap();
             }
+        }
+
+        #[cfg(feature = "debug")]
+        if options.debug.contains(&"call_graph".to_string()) {
+            ctx
+                .generate_call_graph()
+                .render_to(&mut writer)
+                .unwrap();
         }
 
         if !analysis_errors.is_empty() || syntax_error {

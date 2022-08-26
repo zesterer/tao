@@ -6,7 +6,7 @@ default-run = "tao"
 
 [dependencies]
 tao_syntax = { path = "../syntax" }
-tao_analysis = { path = "../analysis" }
+tao_analysis = { path = "../analysis", default-features = false }
 tao_middle = { path = "../middle" }
 tao_cir = { path = "../cir" }
 tao_vm = { path = "../vm" }
@@ -19,4 +19,5 @@ ariadne = { git = "https://github.com/zesterer/ariadne.git" }
 structopt = "0.3"
 
 [features]
-default = ["rand"]
+debug = ["tao_analysis/debug"]
+default = ["rand", "debug"]
