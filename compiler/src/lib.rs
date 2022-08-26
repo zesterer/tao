@@ -20,7 +20,7 @@ use error::Error;
 
 #[derive(Clone, Debug, Default, StructOpt)]
 pub struct Options {
-    /// Add a debugging layer to stdout (tokens, ast, hir, call_graph, mir, bytecode)
+    /// Add a debugging layer to stdout (ast, hir, call_graph, mir, bytecode)
     #[structopt(long)]
     pub debug: Vec<String>,
     /// Specify an optimisation mode (none, fast, size)

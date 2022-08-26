@@ -25,6 +25,8 @@ const input = new EditorView({
 });
 
 var output = document.getElementById("output");
+var mode = document.getElementById("mode");
+var optimisation = document.getElementById("optimisation");
 
 function set_text(s) {
     input.dispatch({
@@ -46,7 +48,7 @@ function set_example(s) {
 
 function compile() {
     output.textContent = "";
-    wasm.run(input.state.doc.toString());
+    wasm.run(input.state.doc.toString(), mode.value, optimisation.value);
 }
 
 var run_button = document.getElementById("run_button");

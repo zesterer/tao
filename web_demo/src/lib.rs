@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use include_dir::{include_dir, Dir};
 use rand::prelude::*;
-use tao::{compile, SrcId, Options};
+use tao::{compile, SrcId, Options, OptMode};
 use tao_vm::{Program, Env, exec};
 use std::path::{PathBuf, Component};
 
@@ -43,12 +43,23 @@ pub fn tao_init() {
 }
 
 #[wasm_bindgen]
-pub fn run(src: &str) {
+pub fn run(src: &str, mode: &str, optimisation: &str) {
     let mut stderr = Vec::<u8>::new();
+    let debug = match mode {
+        "tokens" | "ast" | "hir" | "call_graph" | "mir" | "bytecode" => vec![mode.to_string()],
+        _ => Vec::new(),
+    };
     let prog = compile(
         src.to_string(),
         SrcId::from_path("main.tao"),
-        Options::default(),
+        Options {
+            debug: debug.clone(),
+            opt: match optimisation {
+                "fast" => OptMode::Fast,
+                "size" => OptMode::Size,
+                _ => OptMode::None,
+            },
+        },
         &mut stderr,
         |src_id| std::str::from_utf8(LIB_DIR
             .get_file(src_id.to_path())?
@@ -79,8 +90,10 @@ pub fn run(src: &str) {
 
     env.print(output);
 
-    if let Some(prog) = prog {
-        env.print(format!("Compilation succeeded."));
-        exec(&prog, &mut env);
+    if debug.is_empty() {
+        if let Some(prog) = prog {
+            env.print(format!("Compilation succeeded."));
+            exec(&prog, &mut env);
+        }
     }
 }

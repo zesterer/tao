@@ -13,7 +13,22 @@
     <div id="buttons">
         <button id="run_button">Run</button>
 
-        <select name="examples" id="examples">
+        <span>Example: </span>
+        <select name="examples" id="examples"></select>
+        <span>Mode: </span>
+        <select name="mode" id="mode">
+            <option value = "exec" selected>Execute</option>
+            <option value = "ast">AST</option>
+            <option value = "hir">HIR</option>
+            <!-- <option value = "call_graph">Call Graph</option> -->
+            <option value = "mir">MIR</option>
+            <option value = "bytecode">Bytecode</option>
+        </select>
+        <span>Optimisation: </span>
+        <select name="optimisation" id="optimisation">
+            <option value = "none" selected>None</option>
+            <option value = "fast">Fast</option>
+            <option value = "size">Size</option>
         </select>
     </div>
 
