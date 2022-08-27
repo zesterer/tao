@@ -2,8 +2,10 @@
 
 effect mut A = (A -> A) => ()
 
+$[util]
 fn mut A : (A -> A) -> mut A ~ () = f => @suspend(f)
 
+$[util]
 fn apply A : mut A ~ () -> A -> A =
     m, x => let (_, x) = (m, x)
         handle mut A with f, x => ((), x -> f)

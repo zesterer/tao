@@ -30,6 +30,7 @@ for A, B, E, e member Result A E of Map B e =
         | f, Ok a => Ok a->f!
         \ _, Err e => Err e
 
+$[util]
 fn map_err A, E, F : (E -> F) -> Result A E -> Result A F =
     | _, Ok x => Ok x
     \ f, Err e => Err e->f

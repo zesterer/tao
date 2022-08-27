@@ -9,12 +9,14 @@ for B < Show member [Char] of Add B =
     => Output = Str
     => add = fn s, b => s ++ b->show
 
+$[util]
 fn codepoint : Char -> Nat = c => @codepoint_char(c)
 
 class FromStr =
     => Err
     => from_str : Str -> Result Self Self.Err
 
+$[util]
 def parse A < FromStr : Str -> Result A A.Err = A.from_str
 
 data NatParseError =

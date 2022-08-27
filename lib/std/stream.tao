@@ -42,6 +42,7 @@ for S < Stream, B member Mapped S B of ToStream =
     => Stream = Self
     => to_stream = fn s => s
 
+$[util]
 fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
     S < ToStream,
     S.Stream < Stream,
@@ -59,11 +60,13 @@ for A member Maybe A of FromStream A =
         | [] => None
         \ [x ..] => Just x
 
+$[util]
 fn collect B < FromStream S.Item, S < Stream : S -> B =
     s => let xs = s->fix(fn rec, s => when s->S.next is
         | None => []
         \ Just (s, x) => [x .. rec(s)]) in xs->B.from_stream
 
+$[util]
 fn collect_list S < Stream : S -> [S.Item] =
     s => s->fix(fn rec, s => when s->S.next is
         | None => []
@@ -91,4 +94,5 @@ for A member Range A of Iter where
             let one : A = one in # TODO: This line is silly, figure out why we can't infer this
             Just (from, Range (from + one, to))
 
+$[util]
 fn range A : A -> A -> Range A = from, to => Range (from, to)

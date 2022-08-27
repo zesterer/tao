@@ -9,6 +9,7 @@
 ## in
 ## factorial(10)
 ## ```
+$[util]
 fn fix A, B, e : ((A -> e ~ B) -> A -> e ~ B) -> A -> e ~ B =
     \ f, n => f(f->fix, n)!
 

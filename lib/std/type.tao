@@ -10,6 +10,7 @@ for A member A of Any =
         let xs : [A] = [] in
         @type_name(xs)
 
+$[util]
 fn type_name_of A < Any =
     _ : A => A.type_name
 
@@ -17,6 +18,7 @@ fn type_name_of A < Any =
 ##
 ## This can be used to specialise the implementation of code depending on the type of an
 ## expression.
+$[util]
 fn dispatch A, B, C : A -> (B -> C) -> (A -> C) -> C =
     x, special, fallback => dispatch_map(
         x,
@@ -29,5 +31,6 @@ fn dispatch A, B, C : A -> (B -> C) -> (A -> C) -> C =
 ##
 ## This can be used to specialise the implementation of code depending on the type of an
 ## expression.
+$[util]
 fn dispatch_map A, B, C : A -> (B -> (B, C)) -> (A -> (A, C)) -> (A, C) =
     x, special, fallback => @dispatch(x, special, fallback)

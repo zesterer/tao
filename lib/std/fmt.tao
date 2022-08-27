@@ -8,6 +8,7 @@ import "str.tao"
 class Debug =
     => debug : Self -> Str
 
+$[util]
 def debug A < Debug : A -> Str = A.debug
 
 member Bool of Debug =
@@ -50,6 +51,7 @@ for A < Debug member Maybe A of Debug =
 class Show =
     => show : Self -> Str
 
+$[util]
 def show A < Show : A -> Str = A.show
 
 for A < Show member [A] of Show =

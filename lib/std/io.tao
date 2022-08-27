@@ -7,12 +7,15 @@ effect io = input + print + rand
 
 # Core monadic IO operations
 
+$[util]
 fn __print : Str -> IO () = s, uni =>
     let uni = @print(uni, s) in
     (uni, ())
 
+$[util]
 fn __input : IO Str = uni => @input(uni)
 
+$[util]
 fn __rand : Nat -> IO Nat = n, uni => @rand(uni, n)
 
 # High-level effect IO operations

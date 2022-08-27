@@ -4,6 +4,7 @@ data Go C, R =
     \ Done R
 
 ## Guaranteed to tail call
+$[util]
 fn go C, R : (C -> Go C R) -> C -> R = f, c =>
     @go(f, c)
 

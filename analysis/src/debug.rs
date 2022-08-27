@@ -39,16 +39,23 @@ impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
     fn nodes(&'a self) -> dot::Nodes<'a, Node> {
         self.ctx.defs
             .iter()
-            .map(|(id, def)| (id, *def.name))
+            .filter_map(|(id, def)| if def.attr.iter().find(|a| &**a.name == "util").is_none() {
+                Some((id, *def.name))
+            } else {
+                None
+            })
             .collect()
     }
     fn edges(&'a self) -> dot::Edges<'a, Edge> {
         fn fetch_edge(ctx: &Context, parent: Node, expr: &TyExpr, edges: &mut HashSet<Edge>) {
             if let hir::Expr::Global(global) = &**expr {
-                edges.insert((
-                    parent,
-                    (global.0, *ctx.defs.get(global.0).name),
-                ));
+                let def = ctx.defs.get(global.0);
+                if def.attr.iter().find(|a| &**a.name == "util").is_none() {
+                    edges.insert((
+                        parent,
+                        (global.0, *def.name),
+                    ));
+                }
             }
 
             expr.for_children(|e| fetch_edge(ctx, parent, e, edges));
@@ -56,8 +63,10 @@ impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
 
         let mut edges = HashSet::new();
         for (id, def) in self.ctx.defs.iter() {
-            let parent = (id, *def.name);
-            fetch_edge(self.ctx, parent, def.body.as_ref().unwrap(), &mut edges);
+            if def.attr.iter().find(|a| &**a.name == "util").is_none() {
+                let parent = (id, *def.name);
+                fetch_edge(self.ctx, parent, def.body.as_ref().unwrap(), &mut edges);
+            }
         }
         edges.into_iter().collect()
     }

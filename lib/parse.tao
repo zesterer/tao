@@ -4,14 +4,18 @@ import "std.tao"
 #     | init, _, [] => init
 #     \ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
+$[util]
 fn reduce A, B = f, (init, xs) : (A, [B]) => fold(init, f, xs)
 
+$[util]
 fn fold_r A, B =
 	| init, _, [] => init
 	\ init, f : A -> B -> ?, [x .. xs] => f(x, fold_r(init, f, xs))
 
+$[util]
 fn reduce_r A, B = f, (xs, init) : ([B], A) => fold_r(init, f, xs)
 
+$[util]
 fn map_res A, B, E : (A -> B) -> Result A E -> Result B E =
 	| f, Ok ok => Ok ok->f
 	\ _, Err err => Err err
@@ -33,15 +37,18 @@ for I < Show member ParseErr I of Show =
 
 type Parser I, O = [I] -> Result (O, [I]) (ParseErr I)
 
+$[util]
 fn filter_tok I, O : (I -> Result O (ParseErr I)) -> Parser I O =
     | _, [] => Err UnexpectedEnd
     \ f, [head .. tail] => head->f->map_res(fn o => (o, tail))
 
+$[util]
 fn just : Char -> ? =
     c => filter_tok(fn head => if head = c
         then Ok head
         else Err ExpectedFound (Just c, head))
 
+$[util]
 fn and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
 	b, a, xs => when xs->a is
 		| Err err => Err err
@@ -49,6 +56,7 @@ fn and_then I, O, U : Parser I U -> Parser I O -> Parser I (O, U) =
 			| Err err => Err err
 			\ Ok (b, xs) => Ok ((a, b), xs)
 
+$[util]
 fn or_else I, O : Parser I O -> Parser I O -> Parser I O =
 	a, b, xs => when xs->a is
 		| ok ~ Ok _ => ok
@@ -56,6 +64,7 @@ fn or_else I, O : Parser I O -> Parser I O -> Parser I O =
 			| ok ~ Ok _ => ok
 			\ err ~ Err _ => err
 
+$[util]
 fn repeated I, O : Parser I O -> Parser I [O] =
 	a, xs => when xs->a is
 		| Ok (out, tail) => when tail->repeated(a) is
@@ -63,6 +72,7 @@ fn repeated I, O : Parser I O -> Parser I [O] =
 			\ err ~ Err _ => Ok ([], tail)
 		\ Err err => Ok ([], xs)
 
+$[util]
 fn repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
 	n, a, xs => when xs->repeated(a) is
 		| ok ~ Ok (out, tail) => if out->len >= n
@@ -70,29 +80,36 @@ fn repeated_at_least I, O : Nat -> Parser I O -> Parser I [O] =
 			else Err ExpectedMore
 		\ err ~ Err _ => err
 
+$[util]
 fn map_to I, O, U : (O -> U) -> Parser I O -> Parser I U =
     f, a, xs => xs->a->map_res(fn (out, tail) => (out->f, tail))
 
+$[util]
 fn then_ignore I, O, U : Parser I U -> Parser I O -> Parser I O =
     b, a => a
     -> and_then(b)
     -> map_to(fn (a, _) => a)
 
+$[util]
 fn ignore_then I, O, U : Parser I U -> Parser I O -> Parser I U =
     b, a => a
     -> and_then(b)
     -> map_to(fn (_, b) => b)
 
+$[util]
 def whitespace = just(' ')
 	-> or_else(just('\t'))
 
+$[util]
 def whitespaces = whitespace->repeated
 
+$[util]
 fn padded O : Parser Char O -> Parser Char O =
     a => whitespaces
     -> ignore_then(a)
     -> then_ignore(whitespaces)
 
+$[util]
 fn recurse I, O : Parser I O -> Parser I O = f, xs => when xs->f is
     | Ok (out, tail) => Ok (out, tail)
     \ Err e => Err e
@@ -100,17 +117,26 @@ fn recurse I, O : Parser I O -> Parser I O = f, xs => when xs->f is
 data FindErr =
 	\ NotFound
 
+$[util]
 fn find_start : Nat -> Char -> Str -> Result Nat FindErr =
 	| idx, c, [head .. tail] => if c = head
 		then Ok idx
 		else tail->find_start(idx + 1, c)
 	\ idx, c, [] => Err NotFound
 
+$[util]
 def find = find_start(0)
 
+$[util]
 fn eoi I : Parser I () =
     | [] => Ok ((), [])
     \ [x ..] => Err ExpectedFound (None, x)
+
+$[util]
+fn do_parse I, O : Parser I O -> [I] -> Result O (ParseErr I) = parser, input =>
+    when input->(parser->and_then(eoi)) is
+        | Ok ((o, _), _) => Ok o
+        \ Err e => Err e
 
 fn char_to_num = c => "0123456789"->find(c)
 
@@ -166,11 +192,6 @@ def sum_parser = product_parser
 	-> map_to(reduce(fn a, (op, b) => Binary (op, a, b)))
 
 def expr_parser : Parser Char Expr = sum_parser
-
-fn do_parse I, O : Parser I O -> [I] -> Result O (ParseErr I) = parser, input =>
-    when input->(parser->and_then(eoi)) is
-        | Ok ((o, _), _) => Ok o
-        \ Err e => Err e
 
 fn eval =
 	| Natural x => --x

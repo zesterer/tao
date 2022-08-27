@@ -1,5 +1,6 @@
 #! Utilities for working with values.
 
+$[util]
 fn identity A : A -> A =
     \ x => x
 
@@ -8,6 +9,7 @@ fn identity A : A -> A =
 class Default =
     => default : Self
 
+$[util]
 def default A < Default : A = A.default
 
 member Nat of Default =
@@ -27,11 +29,13 @@ class From A =
 for A member A of From A =
     => from = identity
 
+$[util]
 fn from A, B < From A = a => B.from(a)
 
 class Into A =
     => into : Self -> A
 
+$[util]
 fn into A < Into B, B = a => A.into(a)
 
 for A, B < From A member A of Into B =
@@ -49,16 +53,19 @@ data Maybe A =
 for A member Maybe A of Default =
     => default = None
 
+$[util]
 fn flat_map A, B, e : (A -> e ~ Maybe B) -> Maybe A -> e ~ Maybe B =
     | _, None => None
     \ f, Just a => a->f!
 
+$[util]
 fn filter_opt A, e : (A -> e ~ Bool) -> Maybe A -> e ~ Maybe A =
     | _, None => None
     \ f, Just a => if a->f!
         then Just a
         else None
 
+$[util]
 fn unwrap_or A : A -> Maybe A -> A =
     | a, None => a
     \ _, Just a => a

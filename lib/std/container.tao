@@ -14,21 +14,25 @@ for A, B, e member Maybe A of Map B e =
         | _, None => None
         \ f, Just a => Just a->f!
 
+$[util]
 def map V < Map B e, B, e : (V.Item -> e ~ B) -> V -> e ~ V.Output = V.map
 
 class Iter =
     => Item
     => next : Self -> Maybe (Self.Item, Self)
 
+$[util]
 fn fold A, I < Iter, e : A -> (A -> I.Item -> e ~ A) -> I -> e ~ A = a, f, xs => when I.next(xs) is
     | None => a
     \ Just (x, xs) => fold(f(a, x)!, f, xs)!
 
+$[util]
 def sum C, A : C -> A where
     C < Iter with { Item = A },
     A < Zero + Add A with { Output = A },
 = fold(A.zero, fn x, y => x + y)
 
+$[util]
 def product C, A : C -> A where
     C < Iter with { Item = A },
     A < One + Mul A with { Output = A },

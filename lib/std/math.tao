@@ -5,6 +5,7 @@ import "../core/ops.tao"
 class Zero =
     => zero : Self
 
+$[util]
 def zero A < Zero : A = A.zero
 
 member Nat of Zero =
@@ -13,6 +14,7 @@ member Nat of Zero =
 class One =
     => one : Self
 
+$[util]
 def one A < One : A = A.one
 
 member Nat of One =
@@ -81,6 +83,7 @@ for A member N3 of VecData A =
     => map = fn xs, f => { x : f(xs.x), y : f(xs.y), z : f(xs.z) }
     => map2 = fn xs, ys, f => { x : f(xs.x, ys.x), y : f(xs.y, ys.y), z : f(xs.z, ys.z) }
 
+$[util]
 fn splat A, N < VecData A  : A -> Vec A N =
     e => Vec N.splat(e)
 
@@ -90,6 +93,7 @@ for A < Zero, N < VecData A member Vec A N of Zero =
 for A < One, N < VecData A member Vec A N of One =
     => one = splat(A.one)
 
+$[util]
 fn mul_add A < Num : A -> A -> A -> A =
     x, y, z => x * y + z
 

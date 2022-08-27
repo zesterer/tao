@@ -138,13 +138,14 @@ for A < Eq member [A] of Eq =
         \ _, _ => False
     => ne = fn x, y => !Self.eq(x, y)
 
-fn eq A < Eq : A -> A -> Bool = x, y => A.eq(x, y)
+#fn eq A < Eq : A -> A -> Bool = x, y => A.eq(x, y)
 
 # Ord
 
 class Ord < Eq =
     => cmp : Self -> Self -> Ordering
 
+$[util]
 fn cmp A < Ord : A -> A -> Ordering = a, b => A.cmp(a, b)
 
 data Ordering =
