@@ -191,6 +191,17 @@ Tao preserves useful information about the input code such as the span of each e
 that guide users towards solutions to their programs. Diagnostic rendering itself is done by my crate
 [Ariadne](https://www.github.com/zesterer/ariadne).
 
+### Automatic call graph generation.
+
+Tao's compiler can also automatically generate graphviz call graphs of your programs to help you understand them better.
+Here's the expression parser + REPL from `examples/calc.tao`. The call graph will automatically ignore utility functions
+(i.e: functions with a `$[util]` attribute on them), meaning that even very complex programs suddenly become
+understandable.
+
+<a href = "https://www.github.com/zesterer/tao">
+    <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/call_graph.png" alt="Call graph of an expression parser in Tao"/>
+</a>
+
 ## Commands
 
 Compile/run a `.tao` file
