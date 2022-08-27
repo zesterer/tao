@@ -38,7 +38,7 @@ data Event =
     | Grab
     \ MoveTo Location
 
-fn apply : Event -> State -> io ~ State =
+fn apply_event : Event -> State -> io ~ State =
     | Grab, state => do {
         print("There was nothing to grab!")!;
         state
@@ -74,7 +74,7 @@ fn game_loop : State -> io ~ () = state => do {
             }
     );
     when res is
-        | Next Just event => game_loop(state->apply(event)!)!
+        | Next Just event => game_loop(state->apply_event(event)!)!
         | Next None => game_loop(state)!
         \ Done => ()
 }
