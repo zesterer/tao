@@ -198,8 +198,8 @@ Here's the expression parser + REPL from `examples/calc.tao`. The call graph wil
 (i.e: functions with a `$[util]` attribute on them), meaning that even very complex programs suddenly become
 understandable.
 
-<a href = "https://www.github.com/zesterer/tao">
-    <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/call_graph.png" alt="Call graph of an expression parser in Tao"/>
+<a href = "https://raw.githubusercontent.com/zesterer/tao/master/misc/call_graph.svg">
+    <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/call_graph.svg" alt="Call graph of an expression parser in Tao"/>
 </a>
 
 ## Commands

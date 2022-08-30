@@ -1,6 +1,6 @@
 import "std.tao"
 
-$[entry]
+$[entry, util]
 fn __start : @ -> (@, ()) = uni =>
     let main : io ~ () = main in
     let ((), uni) = (main, uni) handle

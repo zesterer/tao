@@ -20,10 +20,14 @@ fn __rand : Nat -> IO Nat = n, uni => @rand(uni, n)
 
 # High-level effect IO operations
 
+$[util]
 def input : input ~ Str = @suspend(())
 
+$[util]
 fn print : Str -> print ~ () = s => @suspend(s)
 
+$[util]
 fn rand : Nat -> rand ~ Nat = max => @suspend(max)
 
+$[util]
 def rand_bool : rand ~ Bool = rand(2)! = 0

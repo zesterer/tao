@@ -199,8 +199,3 @@ fn eval =
 	| Binary (Add, a, b) => a->eval + b->eval
 	| Binary (Sub, a, b) => a->eval - b->eval
 	\ Binary (Mul, a, b) => a->eval * b->eval
-
-# $[main]
-# def main =
-#     let parser = expr_parser->map_to(eval) in
-#     parser("2 * (5 - 1)")
