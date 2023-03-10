@@ -102,10 +102,10 @@ impl AbstractPat {
         Self::inexhaustive_pat(ctx, ty, &mut std::iter::once(self), get_gen_ty).is_some()
     }
 
-    fn inexhaustive_pat<'a>(
+    fn inexhaustive_pat(
         ctx: &Context,
         ty: TyId,
-        mut filter: &mut dyn Iterator<Item = &'a AbstractPat>,
+        mut filter: &mut dyn Iterator<Item = &AbstractPat>,
         get_gen_ty: Option<&dyn Fn(usize) -> Option<TyId>>,
     ) -> Option<ExamplePat> {
         let ty = match ctx.tys.get(ty) {
