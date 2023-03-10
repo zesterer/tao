@@ -237,30 +237,29 @@ impl Classes {
             member: TyId,
             ty: ConTyId,
             gen_ty_links: &mut HashMap<usize, ConTyId>,
-            gen_eff_links: &mut HashMap<usize, ConEffectId>,
         ) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
                 (Ty::Gen(idx, _), _) => *gen_ty_links.entry(idx).or_insert(ty) == ty,
                 (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
                 (Ty::List(x), ConTy::List(y)) => {
-                    covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)
+                    covers(hir, ctx, x, *y, gen_ty_links)
                 }
                 // TODO: Care about field names!
                 (Ty::Record(xs, _), ConTy::Record(ys)) if xs.len() == ys.len() => xs
                     .into_iter()
                     .zip(ys.iter())
-                    .all(|((_, x), (_, y))| covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)),
+                    .all(|((_, x), (_, y))| covers(hir, ctx, x, *y, gen_ty_links)),
                 (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
-                    covers(hir, ctx, x_i, *y_i, gen_ty_links, gen_eff_links)
-                        && covers(hir, ctx, x_o, *y_o, gen_ty_links, gen_eff_links)
+                    covers(hir, ctx, x_i, *y_i, gen_ty_links)
+                        && covers(hir, ctx, x_o, *y_o, gen_ty_links)
                 }
                 (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0 .0 && xs.len() == y.0 .1.len() => xs
                     .into_iter()
                     .zip(y.0 .1.iter())
-                    .all(|(x, y)| covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)),
+                    .all(|(x, y)| covers(hir, ctx, x, *y, gen_ty_links)),
                 // Flatten empty effects
                 (_, ConTy::Effect(eff, ty)) if eff.is_empty() => {
-                    covers(hir, ctx, member, *ty, gen_ty_links, gen_eff_links)
+                    covers(hir, ctx, member, *ty, gen_ty_links)
                 }
                 (Ty::Effect(_, _), ConTy::Effect(_, _)) => todo!(),
                 (Ty::Error(_), _) => panic!("Error ty during monomorphisation"),
@@ -308,7 +307,6 @@ impl Classes {
                             member.member,
                             ty,
                             &mut gen_ty_links,
-                            &mut gen_eff_links,
                         ) && member.gen_tys.iter().zip(gen_tys.iter()).all(
                             |(member_gen_ty, gen_ty)| {
                                 covers(
@@ -317,7 +315,6 @@ impl Classes {
                                     *member_gen_ty,
                                     *gen_ty,
                                     &mut gen_ty_links,
-                                    &mut gen_eff_links,
                                 )
                             },
                         ) && member.gen_effs.iter().zip(gen_effs.iter()).all(
