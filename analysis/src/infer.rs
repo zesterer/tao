@@ -1746,7 +1746,7 @@ impl<'a> Infer<'a> {
                 // throughout the chain.
                 let data = self.ctx.datas.get_data(data);
                 // Field access on data only works for single-variant, record datatypes
-                if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
+                if let (Some((_, ty)), true) = (data.cons.first(), data.cons.len() == 1) {
                     if let Ty::Record(fields, _) = self.ctx.tys.get(*ty) {
                         if let Some(field_ty) = fields.get(field_name) {
                             let field_ty = self.instantiate(
