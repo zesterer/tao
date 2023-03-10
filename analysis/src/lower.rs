@@ -834,7 +834,7 @@ impl ToHir for ast::Expr {
 
     fn to_hir(
         self: &SrcNode<Self>,
-        cfg: &Self::Cfg,
+        _cfg: &Self::Cfg,
         infer: &mut Infer,
         scope: &Scope,
     ) -> InferNode<Self::Output> {
@@ -849,7 +849,7 @@ impl ToHir for ast::Expr {
                 )
             }
             ast::Expr::Local(local) => {
-                if let Some((ty, rec)) = scope.find(infer, self.span(), &local) {
+                if let Some((ty, rec)) = scope.find(infer, self.span(), local) {
                     if let Some((def_id, gen_tys, gen_effs)) = rec {
                         (
                             TyInfo::Ref(ty),
@@ -870,7 +870,7 @@ impl ToHir for ast::Expr {
             ast::Expr::Tuple(items) => {
                 let items = items
                     .iter()
-                    .map(|item| item.to_hir(cfg, infer, scope))
+                    .map(|item| item.to_hir(_cfg, infer, scope))
                     .collect::<Vec<_>>();
                 (
                     TyInfo::tuple(items.iter().map(|item| item.meta().1)),
@@ -884,7 +884,7 @@ impl ToHir for ast::Expr {
                 let items = items
                     .iter()
                     .map(|item| {
-                        let item = item.to_hir(cfg, infer, scope);
+                        let item = item.to_hir(_cfg, infer, scope);
                         infer.make_flow(item.meta().1, item_ty, item.meta().0);
                         item
                     })
@@ -893,7 +893,7 @@ impl ToHir for ast::Expr {
                 let tails = tails
                     .iter()
                     .map(|tail| {
-                        let tail = tail.to_hir(cfg, infer, scope);
+                        let tail = tail.to_hir(_cfg, infer, scope);
                         infer.make_flow(tail.meta().1, list_ty, tail.meta().0);
                         tail
                     })
@@ -904,7 +904,7 @@ impl ToHir for ast::Expr {
             ast::Expr::Record(fields) => {
                 let fields = fields
                     .iter()
-                    .map(|(name, field)| (name.clone(), field.to_hir(cfg, infer, scope)))
+                    .map(|(name, field)| (name.clone(), field.to_hir(_cfg, infer, scope)))
                     .collect::<BTreeMap<_, _>>();
                 let tys = fields
                     .iter()
@@ -913,7 +913,7 @@ impl ToHir for ast::Expr {
                 (TyInfo::Record(tys, false), hir::Expr::Record(fields, false))
             }
             ast::Expr::Access(record, field) => {
-                let record = record.to_hir(cfg, infer, scope);
+                let record = record.to_hir(_cfg, infer, scope);
                 let field_ty = infer.unknown(self.span());
                 infer.make_access(record.meta().1, field.clone(), field_ty);
                 // TODO: don't use `Ref` to link types
@@ -924,7 +924,7 @@ impl ToHir for ast::Expr {
             }
             ast::Expr::Unary(op, a) => {
                 if let ast::UnaryOp::Propagate = &**op {
-                    let a = a.to_hir(cfg, infer, scope);
+                    let a = a.to_hir(_cfg, infer, scope);
                     let out_ty = infer.unknown(self.span());
 
                     let basin_eff = if let Some(basin_eff) = scope.last_basin() {
@@ -951,7 +951,7 @@ impl ToHir for ast::Expr {
                         ),
                     )
                 } else {
-                    let a = a.to_hir(cfg, infer, scope);
+                    let a = a.to_hir(_cfg, infer, scope);
                     let output_ty = infer.unknown(self.span());
 
                     let func = infer.insert(op.span(), TyInfo::Func(a.meta().1, output_ty));
@@ -993,8 +993,8 @@ impl ToHir for ast::Expr {
                 }
             }
             ast::Expr::Binary(op, a, b) => {
-                let a = a.to_hir(cfg, infer, scope);
-                let b = b.to_hir(cfg, infer, scope);
+                let a = a.to_hir(_cfg, infer, scope);
+                let b = b.to_hir(_cfg, infer, scope);
                 let output_ty = infer.unknown(self.span());
 
                 let (class_id, field, class_gen_tys) = match &**op {
@@ -1133,7 +1133,7 @@ impl ToHir for ast::Expr {
                     }
                 }
 
-                let expr = fold(then, &mut bindings.iter(), cfg, infer, scope);
+                let expr = fold(then, &mut bindings.iter(), _cfg, infer, scope);
                 span = expr.meta().0;
                 (TyInfo::Ref(expr.meta().1), expr.into_inner())
             }
@@ -1154,17 +1154,17 @@ impl ToHir for ast::Expr {
                 if is_err {
                     (TyInfo::Error(ErrorReason::Unknown), hir::Expr::Error)
                 } else {
-                    let pred = tupleify_expr(preds, cfg, infer, scope);
+                    let pred = tupleify_expr(preds, _cfg, infer, scope);
 
                     let output_ty = infer.unknown(self.span());
 
                     let arms = arms
                         .iter()
                         .map(|(bindings, body)| {
-                            let binding = tupleify_binding(bindings, cfg, infer, scope);
+                            let binding = tupleify_binding(bindings, _cfg, infer, scope);
                             infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
                             let body = body.to_hir(
-                                cfg,
+                                _cfg,
                                 infer,
                                 &scope.with_many(&binding.get_binding_tys()),
                             );
@@ -1187,14 +1187,14 @@ impl ToHir for ast::Expr {
                 if let Some(bool_data) = infer.ctx().datas.lang.r#bool {
                     let pred_ty = infer.insert(pred.span(), TyInfo::Data(bool_data, Vec::new()));
                     let output_ty = infer.unknown(self.span());
-                    let pred = pred.to_hir(cfg, infer, scope);
+                    let pred = pred.to_hir(_cfg, infer, scope);
                     infer.make_flow(
                         pred.meta().1,
                         pred_ty,
                         EqInfo::new(self.span(), "Conditions must be booleans".to_string()),
                     );
-                    let a = a.to_hir(cfg, infer, scope);
-                    let b = b.to_hir(cfg, infer, scope);
+                    let a = a.to_hir(_cfg, infer, scope);
+                    let b = b.to_hir(_cfg, infer, scope);
                     infer.make_flow(
                         a.meta().1,
                         output_ty,
@@ -1303,7 +1303,7 @@ impl ToHir for ast::Expr {
                                     .collect(),
                                 self.span(),
                             ),
-                            cfg,
+                            _cfg,
                             infer,
                             &scope.with_many(&pseudos.clone()),
                         );
@@ -1311,10 +1311,10 @@ impl ToHir for ast::Expr {
                         let arms = arms
                             .iter()
                             .map(|(bindings, body)| {
-                                let binding = tupleify_binding(bindings, cfg, infer, &scope);
+                                let binding = tupleify_binding(bindings, _cfg, infer, &scope);
                                 infer.make_flow(pred.meta().1, binding.meta().1, binding.meta().0);
                                 let body = body.to_hir(
-                                    cfg,
+                                    _cfg,
                                     infer,
                                     &scope.with_many(&binding.get_binding_tys()),
                                 );
@@ -1361,8 +1361,8 @@ impl ToHir for ast::Expr {
                 }
             }
             ast::Expr::Apply(f, param) => {
-                let f = f.to_hir(cfg, infer, scope);
-                let param = param.to_hir(cfg, infer, scope);
+                let f = f.to_hir(_cfg, infer, scope);
+                let param = param.to_hir(_cfg, infer, scope);
                 let input_ty = infer.unknown(param.meta().0);
                 let output_ty = infer.unknown(self.span());
                 let func = infer.insert(f.meta().0, TyInfo::Func(input_ty, output_ty));
@@ -1441,7 +1441,7 @@ impl ToHir for ast::Expr {
                         )
                     };
 
-                    let inner = inner.to_hir(cfg, infer, scope);
+                    let inner = inner.to_hir(_cfg, infer, scope);
                     infer.make_flow(inner.meta().1, inner_ty, self.span());
 
                     (
@@ -1473,7 +1473,7 @@ impl ToHir for ast::Expr {
 
                     let mut args = args
                         .iter()
-                        .map(|arg| arg.to_hir(cfg, infer, scope))
+                        .map(|arg| arg.to_hir(_cfg, infer, scope))
                         .collect::<Vec<_>>();
 
                     let unary_ops = [
@@ -1809,11 +1809,11 @@ impl ToHir for ast::Expr {
                 }
             }
             ast::Expr::Update(record, fields) => {
-                let record = record.to_hir(cfg, infer, scope);
+                let record = record.to_hir(_cfg, infer, scope);
                 let fields = fields
                     .iter()
                     .map(|(name, field)| {
-                        let field = field.to_hir(cfg, infer, scope);
+                        let field = field.to_hir(_cfg, infer, scope);
                         infer.make_update(record.meta().1, name.clone(), field.meta().1);
                         (name.clone(), field)
                     })
@@ -1830,7 +1830,7 @@ impl ToHir for ast::Expr {
                 // Collect effects into this basin
                 let scope = scope.with_basin(eff);
 
-                let expr = gen_block(infer, cfg, init, last, &scope);
+                let expr = gen_block(infer, _cfg, init, last, &scope);
 
                 let opaque = infer.opaque(self.span(), false);
                 (
@@ -1839,11 +1839,11 @@ impl ToHir for ast::Expr {
                 )
             }
             ast::Expr::Block(init, last) => {
-                let expr = gen_block(infer, cfg, init, last, scope);
+                let expr = gen_block(infer, _cfg, init, last, scope);
                 (TyInfo::Ref(expr.meta().1), expr.into_inner())
             }
             ast::Expr::Handle { expr, handlers } => {
-                let expr = expr.to_hir(cfg, infer, scope);
+                let expr = expr.to_hir(_cfg, infer, scope);
                 let out_ty = infer.unknown(self.span());
                 let mut state_ty = None;
                 handlers
@@ -1856,11 +1856,11 @@ impl ToHir for ast::Expr {
                              state,
                              recv,
                          }| {
-                            let send = send.to_hir(cfg, infer, scope);
+                            let send = send.to_hir(_cfg, infer, scope);
                             let state =
-                                state.as_ref().map(|state| state.to_hir(cfg, infer, scope));
+                                state.as_ref().map(|state| state.to_hir(_cfg, infer, scope));
                             let recv = recv.to_hir(
-                                cfg,
+                                _cfg,
                                 infer,
                                 &scope.with_many(&send.get_binding_tys()).with_many(
                                     &state
