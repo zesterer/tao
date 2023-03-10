@@ -1219,7 +1219,7 @@ impl<'a> Infer<'a> {
         match check.1 {
             Some(true) => Some(res.is_ok()),
             None => {
-                if !res.is_ok() {
+                if res.is_err() {
                     Some(false)
                 } else {
                     None
@@ -1241,7 +1241,7 @@ impl<'a> Infer<'a> {
         match check.1 {
             Some(true) => Some(res.is_ok()),
             None => {
-                if !res.is_ok() {
+                if res.is_err() {
                     Some(false)
                 } else {
                     None
