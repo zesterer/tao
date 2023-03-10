@@ -2455,7 +2455,8 @@ impl<'a> Infer<'a> {
                             .into_iter()
                             .zip(y_gen_tys.iter())
                             .try_fold(true, |a, (x, y)| {
-                                Ok(a && self.covers_var(x, *y, ty_gens, eff_gens, todo)?)
+                                self.covers_var(x, *y, ty_gens, eff_gens, todo)
+                                    .map(|b| a && b)
                             })
                             .unwrap_or(false),
                         (x, y) => {
