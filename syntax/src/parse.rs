@@ -1086,7 +1086,7 @@ pub fn data_parser() -> impl Parser<ast::Data> {
                     )]))
                 })
                 .unwrap_or_else(|ty| Some(vec![(name.clone(), ty)]))
-                .unwrap_or_else(|| Vec::new()),
+                .unwrap_or_else(Vec::new),
             name,
         })
         .boxed()
