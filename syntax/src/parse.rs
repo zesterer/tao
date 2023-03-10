@@ -527,7 +527,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             |_| None,
         )
         .map(|x| match x {
-            Some((items, tails)) => ast::Expr::List(items, tails.unwrap_or_else(Vec::new)),
+            Some((items, tails)) => ast::Expr::List(items, tails.unwrap_or_default()),
             None => ast::Expr::Error,
         })
         .labelled("list");
@@ -1086,7 +1086,7 @@ pub fn data_parser() -> impl Parser<ast::Data> {
                     )]))
                 })
                 .unwrap_or_else(|ty| Some(vec![(name.clone(), ty)]))
-                .unwrap_or_else(Vec::new),
+                .unwrap_or_default(),
             name,
         })
         .boxed()
