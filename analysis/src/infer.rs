@@ -292,7 +292,7 @@ impl<'a> Infer<'a> {
     pub fn new(ctx: &'a mut Context, gen_scope: Option<GenScopeId>) -> Self {
         Self {
             ctx,
-            gen_scope: gen_scope,
+            gen_scope,
             vars: Vec::new(),
             class_vars: Vec::new(),
             effect_vars: Vec::new(),
