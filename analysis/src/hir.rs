@@ -239,26 +239,26 @@ impl<M: Meta> Expr<M> {
                 tails.iter().for_each(|tail| f(tail));
             }
             Expr::Record(fields, _) => fields.iter().for_each(|(_, field)| f(field)),
-            Expr::Access(record, _) => f(&record),
+            Expr::Access(record, _) => f(record),
             Expr::Match(_, pred, arms) => {
-                f(&pred);
+                f(pred);
                 arms.iter().for_each(|(_, arm)| f(arm));
             }
-            Expr::Func(_, body) => f(&body),
+            Expr::Func(_, body) => f(body),
             Expr::Apply(func, arg) => {
-                f(&func);
-                f(&arg);
+                f(func);
+                f(arg);
             }
-            Expr::Cons(_, _, inner) => f(&inner),
+            Expr::Cons(_, _, inner) => f(inner),
             Expr::Intrinsic(_, args) => args.iter().for_each(|arg| f(arg)),
             Expr::Update(record, fields) => {
-                f(&record);
+                f(record);
                 fields.iter().for_each(|(_, field)| f(field));
             }
-            Expr::Basin(_, inner) => f(&inner),
-            Expr::Suspend(_, inner) => f(&inner),
+            Expr::Basin(_, inner) => f(inner),
+            Expr::Suspend(_, inner) => f(inner),
             Expr::Handle { expr, handlers } => {
-                f(&expr);
+                f(expr);
                 handlers.iter().for_each(|handler| f(&handler.recv));
             }
         }
