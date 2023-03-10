@@ -1,5 +1,7 @@
 #![feature(option_zip, trait_alias)]
 
+#![allow(clippy::type_complexity)]
+
 pub mod ast;
 pub mod error;
 pub mod node;
