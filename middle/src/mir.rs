@@ -1,7 +1,3 @@
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
 //! The MIR is *not* correct (in the context of Tao's abstract machine) by construction. See the 'SAFETY' notes.
 
 use super::*;
