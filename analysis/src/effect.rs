@@ -106,11 +106,7 @@ impl Effects {
     }
 
     pub fn check_lang_items(&self) -> Vec<Error> {
-        let errors = Vec::new();
-
-        // if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
-
-        errors
+        Vec::new()
     }
 
     pub fn define_send_recv(&mut self, id: EffectDeclId, send: TyId, recv: TyId) {
