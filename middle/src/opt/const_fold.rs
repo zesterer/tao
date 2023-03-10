@@ -272,7 +272,7 @@ impl ConstFold {
             e => todo!("{:?}", e),
         };
 
-        let partial = match partial {
+        match partial {
             // If the partial output of this expression is a local found in the enclosing expression, just refer to it
             // directly.
             Partial::Unknown(local)
@@ -294,9 +294,7 @@ impl ConstFold {
                 }
                 partial
             }
-        };
-
-        partial
+        }
     }
 }
 
