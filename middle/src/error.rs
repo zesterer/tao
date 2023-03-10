@@ -14,10 +14,10 @@ impl Error {
 
         let (msg, spans, notes) = match self {
             Error::NoEntryPoint(root_span) => (
-                format!("No main definition"),
+                "No main definition".to_string(),
                 vec![(
                     root_span,
-                    format!("Does not contain a definition marked as the main entry point"),
+                    "Does not contain a definition marked as the main entry point".to_string(),
                     Color::Red,
                 )],
                 vec![format!(
@@ -26,24 +26,24 @@ impl Error {
                 )],
             ),
             Error::MultipleEntryPoints(a, b) => (
-                format!("Multiple entry points"),
+                "Multiple entry points".to_string(),
                 vec![
-                    (a, format!("First entry point is here"), Color::Red),
-                    (b, format!("Second entry point is here"), Color::Red),
+                    (a, "First entry point is here".to_string(), Color::Red),
+                    (b, "Second entry point is here".to_string(), Color::Red),
                 ],
-                vec![format!("A program may only have a single entry point")],
+                vec!["A program may only have a single entry point".to_string()],
             ),
             Error::GenericEntryPoint(name, gen, entry) => (
                 format!("Entry point {} cannot be generic", (*name).fg(Color::Red)),
                 vec![
-                    (gen, format!("Generics are not allowed here"), Color::Red),
+                    (gen, "Generics are not allowed here".to_string(), Color::Red),
                     (
                         entry,
-                        format!("Declared as an entry point because of this attribute"),
+                        "Declared as an entry point because of this attribute".to_string(),
                         Color::Yellow,
                     ),
                 ],
-                vec![format!("A program cannot be generic over types")],
+                vec!["A program cannot be generic over types".to_string()],
             ),
         };
 
