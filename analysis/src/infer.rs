@@ -1406,8 +1406,7 @@ impl<'a> Infer<'a> {
                 } else if y_effs.len() == 1 {
                     x_effs
                         .iter()
-                        .map(|x| Self::flow_effect_inst(infer, (*x, x_ty), (y_effs[0], y_ty)))
-                        .collect::<Result<_, _>>()?;
+                        .try_for_each(|x| Self::flow_effect_inst(infer, (*x, x_ty), (y_effs[0], y_ty)))?;
                     infer.set_effect_info(x, EffectInfo::Ref(y));
                     Ok(())
                 } else if infer.make_check_eff((x, x_ty), (y, y_ty)) {
