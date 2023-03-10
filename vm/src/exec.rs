@@ -148,7 +148,6 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
     };
     let mut handlers: Vector<(_, Value, usize)> = Vector::new();
 
-    let mut tick = 0u64;
     loop {
         let mut next_addr = addr.incr();
 
