@@ -85,14 +85,13 @@ impl Pass for RemoveUnusedBindings {
                     } else if arms
                         .get(0)
                         .map_or(false, |(b, _)| matches!(&b.pat, Pat::Wildcard))
+                        && !pred.may_have_effect()
                     {
-                        if !pred.may_have_effect() {
-                            let (arm, mut body) = arms.remove(0);
-                            if let Some(name) = arm.name {
-                                body.inline_local(name, pred);
-                            }
-                            *expr = body.into_inner();
+                        let (arm, mut body) = arms.remove(0);
+                        if let Some(name) = arm.name {
+                            body.inline_local(name, pred);
                         }
+                        *expr = body.into_inner();
                     }
                 }
                 Expr::Func(arg, body) => {
