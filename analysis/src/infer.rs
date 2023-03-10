@@ -1903,10 +1903,10 @@ impl<'a> Infer<'a> {
                 }
             }
             Constraint::ClassField(ty, class, field, field_ty, span) => {
-                self.try_resolve_class_from_field(ty, class, field.clone(), field_ty, span)
+                self.try_resolve_class_from_field(ty, class, field, field_ty, span)
             }
             Constraint::ClassAssoc(ty, class, assoc, assoc_ty, span) => {
-                self.try_resolve_class_from_assoc(ty, class, assoc.clone(), assoc_ty, span)
+                self.try_resolve_class_from_assoc(ty, class, assoc, assoc_ty, span)
             }
             Constraint::EffectSendRecv(eff, send, recv, span) => match self.follow_effect_inst(eff)
             {
