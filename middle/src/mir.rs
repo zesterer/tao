@@ -261,7 +261,9 @@ impl Binding {
     }
 
     fn visit_bindings(self: &MirNode<Self>, bind: &mut impl FnMut(Local, &Repr)) {
-        self.name.map(|name| bind(name, self.meta()));
+        if let Some(name) = self.name {
+            bind(name, self.meta());
+        }
         match &self.pat {
             Pat::Wildcard => {}
             Pat::Literal(_) => {}
