@@ -583,7 +583,7 @@ impl ToHir for ast::Binding {
                             nat,
                             EqInfo::new(
                                 self.span(),
-                                format!("Only natural numbers support arithmetic patterns"),
+                                "Only natural numbers support arithmetic patterns".to_string(),
                             ),
                         );
                         (
@@ -1173,7 +1173,7 @@ impl ToHir for ast::Expr {
                                 output_ty,
                                 EqInfo::new(
                                     self.span(),
-                                    format!("Branches must produce compatible values"),
+                                    "Branches must produce compatible values".to_string(),
                                 ),
                             );
                             (binding, body)
@@ -1191,7 +1191,7 @@ impl ToHir for ast::Expr {
                     infer.make_flow(
                         pred.meta().1,
                         pred_ty,
-                        EqInfo::new(self.span(), format!("Conditions must be booleans")),
+                        EqInfo::new(self.span(), "Conditions must be booleans".to_string()),
                     );
                     let a = a.to_hir(cfg, infer, scope);
                     let b = b.to_hir(cfg, infer, scope);
@@ -1200,7 +1200,7 @@ impl ToHir for ast::Expr {
                         output_ty,
                         EqInfo::new(
                             self.span(),
-                            format!("Branches must produce compatible values"),
+                            "Branches must produce compatible values".to_string(),
                         ),
                     );
                     infer.make_flow(
@@ -1208,7 +1208,7 @@ impl ToHir for ast::Expr {
                         output_ty,
                         EqInfo::new(
                             self.span(),
-                            format!("Branches must produce compatible values"),
+                            "Branches must produce compatible values".to_string(),
                         ),
                     );
                     let unit = InferNode::new(
@@ -1323,7 +1323,7 @@ impl ToHir for ast::Expr {
                                     output_ty,
                                     EqInfo::new(
                                         self.span(),
-                                        format!("Branches must produce compatible values"),
+                                        "Branches must produce compatible values".to_string(),
                                     ),
                                 );
                                 (binding, body)
@@ -1369,14 +1369,14 @@ impl ToHir for ast::Expr {
                 infer.make_flow(
                     f.meta().1,
                     func,
-                    EqInfo::new(self.span(), format!("Only functions are callable")),
+                    EqInfo::new(self.span(), "Only functions are callable".to_string()),
                 );
                 infer.make_flow(
                     param.meta().1,
                     input_ty,
                     EqInfo::new(
                         param.meta().0,
-                        format!("Functions may only be called with compatible arguments"),
+                        "Functions may only be called with compatible arguments".to_string(),
                     ),
                 );
 
