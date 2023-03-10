@@ -1,0 +1,19 @@
+on:
+  pull_request:
+
+name: Pull Request Checks
+
+jobs:
+  commit-lint:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - run: pip install gitlint
+      - run: gitlint --commits $(git merge-base origin/master HEAD)..HEAD
+
