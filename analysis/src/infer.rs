@@ -1361,7 +1361,7 @@ impl<'a> Infer<'a> {
                 if x_effs.iter().all(|x| {
                     y_effs
                         .iter()
-                        .any(|y| Self::flow_effect_inst(infer, (*x, x_ty), (*y, y_ty)) == Ok(()))
+                        .any(|y| Self::flow_effect_inst(infer, (*x, x_ty), (*y, y_ty)).is_ok())
                 }) {
                     Ok(())
                 } else if infer.make_check_eff((x, x_ty), (y, y_ty)) {
@@ -1404,9 +1404,9 @@ impl<'a> Infer<'a> {
                         Err((x_ty, y_ty))
                     }
                 } else if y_effs.len() == 1 {
-                    x_effs
-                        .iter()
-                        .try_for_each(|x| Self::flow_effect_inst(infer, (*x, x_ty), (y_effs[0], y_ty)))?;
+                    x_effs.iter().try_for_each(|x| {
+                        Self::flow_effect_inst(infer, (*x, x_ty), (y_effs[0], y_ty))
+                    })?;
                     infer.set_effect_info(x, EffectInfo::Ref(y));
                     Ok(())
                 } else if infer.make_check_eff((x, x_ty), (y, y_ty)) {
@@ -1437,11 +1437,11 @@ impl<'a> Infer<'a> {
             (ClassInfo::Unknown, _) => {
                 infer.set_class_info(x, ClassInfo::Ref(y));
                 Ok(())
-            },
+            }
             (_, ClassInfo::Unknown) => {
                 infer.set_class_info(y, ClassInfo::Ref(x));
                 Ok(())
-            },
+            }
             (ClassInfo::Known(class_id_x, xs, e_xs), ClassInfo::Known(class_id_y, ys, e_ys))
                 if class_id_x == class_id_y =>
             {
