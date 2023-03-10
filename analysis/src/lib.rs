@@ -1,5 +1,7 @@
 #![feature(arbitrary_self_types, option_zip, never_type, let_else, let_chains)]
 
+#![allow(clippy::result_unit_err)]
+
 pub mod class;
 pub mod concrete;
 pub mod context;
