@@ -2457,7 +2457,7 @@ impl<'a> Infer<'a> {
                             .try_fold(true, |a, (x, y)| {
                                 Ok(a && self.covers_var(x, *y, ty_gens, eff_gens, todo)?)
                             })
-                            .unwrap_or_else(|()| false),
+                            .unwrap_or(false),
                         (x, y) => {
                             dbg!("{:?} covers {:?}", x, y);
                             false
