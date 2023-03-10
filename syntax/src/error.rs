@@ -29,7 +29,7 @@ impl Error {
     }
 
     pub fn while_parsing(mut self, span: Span, structure: &'static str) -> Self {
-        self.while_parsing = self.while_parsing.or_else(|| Some((span, structure)));
+        self.while_parsing = self.while_parsing.or(Some((span, structure)));
         self
     }
 }
