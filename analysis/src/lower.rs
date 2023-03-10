@@ -31,10 +31,6 @@ impl<'a> Scope<'a> {
         Self::Empty
     }
 
-    fn with(&self, name: SrcNode<Ident>, ty: TyVar) -> Scope<'_> {
-        Scope::Binding(self, name, ty)
-    }
-
     fn with_many<'b>(&'b self, many: &'b [(SrcNode<Ident>, TyVar)]) -> Scope<'b> {
         Scope::Many(self, many)
     }
