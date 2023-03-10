@@ -13,7 +13,7 @@ impl Error {
         let (msg, spans, notes) = match self {
             Error::CannotImport(path) => (
                 format!("Cannot import {}, no such file", (*path).fg(Color::Red)),
-                vec![(path.span(), format!("Does not exist"), Color::Red)],
+                vec![(path.span(), "Does not exist".to_string(), Color::Red)],
                 vec![format!("The file {} must exist", (*path).fg(Color::Yellow))],
             ),
         };
