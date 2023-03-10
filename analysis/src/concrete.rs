@@ -155,8 +155,7 @@ impl ConContext {
                 if def
                     .attr
                     .iter()
-                    .find(|attr| attr.name.as_str() == "entry")
-                    .is_some()
+                    .any(|attr| attr.name.as_str() == "entry")
                 {
                     Some((id, def))
                 } else {

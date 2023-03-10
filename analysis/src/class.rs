@@ -104,37 +104,37 @@ impl Classes {
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
             {
-                if lang.iter().find(|a| &**a.name == "not").is_some() {
+                if lang.iter().any(|a| &**a.name == "not") {
                     self.lang.not = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "neg").is_some() {
+                if lang.iter().any(|a| &**a.name == "neg") {
                     self.lang.neg = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "add").is_some() {
+                if lang.iter().any(|a| &**a.name == "add") {
                     self.lang.add = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "sub").is_some() {
+                if lang.iter().any(|a| &**a.name == "sub") {
                     self.lang.sub = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "mul").is_some() {
+                if lang.iter().any(|a| &**a.name == "mul") {
                     self.lang.mul = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "div").is_some() {
+                if lang.iter().any(|a| &**a.name == "div") {
                     self.lang.div = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "eq").is_some() {
+                if lang.iter().any(|a| &**a.name == "eq") {
                     self.lang.eq = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "ord_ext").is_some() {
+                if lang.iter().any(|a| &**a.name == "ord_ext") {
                     self.lang.ord_ext = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "and_").is_some() {
+                if lang.iter().any(|a| &**a.name == "and_") {
                     self.lang.and = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "or_").is_some() {
+                if lang.iter().any(|a| &**a.name == "or_") {
                     self.lang.or = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "join").is_some() {
+                if lang.iter().any(|a| &**a.name == "join") {
                     self.lang.join = Some(id);
                 }
             }
