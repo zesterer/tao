@@ -807,7 +807,7 @@ impl Context {
             // If the type hint is fully specified, check it
             let ty_hint = if def.ty_hint.is_fully_specified() {
                 let mut infer = Infer::new(&mut this, Some(gen_scope))
-                    .with_debug(attr.iter().find(|a| **a.name == "ty_debug").is_some())
+                    .with_debug(attr.iter().any(|a| **a.name == "ty_debug"))
                     .with_gen_scope_implied();
                 let ty_hint = def
                     .ty_hint
@@ -962,7 +962,7 @@ impl Context {
             let gen_scope = this.defs.get(id).gen_scope;
 
             let mut infer = Infer::new(&mut this, Some(gen_scope))
-                .with_debug(attr.iter().find(|a| **a.name == "ty_debug").is_some())
+                .with_debug(attr.iter().any(|a| **a.name == "ty_debug"))
                 .with_gen_scope_implied();
 
             let ty_hint = def

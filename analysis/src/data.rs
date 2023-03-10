@@ -123,10 +123,10 @@ impl Datas {
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
             {
-                if lang.iter().find(|a| &**a.name == "go").is_some() {
+                if lang.iter().any(|a| &**a.name == "go") {
                     self.lang.go = Some(id);
                 }
-                if lang.iter().find(|a| &**a.name == "bool").is_some() {
+                if lang.iter().any(|a| &**a.name == "bool") {
                     self.lang.r#bool = Some(id);
                 }
             }
