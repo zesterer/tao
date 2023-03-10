@@ -1163,9 +1163,9 @@ impl<'a> Infer<'a> {
     fn collect_eff_insts(&self, var: EffectVar) -> Vec<EffectInstVar> {
         match self.follow_effect(var) {
             EffectInfo::Ref(_) => unreachable!(),
-            EffectInfo::Open(effs) => effs.clone(),
+            EffectInfo::Open(effs) => effs,
             EffectInfo::Closed(effs, opener) => {
-                let mut effs = effs.clone();
+                let mut effs = effs;
                 if let Some(opener) = opener {
                     effs.append(&mut self.collect_eff_insts(opener))
                 }
