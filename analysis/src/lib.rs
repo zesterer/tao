@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types, option_zip, never_type, let_else, let_chains)]
+#![feature(arbitrary_self_types, option_zip, never_type, let_chains)]
 
 #![allow(clippy::result_unit_err)]
 #![allow(clippy::type_complexity)]
