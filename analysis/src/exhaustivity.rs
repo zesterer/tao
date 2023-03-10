@@ -1,6 +1,6 @@
 use super::*;
 use ranges::Ranges;
-use std::{cmp::Ord, fmt, ops::Range};
+use std::{fmt};
 
 #[derive(Debug)]
 pub enum AbstractPat {

@@ -2,7 +2,7 @@ use include_dir::{include_dir, Dir};
 use rand::prelude::*;
 use std::path::{Component, PathBuf};
 use tao::{compile, OptMode, Options, SrcId};
-use tao_vm::{exec, Env, Program};
+use tao_vm::{exec, Env};
 use wasm_bindgen::prelude::*;
 
 static LIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../lib");

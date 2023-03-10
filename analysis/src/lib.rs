@@ -46,5 +46,5 @@ pub use tao_util::index::{Id, Index};
 
 use hashbrown::{HashMap, HashSet};
 use internment::Intern;
-use std::{collections::BTreeMap, fmt, marker::PhantomData};
+use std::{collections::BTreeMap, fmt};
 use tao_syntax::{ast, Node, Span, SrcId, SrcNode};

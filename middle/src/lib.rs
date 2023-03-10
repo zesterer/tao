@@ -18,13 +18,13 @@ pub use crate::{
 };
 pub use tao_analysis::Ident;
 
-use hashbrown::{HashMap, HashSet};
-use internment::Intern;
+use hashbrown::{HashSet};
+
 use std::collections::{BTreeMap, BTreeSet};
 use tao_analysis::{
-    data::DataId, hir, ty, ConBinding, ConContext, ConDataId, ConEffectId, ConExpr, ConProc,
-    ConProcId, ConTy, ConTyId, Context as HirContext, DefId, TyNode,
+    hir, ty, ConBinding, ConContext, ConDataId, ConEffectId, ConExpr,
+    ConProcId, ConTy, ConTyId, Context as HirContext,
 };
-use tao_syntax::{ast, Node, Span, SrcId, SrcNode};
+use tao_syntax::{Node, Span, SrcId, SrcNode};
 
 pub type EffectId = ConEffectId;

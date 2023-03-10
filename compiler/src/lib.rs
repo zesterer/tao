@@ -6,7 +6,7 @@ pub use tao_syntax::SrcId;
 use ariadne::sources;
 use error::Error;
 use internment::Intern;
-use std::{collections::HashMap, fmt, io::Write, str::FromStr};
+use std::{collections::HashMap, io::Write};
 use structopt::StructOpt;
 use tao_analysis::Context as HirContext;
 use tao_middle::Context;
