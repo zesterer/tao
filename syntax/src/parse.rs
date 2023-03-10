@@ -225,7 +225,7 @@ pub fn always_branches<T>(branch: impl Parser<T> + Clone) -> impl Parser<Vec<T>>
     just(Token::Pipe)
         .ignore_then(branch.clone())
         .repeated()
-        .then(just(Token::EndPipe).ignore_then(branch.clone()).or_not())
+        .then(just(Token::EndPipe).ignore_then(branch).or_not())
         .try_map(|(mut init, end), span| {
             if let Some(end) = end {
                 init.push(end);
