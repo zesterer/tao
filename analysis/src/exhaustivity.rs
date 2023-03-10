@@ -179,7 +179,6 @@ impl AbstractPat {
                 }
                 Some(ExamplePat::Wildcard)
             }
-            Ty::Prim(prim) => todo!("{:?}", prim),
             Ty::Record(fields, is_tuple) if fields.len() == 1 => {
                 let mut inners = Vec::new();
                 for pat in filter {
