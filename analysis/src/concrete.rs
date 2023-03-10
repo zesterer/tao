@@ -183,7 +183,7 @@ impl ConContext {
             }
 
             let gen_scope = hir.tys.get_gen_scope(main.gen_scope);
-            if gen_scope.len() == 0 && gen_scope.len_eff() == 0 {
+            if gen_scope.is_empty() && gen_scope.len_eff() == 0 {
                 let main_def = ConProcId(Intern::new(ConProc::Def(id, Vec::new(), Vec::new())));
                 this.lower_proc(hir, main_def);
                 this.entry = Some(main_def);

@@ -349,7 +349,7 @@ impl Classes {
                         let gen_scope = hir.tys.get_gen_scope(c.gen_scope);
                         format!(
                             "- {}member {} of {}{} (in {})\n",
-                            if gen_scope.len() == 0 {
+                            if gen_scope.is_empty() {
                                 String::new()
                             } else {
                                 format!(
