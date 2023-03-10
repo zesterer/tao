@@ -1015,7 +1015,7 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 self.with_ty(i, true),
                 self.with_ty(o, self.lhs_exposed)
             ),
-            ConTy::Data(data_id) if self.lhs_exposed && data_id.0 .1.len() > 0 => write!(
+            ConTy::Data(data_id) if self.lhs_exposed && !data_id.0.1.is_empty() => write!(
                 f,
                 "({}{})",
                 *self.datas.get_data(data_id.0 .0).name,
