@@ -191,10 +191,7 @@ impl Type {
     }
 
     pub fn is_fully_specified(&self) -> bool {
-        let mut specified = match self {
-            Self::Unknown => false,
-            _ => true,
-        };
+        let mut specified = !matches!(self, Self::Unknown);
         self.for_children(|ty| specified &= ty.is_fully_specified());
         specified
     }
