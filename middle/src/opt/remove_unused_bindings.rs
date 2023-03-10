@@ -132,7 +132,7 @@ impl Pass for RemoveUnusedBindings {
 
         for (id, mut body) in proc_bodies {
             let mut proc_stack = vec![id];
-            visit(&ctx, &mut body, &mut Vec::new(), &mut proc_stack);
+            visit(ctx, &mut body, &mut Vec::new(), &mut proc_stack);
             let requires = body.required_locals(None);
             debug_assert_eq!(
                 requires.len(),

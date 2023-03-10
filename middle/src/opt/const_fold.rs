@@ -376,7 +376,7 @@ impl Pass for ConstFold {
 
         for (id, mut body) in proc_bodies {
             // visit(&ctx, &mut body, &mut Vec::new());
-            self.eval(&ctx, &mut body, &mut Vec::new());
+            self.eval(ctx, &mut body, &mut Vec::new());
             let requires = body.required_locals(None);
             debug_assert_eq!(
                 requires.len(),
