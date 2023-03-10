@@ -531,7 +531,7 @@ impl ToHir for ast::Binding {
 
     fn to_hir(
         self: &SrcNode<Self>,
-        cfg: &Self::Cfg,
+        _cfg: &Self::Cfg,
         infer: &mut Infer,
         scope: &Scope,
     ) -> InferNode<Self::Output> {
@@ -569,12 +569,12 @@ impl ToHir for ast::Binding {
                 )
             }
             ast::Pat::Single(inner) => {
-                let binding = inner.to_hir(cfg, infer, scope);
+                let binding = inner.to_hir(_cfg, infer, scope);
                 // TODO: don't use `Ref` to link types
                 (TyInfo::Ref(binding.meta().1), hir::Pat::Single(binding))
             }
             ast::Pat::Binary(op, lhs, rhs) => {
-                let lhs = lhs.to_hir(cfg, infer, scope);
+                let lhs = lhs.to_hir(_cfg, infer, scope);
                 match (&**rhs, &**op) {
                     (ast::Literal::Nat(rhs_nat), ast::BinaryOp::Add) => {
                         let nat = infer.insert(rhs.span(), TyInfo::Prim(Prim::Nat));
@@ -607,7 +607,7 @@ impl ToHir for ast::Binding {
             ast::Pat::Tuple(items) => {
                 let items = items
                     .iter()
-                    .map(|item| item.to_hir(cfg, infer, scope))
+                    .map(|item| item.to_hir(_cfg, infer, scope))
                     .collect::<Vec<_>>();
                 (
                     TyInfo::tuple(items.iter().map(|item| item.meta().1)),
@@ -617,7 +617,7 @@ impl ToHir for ast::Binding {
             ast::Pat::Record(fields) => {
                 let fields = fields
                     .iter()
-                    .map(|(name, field)| (**name, field.to_hir(cfg, infer, scope)))
+                    .map(|(name, field)| (**name, field.to_hir(_cfg, infer, scope)))
                     .collect::<BTreeMap<_, _>>();
                 (
                     TyInfo::Record(
@@ -635,7 +635,7 @@ impl ToHir for ast::Binding {
                 let items = items
                     .iter()
                     .map(|item| {
-                        let item = item.to_hir(cfg, infer, scope);
+                        let item = item.to_hir(_cfg, infer, scope);
                         infer.make_flow(item.meta().1, item_ty, item.meta().0);
                         item
                     })
@@ -647,13 +647,13 @@ impl ToHir for ast::Binding {
                 let items = items
                     .iter()
                     .map(|item| {
-                        let item = item.to_hir(cfg, infer, scope);
+                        let item = item.to_hir(_cfg, infer, scope);
                         infer.make_flow(item.meta().1, item_ty, item.meta().0);
                         item
                     })
                     .collect::<Vec<_>>();
                 let tail = tail.as_ref().map(|tail| {
-                    let tail = tail.to_hir(cfg, infer, scope);
+                    let tail = tail.to_hir(_cfg, infer, scope);
                     let ty = infer.insert(tail.meta().0, TyInfo::List(item_ty));
                     infer.make_flow(tail.meta().1, ty, tail.meta().0);
                     tail
@@ -717,7 +717,7 @@ impl ToHir for ast::Binding {
                         )
                     };
 
-                    let inner = inner.to_hir(cfg, infer, scope);
+                    let inner = inner.to_hir(_cfg, infer, scope);
                     infer.make_flow(inner_ty, inner.meta().1, self.span());
 
                     (
