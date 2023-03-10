@@ -871,7 +871,6 @@ impl ConContext {
                         .expect("Error effect instance should not exist during concretization"),
                     ty_insts,
                 )
-                .ok()
                 .expect("Generic effect used in suspend?!"),
                 self.lower_expr(hir, inner, ty_insts),
             ),
@@ -887,7 +886,6 @@ impl ConContext {
                             .iter()
                             .map(|hir::Handler { eff, send, state, recv }| hir::Handler {
                                 eff: self.lower_effect_inst(hir, eff.clone().expect("Error effect instance should not exist during concretization"), ty_insts)
-                                    .ok()
                                     .expect("Generic effect used in handler?!"),
                                 send: ConNode::new(**send, self.lower_ty(hir, send.meta().1, ty_insts)),
                                 state: state.as_ref().map(|state| ConNode::new(**state, self.lower_ty(hir, state.meta().1, ty_insts))),
