@@ -39,9 +39,6 @@ impl<'a> Scope<'a> {
         Scope::Basin(self, Some(eff))
     }
 
-    fn without_basin(&self) -> Scope {
-        Scope::Basin(self, None)
-    }
 
     // bool = is_local
     fn find(
