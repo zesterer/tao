@@ -1362,9 +1362,8 @@ impl<'a> Infer<'a> {
                     y_effs
                         .iter()
                         .any(|y| Self::flow_effect_inst(infer, (*x, x_ty), (*y, y_ty)).is_ok())
-                }) {
-                    Ok(())
-                } else if infer.make_check_eff((x, x_ty), (y, y_ty)) {
+                }) || infer.make_check_eff((x, x_ty), (y, y_ty))
+                {
                     Ok(())
                 } else {
                     Err((x_ty, y_ty))
