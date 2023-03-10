@@ -49,7 +49,7 @@ impl Datas {
     }
 
     pub fn iter_aliases(&self) -> impl Iterator<Item = AliasId> {
-        (0..self.aliases.len()).map(|i| AliasId(i))
+        (0..self.aliases.len()).map(AliasId)
     }
 
     pub fn data_gen_scope(&self, data: DataId) -> GenScopeId {
