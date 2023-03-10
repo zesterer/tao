@@ -534,7 +534,7 @@ impl<'a> Infer<'a> {
         if self.vars[ty.0].2.is_ok() {
             self.vars[ty.0].2 = Err(());
             match self.vars[ty.0].1.clone() {
-                TyInfo::Ref(x) => return self.set_error(x),
+                TyInfo::Ref(x) => self.set_error(x),
                 TyInfo::Error(_)
                 | TyInfo::Unknown(_)
                 | TyInfo::Prim(_)
