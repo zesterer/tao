@@ -143,7 +143,7 @@ impl Context {
                     .iter()
                     .map(|(name, field)| (*name, self.lower_binding(hir, con, field, bindings)))
                     .collect::<Vec<_>>();
-                fields.sort_by_key(|(name, _)| name.as_ref());
+                fields.sort_by_key(|(name, _)| name.as_string());
                 mir::Pat::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             }
         };
@@ -255,7 +255,7 @@ impl Context {
                     .unwrap();
                 let field_idx = if let ConTy::Record(fields) = con.get_ty(record_ty) {
                     let mut fields = fields.iter().map(|(name, _)| *name).collect::<Vec<_>>();
-                    fields.sort_by_key(|name| name.as_ref());
+                    fields.sort_by_key(|name| name.as_string());
                     fields
                         .iter()
                         .enumerate()
@@ -288,7 +288,7 @@ impl Context {
                     .iter()
                     .map(|(name, field)| (**name, self.lower_expr(hir, con, field, stack)))
                     .collect::<Vec<_>>();
-                fields.sort_by_key(|(name, _)| name.as_ref());
+                fields.sort_by_key(|(name, _)| name.as_string());
                 mir::Expr::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             }
             hir::Expr::ClassAccess(_ty, _class, _field) => {
@@ -469,7 +469,7 @@ impl Context {
                         .unwrap();
                     let field_idx = if let ConTy::Record(fields) = con.get_ty(record_ty) {
                         let mut fields = fields.iter().map(|(name, _)| *name).collect::<Vec<_>>();
-                        fields.sort_by_key(|name| name.as_ref());
+                        fields.sort_by_key(|name| name.as_string());
                         fields
                             .iter()
                             .enumerate()
