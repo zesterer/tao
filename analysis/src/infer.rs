@@ -3413,7 +3413,7 @@ impl<'a> Checked<'a> {
         match self.infer.follow_effect_inst(var) {
             EffectInstInfo::Unknown => Err(()),
             EffectInstInfo::Error => Err(()),
-            EffectInstInfo::Ref(x) => return self.reify_effect_inst(x),
+            EffectInstInfo::Ref(x) => self.reify_effect_inst(x),
             EffectInstInfo::Gen(idx, gen_scope) => Ok(EffectInst::Gen(idx, gen_scope)),
             EffectInstInfo::Known(eff, args) => Ok(EffectInst::Concrete(
                 eff,
