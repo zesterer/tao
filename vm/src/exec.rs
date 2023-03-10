@@ -467,8 +467,6 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
             }
         }
 
-        tick += 1;
-
         addr = next_addr;
     }
 }

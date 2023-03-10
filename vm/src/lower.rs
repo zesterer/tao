@@ -22,7 +22,7 @@ fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
 
 impl Program {
     // [.., T] => [..]
-    pub fn compile_extractor(&mut self, mir: &MirContext, binding: &MirNode<mir::Binding>) {
+    pub fn compile_extractor(&mut self, binding: &MirNode<mir::Binding>) {
         // The total number of locals this pattern produces
         let mut binds = binding.bindings().len();
 
@@ -48,13 +48,13 @@ impl Program {
             mir::Pat::Literal(_) => {}
             mir::Pat::Single(inner) => {
                 self.push(Instr::Dup);
-                self.compile_extractor(mir, inner);
+                self.compile_extractor(inner);
             }
             mir::Pat::Add(lhs, rhs) => {
                 self.push(Instr::Dup);
                 self.push(Instr::Imm(Value::Int(*rhs as i64)));
                 self.push(Instr::SubInt);
-                self.compile_extractor(mir, lhs);
+                self.compile_extractor(lhs);
             }
             mir::Pat::Tuple(items) | mir::Pat::ListExact(items) => {
                 for (i, item) in items.iter().enumerate() {
@@ -62,7 +62,7 @@ impl Program {
                         self.push(Instr::Dup);
                         self.push(Instr::IndexList(i));
 
-                        self.compile_extractor(mir, item);
+                        self.compile_extractor(item);
                     }
                 }
             }
@@ -76,23 +76,23 @@ impl Program {
                         self.push(Instr::Dup);
                         self.push(Instr::IndexList(i));
 
-                        self.compile_extractor(mir, item);
+                        self.compile_extractor(item);
                     }
                 }
 
                 if let Some(tail) = tail.as_ref() {
                     self.push(Instr::SkipListImm(items.len()));
-                    self.compile_extractor(mir, tail);
+                    self.compile_extractor(tail);
                 }
             }
             mir::Pat::Variant(variant, inner) => {
                 self.push(Instr::Dup);
                 self.push(Instr::IndexSum(*variant));
-                self.compile_extractor(mir, inner);
+                self.compile_extractor(inner);
             }
             mir::Pat::Data(_, inner) => {
                 self.push(Instr::Dup);
-                self.compile_extractor(mir, inner);
+                self.compile_extractor(inner);
             }
         }
 
@@ -419,7 +419,7 @@ impl Program {
                         fail_jumps.push(self.push(Instr::Jump(0)));
                     }
 
-                    self.compile_extractor(mir, binding);
+                    self.compile_extractor(binding);
 
                     let old_stack = stack.len();
                     let names = binding.binding_names();
