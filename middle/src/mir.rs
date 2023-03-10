@@ -828,7 +828,7 @@ impl Expr {
                                 DisplayExpr(body, self.1 + 1, false)
                             )?;
                         }
-                        if arms.len() == 0 {
+                        if arms.is_empty() {
                             write!(f, " (no arms)")?;
                         }
                         Ok(())
