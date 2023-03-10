@@ -18,7 +18,7 @@ pub enum AbstractPat {
 }
 
 impl AbstractPat {
-    fn from_binding(ctx: &Context, binding: &TyBinding) -> Self {
+    fn from_binding(binding: &TyBinding) -> Self {
         match &*binding.pat {
             hir::Pat::Error => Self::Wildcard,
             hir::Pat::Wildcard => Self::Wildcard,
@@ -36,7 +36,7 @@ impl AbstractPat {
             hir::Pat::Literal(hir::Literal::Str(x)) => {
                 Self::ListExact(x.chars().map(Self::Char).collect())
             }
-            hir::Pat::Single(inner) => Self::from_binding(ctx, inner),
+            hir::Pat::Single(inner) => Self::from_binding(inner),
             hir::Pat::Add(lhs, rhs) if matches!(&*lhs.pat, hir::Pat::Wildcard) => Self::Nat({
                 let mut range = Ranges::new();
                 range.insert(**rhs..);
@@ -45,29 +45,29 @@ impl AbstractPat {
             hir::Pat::Decons(data, cons, inner) => AbstractPat::Variant(
                 **data,
                 *cons,
-                Box::new(AbstractPat::from_binding(ctx, inner)),
+                Box::new(AbstractPat::from_binding(inner)),
             ),
             hir::Pat::ListExact(items) => AbstractPat::ListExact(
                 items
                     .iter()
-                    .map(|item| AbstractPat::from_binding(ctx, item))
+                    .map(|item| AbstractPat::from_binding(item))
                     .collect(),
             ),
             hir::Pat::ListFront(items, tail) => AbstractPat::ListFront(
                 items
                     .iter()
-                    .map(|item| AbstractPat::from_binding(ctx, item))
+                    .map(|item| AbstractPat::from_binding(item))
                     .collect(),
                 Box::new(
                     tail.as_ref()
-                        .map(|tail| AbstractPat::from_binding(ctx, tail))
+                        .map(|tail| AbstractPat::from_binding(tail))
                         .unwrap_or(AbstractPat::Wildcard),
                 ),
             ),
             hir::Pat::Record(fields, is_tuple) => AbstractPat::Record(
                 fields
                     .iter()
-                    .map(|(name, field)| (*name, AbstractPat::from_binding(ctx, field)))
+                    .map(|(name, field)| (*name, AbstractPat::from_binding(field)))
                     .collect(),
                 *is_tuple,
             ),
@@ -473,7 +473,7 @@ pub fn exhaustivity<'a>(
 ) -> Result<(), ExamplePat> {
     let arms = arms
         .into_iter()
-        .map(|b| AbstractPat::from_binding(ctx, b))
+        .map(|b| AbstractPat::from_binding(b))
         .collect::<Vec<_>>();
 
     if let Some(pat) = AbstractPat::inexhaustive_pat(ctx, ty, &mut arms.iter(), None) {
