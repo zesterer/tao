@@ -176,7 +176,7 @@ impl Datas {
             }
         }
         self.datas[id.0].1 = Some(data);
-        if errors.len() == 0 {
+        if errors.is_empty() {
             Ok(())
         } else {
             Err(errors)
