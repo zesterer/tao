@@ -309,7 +309,6 @@ impl Expr<ConMeta> {
             }
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Cons(_, _, inner) => inner.required_locals_inner(stack, required),
-            Expr::Access(inner, _) => inner.required_locals_inner(stack, required),
             Expr::ClassAccess(_, _, _) => {}
             Expr::Update(record, fields) => {
                 record.required_locals_inner(stack, required);
