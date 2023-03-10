@@ -1293,10 +1293,12 @@ impl<'a> Infer<'a> {
             (EffectInstInfo::Error, _) => Ok(()),
             (_, EffectInstInfo::Error) => Ok(()),
             (EffectInstInfo::Unknown, _) => {
-                Ok(infer.set_effect_inst_info(x, EffectInstInfo::Ref(y)))
+                infer.set_effect_inst_info(x, EffectInstInfo::Ref(y));
+                Ok(())
             }
             (_, EffectInstInfo::Unknown) => {
-                Ok(infer.set_effect_inst_info(y, EffectInstInfo::Ref(x)))
+                infer.set_effect_inst_info(y, EffectInstInfo::Ref(x));
+                Ok(())
             }
             (EffectInstInfo::Known(x, x_args), EffectInstInfo::Known(y, y_args)) if x == y => {
                 x_args
@@ -1433,8 +1435,14 @@ impl<'a> Infer<'a> {
             infer.as_ref().follow_class(x),
             infer.as_ref().follow_class(y),
         ) {
-            (ClassInfo::Unknown, _) => Ok(infer.set_class_info(x, ClassInfo::Ref(y))),
-            (_, ClassInfo::Unknown) => Ok(infer.set_class_info(y, ClassInfo::Ref(x))),
+            (ClassInfo::Unknown, _) => {
+                infer.set_class_info(x, ClassInfo::Ref(y));
+                Ok(())
+            },
+            (_, ClassInfo::Unknown) => {
+                infer.set_class_info(y, ClassInfo::Ref(x));
+                Ok(())
+            },
             (ClassInfo::Known(class_id_x, xs, e_xs), ClassInfo::Known(class_id_y, ys, e_ys))
                 if class_id_x == class_id_y =>
             {
@@ -1479,28 +1487,34 @@ impl<'a> Infer<'a> {
             (TyInfo::Unknown(_), _y_info) => if infer.as_ref().occurs_in(x, y) {
                 infer.emit_error(InferError::Recursive(y, infer.as_ref().follow(x)));
                 infer.set_info(x, TyInfo::Error(ErrorReason::Recursive));
-                Ok(infer.set_error(x))
+                infer.set_error(x);
+                Ok(())
             } else {
                 infer.set_unknown_flow(x, y);
-                Ok(infer.set_info(x, TyInfo::Ref(y)))
+                infer.set_info(x, TyInfo::Ref(y));
+                Ok(())
             },
             (_x_info, TyInfo::Unknown(_)) => if infer.as_ref().occurs_in(y, x) {
                 infer.emit_error(InferError::Recursive(x, infer.as_ref().follow(y)));
                 infer.set_info(y, TyInfo::Error(ErrorReason::Recursive));
-                Ok(infer.set_error(y))
+                infer.set_error(y);
+                Ok(())
             } else {
                 infer.set_unknown_flow(x, y);
-                Ok(infer.set_info(y, TyInfo::Ref(x)))
+                infer.set_info(y, TyInfo::Ref(x));
+                Ok(())
             },
 
             // Unify errors
             (_, TyInfo::Error(_)) => {
                 infer.set_error(x);
-                Ok(infer.set_info(x, TyInfo::Ref(y)))
+                infer.set_info(x, TyInfo::Ref(y));
+                Ok(())
             },
             (TyInfo::Error(_), _) => {
                 infer.set_error(y);
-                Ok(infer.set_info(y, TyInfo::Ref(x)))
+                infer.set_info(y, TyInfo::Ref(x));
+                Ok(())
             },
 
             (TyInfo::Prim(x), TyInfo::Prim(y)) if x == y => Ok(()),
