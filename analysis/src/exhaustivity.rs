@@ -172,6 +172,7 @@ impl AbstractPat {
                 Some(ExamplePat::Wildcard)
             }
             Ty::Prim(Prim::Universe) => {
+                #[allow(clippy::never_loop)]
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
@@ -366,6 +367,7 @@ impl AbstractPat {
                     .map(|n| ExamplePat::List((0..n).map(|_| ExamplePat::Wildcard).collect()))
             }
             Ty::Func(_, _) | Ty::Effect(_, _) => {
+                #[allow(clippy::never_loop)]
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
