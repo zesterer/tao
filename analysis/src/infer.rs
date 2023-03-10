@@ -1707,7 +1707,7 @@ impl<'a> Infer<'a> {
             }
             TyInfo::Unknown(_) => None,
             TyInfo::Record(fields, _) => {
-                if let Some(field_ty) = fields.get(&field_name) {
+                if let Some(field_ty) = fields.get(field_name) {
                     self.make_flow(*field_ty, field, field_name.span());
                     Some(true)
                 } else {
@@ -1736,7 +1736,7 @@ impl<'a> Infer<'a> {
                 // Field access on data only works for single-variant, record datatypes
                 if let (Some((_, ty)), true) = (data.cons.iter().next(), data.cons.len() == 1) {
                     if let Ty::Record(fields, _) = self.ctx.tys.get(*ty) {
-                        if let Some(field_ty) = fields.get(&field_name) {
+                        if let Some(field_ty) = fields.get(field_name) {
                             let field_ty = self.instantiate(
                                 *field_ty,
                                 self.span(record),
@@ -2433,7 +2433,7 @@ impl<'a> Infer<'a> {
                 if var_effs.into_iter().all(|x| {
                     effs.iter().any(|y| match (self.follow_effect_inst(x), y) {
                         (_, Ok(EffectInst::Gen(idx, _))) => {
-                            if let Some((other_gen_var, other_ty)) = eff_gens.get(&idx) {
+                            if let Some((other_gen_var, other_ty)) = eff_gens.get(idx) {
                                 // Invariance check of generic types with one-another
                                 match (
                                     self.check_flow_eff((var, var_ty), (*other_gen_var, *other_ty)),
