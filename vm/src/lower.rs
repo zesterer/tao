@@ -166,7 +166,7 @@ impl Program {
                     self.compile_item_matcher(items, true, None);
                 }
                 mir::Pat::ListExact(items) => {
-                    if items.len() == 0 {
+                    if items.is_empty() {
                         self.push(Instr::LenList);
                         self.push(Instr::Imm(Value::Int(items.len() as i64)));
                         self.push(Instr::EqInt);
@@ -427,7 +427,7 @@ impl Program {
 
                     self.compile_expr(mir, body, stack, proc_fixups);
 
-                    if names.len() > 0 {
+                    if !names.is_empty() {
                         self.push(Instr::PopLocal(names.len()));
                     }
                     stack.truncate(old_stack); // End scope
@@ -580,7 +580,7 @@ impl Program {
         this.does_io = if let repr::Repr::Func(i, o) = mir.procs.get(entry).unwrap().body.meta() {
             if let (repr::Repr::Prim(repr::Prim::Universe), repr::Repr::Tuple(xs)) = (&**i, &**o) {
                 if let [repr::Repr::Prim(repr::Prim::Universe), repr::Repr::Tuple(xs)] = &xs[..] {
-                    xs.len() == 0
+                    xs.is_empty()
                 } else {
                     false
                 }
