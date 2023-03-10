@@ -544,13 +544,13 @@ impl GenScope {
         self.types
             .iter()
             .enumerate()
-            .find(|(_, ty)| &*ty.name == &name)
+            .find(|(_, ty)| *ty.name == name)
     }
 
     pub fn find_eff(&self, name: Ident) -> Option<(usize, &GenEff)> {
         self.effects
             .iter()
             .enumerate()
-            .find(|(_, eff)| &*eff.name == &name)
+            .find(|(_, eff)| *eff.name == name)
     }
 }
