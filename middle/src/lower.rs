@@ -8,7 +8,7 @@ pub struct TyInsts<'a> {
 
 impl Context {
     pub fn lower_proc(&mut self, hir: &HirContext, con: &ConContext, proc: ConProcId) -> ProcId {
-        let id = self.procs.id_of_con(proc.clone());
+        let id = self.procs.id_of_con(proc);
 
         // Instantiate proc if not already done
         if !self.procs.is_declared(id) {
@@ -620,7 +620,7 @@ impl Context {
                                 } else {
                                     unreachable!()
                                 },
-                                default_state_repr.clone(),
+                                default_state_repr,
                             ]),
                         ),
                         1,
