@@ -127,7 +127,6 @@ impl AbstractPat {
                     }
                 }
                 covered
-                    .clone()
                     .invert()
                     .into_iter()
                     .next()
@@ -144,7 +143,6 @@ impl AbstractPat {
                     }
                 }
                 covered
-                    .clone()
                     .invert()
                     .into_iter()
                     .next()
