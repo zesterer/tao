@@ -146,7 +146,6 @@ impl Context {
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 mir::Pat::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             }
-            pat => todo!("{:?}", pat),
         };
 
         let binding = mir::Binding {

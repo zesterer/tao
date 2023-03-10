@@ -636,7 +636,6 @@ impl Expr {
                     Pat::Data(data, inner) => {
                         write!(f, "{:?} {}", data, DisplayBinding(inner, self.1))
                     }
-                    pat => todo!("{:?}", pat),
                 }
             }
         }

@@ -462,7 +462,6 @@ pub fn check(ctx: &Context) {
             (expr, Repr::Data(data)) => {
                 check_expr(ctx, expr, &ctx.reprs.get(*data).repr, stack);
             }
-            (Expr::Variant(_idx, _inner), Repr::Data(_)) => {} // TODO
             (Expr::Intrinsic(_, _), _) => {}                 // TODO
             (Expr::Access(_, _), _) => {}                    // TODO
             (Expr::Basin(_, inner), Repr::Effect(_, o)) => {

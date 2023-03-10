@@ -268,7 +268,6 @@ impl ConstFold {
 
                 Partial::Unknown(None)
             }
-            e => todo!("{:?}", e),
         };
 
         match partial {
@@ -339,7 +338,6 @@ impl Intrinsic {
             Intrinsic::MulInt => op!(Int(x), Int(y) => Int(x * y)),
             Intrinsic::EqNat => op!(Nat(x), Nat(y) => r#bool(x == y)),
             Intrinsic::EqChar => op!(Char(x), Char(y) => r#bool(x == y)),
-            Intrinsic::EqNat => op!(Nat(x), Nat(y) => r#bool(x == y)),
             Intrinsic::Join(_) => {
                 op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect()))
             }
