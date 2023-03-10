@@ -386,7 +386,6 @@ pub fn prepare(ctx: &mut Context) {
 /// Check the self-consistency of the MIR
 pub fn check(ctx: &Context) {
     fn check_binding(
-        ctx: &Context,
         binding: &Binding,
         repr: &Repr,
     ) {
@@ -395,9 +394,9 @@ pub fn check(ctx: &Context) {
             (Pat::Wildcard, _) => {}
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {}
             (Pat::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => {
-                check_binding(ctx, inner, &variants[*idx])
+                check_binding(inner, &variants[*idx])
             }
-            (Pat::Single(inner), _) => check_binding(ctx, inner, repr),
+            (Pat::Single(inner), _) => check_binding(inner, repr),
             (Pat::ListExact(_), Repr::List(_)) => {}
             (Pat::ListFront(_, _), Repr::List(_)) => {}
             (_, repr) => panic!(
@@ -406,7 +405,7 @@ pub fn check(ctx: &Context) {
             ),
         }
 
-        binding.for_children(|binding| check_binding(ctx, binding, binding.meta()));
+        binding.for_children(|binding| check_binding(binding, binding.meta()));
     }
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
@@ -449,7 +448,7 @@ pub fn check(ctx: &Context) {
             (Expr::Match(pred, arms), _repr) => {
                 for (arm, body) in arms {
                     // TODO: visit binding
-                    check_binding(ctx, arm.inner(), pred.meta());
+                    check_binding(arm.inner(), pred.meta());
                     let old_stack = stack.len();
                     stack.append(&mut arm.bindings());
                     check_expr(ctx, body, body.meta(), stack);
