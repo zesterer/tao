@@ -238,7 +238,7 @@ impl Program {
         f_stack.append(&mut captures.clone());
 
         // A function with an undefined body doesn't need to be compiled!
-        if !matches!(&*body, mir::Expr::Undefined) {
+        if !matches!(body, mir::Expr::Undefined) {
             self.compile_expr(mir, body, &mut f_stack, proc_fixups);
             self.push(Instr::PopLocal(args.len() + captures.len())); // +1 is for the argument
             self.push(Instr::Ret);
@@ -270,7 +270,7 @@ impl Program {
         stack: &mut Vec<mir::Local>,
         proc_fixups: &mut Vec<(ProcId, Addr)>,
     ) {
-        match &*expr {
+        match expr {
             mir::Expr::Undefined => {} // Do the minimum possible work, execution is undefined anyway
             mir::Expr::Literal(literal) => {
                 if let Some(val) = litr_to_value(literal) {
