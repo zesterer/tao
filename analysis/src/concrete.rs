@@ -23,6 +23,7 @@ impl ConTyId {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ConEffect {
     send: ConTyId,
     recv: ConTyId,
