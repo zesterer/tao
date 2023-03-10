@@ -37,7 +37,6 @@ pub struct Datas {
     // TODO: Don't use `Result`
     name_lut: HashMap<Ident, (Span, Result<DataId, AliasId>, GenScopeId)>,
     cons_lut: HashMap<Ident, (Span, DataId)>,
-    alias_lut: HashMap<Ident, Alias>,
     datas: Vec<(Span, Option<Data>, GenScopeId, Ident)>,
     aliases: Vec<(Span, Option<Alias>, GenScopeId)>,
     pub lang: Lang,
