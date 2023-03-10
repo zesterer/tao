@@ -75,6 +75,7 @@ pub struct Func {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Program {
     datas: Index<Repr>,
     funcs: Index<Func>,
