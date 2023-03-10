@@ -175,7 +175,7 @@ impl Context {
             );
             errors.append(&mut errs);
             let gen_scope = this.tys.insert_gen_scope(gen_scope);
-            match this.datas.declare_data(data.name.clone(), gen_scope, &attr) {
+            match this.datas.declare_data(data.name.clone(), gen_scope, attr) {
                 Ok(data_id) => datas.push((attr, data, data_id)),
                 Err(err) => {
                     errors.push(err);
