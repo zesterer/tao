@@ -120,7 +120,7 @@ pub fn enforce_generic_obligations(
         let err = Error::WrongNumberOfGenerics(
             use_span,
             gen_tys.len(),
-            if gen_scope.len() == 0 {
+            if gen_scope.is_empty() {
                 item_span
             } else {
                 gen_scope.get(0).name.span()
@@ -399,7 +399,7 @@ impl ToHir for ast::Type {
                                     let err = Error::WrongNumberOfGenerics(
                                         self.span(),
                                         gen_tys.len(),
-                                        if alias_gen_scope.len() == 0 {
+                                        if alias_gen_scope.is_empty() {
                                             infer.ctx().datas.get_alias_span(alias_id)
                                         } else {
                                             alias_gen_scope.get(0).name.span()
@@ -451,7 +451,7 @@ impl ToHir for ast::Type {
                                 let err = Error::WrongNumberOfGenerics(
                                     self.span(),
                                     gen_tys.len(),
-                                    if data_gen_scope.len() == 0 {
+                                    if data_gen_scope.is_empty() {
                                         infer.ctx().datas.get_data_span(data_id)
                                     } else {
                                         data_gen_scope.get(0).name.span()
