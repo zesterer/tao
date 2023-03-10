@@ -290,7 +290,7 @@ impl<'a> Infer<'a> {
     // gen_scope: Some((_, true)) means that generic bounds are implied (almost always what you want)
     // gen_scope: Some((_, false)) means that generic bounds are not implied (used when inferring the bounds themselves)
     pub fn new(ctx: &'a mut Context, gen_scope: Option<GenScopeId>) -> Self {
-        let this = Self {
+        Self {
             ctx,
             gen_scope: gen_scope,
             vars: Vec::new(),
@@ -305,9 +305,7 @@ impl<'a> Infer<'a> {
             // self_obligations: Vec::new(),
             implied_members: Vec::new(),
             debug: false,
-        };
-
-        this
+        }
     }
 
     pub fn with_debug(mut self, debug: bool) -> Self {
