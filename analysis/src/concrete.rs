@@ -201,7 +201,7 @@ impl ConContext {
     }
 
     pub fn entry_proc(&self) -> ConProcId {
-        self.entry.clone().unwrap()
+        self.entry.unwrap()
     }
 
     pub fn get_proc(&self, proc: ConProcId) -> &ConExpr {
@@ -713,7 +713,7 @@ impl ConContext {
                             .unwrap_or_default()
                     })
                     .collect();
-                let id = ConProcId(Intern::new(ConProc::Def(*x, gen_tys.clone(), gen_effs)));
+                let id = ConProcId(Intern::new(ConProc::Def(*x, gen_tys, gen_effs)));
                 self.lower_proc(hir, id);
                 hir::Expr::Global(id)
             }
