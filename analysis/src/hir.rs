@@ -235,8 +235,8 @@ impl<M: Meta> Expr<M> {
             | Expr::ClassAccess(_, _, _)
             | Expr::Global(_) => {}
             Expr::List(items, tails) => {
-                items.iter().for_each(|item| f(item));
-                tails.iter().for_each(|tail| f(tail));
+                items.iter().for_each(&mut f);
+                tails.iter().for_each(f);
             }
             Expr::Record(fields, _) => fields.iter().for_each(|(_, field)| f(field)),
             Expr::Access(record, _) => f(record),
@@ -250,7 +250,7 @@ impl<M: Meta> Expr<M> {
                 f(arg);
             }
             Expr::Cons(_, _, inner) => f(inner),
-            Expr::Intrinsic(_, args) => args.iter().for_each(|arg| f(arg)),
+            Expr::Intrinsic(_, args) => args.iter().for_each(f),
             Expr::Update(record, fields) => {
                 f(record);
                 fields.iter().for_each(|(_, field)| f(field));
