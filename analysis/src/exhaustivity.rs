@@ -50,17 +50,17 @@ impl AbstractPat {
             hir::Pat::ListExact(items) => AbstractPat::ListExact(
                 items
                     .iter()
-                    .map(|item| AbstractPat::from_binding(item))
+                    .map(AbstractPat::from_binding)
                     .collect(),
             ),
             hir::Pat::ListFront(items, tail) => AbstractPat::ListFront(
                 items
                     .iter()
-                    .map(|item| AbstractPat::from_binding(item))
+                    .map(AbstractPat::from_binding)
                     .collect(),
                 Box::new(
                     tail.as_ref()
-                        .map(|tail| AbstractPat::from_binding(tail))
+                        .map(AbstractPat::from_binding)
                         .unwrap_or(AbstractPat::Wildcard),
                 ),
             ),
@@ -473,7 +473,7 @@ pub fn exhaustivity<'a>(
 ) -> Result<(), ExamplePat> {
     let arms = arms
         .into_iter()
-        .map(|b| AbstractPat::from_binding(b))
+        .map(AbstractPat::from_binding)
         .collect::<Vec<_>>();
 
     if let Some(pat) = AbstractPat::inexhaustive_pat(ctx, ty, &mut arms.iter(), None) {
