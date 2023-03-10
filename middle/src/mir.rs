@@ -244,10 +244,7 @@ impl Binding {
     pub fn is_refutable(&self) -> bool {
         match &self.pat {
             Pat::Wildcard => false,
-            Pat::Literal(c) => match c {
-                Const::Tuple(fields) if fields.is_empty() => false,
-                _ => true,
-            },
+            Pat::Literal(c) => !matches!(c, Const::Tuple(fields) if fields.is_empty()),
             Pat::Single(inner) => inner.is_refutable(),
             Pat::Add(lhs, rhs) => *rhs > 0 || lhs.is_refutable(),
             Pat::Tuple(fields) => fields.iter().any(|field| field.is_refutable()),
