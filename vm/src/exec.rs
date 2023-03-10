@@ -212,7 +212,7 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                 stack.push(func);
             }
             Instr::ApplyFunc => {
-                let (f_addr, mut captures) = stack.pop().unwrap().func();
+                let (f_addr, captures) = stack.pop().unwrap().func();
 
                 funcs.push(next_addr);
                 next_addr = f_addr;
@@ -245,7 +245,7 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                 stack.push(Value::Int(len as i64));
             }
             Instr::JoinList => {
-                let mut y = stack.pop().unwrap().list();
+                let y = stack.pop().unwrap().list();
                 let mut x = stack.pop().unwrap().list();
                 x.append(y);
                 stack.push(Value::List(x));

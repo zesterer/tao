@@ -69,7 +69,7 @@ impl Defs {
     }
 
     pub fn check_lang_items(&self) -> Vec<Error> {
-        let mut errors = Vec::new();
+        let errors = Vec::new();
 
         // if self.lang.io_unit.is_none() { errors.push(Error::MissingLangItem("io_unit")); }
 

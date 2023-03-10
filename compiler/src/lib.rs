@@ -113,7 +113,7 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
     }
 
     if let Some(ast) = ast {
-        let (ctx, mut analysis_errors) = HirContext::from_module(&ast);
+        let (ctx, analysis_errors) = HirContext::from_module(&ast);
 
         if options.debug.contains(&"hir".to_string()) {
             for (_, def) in ctx.defs.iter() {
@@ -132,7 +132,7 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
             }
             None
         } else {
-            let (concrete, mut con_errors) = ctx.concretize();
+            let (concrete, con_errors) = ctx.concretize();
 
             if !con_errors.is_empty() {
                 for e in con_errors {

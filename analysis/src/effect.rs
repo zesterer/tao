@@ -106,7 +106,7 @@ impl Effects {
     }
 
     pub fn check_lang_items(&self) -> Vec<Error> {
-        let mut errors = Vec::new();
+        let errors = Vec::new();
 
         // if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
 

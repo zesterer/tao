@@ -290,7 +290,7 @@ impl<'a> Infer<'a> {
     // gen_scope: Some((_, true)) means that generic bounds are implied (almost always what you want)
     // gen_scope: Some((_, false)) means that generic bounds are not implied (used when inferring the bounds themselves)
     pub fn new(ctx: &'a mut Context, gen_scope: Option<GenScopeId>) -> Self {
-        let mut this = Self {
+        let this = Self {
             ctx,
             gen_scope: gen_scope,
             vars: Vec::new(),
@@ -1200,7 +1200,7 @@ impl<'a> Infer<'a> {
         y: (EffectVar, TyVar),
         info: impl Into<EqInfo>,
     ) {
-        let mut eq_info = info.into();
+        let eq_info = info.into();
         if let Err((a, b)) = Self::flow_effect(&mut MakeFlow(self, &eq_info), x, y) {
             if !self.is_error(a) && !self.is_error(b) {
                 self.set_error(a);
