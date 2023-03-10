@@ -1830,7 +1830,7 @@ impl ToHir for ast::Expr {
                 // Collect effects into this basin
                 let scope = scope.with_basin(eff);
 
-                let expr = gen_block(infer, cfg, &init, last, &scope);
+                let expr = gen_block(infer, cfg, init, last, &scope);
 
                 let opaque = infer.opaque(self.span(), false);
                 (
@@ -1839,11 +1839,11 @@ impl ToHir for ast::Expr {
                 )
             }
             ast::Expr::Block(init, last) => {
-                let expr = gen_block(infer, cfg, &init, last, &scope);
+                let expr = gen_block(infer, cfg, init, last, scope);
                 (TyInfo::Ref(expr.meta().1), expr.into_inner())
             }
             ast::Expr::Handle { expr, handlers } => {
-                let expr = expr.to_hir(cfg, infer, &scope);
+                let expr = expr.to_hir(cfg, infer, scope);
                 let out_ty = infer.unknown(self.span());
                 let mut state_ty = None;
                 handlers
@@ -1856,9 +1856,9 @@ impl ToHir for ast::Expr {
                              state,
                              recv,
                          }| {
-                            let send = send.to_hir(cfg, infer, &scope);
+                            let send = send.to_hir(cfg, infer, scope);
                             let state =
-                                state.as_ref().map(|state| state.to_hir(cfg, infer, &scope));
+                                state.as_ref().map(|state| state.to_hir(cfg, infer, scope));
                             let recv = recv.to_hir(
                                 cfg,
                                 infer,
