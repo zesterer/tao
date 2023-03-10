@@ -60,7 +60,9 @@ impl Pass for RemoveUnusedBindings {
                                 }
                                 Pat::ListFront(items, tail) => {
                                     items.iter_mut().for_each(|item| remove_unused(item, stack));
-                                    tail.as_mut().map(|tail| remove_unused(tail, stack));
+                                    if let Some(tail) = tail.as_mut() {
+                                        remove_unused(tail, stack);
+                                    }
                                 }
                                 Pat::Variant(_, inner) => remove_unused(inner, stack),
                                 Pat::Data(_, inner) => remove_unused(inner, stack),
