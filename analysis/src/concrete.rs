@@ -247,7 +247,7 @@ impl ConContext {
             }
             (Ty::Record(xs, _), ConTy::Record(ys)) => {
                 xs.into_iter()
-                    .zip(ys.into_iter())
+                    .zip(ys.iter())
                     .for_each(|((_, x), (_, y))| {
                         self.derive_links(hir, x, *y, ty_link_gen, eff_link_gen)
                     })
@@ -838,7 +838,7 @@ impl ConContext {
                 } else {
                     hir::Expr::Intrinsic(
                         name.clone(),
-                        args.into_iter()
+                        args.iter()
                             .map(|arg| self.lower_expr(hir, arg, ty_insts))
                             .collect(),
                     )
