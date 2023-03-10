@@ -248,7 +248,7 @@ impl Classes {
                 // TODO: Care about field names!
                 (Ty::Record(xs, _), ConTy::Record(ys)) if xs.len() == ys.len() => xs
                     .into_iter()
-                    .zip(ys.into_iter())
+                    .zip(ys.iter())
                     .all(|((_, x), (_, y))| covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)),
                 (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
                     covers(hir, ctx, x_i, *y_i, gen_ty_links, gen_eff_links)
