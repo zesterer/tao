@@ -117,7 +117,7 @@ impl ConstFold {
             {
                 // If the local is still accessible, we can just inline it directly
                 Partial::Unknown(Some(local))
-                    if locals.iter().find(|(name, _)| *name == local).is_some() =>
+                    if locals.iter().any(|(name, _)| *name == local) =>
                 {
                     *expr = Expr::Local(local);
                     return Partial::Unknown(Some(local));
@@ -277,7 +277,7 @@ impl ConstFold {
             // directly.
             Partial::Unknown(local)
                 if local.map_or(false, |local| {
-                    locals.iter().find(|(l, _)| *l == local).is_some()
+                    locals.iter().any(|(l, _)| *l == local)
                 }) =>
             {
                 if !expr.may_have_effect() {
