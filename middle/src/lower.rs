@@ -152,7 +152,7 @@ impl Context {
         let binding = mir::Binding {
             pat,
             name: if let Some(name) = &con_binding.name {
-                let local = Local::new();
+                let local = Local::default();
                 bindings.push((**name, local));
                 Some(local)
             } else {
@@ -219,7 +219,7 @@ impl Context {
                 list
             }
             hir::Expr::Func(arg, body) => {
-                let arg_local = Local::new();
+                let arg_local = Local::default();
                 stack.push((**arg, arg_local));
                 let body = self.lower_expr(hir, con, body, stack);
                 stack.pop();
@@ -381,7 +381,7 @@ impl Context {
                         ],
                     ),
                     hir::Intrinsic::Go => {
-                        let next_local = Local::new();
+                        let next_local = Local::default();
                         let func = self.lower_expr(hir, con, &args[0], stack);
                         let next = self.lower_expr(hir, con, &args[1], stack);
                         let output_repr = if let Repr::Func(_, o) = func.meta() {
@@ -539,8 +539,8 @@ impl Context {
                              state,
                              recv,
                          }| {
-                            let send_local = Local::new();
-                            let state_local = Local::new();
+                            let send_local = Local::default();
+                            let state_local = Local::default();
                             is_state = state.is_some();
                             mir::Handler {
                                 eff: *eff,

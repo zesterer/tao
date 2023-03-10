@@ -219,8 +219,8 @@ pub enum Pat {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Local(pub usize);
 
-impl Local {
-    pub fn new() -> Self {
+impl Default for Local {
+    fn default() -> Self {
         use core::sync::atomic::{AtomicUsize, Ordering};
         static ID: AtomicUsize = AtomicUsize::new(0);
         Self(ID.fetch_add(1, Ordering::Relaxed))
@@ -426,7 +426,7 @@ impl Expr {
                 pred.refresh_locals_inner(stack);
                 for (binding, arm) in arms {
                     let old_stack = stack.len();
-                    binding.visit_bindings(&mut |name, _| stack.push((name, Local::new())));
+                    binding.visit_bindings(&mut |name, _| stack.push((name, Local::default())));
 
                     binding.refresh_locals_inner(stack);
                     arm.refresh_locals_inner(stack);
@@ -434,7 +434,7 @@ impl Expr {
                 }
             }
             Expr::Func(arg, body) => {
-                let new_arg = Local::new();
+                let new_arg = Local::default();
                 stack.push((**arg, new_arg));
                 body.refresh_locals_inner(stack);
                 stack.pop();
@@ -443,7 +443,7 @@ impl Expr {
             Expr::Go(next, body, init) => {
                 init.refresh_locals_inner(stack);
 
-                let new_init = Local::new();
+                let new_init = Local::default();
                 stack.push((**next, new_init));
                 body.refresh_locals_inner(stack);
                 stack.pop();
@@ -459,8 +459,8 @@ impl Expr {
                     recv,
                 } in handlers
                 {
-                    let new_send = Local::new();
-                    let new_state = Local::new();
+                    let new_send = Local::default();
+                    let new_state = Local::default();
                     let old_len = stack.len();
                     stack.push((**send, new_send));
                     stack.push((**state, new_state));
