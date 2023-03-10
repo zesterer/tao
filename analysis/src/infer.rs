@@ -2453,7 +2453,7 @@ impl<'a> Infer<'a> {
                             Ok(EffectInst::Concrete(y, y_gen_tys)),
                         ) if x == *y => x_gen_tys
                             .into_iter()
-                            .zip(y_gen_tys.into_iter())
+                            .zip(y_gen_tys.iter())
                             .try_fold(true, |a, (x, y)| {
                                 Ok(a && self.covers_var(x, *y, ty_gens, eff_gens, todo)?)
                             })
@@ -2619,7 +2619,7 @@ impl<'a> Infer<'a> {
                             EffectInstInfo::Known(y, y_gen_tys),
                         ) if *x == y => {
                             x_gen_tys
-                                .into_iter()
+                                .iter()
                                 .zip(y_gen_tys.into_iter())
                                 .for_each(|(x, y)| {
                                     self.derive_links(*x, y, self_ty, use_span, ty_links, eff_links)
