@@ -39,11 +39,11 @@ impl<'a> Scope<'a> {
         Scope::Many(self, many)
     }
 
-    fn with_basin<'b>(&'b self, eff: EffectVar) -> Scope<'b> {
+    fn with_basin(&self, eff: EffectVar) -> Scope {
         Scope::Basin(self, Some(eff))
     }
 
-    fn without_basin<'b>(&'b self) -> Scope<'b> {
+    fn without_basin(&self) -> Scope {
         Scope::Basin(self, None)
     }
 
