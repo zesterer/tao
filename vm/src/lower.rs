@@ -26,7 +26,7 @@ impl Program {
         // The total number of locals this pattern produces
         let mut binds = binding.bindings().len();
 
-        if let Some(_) = binding.name {
+        if binding.name.is_some() {
             if binds == 1 {
                 self.push(Instr::PushLocal);
                 return;
