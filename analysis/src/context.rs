@@ -903,7 +903,7 @@ impl Context {
                                         val_ty,
                                         EqInfo::new(
                                             name.span(),
-                                            format!("Type of member item must match class"),
+                                            "Type of member item must match class".to_string(),
                                         ),
                                     );
                                 }
