@@ -348,7 +348,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                     self.with_ty(i, true),
                     self.with_ty(o, self.lhs_exposed)
                 ),
-                Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(
+                Ty::Data(name, params) if self.lhs_exposed && !params.is_empty() => write!(
                     f,
                     "({}{})",
                     *self.ctx.datas.get_data(name).name,
