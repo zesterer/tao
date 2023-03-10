@@ -63,7 +63,7 @@ impl Error {
                 ErrorKind::Unexpected(pat) => format!("Unexpected {}", pat.fg(Color::Red)),
                 ErrorKind::Unclosed { start, .. } =>
                     format!("Unclosed delimiter {}", start.fg(Color::Red)),
-                ErrorKind::NoEndBranch => format!("No end branch"),
+                ErrorKind::NoEndBranch => "No end branch".to_string(),
             },
             if let Some(label) = self.label {
                 format!(" while parsing {}", label.fg(Color::Cyan))
