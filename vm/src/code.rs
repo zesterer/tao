@@ -1,9 +1,6 @@
 use super::*;
-use std::{
-    io::Write,
-    rc::Rc,
-};
 use im::Vector;
+use std::{io::Write, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub enum Instr {
@@ -17,10 +14,10 @@ pub enum Instr {
     MakeFunc(isize, usize),
     ApplyFunc,
 
-    MakeList(usize), // T * N => [T]
-    IndexList(usize), // Nth field of list/tuple
+    MakeList(usize),    // T * N => [T]
+    IndexList(usize),   // Nth field of list/tuple
     SkipListImm(usize), // (N..) fields of list/tuple
-    SetList(usize), // Set Nth field of list
+    SetList(usize),     // Set Nth field of list
     LenList,
     JoinList,
     SkipList,
@@ -43,17 +40,17 @@ pub enum Instr {
     GetLocal(usize), // Duplicate value in locals position (len - 1 - N) and put on stack
 
     NotBool, // Bool -> Bool
-    NegInt, // Int -> Int
+    NegInt,  // Int -> Int
     NegReal, // Real -> Real
 
-    Display, // ? -> Str
+    Display,   // ? -> Str
     Codepoint, // Char -> Int
 
     AddInt, // Int -> Int -> Int
     SubInt, // Int -> Int -> Int
     MulInt,
 
-    EqInt, // Int -> Int -> Bool
+    EqInt,  // Int -> Int -> Bool
     EqBool, // Bool -> Bool -> Bool
     EqChar, // Char -> Char -> Bool
     LessInt,
@@ -86,9 +83,15 @@ impl Instr {
 pub struct Addr(pub usize);
 
 impl Addr {
-    pub fn incr(self) -> Self { Self(self.0 + 1) }
-    pub fn jump(self, rel: isize) -> Self { Self((self.0 as isize + rel) as usize) }
-    pub fn jump_to(self, other: Self) -> isize { other.0 as isize - self.0 as isize }
+    pub fn incr(self) -> Self {
+        Self(self.0 + 1)
+    }
+    pub fn jump(self, rel: isize) -> Self {
+        Self((self.0 as isize + rel) as usize)
+    }
+    pub fn jump_to(self, other: Self) -> isize {
+        other.0 as isize - self.0 as isize
+    }
 }
 
 #[derive(Default, Debug)]
@@ -104,7 +107,9 @@ impl Program {
         self.debug.push((self.next_addr(), msg.to_string()));
     }
 
-    pub fn next_addr(&self) -> Addr { Addr(self.instrs.len()) }
+    pub fn next_addr(&self) -> Addr {
+        Addr(self.instrs.len())
+    }
 
     pub fn instr(&self, ip: Addr) -> Instr {
         self.instrs
@@ -188,61 +193,70 @@ impl Program {
 
             let instr_display = match instr {
                 Instr::Error(msg) => format!("error \"{}\"", msg),
-                Instr::Nop => format!("nop"),
-                Instr::Break => format!("break"),
+                Instr::Nop => "nop".to_string(),
+                Instr::Break => "break".to_string(),
                 Instr::Imm(x) => format!("imm `{}`", x),
                 Instr::Pop(n) => format!("pop {}", n),
-                Instr::Replace => format!("replace"),
-                Instr::Swap => format!("swap"),
+                Instr::Replace => "replace".to_string(),
+                Instr::Swap => "swap".to_string(),
                 Instr::Call(x) => format!("call {:+} (0x{:03X})", x, addr.jump(x).0),
-                Instr::Ret => format!("ret"),
-                Instr::MakeFunc(i, n) => format!("func.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
-                Instr::ApplyFunc => format!("func.apply"),
+                Instr::Ret => "ret".to_string(),
+                Instr::MakeFunc(i, n) => {
+                    format!("func.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n)
+                }
+                Instr::ApplyFunc => "func.apply".to_string(),
                 Instr::MakeList(n) => format!("list.make {}", n),
                 Instr::IndexList(i) => format!("list.index #{}", i),
                 Instr::SkipListImm(i) => format!("list.skip_imm #{}", i),
                 Instr::SetList(idx) => format!("list.set #{}", idx),
-                Instr::LenList => format!("list.len"),
-                Instr::JoinList => format!("list.join"),
-                Instr::SkipList => format!("list.skip"),
-                Instr::TrimList => format!("list.trim"),
+                Instr::LenList => "list.len".to_string(),
+                Instr::JoinList => "list.join".to_string(),
+                Instr::SkipList => "list.skip".to_string(),
+                Instr::TrimList => "list.trim".to_string(),
                 Instr::MakeSum(i) => format!("sum.make #{}", i),
                 Instr::IndexSum(i) => format!("sum.index #{}", i),
-                Instr::VariantSum => format!("sum.variant"),
-                Instr::Dup => format!("dup"),
+                Instr::VariantSum => "sum.variant".to_string(),
+                Instr::Dup => "dup".to_string(),
                 Instr::Jump(x) => format!("jump {:+} (0x{:03X})", x, addr.jump(x).0),
-                Instr::IfNot => format!("if_not"),
-                Instr::PushLocal => format!("local.push"),
+                Instr::IfNot => "if_not".to_string(),
+                Instr::PushLocal => "local.push".to_string(),
                 Instr::PopLocal(n) => format!("local.pop {}", n),
                 Instr::GetLocal(x) => format!("local.get +{}", x),
-                Instr::NotBool => format!("bool.not"),
-                Instr::NegInt => format!("int.neg"),
-                Instr::NegReal => format!("real.neg"),
-                Instr::Display => format!("any.display"),
-                Instr::Codepoint => format!("char.codepoint"),
-                Instr::AddInt => format!("int.add"),
-                Instr::SubInt => format!("int.sub"),
-                Instr::MulInt => format!("int.mul"),
-                Instr::EqInt => format!("int.eq"),
-                Instr::EqBool => format!("bool.eq"),
-                Instr::EqChar => format!("char.eq"),
-                Instr::LessInt => format!("int.less"),
-                Instr::MoreInt => format!("int.more"),
-                Instr::LessEqInt => format!("int.less_eq"),
-                Instr::MoreEqInt => format!("int.more_eq"),
-                Instr::AndBool => format!("bool.and"),
-                Instr::Print => format!("io.print"),
-                Instr::Input => format!("io.input"),
-                Instr::Rand => format!("io.rand"),
-                Instr::MakeEffect(i, n) => format!("eff.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
-                Instr::Propagate => format!("eff.propagate"),
+                Instr::NotBool => "bool.not".to_string(),
+                Instr::NegInt => "int.neg".to_string(),
+                Instr::NegReal => "real.neg".to_string(),
+                Instr::Display => "any.display".to_string(),
+                Instr::Codepoint => "char.codepoint".to_string(),
+                Instr::AddInt => "int.add".to_string(),
+                Instr::SubInt => "int.sub".to_string(),
+                Instr::MulInt => "int.mul".to_string(),
+                Instr::EqInt => "int.eq".to_string(),
+                Instr::EqBool => "bool.eq".to_string(),
+                Instr::EqChar => "char.eq".to_string(),
+                Instr::LessInt => "int.less".to_string(),
+                Instr::MoreInt => "int.more".to_string(),
+                Instr::LessEqInt => "int.less_eq".to_string(),
+                Instr::MoreEqInt => "int.more_eq".to_string(),
+                Instr::AndBool => "bool.and".to_string(),
+                Instr::Print => "io.print".to_string(),
+                Instr::Input => "io.input".to_string(),
+                Instr::Rand => "io.rand".to_string(),
+                Instr::MakeEffect(i, n) => {
+                    format!("eff.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n)
+                }
+                Instr::Propagate => "eff.propagate".to_string(),
                 Instr::Suspend(eff) => format!("eff.suspend {:?}", eff),
                 Instr::Register(eff) => format!("eff.register {:?}", eff),
                 Instr::Resume(eff) => format!("eff.resume {:?}", eff),
                 Instr::EndHandlers(n) => format!("eff.end_handlers {}", n),
             };
 
-            writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();
+            writeln!(
+                writer,
+                "0x{:03X} | {:>+3} | {}",
+                addr.0, stack_diff, instr_display
+            )
+            .unwrap();
         }
 
         writeln!(writer, "{} instructions in total.", self.instrs.len()).unwrap();

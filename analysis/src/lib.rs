@@ -1,4 +1,7 @@
-#![feature(arbitrary_self_types, option_zip, never_type, let_else, let_chains)]
+#![feature(arbitrary_self_types, option_zip, never_type, let_chains)]
+
+#![allow(clippy::result_unit_err)]
+#![allow(clippy::type_complexity)]
 
 pub mod class;
 pub mod concrete;
@@ -10,41 +13,41 @@ pub mod def;
 pub mod effect;
 pub mod error;
 pub mod exhaustivity;
-pub mod infer;
 pub mod hir;
+pub mod infer;
 pub mod lower;
 pub mod reify;
 pub mod ty;
 
 pub use crate::{
-    class::{ClassId, Class, Classes, ClassAssoc, ClassField, Member, MemberId, MemberItem},
-    concrete::{ConContext, ConTyId, ConTy, ConNode, ConMeta, ConProc, ConProcId, ConDataId, ConEffectId},
+    class::{Class, ClassAssoc, ClassField, ClassId, Classes, Member, MemberId, MemberItem},
+    concrete::{
+        ConContext, ConDataId, ConEffectId, ConMeta, ConNode, ConProc, ConProcId, ConTy, ConTyId,
+    },
     context::Context,
-    data::{Datas, Data, DataId, Alias, AliasId},
-    def::{Defs, Def, DefId},
-    effect::{Effects, EffectDecl, EffectDeclId, EffectAlias, EffectAliasId},
+    data::{Alias, AliasId, Data, DataId, Datas},
+    def::{Def, DefId, Defs},
+    effect::{EffectAlias, EffectAliasId, EffectDecl, EffectDeclId, Effects},
     error::Error,
     exhaustivity::{exhaustivity, ExamplePat},
-    hir::{InferExpr, InferBinding, TyExpr, TyBinding, ConBinding, ConExpr, Intrinsic, Meta},
-    infer::{Infer, Checked, TyVar, TyInfo, InferNode, InferMeta, InferError, EqInfo, ClassVar, ClassInfo, EffectVar, EffectInfo, EffectInstInfo, EffectInstVar, covariant, contravariant, invariant},
+    hir::{ConBinding, ConExpr, InferBinding, InferExpr, Intrinsic, Meta, TyBinding, TyExpr},
+    infer::{
+        contravariant, covariant, invariant, Checked, ClassInfo, ClassVar, EffectInfo,
+        EffectInstInfo, EffectInstVar, EffectVar, EqInfo, Infer, InferError, InferMeta, InferNode,
+        TyInfo, TyVar,
+    },
     lower::{Scope, ToHir, TypeLowerCfg},
     reify::Reify,
-    ty::{Types, TyId, GenScope, GenScopeId, Prim, Ty, TyNode, TyMeta, ErrorReason, ImpliedMember, TyImpliedMember, InferImpliedMember, ImpliedItems, InferImpliedItems, Effect, EffectId, EffectInst},
+    ty::{
+        Effect, EffectId, EffectInst, ErrorReason, GenScope, GenScopeId, ImpliedItems,
+        ImpliedMember, InferImpliedItems, InferImpliedMember, Prim, Ty, TyId, TyImpliedMember,
+        TyMeta, TyNode, Types,
+    },
 };
 pub use tao_syntax::ast::Ident;
 pub use tao_util::index::{Id, Index};
 
-use tao_syntax::{
-    Node,
-    Span,
-    SrcNode,
-    SrcId,
-    ast,
-};
 use hashbrown::{HashMap, HashSet};
 use internment::Intern;
-use std::{
-    fmt,
-    marker::PhantomData,
-    collections::BTreeMap,
-};
+use std::{collections::BTreeMap, fmt};
+use tao_syntax::{ast, Node, Span, SrcId, SrcNode};

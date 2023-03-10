@@ -37,12 +37,15 @@ impl<'hir, 'a> dot::Labeller<'a, Node, Edge> for CallGraph<'hir> {
 
 impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
     fn nodes(&'a self) -> dot::Nodes<'a, Node> {
-        self.ctx.defs
+        self.ctx
+            .defs
             .iter()
-            .filter_map(|(id, def)| if def.attr.iter().find(|a| &**a.name == "util").is_none() {
-                Some((id, *def.name))
-            } else {
-                None
+            .filter_map(|(id, def)| {
+                if !def.attr.iter().any(|a| &**a.name == "util") {
+                    Some((id, *def.name))
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -50,11 +53,8 @@ impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
         fn fetch_edge(ctx: &Context, parent: Node, expr: &TyExpr, edges: &mut HashSet<Edge>) {
             if let hir::Expr::Global(global) = &**expr {
                 let def = ctx.defs.get(global.0);
-                if def.attr.iter().find(|a| &**a.name == "util").is_none() {
-                    edges.insert((
-                        parent,
-                        (global.0, *def.name),
-                    ));
+                if !def.attr.iter().any(|a| &**a.name == "util") {
+                    edges.insert((parent, (global.0, *def.name)));
                 }
             }
 
@@ -63,13 +63,17 @@ impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
 
         let mut edges = HashSet::new();
         for (id, def) in self.ctx.defs.iter() {
-            if def.attr.iter().find(|a| &**a.name == "util").is_none() {
+            if !def.attr.iter().any(|a| &**a.name == "util") {
                 let parent = (id, *def.name);
                 fetch_edge(self.ctx, parent, def.body.as_ref().unwrap(), &mut edges);
             }
         }
         edges.into_iter().collect()
     }
-    fn source(&self, e: &Edge) -> Node { e.0 }
-    fn target(&self, e: &Edge) -> Node { e.1 }
+    fn source(&self, e: &Edge) -> Node {
+        e.0
+    }
+    fn target(&self, e: &Edge) -> Node {
+        e.1
+    }
 }

@@ -6,22 +6,33 @@ use std::ops::Deref;
 pub struct Ident(Intern<String>);
 
 impl fmt::Display for Ident {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl fmt::Debug for Ident {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "`{}`", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "`{}`", self.0)
+    }
 }
 
 impl Ident {
-    pub fn new<S: ToString>(s: S) -> Self { Self(Intern::new(s.to_string())) }
-    pub fn as_ref(self) -> &'static String { self.0.as_ref() }
+    pub fn new<S: ToString>(s: S) -> Self {
+        Self(Intern::new(s.to_string()))
+    }
+
+    pub fn as_string(self) -> &'static String {
+        self.0.as_ref()
+    }
 }
 
 impl Deref for Ident {
     type Target = String;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 // #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -57,16 +68,24 @@ impl fmt::Display for UnaryOp {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     // Sum
-    Add, Sub,
+    Add,
+    Sub,
     // Product
-    Mul, Div, Rem,
+    Mul,
+    Div,
+    Rem,
     // Equality
-    Eq, NotEq,
+    Eq,
+    NotEq,
     // Comparison
-    Less, LessEq,
-    More, MoreEq,
+    Less,
+    LessEq,
+    More,
+    MoreEq,
     // Logical
-    And, Or, Xor,
+    And,
+    Or,
+    Xor,
     // Lists
     Join,
 }
@@ -123,17 +142,13 @@ impl EffectSet {
     pub fn mentions_ty(&self, name: Ident) -> bool {
         self.effs
             .iter()
-            .any(|(_, params)| params
-                .iter()
-                .any(|p| p.mentions_ty(name)))
+            .any(|(_, params)| params.iter().any(|p| p.mentions_ty(name)))
     }
 
     pub fn mentions_eff(&self, name: Ident) -> bool {
         self.effs
             .iter()
-            .any(|(eff, params)| **eff == name || params
-                .iter()
-                .any(|p| p.mentions_eff(name)))
+            .any(|(eff, params)| **eff == name || params.iter().any(|p| p.mentions_eff(name)))
     }
 }
 
@@ -156,39 +171,28 @@ pub enum Type {
 impl Type {
     pub fn for_children(&self, mut f: impl FnMut(&Self)) {
         match self {
-            Self::Error | Self::Universe | Self::Unknown => {},
+            Self::Error | Self::Universe | Self::Unknown => {}
             Self::List(x) => f(x),
-            Self::Tuple(fields) => fields
-                .iter()
-                .for_each(|field| f(field)),
-            Self::Record(fields) => fields
-                .iter()
-                .for_each(|(_, field)| f(field)),
+            Self::Tuple(fields) => fields.iter().for_each(|field| f(field)),
+            Self::Record(fields) => fields.iter().for_each(|(_, field)| f(field)),
             Self::Func(i, o) => {
                 f(i);
                 f(o);
-            },
-            Self::Data(data, args) => args
-                .iter()
-                .for_each(|arg| f(arg)),
+            }
+            Self::Data(_data, args) => args.iter().for_each(|arg| f(arg)),
             // TODO: Recurse into class inst?
             Self::Assoc(inner, _, _) => f(inner),
             Self::Effect(set, out) => {
                 f(out);
                 set.effs
                     .iter()
-                    .for_each(|(_, args)| args
-                        .iter()
-                        .for_each(|arg| f(arg)));
-            },
+                    .for_each(|(_, args)| args.iter().for_each(|arg| f(arg)));
+            }
         }
     }
 
     pub fn is_fully_specified(&self) -> bool {
-        let mut specified = match self {
-            Self::Unknown => false,
-            _ => true,
-        };
+        let mut specified = !matches!(self, Self::Unknown);
         self.for_children(|ty| specified &= ty.is_fully_specified());
         specified
     }
@@ -204,9 +208,7 @@ impl Type {
 
     pub fn mentions_eff(&self, name: Ident) -> bool {
         let mut mentions = match self {
-            Self::Effect(set, _) => set.effs
-                .iter()
-                .any(|(eff, _)| **eff == name),
+            Self::Effect(set, _) => set.effs.iter().any(|(eff, _)| **eff == name),
             _ => false,
         };
         self.for_children(|ty| mentions |= ty.mentions_eff(name));
@@ -258,7 +260,10 @@ pub enum Expr {
     Unary(SrcNode<UnaryOp>, SrcNode<Self>),
     Binary(SrcNode<BinaryOp>, SrcNode<Self>, SrcNode<Self>),
     Let(Vec<(SrcNode<Binding>, SrcNode<Self>)>, SrcNode<Self>),
-    Match(SrcNode<Vec<SrcNode<Self>>>, Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>),
+    Match(
+        SrcNode<Vec<SrcNode<Self>>>,
+        Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>,
+    ),
     If(SrcNode<Self>, SrcNode<Self>, SrcNode<Self>),
     Func(SrcNode<Vec<(SrcNode<Vec<SrcNode<Binding>>>, SrcNode<Self>)>>),
     Apply(SrcNode<Self>, SrcNode<Self>),
@@ -266,8 +271,14 @@ pub enum Expr {
     ClassAccess(SrcNode<Type>, SrcNode<Ident>),
     Intrinsic(SrcNode<Ident>, Vec<SrcNode<Self>>),
     Update(SrcNode<Self>, Vec<(SrcNode<Ident>, SrcNode<Self>)>),
-    Basin(Vec<(Option<SrcNode<Binding>>, SrcNode<Self>)>, SrcNode<Self>),
-    Block(Vec<(Option<SrcNode<Binding>>, SrcNode<Self>)>, SrcNode<Self>),
+    Basin(
+        Vec<(Option<SrcNode<Binding>>, SrcNode<Self>)>,
+        SrcNode<Self>,
+    ),
+    Block(
+        Vec<(Option<SrcNode<Binding>>, SrcNode<Self>)>,
+        SrcNode<Self>,
+    ),
     Handle {
         expr: SrcNode<Self>,
         handlers: Vec<Handler>,
@@ -434,65 +445,51 @@ pub struct Module {
 
 impl Module {
     pub fn classes(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Class)> + '_ {
-        self.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Class(class) => Some((item.attrs.as_slice(), class)),
-                _ => None,
-            })
+        self.items.iter().filter_map(|item| match &item.kind {
+            ItemKind::Class(class) => Some((item.attrs.as_slice(), class)),
+            _ => None,
+        })
     }
 
     pub fn datas(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Data)> + '_ {
-        self.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Data(data) => Some((item.attrs.as_slice(), data)),
-                _ => None,
-            })
+        self.items.iter().filter_map(|item| match &item.kind {
+            ItemKind::Data(data) => Some((item.attrs.as_slice(), data)),
+            _ => None,
+        })
     }
 
     pub fn aliases(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Alias)> + '_ {
-        self.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Alias(alias) => Some((item.attrs.as_slice(), alias)),
-                _ => None,
-            })
+        self.items.iter().filter_map(|item| match &item.kind {
+            ItemKind::Alias(alias) => Some((item.attrs.as_slice(), alias)),
+            _ => None,
+        })
     }
 
     pub fn members(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Member)> + '_ {
-        self.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Member(member) => Some((item.attrs.as_slice(), member)),
-                _ => None,
-            })
+        self.items.iter().filter_map(|item| match &item.kind {
+            ItemKind::Member(member) => Some((item.attrs.as_slice(), member)),
+            _ => None,
+        })
     }
 
     pub fn defs(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Def)> + '_ {
-        self.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Def(def) => Some((item.attrs.as_slice(), def)),
-                _ => None,
-            })
+        self.items.iter().filter_map(|item| match &item.kind {
+            ItemKind::Def(def) => Some((item.attrs.as_slice(), def)),
+            _ => None,
+        })
     }
 
     pub fn effects(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Effect)> + '_ {
-        self.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Effect(eff) => Some((item.attrs.as_slice(), eff)),
-                _ => None,
-            })
+        self.items.iter().filter_map(|item| match &item.kind {
+            ItemKind::Effect(eff) => Some((item.attrs.as_slice(), eff)),
+            _ => None,
+        })
     }
 
     pub fn effect_aliases(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &EffectAlias)> + '_ {
-        self.items
-            .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::EffectAlias(eff) => Some((item.attrs.as_slice(), eff)),
-                _ => None,
-            })
+        self.items.iter().filter_map(|item| match &item.kind {
+            ItemKind::EffectAlias(eff) => Some((item.attrs.as_slice(), eff)),
+            _ => None,
+        })
     }
 }

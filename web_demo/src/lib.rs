@@ -1,9 +1,9 @@
-use wasm_bindgen::prelude::*;
 use include_dir::{include_dir, Dir};
 use rand::prelude::*;
-use tao::{compile, SrcId, Options, OptMode};
-use tao_vm::{Program, Env, exec};
-use std::path::{PathBuf, Component};
+use std::path::{Component, PathBuf};
+use tao::{compile, OptMode, Options, SrcId};
+use tao_vm::{exec, Env};
+use wasm_bindgen::prelude::*;
 
 static LIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../lib");
 
@@ -13,7 +13,7 @@ static LIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../lib");
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
-extern {
+extern "C" {
     fn prompt(s: String) -> String;
     fn alert(s: String);
 }
@@ -21,19 +21,21 @@ extern {
 struct WebEnv(rand::rngs::SmallRng);
 
 impl Env for WebEnv {
-    fn input(&mut self) -> String { prompt("Provide input to program".to_string()) }
+    fn input(&mut self) -> String {
+        prompt("Provide input to program".to_string())
+    }
     fn print(&mut self, s: String) {
         let win = web_sys::window().unwrap();
         let doc = win.document().unwrap();
         let output = doc.get_element_by_id("output").unwrap();
-        let mut output_buf = output
-            .text_content()
-            .unwrap();
+        let mut output_buf = output.text_content().unwrap();
         output_buf += &s;
         output_buf += "\n";
         output.set_text_content(Some(&output_buf));
     }
-    fn rand(&mut self, max: i64) -> i64 { self.0.gen_range(0..max) }
+    fn rand(&mut self, max: i64) -> i64 {
+        self.0.gen_range(0..max)
+    }
 }
 
 #[wasm_bindgen]
@@ -61,11 +63,11 @@ pub fn run(src: &str, mode: &str, optimisation: &str) {
             },
         },
         &mut stderr,
-        |src_id| std::str::from_utf8(LIB_DIR
-            .get_file(src_id.to_path())?
-            .contents())
-            .map(|s| s.to_string())
-            .ok(),
+        |src_id| {
+            std::str::from_utf8(LIB_DIR.get_file(src_id.to_path())?.contents())
+                .map(|s| s.to_string())
+                .ok()
+        },
         |parent, rel| {
             let mut path = parent.to_path();
             path.pop();
@@ -73,8 +75,10 @@ pub fn run(src: &str, mode: &str, optimisation: &str) {
             let mut new_path = PathBuf::new();
             for c in path.components() {
                 match c {
-                    Component::Prefix(_) | Component::RootDir | Component::CurDir => {},
-                    Component::ParentDir => { new_path.pop(); },
+                    Component::Prefix(_) | Component::RootDir | Component::CurDir => {}
+                    Component::ParentDir => {
+                        new_path.pop();
+                    }
                     Component::Normal(p) => new_path.push(p),
                 }
             }
@@ -92,7 +96,7 @@ pub fn run(src: &str, mode: &str, optimisation: &str) {
 
     if debug.is_empty() {
         if let Some(prog) = prog {
-            env.print(format!("Compilation succeeded."));
+            env.print("Compilation succeeded.".to_string());
             exec(&prog, &mut env);
         }
     }

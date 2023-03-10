@@ -1,4 +1,4 @@
-use tao_util::index::{Index, Id};
+use tao_util::index::{Id, Index};
 
 #[derive(Copy, Clone)]
 pub struct Reg(usize);
@@ -75,6 +75,7 @@ pub struct Func {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Program {
     datas: Index<Repr>,
     funcs: Index<Func>,

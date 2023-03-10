@@ -1,10 +1,7 @@
 //! The MIR is *not* correct (in the context of Tao's abstract machine) by construction. See the 'SAFETY' notes.
 
 use super::*;
-use std::{
-    cell::Cell,
-    fmt,
-};
+use std::{cell::Cell, fmt};
 
 pub type EffectId = ConEffectId;
 
@@ -36,9 +33,27 @@ pub type Literal = Const<!>;
 pub type Partial = Const<Option<Local>>;
 
 impl<U: fmt::Debug + Clone> Const<U> {
-    pub fn nat(&self) -> u64 { if let Const::Nat(x) = self { *x } else { panic!("{:?}", self) } }
-    pub fn int(&self) -> i64 { if let Const::Int(x) = self { *x } else { panic!("{:?}", self) } }
-    pub fn list(&self) -> Vec<Self> { if let Const::List(x) = self { x.clone() } else { panic!("{:?}", self) } }
+    pub fn nat(&self) -> u64 {
+        if let Const::Nat(x) = self {
+            *x
+        } else {
+            panic!("{:?}", self)
+        }
+    }
+    pub fn int(&self) -> i64 {
+        if let Const::Int(x) = self {
+            *x
+        } else {
+            panic!("{:?}", self)
+        }
+    }
+    pub fn list(&self) -> Vec<Self> {
+        if let Const::List(x) = self {
+            x.clone()
+        } else {
+            panic!("{:?}", self)
+        }
+    }
 }
 
 impl Partial {
@@ -50,14 +65,18 @@ impl Partial {
             Self::Int(x) => Some(Literal::Int(*x)),
             Self::Real(x) => Some(Literal::Real(*x)),
             Self::Char(c) => Some(Literal::Char(*c)),
-            Self::Tuple(fields) => Some(Literal::Tuple(fields
-                .iter()
-                .map(|field| field.to_literal())
-                .collect::<Option<_>>()?)),
-            Self::List(items) => Some(Literal::List(items
-                .iter()
-                .map(|item| item.to_literal())
-                .collect::<Option<_>>()?)),
+            Self::Tuple(fields) => Some(Literal::Tuple(
+                fields
+                    .iter()
+                    .map(|field| field.to_literal())
+                    .collect::<Option<_>>()?,
+            )),
+            Self::List(items) => Some(Literal::List(
+                items
+                    .iter()
+                    .map(|item| item.to_literal())
+                    .collect::<Option<_>>()?,
+            )),
             Self::Sum(v, inner) => Some(Literal::Sum(*v, Box::new(inner.to_literal()?))),
             Self::Data(data, inner) => Some(Literal::Data(*data, Box::new(inner.to_literal()?))),
         }
@@ -75,16 +94,12 @@ impl Partial {
             (Self::Int(x), Self::Int(y)) if x == y => Self::Int(x),
             (Self::Real(x), Self::Real(y)) if x == y => Self::Real(x),
             (Self::Char(x), Self::Char(y)) if x == y => Self::Char(x),
-            (Self::Tuple(xs), Self::Tuple(ys)) => Self::Tuple(xs
-                .into_iter()
-                .zip(ys)
-                .map(|(x, y)| x.or(y))
-                .collect()),
-            (Self::List(xs), Self::List(ys)) if xs.len() == ys.len() => Self::List(xs
-                .into_iter()
-                .zip(ys)
-                .map(|(x, y)| x.or(y))
-                .collect()),
+            (Self::Tuple(xs), Self::Tuple(ys)) => {
+                Self::Tuple(xs.into_iter().zip(ys).map(|(x, y)| x.or(y)).collect())
+            }
+            (Self::List(xs), Self::List(ys)) if xs.len() == ys.len() => {
+                Self::List(xs.into_iter().zip(ys).map(|(x, y)| x.or(y)).collect())
+            }
             (Self::Sum(a, x), Self::Sum(b, y)) if a == b => Self::Sum(a, Box::new(x.or(*y))),
             (Self::Data(a, x), Self::Data(b, y)) if a == b => Self::Data(a, Box::new(x.or(*y))),
             _ => Self::Unknown(None),
@@ -101,14 +116,12 @@ impl Literal {
             Self::Int(x) => Partial::Int(*x),
             Self::Real(x) => Partial::Real(*x),
             Self::Char(c) => Partial::Char(*c),
-            Self::Tuple(fields) => Partial::Tuple(fields
-                .iter()
-                .map(|field| field.to_partial())
-                .collect()),
-            Self::List(items) => Partial::List(items
-                .iter()
-                .map(|item| item.to_partial())
-                .collect()),
+            Self::Tuple(fields) => {
+                Partial::Tuple(fields.iter().map(|field| field.to_partial()).collect())
+            }
+            Self::List(items) => {
+                Partial::List(items.iter().map(|item| item.to_partial()).collect())
+            }
             Self::Sum(v, inner) => Partial::Sum(*v, Box::new(inner.to_partial())),
             Self::Data(data, inner) => Partial::Data(*data, Box::new(inner.to_partial())),
         }
@@ -126,8 +139,22 @@ impl fmt::Display for Literal {
             Self::Char('\t') => write!(f, "'\\t'"),
             Self::Char('\n') => write!(f, "'\\n'"),
             Self::Char(c) => write!(f, "'{}'", c),
-            Self::Tuple(xs) => write!(f, "({})", xs.iter().map(|x| format!("{},", x)).collect::<Vec<_>>().join(" ")),
-            Self::List(xs) => write!(f, "[{}]", xs.iter().map(|x| format!("{}", x)).collect::<Vec<_>>().join(", ")),
+            Self::Tuple(xs) => write!(
+                f,
+                "({})",
+                xs.iter()
+                    .map(|x| format!("{},", x))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+            Self::List(xs) => write!(
+                f,
+                "[{}]",
+                xs.iter()
+                    .map(|x| format!("{}", x))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Self::Sum(v, x) => write!(f, "#{} {}", v, x),
             Self::Data(data, x) => write!(f, "{:?} {}", data, x),
         }
@@ -192,8 +219,8 @@ pub enum Pat {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Local(pub usize);
 
-impl Local {
-    pub fn new() -> Self {
+impl Default for Local {
+    fn default() -> Self {
         use core::sync::atomic::{AtomicUsize, Ordering};
         static ID: AtomicUsize = AtomicUsize::new(0);
         Self(ID.fetch_add(1, Ordering::Relaxed))
@@ -217,41 +244,36 @@ impl Binding {
     pub fn is_refutable(&self) -> bool {
         match &self.pat {
             Pat::Wildcard => false,
-            Pat::Literal(c) => match c {
-                Const::Tuple(fields) if fields.is_empty() => false,
-                _ => true,
-            },
+            Pat::Literal(c) => !matches!(c, Const::Tuple(fields) if fields.is_empty()),
             Pat::Single(inner) => inner.is_refutable(),
             Pat::Add(lhs, rhs) => *rhs > 0 || lhs.is_refutable(),
-            Pat::Tuple(fields) => fields
-                .iter()
-                .any(|field| field.is_refutable()),
+            Pat::Tuple(fields) => fields.iter().any(|field| field.is_refutable()),
             Pat::ListExact(_) => true,
-            Pat::ListFront(items, tail) => items.len() > 0 || tail.as_ref().map_or(false, |tail| tail.is_refutable()),
+            Pat::ListFront(items, tail) => {
+                !items.is_empty() || tail.as_ref().map_or(false, |tail| tail.is_refutable())
+            }
             Pat::Variant(_, _) => true, // TODO: Check number of variants
             Pat::Data(_, inner) => inner.is_refutable(),
         }
     }
 
-    fn visit_bindings(self: &MirNode<Self>, mut bind: &mut impl FnMut(Local, &Repr)) {
-        self.name.map(|name| bind(name, self.meta()));
+    fn visit_bindings(self: &MirNode<Self>, bind: &mut impl FnMut(Local, &Repr)) {
+        if let Some(name) = self.name {
+            bind(name, self.meta());
+        }
         match &self.pat {
-            Pat::Wildcard => {},
-            Pat::Literal(_) => {},
+            Pat::Wildcard => {}
+            Pat::Literal(_) => {}
             Pat::Single(inner) => inner.visit_bindings(bind),
             Pat::Add(lhs, _) => lhs.visit_bindings(bind),
-            Pat::Tuple(fields) => fields
-                .iter()
-                .for_each(|field| field.visit_bindings(bind)),
-            Pat::ListExact(items) => items
-                .iter()
-                .for_each(|item| item.visit_bindings(bind)),
+            Pat::Tuple(fields) => fields.iter().for_each(|field| field.visit_bindings(bind)),
+            Pat::ListExact(items) => items.iter().for_each(|item| item.visit_bindings(bind)),
             Pat::ListFront(items, tail) => {
-                items
-                    .iter()
-                    .for_each(|item| item.visit_bindings(bind));
-                tail.as_ref().map(|tail| tail.visit_bindings(bind));
-            },
+                items.iter().for_each(|item| item.visit_bindings(bind));
+                if let Some(tail) = tail.as_ref() {
+                    tail.visit_bindings(bind);
+                }
+            }
             Pat::Variant(_, inner) => inner.visit_bindings(bind),
             Pat::Data(_, inner) => inner.visit_bindings(bind),
         }
@@ -277,7 +299,12 @@ impl Binding {
 
     fn refresh_locals_inner(&mut self, stack: &mut Vec<(Local, Local)>) {
         if let Some(name) = self.name {
-            let new_name = stack.iter().rev().find(|(old, _)| *old == name).expect("No such local").1;
+            let new_name = stack
+                .iter()
+                .rev()
+                .find(|(old, _)| *old == name)
+                .expect("No such local")
+                .1;
             self.name = Some(new_name);
         }
         self.for_children_mut(|expr| expr.refresh_locals_inner(stack));
@@ -293,17 +320,12 @@ impl Binding {
                 Pat::Literal(_) => true,
                 Pat::Single(inner) => inner.has_matches(ctx),
                 Pat::Add(inner, _) => inner.has_matches(ctx),
-                Pat::Tuple(xs) => xs
-                    .iter()
-                    .all(|x| x.has_matches(ctx)),
-                Pat::ListExact(xs) => xs
-                    .iter()
-                    .all(|x| x.has_matches(ctx)),
-                Pat::ListFront(xs, tail) => xs
-                    .iter()
-                    .all(|x| x.has_matches(ctx)) && tail
-                        .as_ref()
-                        .map_or(true, |tail| tail.has_matches(ctx)),
+                Pat::Tuple(xs) => xs.iter().all(|x| x.has_matches(ctx)),
+                Pat::ListExact(xs) => xs.iter().all(|x| x.has_matches(ctx)),
+                Pat::ListFront(xs, tail) => {
+                    xs.iter().all(|x| x.has_matches(ctx))
+                        && tail.as_ref().map_or(true, |tail| tail.has_matches(ctx))
+                }
                 Pat::Variant(_, inner) => inner.has_matches(ctx),
                 Pat::Data(_, inner) => inner.has_matches(ctx),
             }
@@ -320,9 +342,7 @@ pub struct GlobalFlags {
 
 impl Default for GlobalFlags {
     fn default() -> Self {
-        Self {
-            can_inline: true,
-        }
+        Self { can_inline: true }
     }
 }
 
@@ -386,7 +406,7 @@ impl Expr {
     }
 
     pub fn refresh_locals(&mut self) {
-        let required = self.required_locals(None);
+        let _required = self.required_locals(None);
         // debug_assert_eq!(required.len(), 0, "Cannot refresh locals for an expression\n\n{}\n\nthat captures (required = {:?})", self.print(), required);
         self.refresh_locals_inner(&mut Vec::new());
     }
@@ -394,43 +414,53 @@ impl Expr {
     fn refresh_locals_inner(&mut self, stack: &mut Vec<(Local, Local)>) {
         match self {
             Expr::Local(local) => {
-                let new_local = stack.iter().rev().find(|(old, _)| old == local)
-                    .unwrap_or_else(|| panic!("No such local ${} in {:?}", local.0, stack)).1;
+                let new_local = stack
+                    .iter()
+                    .rev()
+                    .find(|(old, _)| old == local)
+                    .unwrap_or_else(|| panic!("No such local ${} in {:?}", local.0, stack))
+                    .1;
                 *local = new_local;
-            },
+            }
             Expr::Match(pred, arms) => {
                 pred.refresh_locals_inner(stack);
                 for (binding, arm) in arms {
                     let old_stack = stack.len();
-                    binding.visit_bindings(&mut |name, _| stack.push((name, Local::new())));
+                    binding.visit_bindings(&mut |name, _| stack.push((name, Local::default())));
 
                     binding.refresh_locals_inner(stack);
                     arm.refresh_locals_inner(stack);
                     stack.truncate(old_stack);
                 }
-            },
+            }
             Expr::Func(arg, body) => {
-                let new_arg = Local::new();
+                let new_arg = Local::default();
                 stack.push((**arg, new_arg));
                 body.refresh_locals_inner(stack);
                 stack.pop();
                 **arg = new_arg;
-            },
+            }
             Expr::Go(next, body, init) => {
                 init.refresh_locals_inner(stack);
 
-                let new_init = Local::new();
+                let new_init = Local::default();
                 stack.push((**next, new_init));
                 body.refresh_locals_inner(stack);
                 stack.pop();
                 **next = new_init;
-            },
+            }
             Expr::Handle { expr, handlers } => {
                 expr.refresh_locals_inner(stack);
 
-                for Handler { eff, send, state, recv } in handlers {
-                    let new_send = Local::new();
-                    let new_state = Local::new();
+                for Handler {
+                    eff: _,
+                    send,
+                    state,
+                    recv,
+                } in handlers
+                {
+                    let new_send = Local::default();
+                    let new_state = Local::default();
                     let old_len = stack.len();
                     stack.push((**send, new_send));
                     stack.push((**state, new_state));
@@ -439,21 +469,21 @@ impl Expr {
                     **send = new_send;
                     **state = new_state;
                 }
-            },
+            }
             _ => self.for_children_mut(|expr| expr.refresh_locals_inner(stack)),
         }
     }
 
     fn required_locals_inner(&self, stack: &mut Vec<Local>, required: &mut Vec<Local>) {
         match self {
-            Expr::Undefined => {},
-            Expr::Literal(_) => {},
+            Expr::Undefined => {}
+            Expr::Literal(_) => {}
             Expr::Local(local) => {
                 if !stack.contains(local) {
                     required.push(*local);
                 }
-            },
-            Expr::Global(_, _) => {},
+            }
+            Expr::Global(_, _) => {}
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| arg.required_locals_inner(stack, required)),
@@ -467,22 +497,22 @@ impl Expr {
 
                     stack.truncate(old_stack);
                 }
-            },
+            }
             Expr::Func(arg, body) => {
                 stack.push(**arg);
                 body.required_locals_inner(stack, required);
                 stack.pop();
-            },
+            }
             Expr::Go(next, body, init) => {
                 init.required_locals_inner(stack, required);
                 stack.push(**next);
                 body.required_locals_inner(stack, required);
                 stack.pop();
-            },
+            }
             Expr::Apply(f, arg) => {
                 f.required_locals_inner(stack, required);
                 arg.required_locals_inner(stack, required);
-            },
+            }
             Expr::Tuple(fields) => fields
                 .iter()
                 .for_each(|field| field.required_locals_inner(stack, required)),
@@ -497,14 +527,20 @@ impl Expr {
             Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
             Expr::Handle { expr, handlers } => {
                 expr.required_locals_inner(stack, required);
-                for Handler { eff, send, state, recv } in handlers {
+                for Handler {
+                    eff: _,
+                    send,
+                    state,
+                    recv,
+                } in handlers
+                {
                     let old_len = stack.len();
                     stack.push(**send);
                     stack.push(**state);
                     recv.required_locals_inner(stack, required);
                     stack.truncate(old_len);
                 }
-            },
+            }
         }
     }
 
@@ -519,33 +555,30 @@ impl Expr {
         match self {
             Expr::Undefined => false,
             Expr::Literal(_) => false,
-            Expr::Local(local) => false,
+            Expr::Local(_local) => false,
             Expr::Global(_, _) => false,
             Expr::Intrinsic(Intrinsic::Propagate(_), _) => true,
-            Expr::Intrinsic(_, args) => args
-                .iter()
-                .any(|arg| arg.may_have_effect()),
-            Expr::Match(pred, arms) => pred.may_have_effect() || arms
-                .iter()
-                .any(|(_, body)| body.may_have_effect()),
+            Expr::Intrinsic(_, args) => args.iter().any(|arg| arg.may_have_effect()),
+            Expr::Match(pred, arms) => {
+                pred.may_have_effect() || arms.iter().any(|(_, body)| body.may_have_effect())
+            }
             Expr::Func(_, _) => false,
-            Expr::Go(next, body, init) => init.may_have_effect() || body.may_have_effect(),
+            Expr::Go(_next, body, init) => init.may_have_effect() || body.may_have_effect(),
             Expr::Apply(f, arg) => f.may_have_effect() || arg.may_have_effect(),
-            Expr::Tuple(fields) => fields
-                .iter()
-                .any(|field| field.may_have_effect()),
-            Expr::List(items) => items
-                .iter()
-                .any(|item| item.may_have_effect()),
+            Expr::Tuple(fields) => fields.iter().any(|field| field.may_have_effect()),
+            Expr::List(items) => items.iter().any(|item| item.may_have_effect()),
             Expr::Access(tuple, _) => tuple.may_have_effect(),
             Expr::Variant(_, inner) => inner.may_have_effect(),
             Expr::AccessVariant(inner, _) => inner.may_have_effect(),
             Expr::Data(_, inner) => inner.may_have_effect(),
             Expr::AccessData(inner, _) => inner.may_have_effect(),
-            Expr::Basin(_, inner) => false,
-            Expr::Handle { expr, handlers } => expr.may_have_effect() || handlers
-                .iter()
-                .any(|Handler { recv, .. }| recv.may_have_effect()),
+            Expr::Basin(_, _inner) => false,
+            Expr::Handle { expr, handlers } => {
+                expr.may_have_effect()
+                    || handlers
+                        .iter()
+                        .any(|Handler { recv, .. }| recv.may_have_effect())
+            }
         }
     }
 
@@ -566,18 +599,43 @@ impl Expr {
                     Pat::Wildcard => write!(f, "_"),
                     Pat::Literal(c) => write!(f, "{}", c),
                     Pat::Single(inner) => write!(f, "{}", DisplayBinding(inner, self.1)),
-                    Pat::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayBinding(inner, self.1)),
-                    Pat::ListExact(items) => write!(f, "[{}]", items.iter().map(|i| format!("{},", DisplayBinding(i, self.1 + 1))).collect::<Vec<_>>().join(" ")),
+                    Pat::Variant(variant, inner) => {
+                        write!(f, "#{} {}", variant, DisplayBinding(inner, self.1))
+                    }
+                    Pat::ListExact(items) => write!(
+                        f,
+                        "[{}]",
+                        items
+                            .iter()
+                            .map(|i| format!("{},", DisplayBinding(i, self.1 + 1)))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
                     Pat::ListFront(items, tail) => write!(
                         f,
                         "[{} .. {}]",
-                        items.iter().map(|i| format!("{},", DisplayBinding(i, self.1))).collect::<Vec<_>>().join(" "),
-                        tail.as_ref().map(|tail| format!("{}", DisplayBinding(tail, self.1))).unwrap_or_default(),
+                        items
+                            .iter()
+                            .map(|i| format!("{},", DisplayBinding(i, self.1)))
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        tail.as_ref()
+                            .map(|tail| format!("{}", DisplayBinding(tail, self.1)))
+                            .unwrap_or_default(),
                     ),
-                    Pat::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayBinding(f, self.1))).collect::<Vec<_>>().join(" ")),
+                    Pat::Tuple(fields) => write!(
+                        f,
+                        "({})",
+                        fields
+                            .iter()
+                            .map(|f| format!("{},", DisplayBinding(f, self.1)))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
                     Pat::Add(inner, n) => write!(f, "{} + {}", DisplayBinding(inner, self.1), n),
-                    Pat::Data(data, inner) => write!(f, "{:?} {}", data, DisplayBinding(inner, self.1)),
-                    pat => todo!("{:?}", pat),
+                    Pat::Data(data, inner) => {
+                        write!(f, "{:?} {}", data, DisplayBinding(inner, self.1))
+                    }
                 }
             }
         }
@@ -594,70 +652,227 @@ impl Expr {
                     Expr::Local(local) => write!(f, "${}", local.0),
                     Expr::Global(global, _) => write!(f, "{:?}", global),
                     Expr::Literal(c) => write!(f, "{}", c),
-                    Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
-                    Expr::Go(next, body, init) => write!(f, "go(${} => {}, {})", next.0, DisplayExpr(body, self.1, false), DisplayExpr(init, self.1, false)),
-                    Expr::Apply(func, arg) => write!(f, "({})({})", DisplayExpr(func, self.1, false), DisplayExpr(arg, self.1, false)),
-                    Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),
-                    Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1, false))).collect::<Vec<_>>().join(" ")),
-                    Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExpr(i, self.1 + 1, false))).collect::<Vec<_>>().join(", ")),
-                    Expr::Intrinsic(NegNat | NegInt | NegReal, args) => write!(f, "- {}", DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(DisplayInt, args) => write!(f, "@display_int({})", DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(CodepointChar, args) => write!(f, "@codepoint_char({})", DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(EqChar | EqNat | EqInt, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(AddNat | AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(SubNat | SubInt, args) => write!(f, "{} - {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(MulNat | MulInt, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(LessNat, args) => write!(f, "{} < {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(Print, args) => write!(f, "@print({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(Input, args) => write!(f, "@input({})", DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(Rand, args) => write!(f, "@rand({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(UpdateField(idx), args) => write!(f, "@update_field<{}>({}, {})", idx, DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(LenList, args) => write!(f, "@len_list({})", DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(SkipList, args) => write!(f, "@skip_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(TrimList, args) => write!(f, "@trim_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(Suspend(eff), args) => write!(f, "@suspend::<{:?}>({})", eff.0, DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(Propagate(_), args) => write!(f, "{}!", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Func(arg, body) => write!(
+                        f,
+                        "fn ${} =>\n{}",
+                        arg.0,
+                        DisplayExpr(body, self.1 + 1, true)
+                    ),
+                    Expr::Go(next, body, init) => write!(
+                        f,
+                        "go(${} => {}, {})",
+                        next.0,
+                        DisplayExpr(body, self.1, false),
+                        DisplayExpr(init, self.1, false)
+                    ),
+                    Expr::Apply(func, arg) => write!(
+                        f,
+                        "({})({})",
+                        DisplayExpr(func, self.1, false),
+                        DisplayExpr(arg, self.1, false)
+                    ),
+                    Expr::Variant(variant, inner) => {
+                        write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false))
+                    }
+                    Expr::Tuple(fields) => write!(
+                        f,
+                        "({})",
+                        fields
+                            .iter()
+                            .map(|f| format!("{},", DisplayExpr(f, self.1, false)))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
+                    Expr::List(items) => write!(
+                        f,
+                        "[{}]",
+                        items
+                            .iter()
+                            .map(|i| format!("{}", DisplayExpr(i, self.1 + 1, false)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    Expr::Intrinsic(NegNat | NegInt | NegReal, args) => {
+                        write!(f, "- {}", DisplayExpr(&args[0], self.1, false))
+                    }
+                    Expr::Intrinsic(DisplayInt, args) => {
+                        write!(f, "@display_int({})", DisplayExpr(&args[0], self.1, false))
+                    }
+                    Expr::Intrinsic(CodepointChar, args) => write!(
+                        f,
+                        "@codepoint_char({})",
+                        DisplayExpr(&args[0], self.1, false)
+                    ),
+                    Expr::Intrinsic(EqChar | EqNat | EqInt, args) => write!(
+                        f,
+                        "{} = {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(AddNat | AddInt, args) => write!(
+                        f,
+                        "{} + {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(SubNat | SubInt, args) => write!(
+                        f,
+                        "{} - {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(MulNat | MulInt, args) => write!(
+                        f,
+                        "{} * {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(LessNat, args) => write!(
+                        f,
+                        "{} < {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(MoreNat, args) => write!(
+                        f,
+                        "{} > {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(MoreEqNat, args) => write!(
+                        f,
+                        "{} >= {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(LessEqNat, args) => write!(
+                        f,
+                        "{} <= {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(Join(_), args) => write!(
+                        f,
+                        "{} ++ {}",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(Print, args) => write!(
+                        f,
+                        "@print({}, {})",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(Input, args) => {
+                        write!(f, "@input({})", DisplayExpr(&args[0], self.1, false))
+                    }
+                    Expr::Intrinsic(Rand, args) => write!(
+                        f,
+                        "@rand({}, {})",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(UpdateField(idx), args) => write!(
+                        f,
+                        "@update_field<{}>({}, {})",
+                        idx,
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(LenList, args) => {
+                        write!(f, "@len_list({})", DisplayExpr(&args[0], self.1, false))
+                    }
+                    Expr::Intrinsic(SkipList, args) => write!(
+                        f,
+                        "@skip_list({}, {})",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(TrimList, args) => write!(
+                        f,
+                        "@trim_list({}, {})",
+                        DisplayExpr(&args[0], self.1, false),
+                        DisplayExpr(&args[1], self.1, false)
+                    ),
+                    Expr::Intrinsic(Suspend(eff), args) => write!(
+                        f,
+                        "@suspend::<{:?}>({})",
+                        eff.0,
+                        DisplayExpr(&args[0], self.1, false)
+                    ),
+                    Expr::Intrinsic(Propagate(_), args) => {
+                        write!(f, "{}!", DisplayExpr(&args[0], self.1, false))
+                    }
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
-                        write!(f, "let {} = {} in\n{}", DisplayBinding(arm, self.1 + 1), DisplayExpr(pred, self.1, false), DisplayExpr(body, self.1, true))
-                    },
+                        write!(
+                            f,
+                            "let {} = {} in\n{}",
+                            DisplayBinding(arm, self.1 + 1),
+                            DisplayExpr(pred, self.1, false),
+                            DisplayExpr(body, self.1, true)
+                        )
+                    }
                     Expr::Match(pred, arms) => {
                         write!(f, "match {} in", DisplayExpr(pred, self.1 + 1, false))?;
                         for (i, (arm, body)) in arms.iter().enumerate() {
                             let start = if i + 1 == arms.len() { '\\' } else { '|' };
-                            write!(f, "\n{}{} {} => {}", "    ".repeat(self.1 + 1), start, DisplayBinding(arm, self.1 + 1), DisplayExpr(body, self.1 + 1, false))?;
+                            write!(
+                                f,
+                                "\n{}{} {} => {}",
+                                "    ".repeat(self.1 + 1),
+                                start,
+                                DisplayBinding(arm, self.1 + 1),
+                                DisplayExpr(body, self.1 + 1, false)
+                            )?;
                         }
-                        if arms.len() == 0 {
+                        if arms.is_empty() {
                             write!(f, " (no arms)")?;
                         }
                         Ok(())
-                    },
-                    Expr::Basin(eff, inner) => write!(f, "effect {{\n{}\n{}}}", DisplayExpr(inner, self.1 + 1, true), "    ".repeat(self.1)),
+                    }
+                    Expr::Basin(_eff, inner) => write!(
+                        f,
+                        "effect {{\n{}\n{}}}",
+                        DisplayExpr(inner, self.1 + 1, true),
+                        "    ".repeat(self.1)
+                    ),
                     Expr::Handle { expr, handlers } => write!(
                         f,
                         "{}\n{}",
                         DisplayExpr(expr, self.1, false),
                         handlers
                             .iter()
-                            .map(|Handler { eff, send, state, recv }| format!(
-                                "{}handle {:?} with ${}, ${} =>\n{}",
-                                "    ".repeat(self.1 + 1),
-                                eff,
-                                send.0,
-                                state.0,
-                                DisplayExpr(recv, self.1 + 1, true),
-                            ))
+                            .map(
+                                |Handler {
+                                     eff,
+                                     send,
+                                     state,
+                                     recv,
+                                 }| format!(
+                                    "{}handle {:?} with ${}, ${} =>\n{}",
+                                    "    ".repeat(self.1 + 1),
+                                    eff,
+                                    send.0,
+                                    state.0,
+                                    DisplayExpr(recv, self.1 + 1, true),
+                                )
+                            )
                             .collect::<Vec<_>>()
                             .join("\n"),
                     ),
-                    Expr::Access(inner, field) => write!(f, "({}).{}", DisplayExpr(inner, self.1, false), field),
-                    Expr::AccessVariant(inner, variant) => write!(f, "({}).#{}", DisplayExpr(inner, self.1, false), variant),
-                    Expr::Data(data, inner) => write!(f, "{:?} {}", data, DisplayExpr(inner, self.1, false)),
-                    Expr::AccessData(inner, data) => write!(f, "{}.#{:?}", DisplayExpr(inner, self.1, false), data),
+                    Expr::Access(inner, field) => {
+                        write!(f, "({}).{}", DisplayExpr(inner, self.1, false), field)
+                    }
+                    Expr::AccessVariant(inner, variant) => {
+                        write!(f, "({}).#{}", DisplayExpr(inner, self.1, false), variant)
+                    }
+                    Expr::Data(data, inner) => {
+                        write!(f, "{:?} {}", data, DisplayExpr(inner, self.1, false))
+                    }
+                    Expr::AccessData(inner, data) => {
+                        write!(f, "{}.#{:?}", DisplayExpr(inner, self.1, false), data)
+                    }
                     // _ => write!(f, "<TODO>"),
                     expr => todo!("{:?}", expr),
                 }

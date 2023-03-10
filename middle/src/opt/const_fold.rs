@@ -11,7 +11,12 @@ pub struct ConstFold {
 impl ConstFold {
     // Returns `true` if the branch *could* still match the partial value and the partial value has inhabitants. If
     // `false` is returned, there's no saying what was or wasn't added to the locals.
-    fn extract(&self, ctx: &Context, binding: &mut MirNode<Binding>, partial: &Partial, locals: &mut Vec<(Local, Partial)>) -> bool {
+    fn extract(
+        ctx: &Context,
+        binding: &mut MirNode<Binding>,
+        partial: &Partial,
+        locals: &mut Vec<(Local, Partial)>,
+    ) -> bool {
         if let Some(name) = binding.name {
             locals.push((name, partial.clone()));
         }
@@ -24,65 +29,74 @@ impl ConstFold {
             binding.for_children_mut(|binding| {
                 // TODO: This will become unsound if or patterns are ever added because it assumes that all child
                 // patterns are and patterns.
-                matches &= self.extract(ctx, binding, &Partial::Unknown(None), locals);
+                matches &= ConstFold::extract(ctx, binding, &Partial::Unknown(None), locals);
             });
             matches
         } else {
             match (&mut binding.pat, partial) {
                 (Pat::Wildcard, _) => true,
-                (Pat::Literal(litr), partial) => if let Some(rhs) = partial.to_literal() {
-                    litr == &rhs
-                } else {
-                    true
-                },
-                (Pat::Single(inner), partial) => self.extract(ctx, inner, partial, locals),
-                (Pat::Variant(variant, x), Partial::Sum(tag, y)) => if variant == tag {
-                    self.extract(ctx, x, y, locals)
-                } else {
-                    false
-                },
-                (Pat::Tuple(xs), Partial::Tuple(ys)) => {
-                    debug_assert_eq!(xs.len(), ys.len());
-                    xs
-                        .iter_mut()
-                        .zip(ys.iter())
-                        .all(|(x, y)| self.extract(ctx, x, y, locals))
-                },
-                (Pat::ListExact(xs), Partial::List(ys)) => if xs.len() != ys.len() {
-                    false
-                } else {
-                    xs
-                        .iter_mut()
-                        .zip(ys.iter())
-                        .all(|(x, y)| self.extract(ctx, x, y, locals))
-                },
-                (Pat::ListFront(xs, tail), Partial::List(ys)) => if ys.len() < xs.len() {
-                    false
-                } else {
-                    let could_match_tail = if let Some(tail) = tail {
-                        self.extract(ctx, tail, &Partial::List(ys[xs.len()..].to_vec()), locals)
+                (Pat::Literal(litr), partial) => {
+                    if let Some(rhs) = partial.to_literal() {
+                        litr == &rhs
                     } else {
                         true
-                    };
-                    could_match_tail && xs
-                        .iter_mut()
-                        .zip(ys.iter())
-                        .all(|(x, y)| self.extract(ctx, x, y, locals))
-                },
-                (Pat::Add(inner, n), partial) => if let Some(rhs) = partial.to_literal() {
-                    let rhs = rhs.nat();
-                    if rhs >= *n {
-                        self.extract(ctx, inner, &Partial::Nat(rhs - *n), locals)
+                    }
+                }
+                (Pat::Single(inner), partial) => ConstFold::extract(ctx, inner, partial, locals),
+                (Pat::Variant(variant, x), Partial::Sum(tag, y)) => {
+                    if variant == tag {
+                        ConstFold::extract(ctx, x, y, locals)
                     } else {
                         false
                     }
-                } else {
-                    true
-                },
+                }
+                (Pat::Tuple(xs), Partial::Tuple(ys)) => {
+                    debug_assert_eq!(xs.len(), ys.len());
+                    xs.iter_mut()
+                        .zip(ys.iter())
+                        .all(|(x, y)| ConstFold::extract(ctx, x, y, locals))
+                }
+                (Pat::ListExact(xs), Partial::List(ys)) => {
+                    if xs.len() != ys.len() {
+                        false
+                    } else {
+                        xs.iter_mut()
+                            .zip(ys.iter())
+                            .all(|(x, y)| ConstFold::extract(ctx, x, y, locals))
+                    }
+                }
+                (Pat::ListFront(xs, tail), Partial::List(ys)) => {
+                    if ys.len() < xs.len() {
+                        false
+                    } else {
+                        let could_match_tail = if let Some(tail) = tail {
+                            ConstFold::extract(ctx, tail, &Partial::List(ys[xs.len()..].to_vec()), locals)
+                        } else {
+                            true
+                        };
+                        could_match_tail
+                            && xs
+                                .iter_mut()
+                                .zip(ys.iter())
+                                .all(|(x, y)| ConstFold::extract(ctx, x, y, locals))
+                    }
+                }
+                (Pat::Add(inner, n), partial) => {
+                    if let Some(rhs) = partial.to_literal() {
+                        let rhs = rhs.nat();
+                        if rhs >= *n {
+                            ConstFold::extract(ctx, inner, &Partial::Nat(rhs - *n), locals)
+                        } else {
+                            false
+                        }
+                    } else {
+                        true
+                    }
+                }
                 (Pat::Data(a, inner), Partial::Data(b, partial)) => {
                     debug_assert_eq!(a, b);
-                    self.extract(ctx, inner, partial, locals)
-                },
+                    ConstFold::extract(ctx, inner, partial, locals)
+                }
                 (p, v) => todo!("Pattern:\n\n{:?}\n\nPartial:\n\n{:?}\n\n", p, v),
             }
         }
@@ -101,20 +115,24 @@ impl ConstFold {
                 .clone()
             {
                 // If the local is still accessible, we can just inline it directly
-                Partial::Unknown(Some(local)) if locals.iter().find(|(name, _)| *name == local).is_some() => {
+                Partial::Unknown(Some(local))
+                    if locals.iter().any(|(name, _)| *name == local) =>
+                {
                     *expr = Expr::Local(local);
-                    return Partial::Unknown(Some(local))
-                },
+                    return Partial::Unknown(Some(local));
+                }
                 partial => partial,
             },
-            Expr::Global(proc_id, flags) => if flags.get().can_inline && self.inline {
-                *expr = ctx.procs.get(*proc_id).unwrap().body.inner().clone();
-                expr.refresh_locals();
-                // Return directly, since we apply to itself
-                return self.eval(ctx, expr, &mut Vec::new())
-            } else {
-                Partial::Unknown(None)
-            },
+            Expr::Global(proc_id, flags) => {
+                if flags.get().can_inline && self.inline {
+                    *expr = ctx.procs.get(*proc_id).unwrap().body.inner().clone();
+                    expr.refresh_locals();
+                    // Return directly, since we apply to itself
+                    return self.eval(ctx, expr, &mut Vec::new());
+                } else {
+                    Partial::Unknown(None)
+                }
+            }
             Expr::Match(pred, arms) => {
                 let pred = self.eval(ctx, pred, locals);
                 let mut output = Partial::Never;
@@ -122,11 +140,12 @@ impl ConstFold {
                     // Remove arms that cannot possibly match
                     .drain_filter(|(binding, arm)| {
                         let old_locals = locals.len();
-                        let cull = if self.extract(ctx, binding, &pred, locals) {
+                        let cull = if ConstFold::extract(ctx, binding, &pred, locals) {
                             let arm_output = self.eval(ctx, arm, locals);
 
                             // Combine outputs together in an attempt to unify their values
-                            output = std::mem::replace(&mut output, Partial::Unknown(None)).or(arm_output);
+                            output = std::mem::replace(&mut output, Partial::Unknown(None))
+                                .or(arm_output);
 
                             false
                         } else {
@@ -139,7 +158,7 @@ impl ConstFold {
                     })
                     .for_each(|_| {});
                 output
-            },
+            }
             Expr::Func(arg, body) => {
                 if ctx.reprs.has_inhabitants(arg.meta()) {
                     locals.push((**arg, Partial::Unknown(Some(**arg))));
@@ -149,7 +168,7 @@ impl ConstFold {
                     **body = Expr::Undefined;
                 }
                 Partial::Unknown(None) // TODO: Turn into a `Partial::Func` if no captures
-            },
+            }
             Expr::Go(next, body, init) => {
                 self.eval(ctx, init, locals);
 
@@ -158,16 +177,22 @@ impl ConstFold {
                 locals.pop();
 
                 Partial::Unknown(None)
-            },
-            Expr::Variant(variant, inner) => Partial::Sum(*variant, Box::new(self.eval(ctx, inner, locals))),
-            Expr::Tuple(fields) => Partial::Tuple(fields
-                .iter_mut()
-                .map(|field| self.eval(ctx, field, locals))
-                .collect()),
-            Expr::List(items) => Partial::List(items
-                .iter_mut()
-                .map(|item| self.eval(ctx, item, locals))
-                .collect()),
+            }
+            Expr::Variant(variant, inner) => {
+                Partial::Sum(*variant, Box::new(self.eval(ctx, inner, locals)))
+            }
+            Expr::Tuple(fields) => Partial::Tuple(
+                fields
+                    .iter_mut()
+                    .map(|field| self.eval(ctx, field, locals))
+                    .collect(),
+            ),
+            Expr::List(items) => Partial::List(
+                items
+                    .iter_mut()
+                    .map(|item| self.eval(ctx, item, locals))
+                    .collect(),
+            ),
             Expr::Apply(f, arg) => {
                 self.eval(ctx, f, locals);
                 self.eval(ctx, arg, locals);
@@ -176,20 +201,23 @@ impl ConstFold {
                 if let Expr::Func(param, body) = &mut **f {
                     *expr = Expr::Match(
                         arg.clone(),
-                        vec![(MirNode::new(Binding::wildcard(**param), arg.meta().clone()), body.clone())],
+                        vec![(
+                            MirNode::new(Binding::wildcard(**param), arg.meta().clone()),
+                            body.clone(),
+                        )],
                     );
-                    return self.eval(ctx, expr, locals)
+                    return self.eval(ctx, expr, locals);
                 } else {
                     Partial::Unknown(None)
                 }
-            },
+            }
             Expr::Intrinsic(intrinsic, args) => {
                 let args = args
                     .iter_mut()
                     .map(|arg| self.eval(ctx, arg, locals))
                     .collect::<Vec<_>>();
                 intrinsic.eval(ctx, &args)
-            },
+            }
             Expr::Access(tuple, field) => {
                 let tuple = self.eval(ctx, tuple, locals);
                 if let Partial::Tuple(mut fields) = tuple {
@@ -197,7 +225,7 @@ impl ConstFold {
                 } else {
                     Partial::Unknown(None)
                 }
-            },
+            }
             Expr::AccessVariant(inner, variant) => {
                 let inner = self.eval(ctx, inner, locals);
                 if let Partial::Sum(tag, inner) = inner {
@@ -206,11 +234,11 @@ impl ConstFold {
                 } else {
                     Partial::Unknown(None)
                 }
-            },
+            }
             Expr::Data(data, inner) => {
                 let inner = self.eval(ctx, inner, locals);
                 Partial::Data(*data, Box::new(inner))
-            },
+            }
             Expr::AccessData(inner, data) => {
                 let inner = self.eval(ctx, inner, locals);
                 if let Partial::Data(id, inner) = inner {
@@ -219,15 +247,18 @@ impl ConstFold {
                 } else {
                     Partial::Unknown(None)
                 }
-            },
+            }
             Expr::Basin(_, inner) => {
                 self.eval(ctx, inner, locals);
                 Partial::Unknown(None)
-            },
+            }
             Expr::Handle { expr, handlers } => {
                 self.eval(ctx, expr, locals);
 
-                for Handler { send, state, recv, .. } in handlers {
+                for Handler {
+                    send, state, recv, ..
+                } in handlers
+                {
                     let old_len = locals.len();
                     locals.push((**send, Partial::Unknown(Some(**send))));
                     locals.push((**state, Partial::Unknown(Some(**state))));
@@ -236,23 +267,22 @@ impl ConstFold {
                 }
 
                 Partial::Unknown(None)
-            },
-            e => todo!("{:?}", e),
+            }
         };
 
-        let partial = match partial {
+        match partial {
             // If the partial output of this expression is a local found in the enclosing expression, just refer to it
             // directly.
-            Partial::Unknown(local) if local
-                .map_or(false, |local| locals
-                    .iter()
-                    .find(|(l, _)| *l == local)
-                    .is_some()) => {
+            Partial::Unknown(local)
+                if local.map_or(false, |local| {
+                    locals.iter().any(|(l, _)| *l == local)
+                }) =>
+            {
                 if !expr.may_have_effect() {
                     *expr = Expr::Local(local.unwrap());
                 }
                 partial
-            },
+            }
             partial => {
                 // Otherwise, if the partial is just a literal, use the literal directly.
                 if let Some(literal) = partial.to_literal() {
@@ -261,10 +291,8 @@ impl ConstFold {
                     }
                 }
                 partial
-            },
-        };
-
-        partial
+            }
+        }
     }
 }
 
@@ -285,15 +313,19 @@ impl Intrinsic {
             };
         }
 
-        let r#bool = |x| Data(
-            ctx.reprs.r#bool.expect("bool type must be known here"),
-            Box::new(Sum(x as usize, Box::new(Tuple(Vec::new())))),
-        );
+        let r#bool = |x| {
+            Data(
+                ctx.reprs.r#bool.expect("bool type must be known here"),
+                Box::new(Sum(x as usize, Box::new(Tuple(Vec::new())))),
+            )
+        };
 
         match self {
             Intrinsic::NegNat => op!(Nat(x) => Int(-(*x as i64))),
             Intrinsic::NegInt => op!(Int(x) => Int(-*x)),
-            Intrinsic::DisplayInt => op!(Int(x) => List(x.to_string().chars().map(Const::Char).collect())),
+            Intrinsic::DisplayInt => {
+                op!(Int(x) => List(x.to_string().chars().map(Const::Char).collect()))
+            }
             Intrinsic::CodepointChar => op!(Char(c) => Nat(*c as u64)),
             Intrinsic::AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
             Intrinsic::SubNat => op!(Nat(x), Nat(y) => Int(*x as i64 - *y as i64)),
@@ -306,14 +338,17 @@ impl Intrinsic {
             Intrinsic::MulInt => op!(Int(x), Int(y) => Int(x * y)),
             Intrinsic::EqNat => op!(Nat(x), Nat(y) => r#bool(x == y)),
             Intrinsic::EqChar => op!(Char(x), Char(y) => r#bool(x == y)),
-            Intrinsic::EqNat => op!(Nat(x), Nat(y) => r#bool(x == y)),
-            Intrinsic::Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
+            Intrinsic::Join(_) => {
+                op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect()))
+            }
             Intrinsic::Print => Partial::Unknown(None),
             Intrinsic::Input => Partial::Unknown(None),
             Intrinsic::Rand => Partial::Unknown(None),
-            Intrinsic::UpdateField(idx) => Partial::Unknown(None), // TODO
+            Intrinsic::UpdateField(_idx) => Partial::Unknown(None), // TODO
             Intrinsic::LenList => op!(List(xs) => Nat(xs.len() as u64)),
-            Intrinsic::SkipList => op!(List(xs), Nat(i) => List(xs.clone().split_off((*i as usize).min(xs.len())))),
+            Intrinsic::SkipList => {
+                op!(List(xs), Nat(i) => List(xs.clone().split_off((*i as usize).min(xs.len()))))
+            }
             Intrinsic::TrimList => op!(List(xs), Nat(i) => List({
                 let mut xs = xs.clone();
                 xs.truncate(*i as usize);
@@ -328,16 +363,24 @@ impl Intrinsic {
 
 impl Pass for ConstFold {
     fn apply(&mut self, ctx: &mut Context) {
-        let proc_bodies = ctx.procs
+        let proc_bodies = ctx
+            .procs
             .iter()
             .map(|(id, proc)| (id, proc.body.clone()))
             .collect::<Vec<_>>();
 
         for (id, mut body) in proc_bodies {
             // visit(&ctx, &mut body, &mut Vec::new());
-            self.eval(&ctx, &mut body, &mut Vec::new());
+            self.eval(ctx, &mut body, &mut Vec::new());
             let requires = body.required_locals(None);
-            debug_assert_eq!(requires.len(), 0, "Procedure requires locals {:?}\n\nOld = {}\n\n\nNew = {}\n", requires, ctx.procs.get_mut(id).unwrap().body.print(), body.print());
+            debug_assert_eq!(
+                requires.len(),
+                0,
+                "Procedure requires locals {:?}\n\nOld = {}\n\n\nNew = {}\n",
+                requires,
+                ctx.procs.get_mut(id).unwrap().body.print(),
+                body.print()
+            );
             ctx.procs.get_mut(id).unwrap().body = body;
         }
     }

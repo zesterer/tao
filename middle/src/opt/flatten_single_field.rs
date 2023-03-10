@@ -5,7 +5,7 @@ use super::*;
 pub struct FlattenSingleField;
 
 impl Pass for FlattenSingleField {
-    fn apply(&mut self, ctx: &mut Context) {
+    fn apply(&mut self, _ctx: &mut Context) {
         // TODO: Implement
         /*
         ctx.visit(

@@ -1,8 +1,5 @@
 use super::*;
-use std::{
-    ops::Range,
-    fmt,
-};
+use std::{fmt, ops::Range};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Span {
@@ -16,12 +13,19 @@ impl Span {
         Self::new(SrcId::empty(), 0..0)
     }
 
-    pub fn src(&self) -> SrcId { self.src }
+    pub fn src(&self) -> SrcId {
+        self.src
+    }
 
-    pub fn range(&self) -> Range<usize> { self.start()..self.end() }
+    pub fn range(&self) -> Range<usize> {
+        self.start()..self.end()
+    }
 
     pub fn union(self, other: Self) -> Self {
-        assert_eq!(self.src, other.src, "attempted to union spans with different sources");
+        assert_eq!(
+            self.src, other.src,
+            "attempted to union spans with different sources"
+        );
         Self {
             range: (self.start().min(other.start()), self.end().max(other.end())),
             ..self
@@ -41,19 +45,34 @@ impl chumsky::Span for Span {
 
     fn new(src: SrcId, range: Range<usize>) -> Self {
         assert!(range.start <= range.end);
-        Self { src, range: (range.start, range.end) }
+        Self {
+            src,
+            range: (range.start, range.end),
+        }
     }
 
-    fn context(&self) -> SrcId { self.src }
-    fn start(&self) -> Self::Offset { self.range.0 }
-    fn end(&self) -> Self::Offset { self.range.1 }
+    fn context(&self) -> SrcId {
+        self.src
+    }
+    fn start(&self) -> Self::Offset {
+        self.range.0
+    }
+    fn end(&self) -> Self::Offset {
+        self.range.1
+    }
 }
 
 impl ariadne::Span for Span {
     type SourceId = SrcId;
 
-    fn source(&self) -> &SrcId { &self.src }
+    fn source(&self) -> &SrcId {
+        &self.src
+    }
 
-    fn start(&self) -> usize { self.range.0 }
-    fn end(&self) -> usize { self.range.1 }
+    fn start(&self) -> usize {
+        self.range.0
+    }
+    fn end(&self) -> usize {
+        self.range.1
+    }
 }

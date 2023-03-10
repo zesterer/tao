@@ -3,16 +3,8 @@ pub mod exec;
 pub mod lower;
 
 pub use crate::{
-    code::{Instr, Program, Addr},
-    exec::{exec, Value, Env},
+    code::{Addr, Instr, Program},
+    exec::{exec, Env, Value},
 };
-use tao_middle::{
-    mir,
-    Context as MirContext,
-    MirNode,
-    ProcId,
-    repr,
-    Ident,
-    EffectId,
-};
-use hashbrown::HashMap;
+
+use tao_middle::{mir, repr, Context as MirContext, EffectId, MirNode, ProcId};

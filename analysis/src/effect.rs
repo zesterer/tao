@@ -50,7 +50,10 @@ impl Effects {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (EffectDeclId, &EffectDecl)> {
-        self.effect_decls.iter().enumerate().map(|(i, eff)| (EffectDeclId(i, *eff.name), eff))
+        self.effect_decls
+            .iter()
+            .enumerate()
+            .map(|(i, eff)| (EffectDeclId(i, *eff.name), eff))
     }
 
     // pub fn iter(&self) -> impl Iterator<Item = (EffectDeclId, &EffectDecl)> {
@@ -65,9 +68,14 @@ impl Effects {
         let id = EffectDeclId(self.effect_decls.len(), *eff.name);
         let span = eff.name.span();
         if let Err(old) = self.lut.try_insert(*eff.name, (span, Ok(id))) {
-            Err(Error::DuplicateEffectDecl(*eff.name, old.entry.get().0, span))
+            Err(Error::DuplicateEffectDecl(
+                *eff.name,
+                old.entry.get().0,
+                span,
+            ))
         } else {
-            if let Some(lang) = eff.attr
+            if let Some(_lang) = eff
+                .attr
                 .iter()
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
@@ -86,7 +94,11 @@ impl Effects {
         let id = EffectAliasId(self.effect_aliases.len());
         let span = alias.name.span();
         if let Err(old) = self.lut.try_insert(*alias.name, (span, Err(id))) {
-            Err(Error::DuplicateEffectDecl(*alias.name, old.entry.get().0, span))
+            Err(Error::DuplicateEffectDecl(
+                *alias.name,
+                old.entry.get().0,
+                span,
+            ))
         } else {
             self.effect_aliases.push(alias);
             Ok(id)
@@ -94,11 +106,7 @@ impl Effects {
     }
 
     pub fn check_lang_items(&self) -> Vec<Error> {
-        let mut errors = Vec::new();
-
-        // if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
-
-        errors
+        Vec::new()
     }
 
     pub fn define_send_recv(&mut self, id: EffectDeclId, send: TyId, recv: TyId) {
@@ -106,7 +114,11 @@ impl Effects {
         self.effect_decls[id.0].recv = Some(recv);
     }
 
-    pub fn define_alias_effects(&mut self, id: EffectAliasId, effs: Vec<(SrcNode<EffectDeclId>, Vec<TyId>)>) {
+    pub fn define_alias_effects(
+        &mut self,
+        id: EffectAliasId,
+        effs: Vec<(SrcNode<EffectDeclId>, Vec<TyId>)>,
+    ) {
         self.effect_aliases[id.0].effects = Some(effs);
     }
 }

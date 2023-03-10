@@ -52,7 +52,8 @@ impl Defs {
         if let Err(old) = self.lut.try_insert(name, (span, id)) {
             Err(Error::DuplicateDefName(name, old.entry.get().0, span))
         } else {
-            if let Some(lang) = def.attr
+            if let Some(_lang) = def
+                .attr
                 .iter()
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
@@ -68,11 +69,7 @@ impl Defs {
     }
 
     pub fn check_lang_items(&self) -> Vec<Error> {
-        let mut errors = Vec::new();
-
-        // if self.lang.io_unit.is_none() { errors.push(Error::MissingLangItem("io_unit")); }
-
-        errors
+        Vec::new()
     }
 
     pub fn define_body(&mut self, id: DefId, expr: TyExpr) {

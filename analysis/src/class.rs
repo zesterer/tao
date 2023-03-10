@@ -23,11 +23,7 @@ impl Class {
             .as_ref()
             .expect("Class associated types must be known here")
             .iter()
-            .find_map(|a| if *a.name == assoc {
-                Some(())
-            } else {
-                None
-            })
+            .find_map(|a| if *a.name == assoc { Some(()) } else { None })
     }
 
     pub fn field(&self, field: Ident) -> Option<&SrcNode<TyId>> {
@@ -35,11 +31,7 @@ impl Class {
             .as_ref()
             .expect("Class fields must be known here")
             .iter()
-            .find_map(|f| if *f.name == field {
-                Some(&f.ty)
-            } else {
-                None
-            })
+            .find_map(|f| if *f.name == field { Some(&f.ty) } else { None })
     }
 }
 
@@ -79,11 +71,17 @@ impl Classes {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (ClassId, &Class)> {
-        self.classes.iter().enumerate().map(|(i, class)| (ClassId(i), class))
+        self.classes
+            .iter()
+            .enumerate()
+            .map(|(i, class)| (ClassId(i), class))
     }
 
     pub fn iter_members(&self) -> impl Iterator<Item = (MemberId, &Member)> {
-        self.members.iter().enumerate().map(|(i, member)| (MemberId(i), member))
+        self.members
+            .iter()
+            .enumerate()
+            .map(|(i, member)| (MemberId(i), member))
     }
 
     pub fn class_gen_scope(&self, class: ClassId) -> GenScopeId {
@@ -100,22 +98,45 @@ impl Classes {
         if let Err(old) = self.lut.try_insert(*name, (span, id)) {
             Err(Error::DuplicateClassName(*name, old.entry.get().0, span))
         } else {
-            if let Some(lang) = class.attr
+            if let Some(lang) = class
+                .attr
                 .iter()
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())
             {
-                if lang.iter().find(|a| &**a.name == "not").is_some() { self.lang.not = Some(id); }
-                if lang.iter().find(|a| &**a.name == "neg").is_some() { self.lang.neg = Some(id); }
-                if lang.iter().find(|a| &**a.name == "add").is_some() { self.lang.add = Some(id); }
-                if lang.iter().find(|a| &**a.name == "sub").is_some() { self.lang.sub = Some(id); }
-                if lang.iter().find(|a| &**a.name == "mul").is_some() { self.lang.mul = Some(id); }
-                if lang.iter().find(|a| &**a.name == "div").is_some() { self.lang.div = Some(id); }
-                if lang.iter().find(|a| &**a.name == "eq").is_some() { self.lang.eq = Some(id); }
-                if lang.iter().find(|a| &**a.name == "ord_ext").is_some() { self.lang.ord_ext = Some(id); }
-                if lang.iter().find(|a| &**a.name == "and_").is_some() { self.lang.and = Some(id); }
-                if lang.iter().find(|a| &**a.name == "or_").is_some() { self.lang.or = Some(id); }
-                if lang.iter().find(|a| &**a.name == "join").is_some() { self.lang.join = Some(id); }
+                if lang.iter().any(|a| &**a.name == "not") {
+                    self.lang.not = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "neg") {
+                    self.lang.neg = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "add") {
+                    self.lang.add = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "sub") {
+                    self.lang.sub = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "mul") {
+                    self.lang.mul = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "div") {
+                    self.lang.div = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "eq") {
+                    self.lang.eq = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "ord_ext") {
+                    self.lang.ord_ext = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "and_") {
+                    self.lang.and = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "or_") {
+                    self.lang.or = Some(id);
+                }
+                if lang.iter().any(|a| &**a.name == "join") {
+                    self.lang.join = Some(id);
+                }
             }
 
             self.classes.push(class);
@@ -126,17 +147,39 @@ impl Classes {
     pub fn check_lang_items(&self) -> Vec<Error> {
         let mut errors = Vec::new();
 
-        if self.lang.not.is_none() { errors.push(Error::MissingLangItem("not")); }
-        if self.lang.neg.is_none() { errors.push(Error::MissingLangItem("neg")); }
-        if self.lang.add.is_none() { errors.push(Error::MissingLangItem("add")); }
-        if self.lang.sub.is_none() { errors.push(Error::MissingLangItem("sub")); }
-        if self.lang.mul.is_none() { errors.push(Error::MissingLangItem("mul")); }
-        if self.lang.div.is_none() { errors.push(Error::MissingLangItem("div")); }
-        if self.lang.eq.is_none() { errors.push(Error::MissingLangItem("eq")); }
-        if self.lang.ord_ext.is_none() { errors.push(Error::MissingLangItem("ord_ext")); }
-        if self.lang.and.is_none() { errors.push(Error::MissingLangItem("and_")); }
-        if self.lang.or.is_none() { errors.push(Error::MissingLangItem("or_")); }
-        if self.lang.join.is_none() { errors.push(Error::MissingLangItem("join")); }
+        if self.lang.not.is_none() {
+            errors.push(Error::MissingLangItem("not"));
+        }
+        if self.lang.neg.is_none() {
+            errors.push(Error::MissingLangItem("neg"));
+        }
+        if self.lang.add.is_none() {
+            errors.push(Error::MissingLangItem("add"));
+        }
+        if self.lang.sub.is_none() {
+            errors.push(Error::MissingLangItem("sub"));
+        }
+        if self.lang.mul.is_none() {
+            errors.push(Error::MissingLangItem("mul"));
+        }
+        if self.lang.div.is_none() {
+            errors.push(Error::MissingLangItem("div"));
+        }
+        if self.lang.eq.is_none() {
+            errors.push(Error::MissingLangItem("eq"));
+        }
+        if self.lang.ord_ext.is_none() {
+            errors.push(Error::MissingLangItem("ord_ext"));
+        }
+        if self.lang.and.is_none() {
+            errors.push(Error::MissingLangItem("and_"));
+        }
+        if self.lang.or.is_none() {
+            errors.push(Error::MissingLangItem("or_"));
+        }
+        if self.lang.join.is_none() {
+            errors.push(Error::MissingLangItem("join"));
+        }
 
         errors
     }
@@ -162,11 +205,21 @@ impl Classes {
         id
     }
 
-    pub fn define_member_assoc(&mut self, id: MemberId, class: ClassId, assoc: HashMap<Ident, TyId>) {
+    pub fn define_member_assoc(
+        &mut self,
+        id: MemberId,
+        _class: ClassId,
+        assoc: HashMap<Ident, TyId>,
+    ) {
         self.members[id.0].assoc = Some(assoc);
     }
 
-    pub fn define_member_fields(&mut self, id: MemberId, class: ClassId, fields: HashMap<Ident, TyExpr>) {
+    pub fn define_member_fields(
+        &mut self,
+        id: MemberId,
+        _class: ClassId,
+        fields: HashMap<Ident, TyExpr>,
+    ) {
         self.members[id.0].fields = Some(fields);
     }
 
@@ -184,26 +237,30 @@ impl Classes {
             member: TyId,
             ty: ConTyId,
             gen_ty_links: &mut HashMap<usize, ConTyId>,
-            gen_eff_links: &mut HashMap<usize, ConEffectId>,
         ) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
                 (Ty::Gen(idx, _), _) => *gen_ty_links.entry(idx).or_insert(ty) == ty,
                 (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
-                (Ty::List(x), ConTy::List(y)) => covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links),
+                (Ty::List(x), ConTy::List(y)) => {
+                    covers(hir, ctx, x, *y, gen_ty_links)
+                }
                 // TODO: Care about field names!
                 (Ty::Record(xs, _), ConTy::Record(ys)) if xs.len() == ys.len() => xs
                     .into_iter()
-                    .zip(ys.into_iter())
-                    .all(|((_, x), (_, y))| covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)),
+                    .zip(ys.iter())
+                    .all(|((_, x), (_, y))| covers(hir, ctx, x, *y, gen_ty_links)),
                 (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
-                    covers(hir, ctx, x_i, *y_i, gen_ty_links, gen_eff_links) && covers(hir, ctx, x_o, *y_o, gen_ty_links, gen_eff_links)
-                },
-                (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0.0 && xs.len() == y.0.1.len() => xs
+                    covers(hir, ctx, x_i, *y_i, gen_ty_links)
+                        && covers(hir, ctx, x_o, *y_o, gen_ty_links)
+                }
+                (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0 .0 && xs.len() == y.0 .1.len() => xs
                     .into_iter()
-                    .zip(y.0.1.iter())
-                    .all(|(x, y)| covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)),
+                    .zip(y.0 .1.iter())
+                    .all(|(x, y)| covers(hir, ctx, x, *y, gen_ty_links)),
                 // Flatten empty effects
-                (_, ConTy::Effect(eff, ty)) if eff.is_empty() => covers(hir, ctx, member, *ty, gen_ty_links, gen_eff_links),
+                (_, ConTy::Effect(eff, ty)) if eff.is_empty() => {
+                    covers(hir, ctx, member, *ty, gen_ty_links)
+                }
                 (Ty::Effect(_, _), ConTy::Effect(_, _)) => todo!(),
                 (Ty::Error(_), _) => panic!("Error ty during monomorphisation"),
                 _ => false,
@@ -212,11 +269,11 @@ impl Classes {
 
         fn covers_eff(
             hir: &Context,
-            ctx: &ConContext,
+            _ctx: &ConContext,
             member: EffectId,
             effs: &[ConEffectId],
-            gen_ty_links: &mut HashMap<usize, ConTyId>,
-            gen_eff_links: &mut HashMap<usize, ConEffectId>,
+            _gen_ty_links: &mut HashMap<usize, ConTyId>,
+            _gen_eff_links: &mut HashMap<usize, ConEffectId>,
         ) -> bool {
             match (hir.tys.get_effect(member), effs) {
                 (Effect::Known(member_effs), effs) if member_effs.len() <= 1 || effs.len() <= 1  => effs
@@ -224,7 +281,7 @@ impl Classes {
                     .all(|eff| member_effs
                         .iter()
                         .any(|member_eff| match (member_eff, eff) {
-                            (Ok(EffectInst::Gen(idx, _)), eff) => {
+                            (Ok(EffectInst::Gen(_idx, _)), _eff) => {
                                 // println!("Compare {:?} with {:?}", gen_eff_links.get(idx), eff);
                                 // gen_eff_links.entry(*idx).or_insert(*eff) == eff
                                 // TODO: Is this correct? Can all generics be assumed to match?!
@@ -237,62 +294,84 @@ impl Classes {
             }
         }
 
-        self.member_lut
-            .get(&class)
-            .and_then(|xs| {
-                let candidates = xs
-                    .iter()
+        self.member_lut.get(&class).and_then(|xs| {
+            let candidates =
+                xs.iter()
                     .filter(|m| {
                         let member = self.get_member(**m);
                         let mut gen_ty_links = HashMap::new();
                         let mut gen_eff_links = HashMap::new();
-                        covers(hir, ctx, member.member, ty, &mut gen_ty_links, &mut gen_eff_links)
-                            && member.gen_tys.iter()
-                                .zip(gen_tys.iter())
-                                .all(|(member_gen_ty, gen_ty)| covers(hir, ctx, *member_gen_ty, *gen_ty, &mut gen_ty_links, &mut gen_eff_links))
-                            && member.gen_effs.iter()
-                                .zip(gen_effs.iter())
-                                .all(|(member_gen_eff, gen_eff)| covers_eff(hir, ctx, member_gen_eff.expect("Error eff during monomorphisation"), gen_eff, &mut gen_ty_links, &mut gen_eff_links))
+                        covers(
+                            hir,
+                            ctx,
+                            member.member,
+                            ty,
+                            &mut gen_ty_links,
+                        ) && member.gen_tys.iter().zip(gen_tys.iter()).all(
+                            |(member_gen_ty, gen_ty)| {
+                                covers(
+                                    hir,
+                                    ctx,
+                                    *member_gen_ty,
+                                    *gen_ty,
+                                    &mut gen_ty_links,
+                                )
+                            },
+                        ) && member.gen_effs.iter().zip(gen_effs.iter()).all(
+                            |(member_gen_eff, gen_eff)| {
+                                covers_eff(
+                                    hir,
+                                    ctx,
+                                    member_gen_eff.expect("Error eff during monomorphisation"),
+                                    gen_eff,
+                                    &mut gen_ty_links,
+                                    &mut gen_eff_links,
+                                )
+                            },
+                        )
                     })
                     .collect::<Vec<_>>();
 
-                assert!(
-                    candidates.len() <= 1,
-                    "Multiple member candidates detected during lowering <{:?} as {:?}>.\n\
+            assert!(
+                candidates.len() <= 1,
+                "Multiple member candidates detected during lowering <{:?} as {:?}>.\n\
                     This means that incoherence has occurred!\n\
                     Candidate members:\n{}",
-                    ctx.get_ty(ty),
-                    **self.get(class).name,
-                    candidates
-                        .iter()
-                        .map(|c| {
-                            let c = self.get_member(**c);
-                            let gen_scope = hir.tys.get_gen_scope(c.gen_scope);
-                            format!(
-                                "- {}member {} of {}{} (in {})\n",
-                                if gen_scope.len() == 0 {
-                                    String::new()
-                                } else {
-                                    format!("for {} ", (0..gen_scope.len())
+                ctx.get_ty(ty),
+                **self.get(class).name,
+                candidates
+                    .iter()
+                    .map(|c| {
+                        let c = self.get_member(**c);
+                        let gen_scope = hir.tys.get_gen_scope(c.gen_scope);
+                        format!(
+                            "- {}member {} of {}{} (in {})\n",
+                            if gen_scope.is_empty() {
+                                String::new()
+                            } else {
+                                format!(
+                                    "for {} ",
+                                    (0..gen_scope.len())
                                         .map(|idx| format!("{}", *gen_scope.get(idx).name))
                                         .collect::<Vec<_>>()
-                                        .join(", "))
-                                },
-                                hir.tys.display(hir, c.member),
-                                **self.get(class).name,
-                                c.gen_tys
-                                    .iter()
-                                    .map(|ty| format!(" {}", hir.tys.display(hir, *ty)))
-                                    .collect::<String>(),
-                                hir.tys.get_span(c.member).src(),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("")
-                );
+                                        .join(", ")
+                                )
+                            },
+                            hir.tys.display(hir, c.member),
+                            **self.get(class).name,
+                            c.gen_tys
+                                .iter()
+                                .map(|ty| format!(" {}", hir.tys.display(hir, *ty)))
+                                .collect::<String>(),
+                            hir.tys.get_span(c.member).src(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            );
 
-                candidates.first().copied().copied()
-            })
+            candidates.first().copied().copied()
+        })
     }
 
     pub fn members_of(&self, class: ClassId) -> impl Iterator<Item = (MemberId, &Member)> {
@@ -306,14 +385,8 @@ impl Classes {
 }
 
 pub enum MemberItem {
-    Value {
-        name: SrcNode<Ident>,
-        val: TyExpr,
-    },
-    Type {
-        name: SrcNode<Ident>,
-        ty: TyId,
-    },
+    Value { name: SrcNode<Ident>, val: TyExpr },
+    Type { name: SrcNode<Ident>, ty: TyId },
 }
 
 pub struct Member {
