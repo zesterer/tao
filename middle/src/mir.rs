@@ -405,7 +405,7 @@ impl Expr {
     }
 
     pub fn refresh_locals(&mut self) {
-        let required = self.required_locals(None);
+        let _required = self.required_locals(None);
         // debug_assert_eq!(required.len(), 0, "Cannot refresh locals for an expression\n\n{}\n\nthat captures (required = {:?})", self.print(), required);
         self.refresh_locals_inner(&mut Vec::new());
     }
@@ -452,7 +452,7 @@ impl Expr {
                 expr.refresh_locals_inner(stack);
 
                 for Handler {
-                    eff,
+                    eff: _,
                     send,
                     state,
                     recv,
@@ -527,7 +527,7 @@ impl Expr {
             Expr::Handle { expr, handlers } => {
                 expr.required_locals_inner(stack, required);
                 for Handler {
-                    eff,
+                    eff: _,
                     send,
                     state,
                     recv,
@@ -554,7 +554,7 @@ impl Expr {
         match self {
             Expr::Undefined => false,
             Expr::Literal(_) => false,
-            Expr::Local(local) => false,
+            Expr::Local(_local) => false,
             Expr::Global(_, _) => false,
             Expr::Intrinsic(Intrinsic::Propagate(_), _) => true,
             Expr::Intrinsic(_, args) => args.iter().any(|arg| arg.may_have_effect()),
@@ -562,7 +562,7 @@ impl Expr {
                 pred.may_have_effect() || arms.iter().any(|(_, body)| body.may_have_effect())
             }
             Expr::Func(_, _) => false,
-            Expr::Go(next, body, init) => init.may_have_effect() || body.may_have_effect(),
+            Expr::Go(_next, body, init) => init.may_have_effect() || body.may_have_effect(),
             Expr::Apply(f, arg) => f.may_have_effect() || arg.may_have_effect(),
             Expr::Tuple(fields) => fields.iter().any(|field| field.may_have_effect()),
             Expr::List(items) => items.iter().any(|item| item.may_have_effect()),
@@ -571,7 +571,7 @@ impl Expr {
             Expr::AccessVariant(inner, _) => inner.may_have_effect(),
             Expr::Data(_, inner) => inner.may_have_effect(),
             Expr::AccessData(inner, _) => inner.may_have_effect(),
-            Expr::Basin(_, inner) => false,
+            Expr::Basin(_, _inner) => false,
             Expr::Handle { expr, handlers } => {
                 expr.may_have_effect()
                     || handlers
@@ -831,7 +831,7 @@ impl Expr {
                         }
                         Ok(())
                     }
-                    Expr::Basin(eff, inner) => write!(
+                    Expr::Basin(_eff, inner) => write!(
                         f,
                         "effect {{\n{}\n{}}}",
                         DisplayExpr(inner, self.1 + 1, true),

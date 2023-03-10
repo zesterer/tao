@@ -178,7 +178,7 @@ impl Type {
                 f(i);
                 f(o);
             }
-            Self::Data(data, args) => args.iter().for_each(|arg| f(arg)),
+            Self::Data(_data, args) => args.iter().for_each(|arg| f(arg)),
             // TODO: Recurse into class inst?
             Self::Assoc(inner, _, _) => f(inner),
             Self::Effect(set, out) => {

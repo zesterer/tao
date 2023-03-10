@@ -327,7 +327,7 @@ impl AbstractPat {
                 for pat in filter {
                     match pat {
                         AbstractPat::Wildcard => return None,
-                        pat => {}
+                        _pat => {}
                     }
                 }
                 Some(ExamplePat::Wildcard)
@@ -419,7 +419,7 @@ impl ExamplePat {
                         "{}",
                         fields
                             .iter()
-                            .map(|(name, f)| format!("{}", DisplayExamplePat(f, false, ctx)))
+                            .map(|(_name, f)| format!("{}", DisplayExamplePat(f, false, ctx)))
                             .collect::<Vec<_>>()
                             .join(", ")
                     ),
@@ -428,7 +428,7 @@ impl ExamplePat {
                         "({})",
                         fields
                             .iter()
-                            .map(|(name, f)| format!("{},", DisplayExamplePat(f, false, ctx)))
+                            .map(|(_name, f)| format!("{},", DisplayExamplePat(f, false, ctx)))
                             .collect::<Vec<_>>()
                             .join(" ")
                     ),
@@ -457,7 +457,7 @@ impl ExamplePat {
                     ExamplePat::Variant(name, inner, false) => {
                         write!(f, "{} {}", name, DisplayExamplePat(inner, false, ctx))
                     }
-                    ExamplePat::Variant(name, inner, true) => write!(f, "{}", name),
+                    ExamplePat::Variant(name, _inner, true) => write!(f, "{}", name),
                 }
             }
         }

@@ -5,7 +5,7 @@ fn litr_ty_info(litr: &ast::Literal, infer: &mut Infer, span: Span) -> TyInfo {
     match litr {
         ast::Literal::Nat(_) => TyInfo::Prim(Prim::Nat),
         ast::Literal::Int(_) => TyInfo::Prim(Prim::Int),
-        ast::Literal::Real(x) => TyInfo::Prim(Prim::Real),
+        ast::Literal::Real(_x) => TyInfo::Prim(Prim::Real),
         ast::Literal::Char(_) => TyInfo::Prim(Prim::Char),
         ast::Literal::Str(_) => TyInfo::List(infer.insert(span, TyInfo::Prim(Prim::Char))),
     }
@@ -381,7 +381,7 @@ impl ToHir for ast::Type {
                             let alias_ty = alias.ty;
                             let alias_gen_scope = alias.gen_scope;
                             let mut get_gen =
-                                |index, scope, infer: &mut Infer| gen_tys.get(index).copied();
+                                |index, _scope, _infer: &mut Infer| gen_tys.get(index).copied();
 
                             let res = enforce_generic_obligations(
                                 infer,
@@ -413,7 +413,7 @@ impl ToHir for ast::Type {
                                     alias_ty,
                                     self.span(),
                                     &mut get_gen,
-                                    &mut |idx, _| todo!(),
+                                    &mut |_idx, _| todo!(),
                                     None,
                                     invariant(),
                                 )),
@@ -487,7 +487,7 @@ impl ToHir for ast::Type {
                         let gen_effs = class
                             .gen_effs
                             .iter()
-                            .map(|ty| todo!("to_hir for effect"))
+                            .map(|_ty| todo!("to_hir for effect"))
                             .collect::<Vec<_>>();
                         if let Some(class_id) = infer.ctx_mut().classes.lookup(*class.name) {
                             infer.insert_class(
@@ -676,7 +676,7 @@ impl ToHir for ast::Binding {
                         .collect::<Vec<_>>();
                     let gen_effs = gen_effs
                         .into_iter()
-                        .map(|origin| infer.insert_effect(self.span(), EffectInfo::free()))
+                        .map(|_origin| infer.insert_effect(self.span(), EffectInfo::free()))
                         .collect::<Vec<_>>();
 
                     if let Err(()) = enforce_generic_obligations(
@@ -705,13 +705,13 @@ impl ToHir for ast::Binding {
                     // Recreate type in context
                     let inner_ty = {
                         let data = infer.ctx().datas.get_data(data);
-                        let data_gen_scope = data.gen_scope;
+                        let _data_gen_scope = data.gen_scope;
 
                         infer.instantiate(
                             inner_ty,
                             inner.span(),
-                            &mut |index, _, infer: &mut Infer| gen_tys.get(index).copied(),
-                            &mut |index, infer: &mut Infer| gen_effs.get(index).copied(),
+                            &mut |index, _, _infer: &mut Infer| gen_tys.get(index).copied(),
+                            &mut |index, _infer: &mut Infer| gen_effs.get(index).copied(),
                             None,
                             invariant(),
                         )
@@ -764,7 +764,7 @@ fn instantiate_def(
         .map(|i| TyInfo::Unknown(Some(scope.get(i).name.span())))
         .collect::<Vec<_>>();
     let gen_effs = (0..scope.len_eff())
-        .map(|i| EffectInfo::free())
+        .map(|_i| EffectInfo::free())
         .collect::<Vec<_>>();
     let gen_tys = gen_tys
         .into_iter()
@@ -789,10 +789,10 @@ fn instantiate_def(
 
     // Recreate type in context
     let def = infer.ctx().defs.get(def_id);
-    let def_gen_scope = def.gen_scope;
+    let _def_gen_scope = def.gen_scope;
     let def_name = def.name.clone();
-    let mut gen_ty = |index: usize, _, infer: &mut Infer| gen_tys.get(index).map(|(_, ty)| *ty);
-    let mut gen_eff = |index: usize, infer: &mut Infer| gen_effs.get(index).copied();
+    let mut gen_ty = |index: usize, _, _infer: &mut Infer| gen_tys.get(index).map(|(_, ty)| *ty);
+    let mut gen_eff = |index: usize, _infer: &mut Infer| gen_effs.get(index).copied();
     let ty = if let Some(body_ty) = def
         .ty_hint
         .or_else(|| def.body.as_ref().map(|body| body.meta().1))
@@ -1429,13 +1429,13 @@ impl ToHir for ast::Expr {
                     // Recreate type in context
                     let inner_ty = {
                         let data = infer.ctx().datas.get_data(data);
-                        let data_gen_scope = data.gen_scope;
+                        let _data_gen_scope = data.gen_scope;
 
                         infer.instantiate(
                             inner_ty,
                             name.span(),
-                            &mut |index, _, infer: &mut Infer| gen_tys.get(index).copied(),
-                            &mut |idx, _| todo!(),
+                            &mut |index, _, _infer: &mut Infer| gen_tys.get(index).copied(),
+                            &mut |_idx, _| todo!(),
                             None,
                             invariant(),
                         )

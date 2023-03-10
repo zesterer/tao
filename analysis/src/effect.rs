@@ -74,7 +74,7 @@ impl Effects {
                 span,
             ))
         } else {
-            if let Some(lang) = eff
+            if let Some(_lang) = eff
                 .attr
                 .iter()
                 .find(|a| &**a.name == "lang")

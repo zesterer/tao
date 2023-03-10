@@ -54,7 +54,7 @@ impl Context {
                             .items
                             .iter()
                             .filter_map(|item| match item {
-                                ast::ClassItem::Type { name, obligations } => {
+                                ast::ClassItem::Type { name, obligations: _ } => {
                                     Some(ClassAssoc { name: name.clone() })
                                 }
                                 _ => None,
@@ -72,7 +72,7 @@ impl Context {
             }
         }
         // Class associated types
-        for (attr, class, class_id, gen_scope) in &classes {
+        for (_attr, class, class_id, _gen_scope) in &classes {
             let mut existing_tys = HashMap::new();
             let assoc = class
                 .items
@@ -274,11 +274,11 @@ impl Context {
         }
 
         for (_, _, _, gen_scope_id) in &members_init {
-            this.reify_gen_scope(*gen_scope_id, |infer| {});
+            this.reify_gen_scope(*gen_scope_id, |_infer| {});
         }
 
-        for (_, def, gen_scope_id) in &defs_init {
-            this.reify_gen_scope(*gen_scope_id, |infer| {});
+        for (_, _def, gen_scope_id) in &defs_init {
+            this.reify_gen_scope(*gen_scope_id, |_infer| {});
         }
 
         let mut members = Vec::new();
@@ -386,7 +386,7 @@ impl Context {
 
         // Effect alias definition must go before members and defs because they might have type hints that make use of type
         // aliases
-        for (attr, alias, alias_id, gen_scope) in effect_aliases {
+        for (_attr, alias, alias_id, gen_scope) in effect_aliases {
             let mut infer = Infer::new(&mut this, Some(gen_scope));
             // TODO: Enforce these?
             //.with_gen_scope_implied();
@@ -435,7 +435,7 @@ impl Context {
         this.errors.append(&mut this.classes.check_lang_items());
         this.errors.append(&mut this.datas.check_lang_items());
 
-        for (attr, eff, eff_id, gen_scope) in effects {
+        for (_attr, eff, eff_id, gen_scope) in effects {
             let mut infer = Infer::new(&mut this, Some(gen_scope)).with_gen_scope_implied();
 
             let send = eff
@@ -455,7 +455,7 @@ impl Context {
         }
 
         // Class fields
-        for (attr, class, class_id, gen_scope) in &classes {
+        for (_attr, class, class_id, gen_scope) in &classes {
             let mut existing_fields = HashMap::new();
             let fields = class
                 .items
@@ -520,7 +520,7 @@ impl Context {
             this.classes.define_fields(*class_id, fields);
         }
         // Member associated types
-        for (member, class_id, member_id, member_ty, gen_scope) in &members {
+        for (member, class_id, member_id, _member_ty, gen_scope) in &members {
             let assoc = member
                 .items
                 .iter()
@@ -684,7 +684,7 @@ impl Context {
         }
 
         // Enforce member obligations
-        for (member, class_id, member_id, member_ty, gen_scope) in &members {
+        for (member, class_id, _member_id, member_ty, gen_scope) in &members {
             let mut infer = Infer::new(&mut this, Some(*gen_scope)).with_gen_scope_implied();
 
             let member_ty = infer.instantiate_local(*member_ty, member.member.span());
@@ -740,7 +740,7 @@ impl Context {
                     *member_obl.member,
                     member_obl.member.span(),
                     &mut |idx, _, _| member_gen_tys.get(idx).copied(),
-                    &mut |idx, _| todo!(),
+                    &mut |_idx, _| todo!(),
                     Some(member_ty),
                     invariant(),
                 );
@@ -798,7 +798,7 @@ impl Context {
                 );
             }
 
-            let (mut checked, mut errs) = infer.into_checked();
+            let (_checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
         }
 

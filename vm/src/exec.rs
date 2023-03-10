@@ -430,7 +430,7 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                             eff_id, handlers,
                         )
                     });
-                let (f_addr, mut captures) = handler.1.clone().func();
+                let (f_addr, captures) = handler.1.clone().func();
 
                 funcs.push(next_addr);
                 next_addr = f_addr;

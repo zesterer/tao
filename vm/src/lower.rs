@@ -67,7 +67,7 @@ impl Program {
                 }
             }
             mir::Pat::ListFront(items, tail) => {
-                if let Some(tail) = tail.as_ref() {
+                if let Some(_tail) = tail.as_ref() {
                     self.push(Instr::Dup); // Used for tail later
                 }
 
@@ -383,7 +383,7 @@ impl Program {
                         self.push(Instr::Suspend(*eff));
                         self.push(Instr::Resume(*eff));
                     }
-                    Intrinsic::Propagate(effs) => {
+                    Intrinsic::Propagate(_effs) => {
                         self.push(Instr::Propagate);
                     }
                 };
@@ -509,7 +509,7 @@ impl Program {
             mir::Expr::AccessData(inner, _) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
             }
-            mir::Expr::Basin(eff, inner) => {
+            mir::Expr::Basin(_eff, inner) => {
                 let (f_addr, captures_len) =
                     self.compile_body(mir, Vec::new(), inner, stack, proc_fixups);
                 self.push(Instr::MakeEffect(

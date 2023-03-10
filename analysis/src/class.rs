@@ -208,7 +208,7 @@ impl Classes {
     pub fn define_member_assoc(
         &mut self,
         id: MemberId,
-        class: ClassId,
+        _class: ClassId,
         assoc: HashMap<Ident, TyId>,
     ) {
         self.members[id.0].assoc = Some(assoc);
@@ -217,7 +217,7 @@ impl Classes {
     pub fn define_member_fields(
         &mut self,
         id: MemberId,
-        class: ClassId,
+        _class: ClassId,
         fields: HashMap<Ident, TyExpr>,
     ) {
         self.members[id.0].fields = Some(fields);
@@ -270,11 +270,11 @@ impl Classes {
 
         fn covers_eff(
             hir: &Context,
-            ctx: &ConContext,
+            _ctx: &ConContext,
             member: EffectId,
             effs: &[ConEffectId],
-            gen_ty_links: &mut HashMap<usize, ConTyId>,
-            gen_eff_links: &mut HashMap<usize, ConEffectId>,
+            _gen_ty_links: &mut HashMap<usize, ConTyId>,
+            _gen_eff_links: &mut HashMap<usize, ConEffectId>,
         ) -> bool {
             match (hir.tys.get_effect(member), effs) {
                 (Effect::Known(member_effs), effs) if member_effs.len() <= 1 || effs.len() <= 1  => effs
@@ -282,7 +282,7 @@ impl Classes {
                     .all(|eff| member_effs
                         .iter()
                         .any(|member_eff| match (member_eff, eff) {
-                            (Ok(EffectInst::Gen(idx, _)), eff) => {
+                            (Ok(EffectInst::Gen(_idx, _)), _eff) => {
                                 // println!("Compare {:?} with {:?}", gen_eff_links.get(idx), eff);
                                 // gen_eff_links.entry(*idx).or_insert(*eff) == eff
                                 // TODO: Is this correct? Can all generics be assumed to match?!

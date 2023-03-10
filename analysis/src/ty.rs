@@ -163,8 +163,8 @@ impl Types {
             (Ty::SelfType, Ty::SelfType) => Ordering::Equal,
             // TODO: Check equality of effect parameters?
             (
-                Ty::Assoc(x_ty, (x_class_id, x_gen_tys, x_gen_effs), x_name),
-                Ty::Assoc(y_ty, (y_class_id, y_gen_tys, y_gen_effs), y_name),
+                Ty::Assoc(x_ty, (x_class_id, x_gen_tys, _x_gen_effs), x_name),
+                Ty::Assoc(y_ty, (y_class_id, y_gen_tys, _y_gen_effs), y_name),
             ) => self
                 .cmp_ty(x_ty, y_ty)
                 .then_with(|| x_class_id.cmp(&y_class_id))

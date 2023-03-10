@@ -9,7 +9,7 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, writer: impl Write) {
+    pub fn write<C: ariadne::Cache<SrcId>>(self, _ctx: &Context, cache: C, writer: impl Write) {
         use ariadne::{Color, Fmt, Label, Report, ReportKind, Span};
 
         let (msg, spans, notes) = match self {

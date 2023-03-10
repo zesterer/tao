@@ -214,9 +214,9 @@ impl Expr {
             Expr::Handle { expr, handlers } => {
                 f(expr);
                 for Handler {
-                    eff,
-                    send,
-                    state,
+                    eff: _,
+                    send: _,
+                    state: _,
                     recv,
                 } in handlers
                 {
@@ -256,9 +256,9 @@ impl Expr {
             Expr::Handle { expr, handlers } => {
                 f(expr);
                 for Handler {
-                    eff,
-                    send,
-                    state,
+                    eff: _,
+                    send: _,
+                    state: _,
                     recv,
                 } in handlers
                 {
@@ -287,7 +287,7 @@ impl Expr {
             Expr::Handle { expr, handlers } => {
                 expr.inline_local(name, local_expr);
                 for Handler {
-                    eff,
+                    eff: _,
                     send,
                     state,
                     recv,
@@ -392,7 +392,7 @@ pub fn check(ctx: &Context) {
         stack: &mut Vec<(Local, Repr)>,
     ) {
         match (&binding.pat, repr) {
-            (Pat::Data(a, inner), Repr::Data(b)) if a == b => {} // TODO: Check inner
+            (Pat::Data(a, _inner), Repr::Data(b)) if a == b => {} // TODO: Check inner
             (Pat::Wildcard, _) => {}
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {}
             (Pat::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => {
@@ -412,7 +412,7 @@ pub fn check(ctx: &Context) {
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
         match (expr, repr) {
-            (Expr::Data(a, inner), Repr::Data(b)) if a == b => {} // TODO: Check inner
+            (Expr::Data(a, _inner), Repr::Data(b)) if a == b => {} // TODO: Check inner
             // TODO: Check literals elsewhere
             (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {}
             (Expr::Literal(Literal::List(_)), Repr::List(_)) => {}
@@ -433,10 +433,10 @@ pub fn check(ctx: &Context) {
                 visit_expr(ctx, body, stack);
                 stack.pop();
             }
-            (Expr::Go(_, body, init), _) => {
+            (Expr::Go(_, _body, _init), _) => {
                 // TODO: Validate return body and return type
             }
-            (Expr::Apply(f, arg), _) => {
+            (Expr::Apply(f, _arg), _) => {
                 assert!(matches!(f.meta(), Repr::Func(_, _)));
             }
             (Expr::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {
@@ -447,7 +447,7 @@ pub fn check(ctx: &Context) {
                     check_expr(ctx, item, b, stack);
                 }
             }
-            (Expr::Match(pred, arms), repr) => {
+            (Expr::Match(pred, arms), _repr) => {
                 for (arm, body) in arms {
                     // TODO: visit binding
                     check_binding(ctx, arm.inner(), pred.meta(), stack);
@@ -464,13 +464,13 @@ pub fn check(ctx: &Context) {
             (expr, Repr::Data(data)) => {
                 check_expr(ctx, expr, &ctx.reprs.get(*data).repr, stack);
             }
-            (Expr::Variant(idx, inner), Repr::Data(_)) => {} // TODO
+            (Expr::Variant(_idx, _inner), Repr::Data(_)) => {} // TODO
             (Expr::Intrinsic(_, _), _) => {}                 // TODO
             (Expr::Access(_, _), _) => {}                    // TODO
             (Expr::Basin(_, inner), Repr::Effect(_, o)) => {
                 check_expr(ctx, inner, o, stack);
             } // TODO
-            (Expr::Handle { expr, handlers }, r) if matches!(expr.meta(), Repr::Effect(_, _)) => {
+            (Expr::Handle { expr, handlers: _ }, _r) if matches!(expr.meta(), Repr::Effect(_, _)) => {
                 // TODO: Revisit this, might not be correct with subtyping
                 // check_expr(ctx, expr, &Repr::Effect(vec![*eff], Box::new(r.clone())), stack);
             }

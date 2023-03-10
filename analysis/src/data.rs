@@ -164,7 +164,7 @@ impl Datas {
         }
     }
 
-    pub fn define_data(&mut self, id: DataId, span: Span, data: Data) -> Result<(), Vec<Error>> {
+    pub fn define_data(&mut self, id: DataId, _span: Span, data: Data) -> Result<(), Vec<Error>> {
         let mut errors = Vec::new();
         for (cons, _) in &data.cons {
             if let Err(old) = self.cons_lut.try_insert(**cons, (cons.span(), id)) {

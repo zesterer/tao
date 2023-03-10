@@ -49,7 +49,7 @@ impl Reprs {
 
     pub fn declare(&mut self, data: ConDataId) -> bool {
         match self.datas.entry(data) {
-            Entry::Occupied(data) => false,
+            Entry::Occupied(_data) => false,
             Entry::Vacant(data) => {
                 data.insert(None);
                 true

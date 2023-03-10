@@ -24,8 +24,8 @@ impl Context {
 
     pub fn lower_litr(
         &mut self,
-        hir: &HirContext,
-        con: &ConContext,
+        _hir: &HirContext,
+        _con: &ConContext,
         litr: &hir::Literal,
     ) -> mir::Literal {
         match litr {
@@ -292,7 +292,7 @@ impl Context {
                 fields.sort_by_key(|(name, _)| name.as_ref());
                 mir::Expr::Tuple(fields.into_iter().map(|(_, field)| field).collect())
             }
-            hir::Expr::ClassAccess(ty, class, field) => {
+            hir::Expr::ClassAccess(_ty, _class, _field) => {
                 panic!("Class access should not still exist during MIR lowering")
             }
             hir::Expr::Intrinsic(name, args) => {
