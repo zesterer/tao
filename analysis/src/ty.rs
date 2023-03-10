@@ -379,7 +379,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                             .map(|ty| format!(" {}", self.with_ty(*ty, true)))
                             .chain(gen_effs.iter().map(|eff| match *eff {
                                 Some(eff) => format!(" {}", self.with_eff(eff, true)),
-                                None => format!(" !"),
+                                None => " !".to_string(),
                             }))
                             .collect::<String>()
                     );
@@ -404,10 +404,13 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                     let effs = effs
                         .iter()
                         .map(|eff| match eff {
-                            Ok(EffectInst::Gen(idx, scope)) => format!(
-                                "{}",
-                                **self.ctx.tys.get_gen_scope(*scope).get_eff(*idx).name
-                            ),
+                            Ok(EffectInst::Gen(idx, scope)) => self
+                                .ctx
+                                .tys
+                                .get_gen_scope(*scope)
+                                .get_eff(*idx)
+                                .name
+                                .to_string(),
                             Ok(EffectInst::Concrete(decl, args)) => format!(
                                 "{}{}",
                                 *self.ctx.effects.get_decl(*decl).name,
@@ -415,7 +418,7 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                                     .map(|arg| format!(" {}", self.with_ty(*arg, true)))
                                     .collect::<String>()
                             ),
-                            Err(()) => format!("!"),
+                            Err(()) => "!".to_string(),
                         })
                         .collect::<Vec<_>>();
                     if effs.is_empty() {
