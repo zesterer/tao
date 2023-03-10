@@ -8,7 +8,7 @@ pub struct RemoveUnusedBindings;
 impl Pass for RemoveUnusedBindings {
     fn apply(&mut self, ctx: &mut Context) {
         fn visit(
-            mir: &Context,
+            _mir: &Context,
             expr: &mut Expr,
             stack: &mut Vec<(Local, u64)>,
             _proc_stack: &mut Vec<ProcId>,
@@ -23,7 +23,7 @@ impl Pass for RemoveUnusedBindings {
                     }
                 }
                 Expr::Match(pred, arms) => {
-                    visit(mir, pred, stack, _proc_stack);
+                    visit(_mir, pred, stack, _proc_stack);
 
                     // Remove any arms that follow an irrefutable arm
                     for i in 0..arms.len() {
@@ -37,7 +37,7 @@ impl Pass for RemoveUnusedBindings {
                         let old_stack = stack.len();
 
                         stack.extend(arm.binding_names().into_iter().map(|name| (name, 0)));
-                        visit(mir, body, stack, _proc_stack);
+                        visit(_mir, body, stack, _proc_stack);
 
                         fn remove_unused(binding: &mut Binding, stack: &mut Vec<(Local, u64)>) {
                             if let Some(name) = binding.name {
@@ -73,7 +73,7 @@ impl Pass for RemoveUnusedBindings {
                     });
 
                     // Visit predicate last to avoid visiting it again if the match was removed
-                    visit(mir, pred, stack, _proc_stack);
+                    visit(_mir, pred, stack, _proc_stack);
 
                     // Flatten matches with a single arm where the arm does not bind
                     if arms.len() == 1 && !arms.first().unwrap().0.binds() {
@@ -95,17 +95,17 @@ impl Pass for RemoveUnusedBindings {
                 }
                 Expr::Func(arg, body) => {
                     stack.push((**arg, 0));
-                    visit(mir, body, stack, _proc_stack);
+                    visit(_mir, body, stack, _proc_stack);
                     stack.pop();
                 }
                 Expr::Go(next, body, init) => {
-                    visit(mir, init, stack, _proc_stack);
+                    visit(_mir, init, stack, _proc_stack);
                     stack.push((**next, 0));
-                    visit(mir, body, stack, _proc_stack);
+                    visit(_mir, body, stack, _proc_stack);
                     stack.pop();
                 }
                 Expr::Handle { expr, handlers } => {
-                    visit(mir, expr, stack, _proc_stack);
+                    visit(_mir, expr, stack, _proc_stack);
                     for Handler {
                         eff: _,
                         send,
@@ -116,11 +116,11 @@ impl Pass for RemoveUnusedBindings {
                         let old_len = stack.len();
                         stack.push((**send, 0));
                         stack.push((**state, 0));
-                        visit(mir, recv, stack, _proc_stack);
+                        visit(_mir, recv, stack, _proc_stack);
                         stack.truncate(old_len);
                     }
                 }
-                _ => expr.for_children_mut(|expr| visit(mir, expr, stack, _proc_stack)),
+                _ => expr.for_children_mut(|expr| visit(_mir, expr, stack, _proc_stack)),
             }
         }
 
