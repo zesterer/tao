@@ -271,7 +271,9 @@ impl Binding {
             Pat::ListExact(items) => items.iter().for_each(|item| item.visit_bindings(bind)),
             Pat::ListFront(items, tail) => {
                 items.iter().for_each(|item| item.visit_bindings(bind));
-                tail.as_ref().map(|tail| tail.visit_bindings(bind));
+                if let Some(tail) = tail.as_ref() {
+                    tail.visit_bindings(bind);
+                }
             }
             Pat::Variant(_, inner) => inner.visit_bindings(bind),
             Pat::Data(_, inner) => inner.visit_bindings(bind),
