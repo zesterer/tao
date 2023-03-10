@@ -69,11 +69,7 @@ impl Defs {
     }
 
     pub fn check_lang_items(&self) -> Vec<Error> {
-        let errors = Vec::new();
-
-        // if self.lang.io_unit.is_none() { errors.push(Error::MissingLangItem("io_unit")); }
-
-        errors
+        Vec::new()
     }
 
     pub fn define_body(&mut self, id: DefId, expr: TyExpr) {
