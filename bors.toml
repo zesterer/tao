@@ -1,0 +1,10 @@
+# Must pass on the merge with the master branch
+status = [
+    "CI",
+    "flake-CI",
+]
+
+cut_body_after = "<details>"
+
+delete_merged_branches = true
+
