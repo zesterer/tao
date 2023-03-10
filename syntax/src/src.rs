@@ -1,7 +1,7 @@
 use internment::Intern;
 use std::{
-    path::{Path, PathBuf},
     fmt,
+    path::{Path, PathBuf},
 };
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -18,7 +18,9 @@ impl fmt::Display for SrcId {
 }
 
 impl fmt::Debug for SrcId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 impl SrcId {
@@ -32,11 +34,12 @@ impl SrcId {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Self {
-        SrcId(Intern::new(path
-            .as_ref()
-            .iter()
-            .map(|c| c.to_string_lossy().into_owned())
-            .collect()))
+        SrcId(Intern::new(
+            path.as_ref()
+                .iter()
+                .map(|c| c.to_string_lossy().into_owned())
+                .collect(),
+        ))
     }
 
     pub fn to_path(&self) -> PathBuf {

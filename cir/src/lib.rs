@@ -1,4 +1,4 @@
-use tao_util::index::{Index, Id};
+use tao_util::index::{Id, Index};
 
 #[derive(Copy, Clone)]
 pub struct Reg(usize);

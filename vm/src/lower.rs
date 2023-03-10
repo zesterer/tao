@@ -1,8 +1,5 @@
 use super::*;
-use std::{
-    collections::BTreeMap,
-    rc::Rc,
-};
+use std::{collections::BTreeMap, rc::Rc};
 
 fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
     Some(match literal {
@@ -12,14 +9,12 @@ fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
         mir::Literal::Int(x) => Value::Int(*x),
         mir::Literal::Real(x) => Value::Real(*x),
         mir::Literal::Char(c) => Value::Char(*c),
-        mir::Literal::Tuple(fields) => Value::List(fields
-            .iter()
-            .map(litr_to_value)
-            .collect::<Option<_>>()?),
-        mir::Literal::List(items) => Value::List(items
-            .iter()
-            .map(litr_to_value)
-            .collect::<Option<_>>()?),
+        mir::Literal::Tuple(fields) => {
+            Value::List(fields.iter().map(litr_to_value).collect::<Option<_>>()?)
+        }
+        mir::Literal::List(items) => {
+            Value::List(items.iter().map(litr_to_value).collect::<Option<_>>()?)
+        }
         mir::Literal::Sum(variant, inner) => Value::Sum(*variant, Rc::new(litr_to_value(inner)?)),
         mir::Literal::Data(_, inner) => litr_to_value(inner)?,
     })
@@ -49,18 +44,18 @@ impl Program {
         }
 
         match &binding.pat {
-            mir::Pat::Wildcard => {},
-            mir::Pat::Literal(_) => {},
+            mir::Pat::Wildcard => {}
+            mir::Pat::Literal(_) => {}
             mir::Pat::Single(inner) => {
                 self.push(Instr::Dup);
                 self.compile_extractor(mir, inner);
-            },
+            }
             mir::Pat::Add(lhs, rhs) => {
                 self.push(Instr::Dup);
                 self.push(Instr::Imm(Value::Int(*rhs as i64)));
                 self.push(Instr::SubInt);
                 self.compile_extractor(mir, lhs);
-            },
+            }
             mir::Pat::Tuple(items) | mir::Pat::ListExact(items) => {
                 for (i, item) in items.iter().enumerate() {
                     if item.binds() {
@@ -70,7 +65,7 @@ impl Program {
                         self.compile_extractor(mir, item);
                     }
                 }
-            },
+            }
             mir::Pat::ListFront(items, tail) => {
                 if let Some(tail) = tail.as_ref() {
                     self.push(Instr::Dup); // Used for tail later
@@ -89,23 +84,28 @@ impl Program {
                     self.push(Instr::SkipListImm(items.len()));
                     self.compile_extractor(mir, tail);
                 }
-            },
+            }
             mir::Pat::Variant(variant, inner) => {
                 self.push(Instr::Dup);
                 self.push(Instr::IndexSum(*variant));
                 self.compile_extractor(mir, inner);
-            },
+            }
             mir::Pat::Data(_, inner) => {
                 self.push(Instr::Dup);
                 self.compile_extractor(mir, inner);
-            },
+            }
         }
 
         self.push(Instr::Pop(1));
     }
 
     // [.., [T]] -> [.., Bool]
-    pub fn compile_item_matcher<'a>(&mut self, items: impl IntoIterator<Item = &'a MirNode<mir::Binding>>, is_list: bool, fail_fixup: impl IntoIterator<Item = Addr>) {
+    pub fn compile_item_matcher<'a>(
+        &mut self,
+        items: impl IntoIterator<Item = &'a MirNode<mir::Binding>>,
+        is_list: bool,
+        fail_fixup: impl IntoIterator<Item = Addr>,
+    ) {
         let mut fixups = fail_fixup.into_iter().collect::<Vec<_>>();
 
         for (i, item) in items.into_iter().enumerate() {
@@ -152,7 +152,7 @@ impl Program {
                         repr::Repr::Prim(repr::Prim::Char) => self.push(Instr::EqChar),
                         r => todo!("repr = {:?}, litr = {:?}", r, litr),
                     };
-                },
+                }
                 mir::Pat::Single(inner) => self.compile_matcher(inner),
                 mir::Pat::Add(lhs, rhs) => {
                     self.push(Instr::Dup);
@@ -161,24 +161,26 @@ impl Program {
                     self.push(Instr::IfNot);
                     let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
                     self.compile_item_matcher(Some(lhs), false, Some(fail_fixup));
-                },
+                }
                 mir::Pat::Tuple(items) => {
                     self.compile_item_matcher(items, true, None);
-                },
-                mir::Pat::ListExact(items) => if items.len() == 0 {
-                    self.push(Instr::LenList);
-                    self.push(Instr::Imm(Value::Int(items.len() as i64)));
-                    self.push(Instr::EqInt);
-                } else {
-                    self.push(Instr::Dup);
-                    self.push(Instr::LenList);
-                    self.push(Instr::Imm(Value::Int(items.len() as i64)));
-                    self.push(Instr::EqInt);
-                    self.push(Instr::IfNot);
-                    let fail_fixup = Some(self.push(Instr::Jump(0))); // Fixed by #2
+                }
+                mir::Pat::ListExact(items) => {
+                    if items.len() == 0 {
+                        self.push(Instr::LenList);
+                        self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                        self.push(Instr::EqInt);
+                    } else {
+                        self.push(Instr::Dup);
+                        self.push(Instr::LenList);
+                        self.push(Instr::Imm(Value::Int(items.len() as i64)));
+                        self.push(Instr::EqInt);
+                        self.push(Instr::IfNot);
+                        let fail_fixup = Some(self.push(Instr::Jump(0))); // Fixed by #2
 
-                    self.compile_item_matcher(items, true, fail_fixup);
-                },
+                        self.compile_item_matcher(items, true, fail_fixup);
+                    }
+                }
                 mir::Pat::ListFront(items, tail) => {
                     self.push(Instr::Dup);
                     self.push(Instr::LenList);
@@ -196,7 +198,7 @@ impl Program {
                     }
 
                     self.compile_item_matcher(items, true, fail_fixup);
-                },
+                }
                 mir::Pat::Variant(variant, inner) => {
                     self.push(Instr::Dup);
                     self.push(Instr::VariantSum);
@@ -206,7 +208,7 @@ impl Program {
                     let fail_fixup = self.push(Instr::Jump(0)); // Fixed by #2
                     self.push(Instr::IndexSum(*variant));
                     self.compile_item_matcher(Some(inner), false, Some(fail_fixup));
-                },
+                }
                 mir::Pat::Data(_, inner) => self.compile_matcher(inner),
             }
         }
@@ -269,82 +271,135 @@ impl Program {
         proc_fixups: &mut Vec<(ProcId, Addr)>,
     ) {
         match &*expr {
-            mir::Expr::Undefined => {}, // Do the minimum possible work, execution is undefined anyway
+            mir::Expr::Undefined => {} // Do the minimum possible work, execution is undefined anyway
             mir::Expr::Literal(literal) => {
                 if let Some(val) = litr_to_value(literal) {
                     self.push(Instr::Imm(val));
                 }
-            },
+            }
             mir::Expr::Local(local) => {
                 let idx = stack
                     .iter()
                     .rev()
                     .enumerate()
                     .find(|(_, name)| *name == local)
-                    .unwrap_or_else(|| panic!("Tried to find local ${}, but it was not found. Stack: {:?}", local.0, stack))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Tried to find local ${}, but it was not found. Stack: {:?}",
+                            local.0, stack
+                        )
+                    })
                     .0;
                 self.push(Instr::GetLocal(idx));
-            },
-            mir::Expr::Global(global, _) => { proc_fixups.push((*global, self.push(Instr::Call(0)))); }, // Fixed by #4
+            }
+            mir::Expr::Global(global, _) => {
+                proc_fixups.push((*global, self.push(Instr::Call(0))));
+            } // Fixed by #4
             mir::Expr::Intrinsic(intrinsic, args) => {
                 for arg in args {
                     self.compile_expr(mir, arg, stack, proc_fixups);
                 }
                 use mir::Intrinsic;
                 match intrinsic {
-                    Intrinsic::Debug => { self.push(Instr::Break); },
-                    Intrinsic::MakeList(_) => { self.push(Instr::MakeList(args.len())); },
-                    Intrinsic::NegNat | Intrinsic::NegInt => { self.push(Instr::NegInt); },
-                    Intrinsic::NegReal => { self.push(Instr::NegReal); },
-                    Intrinsic::DisplayInt => { self.push(Instr::Display); },
-                    Intrinsic::CodepointChar => { self.push(Instr::Codepoint); },
-                    Intrinsic::AddNat | Intrinsic::AddInt => { self.push(Instr::AddInt); },
-                    Intrinsic::SubNat | Intrinsic::SubInt => { self.push(Instr::SubInt); },
-                    Intrinsic::MulNat | Intrinsic::MulInt => { self.push(Instr::MulInt); },
-                    Intrinsic::EqNat | Intrinsic::EqInt => { self.push(Instr::EqInt); },
-                    Intrinsic::EqChar => { self.push(Instr::EqChar); },
+                    Intrinsic::Debug => {
+                        self.push(Instr::Break);
+                    }
+                    Intrinsic::MakeList(_) => {
+                        self.push(Instr::MakeList(args.len()));
+                    }
+                    Intrinsic::NegNat | Intrinsic::NegInt => {
+                        self.push(Instr::NegInt);
+                    }
+                    Intrinsic::NegReal => {
+                        self.push(Instr::NegReal);
+                    }
+                    Intrinsic::DisplayInt => {
+                        self.push(Instr::Display);
+                    }
+                    Intrinsic::CodepointChar => {
+                        self.push(Instr::Codepoint);
+                    }
+                    Intrinsic::AddNat | Intrinsic::AddInt => {
+                        self.push(Instr::AddInt);
+                    }
+                    Intrinsic::SubNat | Intrinsic::SubInt => {
+                        self.push(Instr::SubInt);
+                    }
+                    Intrinsic::MulNat | Intrinsic::MulInt => {
+                        self.push(Instr::MulInt);
+                    }
+                    Intrinsic::EqNat | Intrinsic::EqInt => {
+                        self.push(Instr::EqInt);
+                    }
+                    Intrinsic::EqChar => {
+                        self.push(Instr::EqChar);
+                    }
                     Intrinsic::NotEqNat | Intrinsic::NotEqInt => {
                         self.push(Instr::EqInt);
                         self.push(Instr::NotBool);
-                    },
+                    }
                     Intrinsic::NotEqChar => {
                         self.push(Instr::EqChar);
                         self.push(Instr::NotBool);
-                    },
-                    Intrinsic::LessNat | Intrinsic::LessInt => { self.push(Instr::LessInt); },
-                    Intrinsic::MoreNat | Intrinsic::MoreInt => { self.push(Instr::MoreInt); },
-                    Intrinsic::LessEqNat | Intrinsic::LessEqInt => { self.push(Instr::LessEqInt); },
-                    Intrinsic::MoreEqNat | Intrinsic::MoreEqInt => { self.push(Instr::MoreEqInt); },
-                    Intrinsic::Join(_) => { self.push(Instr::JoinList); },
-                    Intrinsic::Print => { self.push(Instr::Print); },
-                    Intrinsic::Input => { self.push(Instr::Input); },
-                    Intrinsic::Rand => { self.push(Instr::Rand); },
-                    Intrinsic::UpdateField(idx) => { self.push(Instr::SetList(*idx)); },
-                    Intrinsic::LenList => { self.push(Instr::LenList); },
-                    Intrinsic::SkipList => { self.push(Instr::SkipList); },
-                    Intrinsic::TrimList => { self.push(Instr::TrimList); },
+                    }
+                    Intrinsic::LessNat | Intrinsic::LessInt => {
+                        self.push(Instr::LessInt);
+                    }
+                    Intrinsic::MoreNat | Intrinsic::MoreInt => {
+                        self.push(Instr::MoreInt);
+                    }
+                    Intrinsic::LessEqNat | Intrinsic::LessEqInt => {
+                        self.push(Instr::LessEqInt);
+                    }
+                    Intrinsic::MoreEqNat | Intrinsic::MoreEqInt => {
+                        self.push(Instr::MoreEqInt);
+                    }
+                    Intrinsic::Join(_) => {
+                        self.push(Instr::JoinList);
+                    }
+                    Intrinsic::Print => {
+                        self.push(Instr::Print);
+                    }
+                    Intrinsic::Input => {
+                        self.push(Instr::Input);
+                    }
+                    Intrinsic::Rand => {
+                        self.push(Instr::Rand);
+                    }
+                    Intrinsic::UpdateField(idx) => {
+                        self.push(Instr::SetList(*idx));
+                    }
+                    Intrinsic::LenList => {
+                        self.push(Instr::LenList);
+                    }
+                    Intrinsic::SkipList => {
+                        self.push(Instr::SkipList);
+                    }
+                    Intrinsic::TrimList => {
+                        self.push(Instr::TrimList);
+                    }
                     Intrinsic::Suspend(eff) => {
                         self.push(Instr::PushLocal);
                         self.push(Instr::Suspend(*eff));
                         self.push(Instr::Resume(*eff));
-                    },
+                    }
                     Intrinsic::Propagate(effs) => {
                         self.push(Instr::Propagate);
-                    },
+                    }
                 };
-            },
+            }
             mir::Expr::Tuple(fields) => {
                 for field in fields {
                     self.compile_expr(mir, field, stack, proc_fixups);
                 }
                 self.push(Instr::MakeList(fields.len()));
-            },
+            }
             mir::Expr::List(items) => {
                 for item in items {
                     self.compile_expr(mir, item, stack, proc_fixups);
                 }
                 self.push(Instr::MakeList(items.len()));
-            },
+            }
             mir::Expr::Match(pred, arms) => {
                 self.compile_expr(mir, pred, stack, proc_fixups);
 
@@ -391,12 +446,16 @@ impl Program {
                 for end_arm in end_matches {
                     self.fixup(end_arm, end_match, Instr::Jump); // Fixes #1
                 }
-            },
+            }
             mir::Expr::Func(arg, body) => {
-                let (f_addr, captures_len) = self.compile_body(mir, vec![**arg], body, stack, proc_fixups);
+                let (f_addr, captures_len) =
+                    self.compile_body(mir, vec![**arg], body, stack, proc_fixups);
 
-                self.push(Instr::MakeFunc(self.next_addr().jump_to(f_addr), captures_len));
-            },
+                self.push(Instr::MakeFunc(
+                    self.next_addr().jump_to(f_addr),
+                    captures_len,
+                ));
+            }
             mir::Expr::Go(arg, body, init) => {
                 self.compile_expr(mir, init, stack, proc_fixups);
 
@@ -425,45 +484,58 @@ impl Program {
                 self.fixup(done, self.next_addr(), Instr::Jump); // Fixes #6
                 self.push(Instr::IndexSum(DONE_VARIANT));
                 self.push(Instr::Replace);
-            },
+            }
             mir::Expr::Apply(f, arg) => {
                 self.compile_expr(mir, f, stack, proc_fixups);
                 self.compile_expr(mir, arg, stack, proc_fixups);
                 self.push(Instr::PushLocal);
                 self.push(Instr::ApplyFunc);
-            },
+            }
             mir::Expr::Variant(variant, inner) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
                 self.push(Instr::MakeSum(*variant));
-            },
+            }
             mir::Expr::Access(record, field) => {
                 self.compile_expr(mir, record, stack, proc_fixups);
                 self.push(Instr::IndexList(*field));
-            },
+            }
             mir::Expr::AccessVariant(inner, variant) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
                 self.push(Instr::IndexSum(*variant));
-            },
+            }
             mir::Expr::Data(_, inner) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
-            },
+            }
             mir::Expr::AccessData(inner, _) => {
                 self.compile_expr(mir, inner, stack, proc_fixups);
-            },
+            }
             mir::Expr::Basin(eff, inner) => {
-                let (f_addr, captures_len) = self.compile_body(mir, Vec::new(), inner, stack, proc_fixups);
-                self.push(Instr::MakeEffect(self.next_addr().jump_to(f_addr), captures_len));
-            },
+                let (f_addr, captures_len) =
+                    self.compile_body(mir, Vec::new(), inner, stack, proc_fixups);
+                self.push(Instr::MakeEffect(
+                    self.next_addr().jump_to(f_addr),
+                    captures_len,
+                ));
+            }
             mir::Expr::Handle { expr, handlers } => {
                 // self.debug("Starting handler...");
                 // self.debug("Compiling expr...");
                 self.compile_expr(mir, expr, stack, proc_fixups);
 
-                for mir::Handler { eff, send, state, recv } in handlers {
-
+                for mir::Handler {
+                    eff,
+                    send,
+                    state,
+                    recv,
+                } in handlers
+                {
                     // self.debug("Compiling body...");
-                    let (h_addr, captures_len) = self.compile_body(mir, vec![**send, **state], recv, stack, proc_fixups);
-                    self.push(Instr::MakeFunc(self.next_addr().jump_to(h_addr), captures_len));
+                    let (h_addr, captures_len) =
+                        self.compile_body(mir, vec![**send, **state], recv, stack, proc_fixups);
+                    self.push(Instr::MakeFunc(
+                        self.next_addr().jump_to(h_addr),
+                        captures_len,
+                    ));
                     self.push(Instr::Register(*eff));
                 }
 
@@ -475,14 +547,25 @@ impl Program {
                 self.push(Instr::Propagate);
 
                 self.push(Instr::EndHandlers(handlers.len()));
-            },
+            }
         }
     }
 
-    pub fn compile_proc(&mut self, mir: &MirContext, proc: ProcId, entry_io: bool, proc_fixups: &mut Vec<(ProcId, Addr)>) -> Addr {
+    pub fn compile_proc(
+        &mut self,
+        mir: &MirContext,
+        proc: ProcId,
+        entry_io: bool,
+        proc_fixups: &mut Vec<(ProcId, Addr)>,
+    ) -> Addr {
         self.debug(format!("Proc {:?}", proc));
         let addr = self.next_addr();
-        self.compile_expr(mir, &mir.procs.get(proc).unwrap().body, &mut Vec::new(), proc_fixups);
+        self.compile_expr(
+            mir,
+            &mir.procs.get(proc).unwrap().body,
+            &mut Vec::new(),
+            proc_fixups,
+        );
         if entry_io {
             self.push(Instr::ApplyFunc);
         }
@@ -512,7 +595,15 @@ impl Program {
         let mut proc_fixups = Vec::new();
 
         for proc_id in mir.reachable_procs() {
-            procs.insert(proc_id, this.compile_proc(mir, proc_id, this.does_io && proc_id == entry, &mut proc_fixups));
+            procs.insert(
+                proc_id,
+                this.compile_proc(
+                    mir,
+                    proc_id,
+                    this.does_io && proc_id == entry,
+                    &mut proc_fixups,
+                ),
+            );
         }
 
         for (proc_id, addr) in proc_fixups {

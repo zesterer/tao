@@ -16,7 +16,13 @@ pub enum Error {
     WrongNumberOfParams(Span, usize, Span, usize),
     NoBranches(Span),
     // (obligation, type, obligation_origin, generic_definition
-    TypeDoesNotFulfil(Option<(ClassId, Vec<TyId>, Vec<Option<EffectId>>)>, TyId, Span, Option<Span>, Span),
+    TypeDoesNotFulfil(
+        Option<(ClassId, Vec<TyId>, Vec<Option<EffectId>>)>,
+        TyId,
+        Span,
+        Option<Span>,
+        Span,
+    ),
     CycleWhenResolving(TyId, (ClassId, Vec<TyId>, Vec<Option<EffectId>>), Span),
     NoSuchData(SrcNode<Ident>),
     NoSuchCons(SrcNode<Ident>),
@@ -52,28 +58,36 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn write<C: ariadne::Cache<SrcId>>(self, ctx: &Context, cache: C, main_src: SrcId, writer: impl Write) {
-        use ariadne::{Report, ReportKind, Label, Color, Fmt, Span, Config};
+    pub fn write<C: ariadne::Cache<SrcId>>(
+        self,
+        ctx: &Context,
+        cache: C,
+        main_src: SrcId,
+        writer: impl Write,
+    ) {
+        use ariadne::{Color, Config, Fmt, Label, Report, ReportKind, Span};
 
         let display = |id| ctx.tys.display(ctx, id);
 
-        let display_eff = |id| if let Some(eff) = id {
-            ctx.tys.display_eff(ctx, eff).to_string()
-        } else {
-            format!("!")
+        let display_eff = |id| {
+            if let Some(eff) = id {
+                ctx.tys.display_eff(ctx, eff).to_string()
+            } else {
+                format!("!")
+            }
         };
 
-        let display_class = |class_id, gen_tys: &[_], gen_effs: &[_]| format!(
-            "{}{}",
-            *ctx.classes.get(class_id).name,
-            gen_tys
-                .iter()
-                .map(|ty| format!(" {}", display(*ty)))
-                .chain(gen_effs
+        let display_class = |class_id, gen_tys: &[_], gen_effs: &[_]| {
+            format!(
+                "{}{}",
+                *ctx.classes.get(class_id).name,
+                gen_tys
                     .iter()
-                    .map(|eff| format!(" {}", display_eff(*eff))))
-                .collect::<String>(),
-        );
+                    .map(|ty| format!(" {}", display(*ty)))
+                    .chain(gen_effs.iter().map(|eff| format!(" {}", display_eff(*eff))))
+                    .collect::<String>(),
+            )
+        };
 
         let (msg, spans, notes) = match self {
             Error::CannotCoerce(x, y, inner, info) => {
@@ -476,14 +490,16 @@ impl Error {
             spans.first().map(|s| s.0.src()).unwrap_or(main_src),
             spans.first().map(|s| s.0.start()).unwrap_or(0),
         )
-            .with_code(3)
-            .with_message(msg);
+        .with_code(3)
+        .with_message(msg);
 
         for (i, (span, msg, col)) in spans.into_iter().enumerate() {
-            report = report.with_label(Label::new(span)
-                .with_message(msg)
-                .with_order(i as i32)
-                .with_color(col));
+            report = report.with_label(
+                Label::new(span)
+                    .with_message(msg)
+                    .with_order(i as i32)
+                    .with_color(col),
+            );
         }
 
         for note in notes {
@@ -491,8 +507,7 @@ impl Error {
         }
 
         report
-            .with_config(Config::default()
-                .with_compact(false))
+            .with_config(Config::default().with_compact(false))
             .finish()
             .write(cache, writer)
             .unwrap();

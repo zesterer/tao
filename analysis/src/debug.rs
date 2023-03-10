@@ -37,12 +37,15 @@ impl<'hir, 'a> dot::Labeller<'a, Node, Edge> for CallGraph<'hir> {
 
 impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
     fn nodes(&'a self) -> dot::Nodes<'a, Node> {
-        self.ctx.defs
+        self.ctx
+            .defs
             .iter()
-            .filter_map(|(id, def)| if def.attr.iter().find(|a| &**a.name == "util").is_none() {
-                Some((id, *def.name))
-            } else {
-                None
+            .filter_map(|(id, def)| {
+                if def.attr.iter().find(|a| &**a.name == "util").is_none() {
+                    Some((id, *def.name))
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -51,10 +54,7 @@ impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
             if let hir::Expr::Global(global) = &**expr {
                 let def = ctx.defs.get(global.0);
                 if def.attr.iter().find(|a| &**a.name == "util").is_none() {
-                    edges.insert((
-                        parent,
-                        (global.0, *def.name),
-                    ));
+                    edges.insert((parent, (global.0, *def.name)));
                 }
             }
 
@@ -70,6 +70,10 @@ impl<'hir, 'a> dot::GraphWalk<'a, Node, Edge> for CallGraph<'hir> {
         }
         edges.into_iter().collect()
     }
-    fn source(&self, e: &Edge) -> Node { e.0 }
-    fn target(&self, e: &Edge) -> Node { e.1 }
+    fn source(&self, e: &Edge) -> Node {
+        e.0
+    }
+    fn target(&self, e: &Edge) -> Node {
+        e.1
+    }
 }

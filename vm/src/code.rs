@@ -1,9 +1,6 @@
 use super::*;
-use std::{
-    io::Write,
-    rc::Rc,
-};
 use im::Vector;
+use std::{io::Write, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub enum Instr {
@@ -17,10 +14,10 @@ pub enum Instr {
     MakeFunc(isize, usize),
     ApplyFunc,
 
-    MakeList(usize), // T * N => [T]
-    IndexList(usize), // Nth field of list/tuple
+    MakeList(usize),    // T * N => [T]
+    IndexList(usize),   // Nth field of list/tuple
     SkipListImm(usize), // (N..) fields of list/tuple
-    SetList(usize), // Set Nth field of list
+    SetList(usize),     // Set Nth field of list
     LenList,
     JoinList,
     SkipList,
@@ -43,17 +40,17 @@ pub enum Instr {
     GetLocal(usize), // Duplicate value in locals position (len - 1 - N) and put on stack
 
     NotBool, // Bool -> Bool
-    NegInt, // Int -> Int
+    NegInt,  // Int -> Int
     NegReal, // Real -> Real
 
-    Display, // ? -> Str
+    Display,   // ? -> Str
     Codepoint, // Char -> Int
 
     AddInt, // Int -> Int -> Int
     SubInt, // Int -> Int -> Int
     MulInt,
 
-    EqInt, // Int -> Int -> Bool
+    EqInt,  // Int -> Int -> Bool
     EqBool, // Bool -> Bool -> Bool
     EqChar, // Char -> Char -> Bool
     LessInt,
@@ -86,9 +83,15 @@ impl Instr {
 pub struct Addr(pub usize);
 
 impl Addr {
-    pub fn incr(self) -> Self { Self(self.0 + 1) }
-    pub fn jump(self, rel: isize) -> Self { Self((self.0 as isize + rel) as usize) }
-    pub fn jump_to(self, other: Self) -> isize { other.0 as isize - self.0 as isize }
+    pub fn incr(self) -> Self {
+        Self(self.0 + 1)
+    }
+    pub fn jump(self, rel: isize) -> Self {
+        Self((self.0 as isize + rel) as usize)
+    }
+    pub fn jump_to(self, other: Self) -> isize {
+        other.0 as isize - self.0 as isize
+    }
 }
 
 #[derive(Default, Debug)]
@@ -104,7 +107,9 @@ impl Program {
         self.debug.push((self.next_addr(), msg.to_string()));
     }
 
-    pub fn next_addr(&self) -> Addr { Addr(self.instrs.len()) }
+    pub fn next_addr(&self) -> Addr {
+        Addr(self.instrs.len())
+    }
 
     pub fn instr(&self, ip: Addr) -> Instr {
         self.instrs
@@ -196,7 +201,9 @@ impl Program {
                 Instr::Swap => format!("swap"),
                 Instr::Call(x) => format!("call {:+} (0x{:03X})", x, addr.jump(x).0),
                 Instr::Ret => format!("ret"),
-                Instr::MakeFunc(i, n) => format!("func.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
+                Instr::MakeFunc(i, n) => {
+                    format!("func.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n)
+                }
                 Instr::ApplyFunc => format!("func.apply"),
                 Instr::MakeList(n) => format!("list.make {}", n),
                 Instr::IndexList(i) => format!("list.index #{}", i),
@@ -234,7 +241,9 @@ impl Program {
                 Instr::Print => format!("io.print"),
                 Instr::Input => format!("io.input"),
                 Instr::Rand => format!("io.rand"),
-                Instr::MakeEffect(i, n) => format!("eff.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n),
+                Instr::MakeEffect(i, n) => {
+                    format!("eff.make {:+} (0x{:03X}) {}", i, addr.jump(i).0, n)
+                }
                 Instr::Propagate => format!("eff.propagate"),
                 Instr::Suspend(eff) => format!("eff.suspend {:?}", eff),
                 Instr::Register(eff) => format!("eff.register {:?}", eff),
@@ -242,7 +251,12 @@ impl Program {
                 Instr::EndHandlers(n) => format!("eff.end_handlers {}", n),
             };
 
-            writeln!(writer, "0x{:03X} | {:>+3} | {}", addr.0, stack_diff, instr_display).unwrap();
+            writeln!(
+                writer,
+                "0x{:03X} | {:>+3} | {}",
+                addr.0, stack_diff, instr_display
+            )
+            .unwrap();
         }
 
         writeln!(writer, "{} instructions in total.", self.instrs.len()).unwrap();

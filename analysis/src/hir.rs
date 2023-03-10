@@ -1,6 +1,6 @@
 use super::*;
 
-pub use ast::Literal as Literal;
+pub use ast::Literal;
 
 pub trait Meta {
     type Ty;
@@ -54,11 +54,13 @@ pub enum Pat<M: Meta> {
 
 impl<M: Meta> Pat<M> {
     pub fn tuple(i: impl IntoIterator<Item = Node<Binding<M>, M>>) -> Self {
-        Self::Record(i
-            .into_iter()
-            .enumerate()
-            .map(|(i, field)| (Ident::new(format!("{}", i)), field))
-            .collect(), true)
+        Self::Record(
+            i.into_iter()
+                .enumerate()
+                .map(|(i, field)| (Ident::new(format!("{}", i)), field))
+                .collect(),
+            true,
+        )
     }
 }
 
@@ -78,11 +80,17 @@ impl<M: Meta> Binding<M> {
     }
 
     pub fn wildcard(name: SrcNode<Ident>) -> Self {
-        Self { pat: SrcNode::new(hir::Pat::Wildcard, name.span()), name: Some(name) }
+        Self {
+            pat: SrcNode::new(hir::Pat::Wildcard, name.span()),
+            name: Some(name),
+        }
     }
 
     pub fn unit(span: Span) -> Self {
-        Self { pat: SrcNode::new(hir::Pat::tuple([]), span), name: None }
+        Self {
+            pat: SrcNode::new(hir::Pat::tuple([]), span),
+            name: None,
+        }
     }
 }
 
@@ -97,11 +105,13 @@ impl Binding<InferMeta> {
 impl<M: Meta> Binding<M> {
     fn visit_bindings_inner(self: &Node<Self, M>, visit: &mut impl FnMut(&SrcNode<Ident>, &M)) {
         // TODO: Check for duplicates!
-        if let Some(name) = &self.name { visit(name, self.meta()); };
+        if let Some(name) = &self.name {
+            visit(name, self.meta());
+        };
         match &*self.pat {
-            Pat::Error => {},
-            Pat::Wildcard => {},
-            Pat::Literal(_) => {},
+            Pat::Error => {}
+            Pat::Wildcard => {}
+            Pat::Literal(_) => {}
             Pat::Single(inner) => inner.visit_bindings_inner(visit),
             Pat::Add(lhs, _) => lhs.visit_bindings_inner(visit),
             Pat::Record(fields, _) => fields
@@ -114,8 +124,10 @@ impl<M: Meta> Binding<M> {
                 items
                     .iter()
                     .for_each(|item| item.visit_bindings_inner(visit));
-                if let Some(tail) = tail { tail.visit_bindings_inner(visit); }
-            },
+                if let Some(tail) = tail {
+                    tail.visit_bindings_inner(visit);
+                }
+            }
             Pat::Decons(_, _, inner) => inner.visit_bindings_inner(visit),
         }
     }
@@ -160,7 +172,11 @@ pub enum Expr<M: Meta> {
     Record(BTreeMap<SrcNode<Ident>, Node<Self, M>>, bool),
     Access(Node<Self, M>, SrcNode<Ident>),
     // hidden_outer
-    Match(bool, Node<Self, M>, Vec<(Node<Binding<M>, M>, Node<Self, M>)>),
+    Match(
+        bool,
+        Node<Self, M>,
+        Vec<(Node<Binding<M>, M>, Node<Self, M>)>,
+    ),
     Func(Node<Ident, M>, Node<Self, M>),
     Apply(Node<Self, M>, Node<Self, M>),
     Cons(M::Data, Ident, Node<Self, M>),
@@ -195,11 +211,18 @@ pub type ConExpr = ConNode<Expr<ConMeta>>;
 
 impl Expr<InferMeta> {
     pub fn tuple(i: impl IntoIterator<Item = InferExpr>) -> Self {
-        Self::Record(i
-            .into_iter()
-            .enumerate()
-            .map(|(i, field)| (SrcNode::new(Ident::new(format!("{}", i)), field.meta().0), field))
-            .collect(), true)
+        Self::Record(
+            i.into_iter()
+                .enumerate()
+                .map(|(i, field)| {
+                    (
+                        SrcNode::new(Ident::new(format!("{}", i)), field.meta().0),
+                        field,
+                    )
+                })
+                .collect(),
+            true,
+        )
     }
 }
 
@@ -210,48 +233,34 @@ impl<M: Meta> Expr<M> {
             | Expr::Error
             | Expr::Local(_)
             | Expr::ClassAccess(_, _, _)
-            | Expr::Global(_) => {},
+            | Expr::Global(_) => {}
             Expr::List(items, tails) => {
-                items
-                    .iter()
-                    .for_each(|item| f(item));
-                tails
-                    .iter()
-                    .for_each(|tail| f(tail));
-            },
-            Expr::Record(fields, _) => fields
-                .iter()
-                .for_each(|(_, field)| f(field)),
+                items.iter().for_each(|item| f(item));
+                tails.iter().for_each(|tail| f(tail));
+            }
+            Expr::Record(fields, _) => fields.iter().for_each(|(_, field)| f(field)),
             Expr::Access(record, _) => f(&record),
             Expr::Match(_, pred, arms) => {
                 f(&pred);
-                arms
-                    .iter()
-                    .for_each(|(_, arm)| f(arm));
-            },
+                arms.iter().for_each(|(_, arm)| f(arm));
+            }
             Expr::Func(_, body) => f(&body),
             Expr::Apply(func, arg) => {
                 f(&func);
                 f(&arg);
-            },
+            }
             Expr::Cons(_, _, inner) => f(&inner),
-            Expr::Intrinsic(_, args) => args
-                .iter()
-                .for_each(|arg| f(arg)),
+            Expr::Intrinsic(_, args) => args.iter().for_each(|arg| f(arg)),
             Expr::Update(record, fields) => {
                 f(&record);
-                fields
-                    .iter()
-                    .for_each(|(_, field)| f(field));
-            },
+                fields.iter().for_each(|(_, field)| f(field));
+            }
             Expr::Basin(_, inner) => f(&inner),
             Expr::Suspend(_, inner) => f(&inner),
             Expr::Handle { expr, handlers } => {
                 f(&expr);
-                handlers
-                    .iter()
-                    .for_each(|handler| f(&handler.recv));
-            },
+                handlers.iter().for_each(|handler| f(&handler.recv));
+            }
         }
     }
 }
@@ -259,13 +268,13 @@ impl<M: Meta> Expr<M> {
 impl Expr<ConMeta> {
     fn required_locals_inner(&self, stack: &mut Vec<Ident>, required: &mut Vec<Ident>) {
         match self {
-            Expr::Literal(_) | Expr::Error => {},
+            Expr::Literal(_) | Expr::Error => {}
             Expr::Local(local) => {
                 if !stack.contains(local) {
                     required.push(*local);
                 }
-            },
-            Expr::Global(_) => {},
+            }
+            Expr::Global(_) => {}
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| arg.required_locals_inner(stack, required)),
@@ -277,16 +286,16 @@ impl Expr<ConMeta> {
                     body.required_locals_inner(stack, required);
                     stack.truncate(old_stack);
                 }
-            },
+            }
             Expr::Func(arg, body) => {
                 stack.push(**arg);
                 body.required_locals_inner(stack, required);
                 stack.pop();
-            },
+            }
             Expr::Apply(f, arg) => {
                 f.required_locals_inner(stack, required);
                 arg.required_locals_inner(stack, required);
-            },
+            }
             Expr::Record(fields, _) => fields
                 .iter()
                 .for_each(|(_, field)| field.required_locals_inner(stack, required)),
@@ -297,29 +306,34 @@ impl Expr<ConMeta> {
                 tails
                     .iter()
                     .for_each(|tail| tail.required_locals_inner(stack, required));
-            },
+            }
             Expr::Access(tuple, _) => tuple.required_locals_inner(stack, required),
             Expr::Cons(_, _, inner) => inner.required_locals_inner(stack, required),
             Expr::Access(inner, _) => inner.required_locals_inner(stack, required),
-            Expr::ClassAccess(_, _, _) => {},
+            Expr::ClassAccess(_, _, _) => {}
             Expr::Update(record, fields) => {
                 record.required_locals_inner(stack, required);
                 fields
                     .iter()
                     .for_each(|(_, field)| field.required_locals_inner(stack, required));
-            },
+            }
             Expr::Basin(_, inner) => inner.required_locals_inner(stack, required),
             Expr::Suspend(_, inner) => inner.required_locals_inner(stack, required),
             Expr::Handle { expr, handlers } => {
                 expr.required_locals_inner(stack, required);
-                for Handler { send, recv, state, .. } in handlers {
+                for Handler {
+                    send, recv, state, ..
+                } in handlers
+                {
                     let old_len = stack.len();
                     stack.push(**send);
-                    if let Some(state) = state { stack.push(**state); }
+                    if let Some(state) = state {
+                        stack.push(**state);
+                    }
                     recv.required_locals_inner(stack, required);
                     stack.truncate(old_len);
                 }
-            },
+            }
         }
     }
 

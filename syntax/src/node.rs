@@ -1,8 +1,8 @@
 use super::*;
 use std::{
-    ops::{Deref, DerefMut},
-    cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering},
+    cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd},
     fmt,
+    ops::{Deref, DerefMut},
 };
 
 #[derive(Clone)]
@@ -14,7 +14,10 @@ pub struct Node<T, M = ()> {
 impl<T, M> Node<T, M> {
     /// Create a new node with the given inner value and metadata.
     pub fn new(inner: T, meta: M) -> Self {
-        Node { inner: Box::new(inner), meta }
+        Node {
+            inner: Box::new(inner),
+            meta,
+        }
     }
 
     /// Get a reference to the inner value.
@@ -28,7 +31,9 @@ impl<T, M> Node<T, M> {
     }
 
     // Take the node's inner value.
-    pub fn into_inner(self) -> T { *self.inner }
+    pub fn into_inner(self) -> T {
+        *self.inner
+    }
 
     /// Map the node's inner value.
     pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Node<U, M> {
@@ -39,19 +44,27 @@ impl<T, M> Node<T, M> {
     }
 
     /// Get a reference to the metadata.
-    pub fn meta(&self) -> &M { &self.meta }
+    pub fn meta(&self) -> &M {
+        &self.meta
+    }
 
     /// Get a mutable reference to the metadata.
-    pub fn meta_mut(&mut self) -> &mut M { &mut self.meta }
+    pub fn meta_mut(&mut self) -> &mut M {
+        &mut self.meta
+    }
 }
 
 impl<T, M> Deref for Node<T, M> {
     type Target = T;
-    fn deref(&self) -> &Self::Target { self.inner() }
+    fn deref(&self) -> &Self::Target {
+        self.inner()
+    }
 }
 
 impl<T, M> DerefMut for Node<T, M> {
-    fn deref_mut(&mut self) -> &mut Self::Target { self.inner_mut() }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner_mut()
+    }
 }
 
 impl<T: PartialEq, M> PartialEq for Node<T, M> {
@@ -84,5 +97,7 @@ impl<T: fmt::Debug, M: fmt::Debug> fmt::Debug for Node<T, M> {
 pub type SrcNode<T> = Node<T, Span>;
 
 impl<T> SrcNode<T> {
-    pub fn span(&self) -> Span { self.meta }
+    pub fn span(&self) -> Span {
+        self.meta
+    }
 }

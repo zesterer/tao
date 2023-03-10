@@ -1,14 +1,15 @@
 use super::*;
-use std::{
-    collections::HashSet,
-    io::Write,
-};
+use std::{collections::HashSet, io::Write};
 
 #[derive(Debug, PartialEq)]
 pub enum ErrorKind {
     UnexpectedEnd,
     Unexpected(Pattern),
-    Unclosed { start: Pattern, before_span: Span, before: Option<Pattern> },
+    Unclosed {
+        start: Pattern,
+        before_span: Span,
+        before: Option<Pattern>,
+    },
     NoEndBranch,
 }
 
@@ -53,14 +54,15 @@ impl Error {
     }
 
     pub fn write<C: ariadne::Cache<SrcId>>(self, cache: C, writer: impl Write) {
-        use ariadne::{Report, ReportKind, Label, Color, Fmt};
+        use ariadne::{Color, Fmt, Label, Report, ReportKind};
 
         let msg = format!(
             "{}{}, expected {}",
             match &self.kind {
                 ErrorKind::UnexpectedEnd => "Unexpected end of input".to_string(),
                 ErrorKind::Unexpected(pat) => format!("Unexpected {}", pat.fg(Color::Red)),
-                ErrorKind::Unclosed { start, .. } => format!("Unclosed delimiter {}", start.fg(Color::Red)),
+                ErrorKind::Unclosed { start, .. } =>
+                    format!("Unclosed delimiter {}", start.fg(Color::Red)),
                 ErrorKind::NoEndBranch => format!("No end branch"),
             },
             if let Some(label) = self.label {
@@ -70,55 +72,77 @@ impl Error {
             },
             match self.expected.len() {
                 0 => "something else".to_string(),
-                1 => format!("{}", self.expected.into_iter().next().unwrap().fg(Color::Yellow)),
-                _ => format!("one of {}", self.expected.into_iter().map(|x| x.fg(Color::Yellow).to_string()).collect::<Vec<_>>().join(", ")),
+                1 => format!(
+                    "{}",
+                    self.expected.into_iter().next().unwrap().fg(Color::Yellow)
+                ),
+                _ => format!(
+                    "one of {}",
+                    self.expected
+                        .into_iter()
+                        .map(|x| x.fg(Color::Yellow).to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             },
         );
 
         let report = Report::build(ReportKind::Error, self.span.src(), self.span.start())
             .with_code(3)
             .with_message(msg)
-            .with_label(Label::new(self.span)
-                .with_message(match &self.kind {
-                    ErrorKind::UnexpectedEnd => "End of input".to_string(),
-                    ErrorKind::Unexpected(pat) => format!("Unexpected {}", pat.fg(Color::Red)),
-                    ErrorKind::Unclosed { start, .. } => format!("Delimiter {} is never closed", start.fg(Color::Red)),
-                    ErrorKind::NoEndBranch => format!("Requires a {} branch", "\\ ... => ...".fg(Color::Blue)),
-                })
-                .with_color(Color::Red));
+            .with_label(
+                Label::new(self.span)
+                    .with_message(match &self.kind {
+                        ErrorKind::UnexpectedEnd => "End of input".to_string(),
+                        ErrorKind::Unexpected(pat) => format!("Unexpected {}", pat.fg(Color::Red)),
+                        ErrorKind::Unclosed { start, .. } => {
+                            format!("Delimiter {} is never closed", start.fg(Color::Red))
+                        }
+                        ErrorKind::NoEndBranch => {
+                            format!("Requires a {} branch", "\\ ... => ...".fg(Color::Blue))
+                        }
+                    })
+                    .with_color(Color::Red),
+            );
 
-        let report = if let ErrorKind::Unclosed { before, before_span, .. } = self.kind {
-            report
-                .with_label(Label::new(before_span)
-                    .with_message(format!("Must be closed before {}", match before {
-                        Some(before) => format!("this {}", before.fg(Color::Yellow)),
-                        None => "end of input".to_string(),
-                    }))
-                .with_color(Color::Yellow))
+        let report = if let ErrorKind::Unclosed {
+            before,
+            before_span,
+            ..
+        } = self.kind
+        {
+            report.with_label(
+                Label::new(before_span)
+                    .with_message(format!(
+                        "Must be closed before {}",
+                        match before {
+                            Some(before) => format!("this {}", before.fg(Color::Yellow)),
+                            None => "end of input".to_string(),
+                        }
+                    ))
+                    .with_color(Color::Yellow),
+            )
         } else {
             report
         };
 
         let report = if let Some((while_parsing, s)) = self.while_parsing {
-            report.with_label(Label::new(while_parsing)
-                .with_message(format!("encountered while parsing this {}", s))
-                .with_color(Color::Blue))
+            report.with_label(
+                Label::new(while_parsing)
+                    .with_message(format!("encountered while parsing this {}", s))
+                    .with_color(Color::Blue),
+            )
         } else {
             report
         };
 
-        report
-            .finish()
-            .write(cache, writer)
-            .unwrap();
+        report.finish().write(cache, writer).unwrap();
     }
 }
 
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-            && self.span == other.span
-            && self.label == other.label
+        self.kind == other.kind && self.span == other.span && self.label == other.label
     }
 }
 
@@ -186,8 +210,16 @@ pub enum Pattern {
     End,
 }
 
-impl From<char> for Pattern { fn from(c: char) -> Self { Self::Char(c) } }
-impl From<Token> for Pattern { fn from(tok: Token) -> Self { Self::Token(tok) } }
+impl From<char> for Pattern {
+    fn from(c: char) -> Self {
+        Self::Char(c)
+    }
+}
+impl From<Token> for Pattern {
+    fn from(tok: Token) -> Self {
+        Self::Token(tok)
+    }
+}
 
 impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

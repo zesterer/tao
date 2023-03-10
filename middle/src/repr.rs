@@ -1,6 +1,6 @@
 use super::*;
 // use hashbrown::hash_map::Entry;
-use std::collections::{BTreeMap, btree_map::Entry};
+use std::collections::{btree_map::Entry, BTreeMap};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Prim {
@@ -44,9 +44,7 @@ impl Reprs {
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Data> {
-        self.datas
-            .values_mut()
-            .filter_map(|r| r.as_mut())
+        self.datas.values_mut().filter_map(|r| r.as_mut())
     }
 
     pub fn declare(&mut self, data: ConDataId) -> bool {
@@ -67,12 +65,8 @@ impl Reprs {
         match repr {
             Repr::Prim(_) => true,
             Repr::List(_) => true, // Empty list
-            Repr::Tuple(xs) => xs
-                .iter()
-                .all(|x| self.has_inhabitants(x)),
-            Repr::Sum(variants) => variants
-                .iter()
-                .any(|v| self.has_inhabitants(v)),
+            Repr::Tuple(xs) => xs.iter().all(|x| self.has_inhabitants(x)),
+            Repr::Sum(variants) => variants.iter().any(|v| self.has_inhabitants(v)),
             Repr::Data(data) => self.has_inhabitants(&self.get(*data).repr),
             Repr::Func(_, _) => true,
             Repr::Effect(_, _) => true, // Effect objects always have inhabitants
