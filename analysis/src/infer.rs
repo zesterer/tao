@@ -1000,10 +1000,6 @@ impl<'a> Infer<'a> {
         self.effect_vars[eff.0].0
     }
 
-    fn iter_effects(&self) -> impl Iterator<Item = (EffectVar, EffectInfo)> + '_ {
-        (0..self.effect_vars.len()).map(|i| (EffectVar(i), self.effect_vars[i].1.clone()))
-    }
-
     fn info_effect(&self, eff: EffectVar) -> EffectInfo {
         self.effect_vars[eff.0].1.clone()
     }
