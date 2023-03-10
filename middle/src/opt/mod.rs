@@ -115,11 +115,11 @@ impl Binding {
             mir::Pat::Wildcard | mir::Pat::Literal(_) => {}
             mir::Pat::Single(inner) => f(inner),
             mir::Pat::Add(lhs, _) => f(lhs),
-            mir::Pat::Tuple(fields) => fields.iter().for_each(|field| f(field)),
-            mir::Pat::ListExact(items) => items.iter().for_each(|item| f(item)),
+            mir::Pat::Tuple(fields) => fields.iter().for_each(f),
+            mir::Pat::ListExact(items) => items.iter().for_each(f),
             mir::Pat::ListFront(items, tail) => {
-                items.iter().for_each(|item| f(item));
-                tail.as_ref().map(|tail| f(tail));
+                items.iter().for_each(&mut f);
+                tail.as_ref().map(f);
             }
             mir::Pat::Variant(_, inner) => f(inner),
             mir::Pat::Data(_, inner) => f(inner),
@@ -131,11 +131,11 @@ impl Binding {
             mir::Pat::Wildcard | mir::Pat::Literal(_) => {}
             mir::Pat::Single(inner) => f(inner),
             mir::Pat::Add(lhs, _) => f(lhs),
-            mir::Pat::Tuple(fields) => fields.iter_mut().for_each(|field| f(field)),
-            mir::Pat::ListExact(items) => items.iter_mut().for_each(|item| f(item)),
+            mir::Pat::Tuple(fields) => fields.iter_mut().for_each(f),
+            mir::Pat::ListExact(items) => items.iter_mut().for_each(f),
             mir::Pat::ListFront(items, tail) => {
-                items.iter_mut().for_each(|item| f(item));
-                tail.as_mut().map(|tail| f(tail));
+                items.iter_mut().for_each(&mut f);
+                tail.as_mut().map(f);
             }
             mir::Pat::Variant(_, inner) => f(inner),
             mir::Pat::Data(_, inner) => f(inner),
@@ -187,9 +187,9 @@ impl Expr {
     pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
         match self {
             Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {}
-            Expr::Intrinsic(_, args) => args.iter().for_each(|arg| f(arg)),
-            Expr::Tuple(fields) => fields.iter().for_each(|field| f(field)),
-            Expr::List(items) => items.iter().for_each(|item| f(item)),
+            Expr::Intrinsic(_, args) => args.iter().for_each(f),
+            Expr::Tuple(fields) => fields.iter().for_each(f),
+            Expr::List(items) => items.iter().for_each(f),
             Expr::Match(pred, arms) => {
                 f(pred);
                 for (_, body) in arms {
@@ -229,9 +229,9 @@ impl Expr {
     pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut MirNode<Self>)) {
         match self {
             Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {}
-            Expr::Intrinsic(_, args) => args.iter_mut().for_each(|arg| f(arg)),
-            Expr::Tuple(fields) => fields.iter_mut().for_each(|field| f(field)),
-            Expr::List(items) => items.iter_mut().for_each(|item| f(item)),
+            Expr::Intrinsic(_, args) => args.iter_mut().for_each(f),
+            Expr::Tuple(fields) => fields.iter_mut().for_each(f),
+            Expr::List(items) => items.iter_mut().for_each(f),
             Expr::Match(pred, arms) => {
                 f(pred);
                 for (_, body) in arms {
