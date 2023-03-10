@@ -2718,7 +2718,7 @@ impl<'a> Infer<'a> {
                     // Check constrained associated types
                     let _class = self.insert_class(
                         obl_span,
-                        ClassInfo::Known(class_id, class_gen_tys.clone(), class_gen_effs.clone()),
+                        ClassInfo::Known(class_id, class_gen_tys, class_gen_effs),
                     );
                     // if let ImpliedItems::Eq(assoc_set) = &items {
                     //     for (assoc, assoc_ty) in assoc {
@@ -2964,7 +2964,7 @@ impl<'a> Infer<'a> {
                                 if proof_stack.contains(&proof_key) {
                                     return Some(Err(InferError::CycleWhenResolving(
                                         ty,
-                                        (class_id, class_gen_tys.clone(), class_gen_effs.clone()),
+                                        (class_id, class_gen_tys, class_gen_effs),
                                         member.span(),
                                     )));
                                 } else {
