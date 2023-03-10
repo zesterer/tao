@@ -710,7 +710,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
             .or(just(Token::Op(Op::RArrow))
                 .ignore_then(direct.clone())
                 .map(Chain::Infix))
-            .or(paren_exp_list.map_with_span(|args, span| Chain::Apply(args, span)))
+            .or(paren_exp_list.map_with_span(Chain::Apply))
             .boxed();
 
         let chained = direct
