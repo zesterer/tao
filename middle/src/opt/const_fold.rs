@@ -12,7 +12,6 @@ impl ConstFold {
     // Returns `true` if the branch *could* still match the partial value and the partial value has inhabitants. If
     // `false` is returned, there's no saying what was or wasn't added to the locals.
     fn extract(
-        &self,
         ctx: &Context,
         binding: &mut MirNode<Binding>,
         partial: &Partial,
@@ -30,7 +29,7 @@ impl ConstFold {
             binding.for_children_mut(|binding| {
                 // TODO: This will become unsound if or patterns are ever added because it assumes that all child
                 // patterns are and patterns.
-                matches &= self.extract(ctx, binding, &Partial::Unknown(None), locals);
+                matches &= ConstFold::extract(ctx, binding, &Partial::Unknown(None), locals);
             });
             matches
         } else {
@@ -43,10 +42,10 @@ impl ConstFold {
                         true
                     }
                 }
-                (Pat::Single(inner), partial) => self.extract(ctx, inner, partial, locals),
+                (Pat::Single(inner), partial) => ConstFold::extract(ctx, inner, partial, locals),
                 (Pat::Variant(variant, x), Partial::Sum(tag, y)) => {
                     if variant == tag {
-                        self.extract(ctx, x, y, locals)
+                        ConstFold::extract(ctx, x, y, locals)
                     } else {
                         false
                     }
@@ -55,7 +54,7 @@ impl ConstFold {
                     debug_assert_eq!(xs.len(), ys.len());
                     xs.iter_mut()
                         .zip(ys.iter())
-                        .all(|(x, y)| self.extract(ctx, x, y, locals))
+                        .all(|(x, y)| ConstFold::extract(ctx, x, y, locals))
                 }
                 (Pat::ListExact(xs), Partial::List(ys)) => {
                     if xs.len() != ys.len() {
@@ -63,7 +62,7 @@ impl ConstFold {
                     } else {
                         xs.iter_mut()
                             .zip(ys.iter())
-                            .all(|(x, y)| self.extract(ctx, x, y, locals))
+                            .all(|(x, y)| ConstFold::extract(ctx, x, y, locals))
                     }
                 }
                 (Pat::ListFront(xs, tail), Partial::List(ys)) => {
@@ -71,7 +70,7 @@ impl ConstFold {
                         false
                     } else {
                         let could_match_tail = if let Some(tail) = tail {
-                            self.extract(ctx, tail, &Partial::List(ys[xs.len()..].to_vec()), locals)
+                            ConstFold::extract(ctx, tail, &Partial::List(ys[xs.len()..].to_vec()), locals)
                         } else {
                             true
                         };
@@ -79,14 +78,14 @@ impl ConstFold {
                             && xs
                                 .iter_mut()
                                 .zip(ys.iter())
-                                .all(|(x, y)| self.extract(ctx, x, y, locals))
+                                .all(|(x, y)| ConstFold::extract(ctx, x, y, locals))
                     }
                 }
                 (Pat::Add(inner, n), partial) => {
                     if let Some(rhs) = partial.to_literal() {
                         let rhs = rhs.nat();
                         if rhs >= *n {
-                            self.extract(ctx, inner, &Partial::Nat(rhs - *n), locals)
+                            ConstFold::extract(ctx, inner, &Partial::Nat(rhs - *n), locals)
                         } else {
                             false
                         }
@@ -96,7 +95,7 @@ impl ConstFold {
                 }
                 (Pat::Data(a, inner), Partial::Data(b, partial)) => {
                     debug_assert_eq!(a, b);
-                    self.extract(ctx, inner, partial, locals)
+                    ConstFold::extract(ctx, inner, partial, locals)
                 }
                 (p, v) => todo!("Pattern:\n\n{:?}\n\nPartial:\n\n{:?}\n\n", p, v),
             }
@@ -141,7 +140,7 @@ impl ConstFold {
                     // Remove arms that cannot possibly match
                     .drain_filter(|(binding, arm)| {
                         let old_locals = locals.len();
-                        let cull = if self.extract(ctx, binding, &pred, locals) {
+                        let cull = if ConstFold::extract(ctx, binding, &pred, locals) {
                             let arm_output = self.eval(ctx, arm, locals);
 
                             // Combine outputs together in an attempt to unify their values
