@@ -253,7 +253,7 @@ impl Binding {
             Pat::Tuple(fields) => fields.iter().any(|field| field.is_refutable()),
             Pat::ListExact(_) => true,
             Pat::ListFront(items, tail) => {
-                items.len() > 0 || tail.as_ref().map_or(false, |tail| tail.is_refutable())
+                !items.is_empty() || tail.as_ref().map_or(false, |tail| tail.is_refutable())
             }
             Pat::Variant(_, _) => true, // TODO: Check number of variants
             Pat::Data(_, inner) => inner.is_refutable(),
