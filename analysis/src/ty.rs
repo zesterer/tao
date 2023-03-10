@@ -528,6 +528,11 @@ impl GenScope {
     pub fn len(&self) -> usize {
         self.types.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn len_eff(&self) -> usize {
         self.effects.len()
     }
