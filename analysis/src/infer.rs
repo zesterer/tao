@@ -1563,14 +1563,6 @@ impl<'a> Infer<'a> {
             },
             // TODO: Don't ignore!!! But make `fix` work, somehow
             (TyInfo::Opaque(_x_id, _), TyInfo::Opaque(_y_id, _)) /*if x_id == y_id*/ => Ok(()),
-            (TyInfo::Opaque(_x_id, relaxed_x), TyInfo::Opaque(_y_id, relaxed_y)) if relaxed_x || relaxed_y => {
-                if relaxed_y {
-                    infer.set_info(y, TyInfo::Ref(x));
-                } else {
-                    infer.set_info(x, TyInfo::Ref(y));
-                }
-                Ok(())
-            },
             (_, _) => Err((x, y)),
         }
     }
