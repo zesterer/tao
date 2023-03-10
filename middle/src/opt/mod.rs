@@ -389,16 +389,15 @@ pub fn check(ctx: &Context) {
         ctx: &Context,
         binding: &Binding,
         repr: &Repr,
-        stack: &mut Vec<(Local, Repr)>,
     ) {
         match (&binding.pat, repr) {
             (Pat::Data(a, _inner), Repr::Data(b)) if a == b => {} // TODO: Check inner
             (Pat::Wildcard, _) => {}
             (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {}
             (Pat::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => {
-                check_binding(ctx, inner, &variants[*idx], stack)
+                check_binding(ctx, inner, &variants[*idx])
             }
-            (Pat::Single(inner), _) => check_binding(ctx, inner, repr, stack),
+            (Pat::Single(inner), _) => check_binding(ctx, inner, repr),
             (Pat::ListExact(_), Repr::List(_)) => {}
             (Pat::ListFront(_, _), Repr::List(_)) => {}
             (_, repr) => panic!(
@@ -407,7 +406,7 @@ pub fn check(ctx: &Context) {
             ),
         }
 
-        binding.for_children(|binding| check_binding(ctx, binding, binding.meta(), stack));
+        binding.for_children(|binding| check_binding(ctx, binding, binding.meta()));
     }
 
     fn check_expr(ctx: &Context, expr: &Expr, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
@@ -450,7 +449,7 @@ pub fn check(ctx: &Context) {
             (Expr::Match(pred, arms), _repr) => {
                 for (arm, body) in arms {
                     // TODO: visit binding
-                    check_binding(ctx, arm.inner(), pred.meta(), stack);
+                    check_binding(ctx, arm.inner(), pred.meta());
                     let old_stack = stack.len();
                     stack.append(&mut arm.bindings());
                     check_expr(ctx, body, body.meta(), stack);
