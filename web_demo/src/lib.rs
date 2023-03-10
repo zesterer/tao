@@ -96,7 +96,7 @@ pub fn run(src: &str, mode: &str, optimisation: &str) {
 
     if debug.is_empty() {
         if let Some(prog) = prog {
-            env.print(format!("Compilation succeeded."));
+            env.print("Compilation succeeded.".to_string());
             exec(&prog, &mut env);
         }
     }
