@@ -52,7 +52,8 @@ impl Defs {
         if let Err(old) = self.lut.try_insert(name, (span, id)) {
             Err(Error::DuplicateDefName(name, old.entry.get().0, span))
         } else {
-            if let Some(lang) = def.attr
+            if let Some(lang) = def
+                .attr
                 .iter()
                 .find(|a| &**a.name == "lang")
                 .and_then(|a| a.args.as_ref())

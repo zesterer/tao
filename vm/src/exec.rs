@@ -1,9 +1,6 @@
 use super::*;
-use std::{
-    fmt,
-    rc::Rc,
-};
-use im::{Vector, vector};
+use im::{vector, Vector};
+use std::{fmt, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub struct Effect {
@@ -28,15 +25,69 @@ impl Value {
         Value::Sum(x as usize, Rc::new(Value::List(Vector::new())))
     }
 
-    pub fn int(self) -> i64 { if let Value::Int(x) = self { x } else { panic!("{}", self) } }
-    pub fn real(self) -> f64 { if let Value::Real(x) = self { x } else { panic!("{}", self) } }
-    pub fn char(self) -> char { if let Value::Char(c) = self { c } else { panic!("{}", self) } }
-    pub fn bool(self) -> bool { if let Value::Sum(x, _) = self { x > 0 } else { panic!("{}", self) } }
-    pub fn list(self) -> Vector<Self> { if let Value::List(xs) = self { xs } else { panic!("{}", self) } }
-    pub fn func(self) -> (Addr, Vector<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
-    pub fn sum(self) -> (usize, Rc<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
-    pub fn universe(self) -> u64 { if let Value::Universe(x) = self { x } else { panic!("{}", self) } }
-    pub fn eff(self) -> Rc<Effect> { if let Value::Effect(eff) = self { eff } else { panic!("{}", self) } }
+    pub fn int(self) -> i64 {
+        if let Value::Int(x) = self {
+            x
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn real(self) -> f64 {
+        if let Value::Real(x) = self {
+            x
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn char(self) -> char {
+        if let Value::Char(c) = self {
+            c
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn bool(self) -> bool {
+        if let Value::Sum(x, _) = self {
+            x > 0
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn list(self) -> Vector<Self> {
+        if let Value::List(xs) = self {
+            xs
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn func(self) -> (Addr, Vector<Self>) {
+        if let Value::Func(f_addr, captures) = self {
+            (f_addr, captures)
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn sum(self) -> (usize, Rc<Self>) {
+        if let Value::Sum(variant, inner) = self {
+            (variant, inner)
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn universe(self) -> u64 {
+        if let Value::Universe(x) = self {
+            x
+        } else {
+            panic!("{}", self)
+        }
+    }
+    pub fn eff(self) -> Rc<Effect> {
+        if let Value::Effect(eff) = self {
+            eff
+        } else {
+            panic!("{}", self)
+        }
+    }
 
     pub fn display(self) -> String {
         match self {
@@ -55,14 +106,16 @@ impl fmt::Display for Value {
             Value::Real(x) => write!(f, "{}f", x),
             Value::Char(c) => write!(f, "{}", c),
             Value::List(items) => match items.iter().next() {
-                Some(Value::Char(_)) => items
-                    .iter()
-                    .try_for_each(|c| write!(f, "{}", c)),
-                _ => write!(f, "[{}]", items
-                    .iter()
-                    .map(|x| format!("{}", x))
-                    .collect::<Vec<_>>()
-                    .join(", ")),
+                Some(Value::Char(_)) => items.iter().try_for_each(|c| write!(f, "{}", c)),
+                _ => write!(
+                    f,
+                    "[{}]",
+                    items
+                        .iter()
+                        .map(|x| format!("{}", x))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             },
             Value::Func(addr, captures) => write!(
                 f,
@@ -103,52 +156,61 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
 
         match prog.instr(addr) {
             Instr::Error(err) => panic!("Error: {}", err),
-            Instr::Nop => {},
+            Instr::Nop => {}
             Instr::Break => {
                 println!("Breakpoint at 0x{:03X?}", addr.0);
                 for (i, x) in stack.iter().rev().enumerate() {
                     println!("{:02} | {:?}", i, x);
                 }
-            },
+            }
             Instr::Imm(x) => stack.push(x.clone()),
             Instr::Pop(n) => {
                 assert!(n > 0, "Popped zero items, this is probably a bug");
                 stack.truncate(stack.len().saturating_sub(n));
-            },
+            }
             Instr::Replace => {
                 let x = stack.pop().unwrap();
                 stack.pop();
                 stack.push(x);
-            },
+            }
             Instr::Swap => {
                 let x = stack.pop().unwrap();
                 let y = stack.pop().unwrap();
                 stack.push(x);
                 stack.push(y);
-            },
+            }
             Instr::Call(n) => {
                 funcs.push(next_addr);
                 next_addr = addr.jump(n);
-            },
-            Instr::Ret => if let Some(addr) = funcs.pop() {
-                next_addr = addr;
-            } else {
-                assert_eq!(locals.len(), 0, "Local stack still has values, this is probably a bug");
-                assert_eq!(stack.len(), 1, "Stack size must be 1 on program exit");
-                // println!("Executed {} instructions.", tick);
-                break if prog.does_io {
-                    let mut r = stack.pop().unwrap().list();
-                    assert_eq!(r.remove(0).universe(), universe_counter);
-                    None
+            }
+            Instr::Ret => {
+                if let Some(addr) = funcs.pop() {
+                    next_addr = addr;
                 } else {
-                    stack.pop()
-                };
-            },
+                    assert_eq!(
+                        locals.len(),
+                        0,
+                        "Local stack still has values, this is probably a bug"
+                    );
+                    assert_eq!(stack.len(), 1, "Stack size must be 1 on program exit");
+                    // println!("Executed {} instructions.", tick);
+                    break if prog.does_io {
+                        let mut r = stack.pop().unwrap().list();
+                        assert_eq!(r.remove(0).universe(), universe_counter);
+                        None
+                    } else {
+                        stack.pop()
+                    };
+                }
+            }
             Instr::MakeFunc(i, n) => {
                 let f_addr = addr.jump(i);
-                let func = Value::Func(f_addr, stack.split_off(stack.len().saturating_sub(n)).into());
+                let func = Value::Func(
+                    f_addr,
+                    stack.split_off(stack.len().saturating_sub(n)).into(),
+                );
                 stack.push(func);
-            },
+            }
             Instr::ApplyFunc => {
                 let (f_addr, mut captures) = stack.pop().unwrap().func();
 
@@ -156,160 +218,166 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                 next_addr = f_addr;
 
                 locals.extend(captures.into_iter());
-            },
+            }
             Instr::MakeList(n) => {
                 let val = Value::List(stack.split_off(stack.len().saturating_sub(n)).into());
                 stack.push(val);
-            },
+            }
             Instr::IndexList(i) => {
                 let mut x = stack.pop().unwrap().list();
                 if x.len() < i + 1 {
                     panic!("Removing item {} from list {:?} at 0x{:X}", i, x, addr.0);
                 }
                 stack.push(x.remove(i));
-            },
+            }
             Instr::SkipListImm(i) => {
                 let x = stack.pop().unwrap().list();
                 stack.push(Value::List(x.skip(i)));
-            },
+            }
             Instr::SetList(idx) => {
                 let item = stack.pop().unwrap();
                 let mut xs = stack.pop().unwrap().list();
                 xs[idx] = item;
                 stack.push(Value::List(xs));
-            },
+            }
             Instr::LenList => {
                 let len = stack.pop().unwrap().list().len();
                 stack.push(Value::Int(len as i64));
-            },
+            }
             Instr::JoinList => {
                 let mut y = stack.pop().unwrap().list();
                 let mut x = stack.pop().unwrap().list();
                 x.append(y);
                 stack.push(Value::List(x));
-            },
+            }
             Instr::SkipList => {
                 let i = stack.pop().unwrap().int();
                 let xs = stack.pop().unwrap().list();
                 stack.push(Value::List(xs.skip((i as usize).min(xs.len()))));
-            },
+            }
             Instr::TrimList => {
                 let i = stack.pop().unwrap().int();
                 let mut xs = stack.pop().unwrap().list();
                 xs.truncate((i as usize).min(xs.len()));
                 stack.push(Value::List(xs));
-            },
+            }
             Instr::MakeSum(variant) => {
                 let x = stack.pop().unwrap();
                 stack.push(Value::Sum(variant, Rc::new(x)));
-            },
+            }
             Instr::IndexSum(variant) => {
                 let (v, inner) = stack.pop().unwrap().sum();
                 debug_assert_eq!(variant, v);
                 stack.push((*inner).clone());
-            },
+            }
             Instr::VariantSum => {
                 let (variant, _) = stack.pop().unwrap().sum();
                 stack.push(Value::Int(variant as i64));
-            },
+            }
             Instr::Dup => stack.push(stack.last().unwrap().clone()),
             Instr::Jump(n) => {
                 next_addr = addr.jump(n);
-            },
+            }
             Instr::IfNot => {
                 if stack.pop().unwrap().bool() {
                     next_addr = next_addr.jump(1);
                 }
-            },
+            }
             Instr::PushLocal => locals.push(stack.pop().unwrap()),
             Instr::PopLocal(n) => locals.truncate(locals.len() - n),
             Instr::GetLocal(x) => stack.push(locals[locals.len() - 1 - x].clone()),
             Instr::NotBool => {
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::new_bool(!x))
-            },
+            }
             Instr::NegInt => {
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::Int(-x))
-            },
+            }
             Instr::NegReal => {
                 let x = stack.pop().unwrap().real();
                 stack.push(Value::Real(-x))
-            },
+            }
             Instr::Display => {
                 let s = stack.pop().unwrap().display();
                 stack.push(Value::List(s.chars().map(Value::Char).collect()))
-            },
+            }
             Instr::Codepoint => {
                 let c = stack.pop().unwrap().char();
                 stack.push(Value::Int(c as u64 as i64))
-            },
+            }
             Instr::AddInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::Int(x + y))
-            },
+            }
             Instr::SubInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::Int(x - y))
-            },
+            }
             Instr::MulInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::Int(x * y))
-            },
+            }
             Instr::EqInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::new_bool(x == y))
-            },
+            }
             Instr::EqBool => {
                 let y = stack.pop().unwrap().bool();
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::new_bool(x == y))
-            },
+            }
             Instr::EqChar => {
                 let y = stack.pop().unwrap().char();
                 let x = stack.pop().unwrap().char();
                 stack.push(Value::new_bool(x == y))
-            },
+            }
             Instr::LessInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::new_bool(x < y))
-            },
+            }
             Instr::MoreInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::new_bool(x > y))
-            },
+            }
             Instr::LessEqInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::new_bool(x <= y))
-            },
+            }
             Instr::MoreEqInt => {
                 let y = stack.pop().unwrap().int();
                 let x = stack.pop().unwrap().int();
                 stack.push(Value::new_bool(x >= y))
-            },
+            }
             Instr::AndBool => {
                 let y = stack.pop().unwrap().bool();
                 let x = stack.pop().unwrap().bool();
                 stack.push(Value::new_bool(x && y))
-            },
+            }
             Instr::Print => {
                 let s = stack.pop().unwrap().list();
                 let universe = stack.pop().unwrap().universe();
-                assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
+                assert!(
+                    universe == universe_counter,
+                    "Universe forked, the thread of prophecy has been broken"
+                );
                 universe_counter += 1;
                 env.print(s.into_iter().map(|c| c.char()).collect::<String>());
                 stack.push(Value::Universe(universe_counter))
-            },
+            }
             Instr::Input => {
                 let universe = stack.pop().unwrap().universe();
-                assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
+                assert!(
+                    universe == universe_counter,
+                    "Universe forked, the thread of prophecy has been broken"
+                );
                 universe_counter += 1;
 
                 let s = env.input();
@@ -318,11 +386,14 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                     Value::Universe(universe_counter),
                     Value::List(s.trim_end().chars().map(Value::Char).collect()),
                 ]));
-            },
+            }
             Instr::Rand => {
                 let max = stack.pop().unwrap().int();
                 let universe = stack.pop().unwrap().universe();
-                assert!(universe == universe_counter, "Universe forked, the thread of prophecy has been broken");
+                assert!(
+                    universe == universe_counter,
+                    "Universe forked, the thread of prophecy has been broken"
+                );
                 universe_counter += 1;
 
                 let n = env.rand(max);
@@ -331,7 +402,7 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                     Value::Universe(universe_counter),
                     Value::Int(n),
                 ]));
-            },
+            }
             Instr::MakeEffect(i, n) => {
                 let addr = addr.jump(i);
                 let func = Value::Effect(Rc::new(Effect {
@@ -339,7 +410,7 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                     captures: stack.split_off(stack.len().saturating_sub(n)).into(),
                 }));
                 stack.push(func);
-            },
+            }
             Instr::Propagate => {
                 let eff = stack.pop().unwrap().eff();
 
@@ -347,17 +418,18 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                 next_addr = eff.addr;
 
                 locals.extend(eff.captures.iter().cloned());
-            },
+            }
             Instr::Suspend(eff_id) => {
                 let handler = handlers
                     .iter()
                     .rev()
                     .find(|(e, _, _)| *e == eff_id)
-                    .unwrap_or_else(|| panic!(
-                        "No such effect handler for {:?} on effect stack. Effect stack:\n{:#?}",
-                        eff_id,
-                        handlers,
-                    ));
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "No such effect handler for {:?} on effect stack. Effect stack:\n{:#?}",
+                            eff_id, handlers,
+                        )
+                    });
                 let (f_addr, mut captures) = handler.1.clone().func();
 
                 funcs.push(next_addr);
@@ -365,18 +437,18 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
 
                 locals.push(stack[handler.2].clone()); // Push effect
                 locals.extend(captures.into_iter());
-            },
+            }
             Instr::Register(eff_id) => {
                 let handler = stack.pop().unwrap();
                 // let state = stack.pop().unwrap();
                 handlers.push_back((eff_id, handler, stack.len() - 1));
-            },
+            }
             Instr::EndHandlers(n) => {
                 let out = stack.pop().unwrap();
                 let state = stack.pop().unwrap();
                 handlers.truncate(handlers.len() - n);
                 stack.push(Value::List([out, state].into_iter().collect()));
-            },
+            }
             Instr::Resume(eff_id) => {
                 let out_and_state = stack.pop().unwrap().list();
                 let out = out_and_state[0].clone();
@@ -387,11 +459,12 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                     .iter_mut()
                     .rev()
                     .find(|(e, _, _)| *e == eff_id)
-                    .unwrap().2;
+                    .unwrap()
+                    .2;
                 stack[stack_idx] = state;
 
                 stack.push(out);
-            },
+            }
         }
 
         tick += 1;

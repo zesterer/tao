@@ -7,16 +7,26 @@ use std::{
 pub struct Id<T>(usize, PhantomData<T>);
 
 impl<T> Copy for Id<T> {}
-impl<T> Clone for Id<T> { fn clone(&self) -> Self { *self } }
+impl<T> Clone for Id<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
 impl<T> Eq for Id<T> {}
 impl<T> PartialEq for Id<T> {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
 }
 impl<T> Ord for Id<T> {
-    fn cmp(&self, other: &Self) -> Ordering { self.0.cmp(&(other.0)) }
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&(other.0))
+    }
 }
 impl<T> PartialOrd for Id<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 impl<T> fmt::Debug for Id<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -24,7 +34,9 @@ impl<T> fmt::Debug for Id<T> {
     }
 }
 impl<T> hash::Hash for Id<T> {
-    fn hash<H: hash::Hasher>(&self, h: &mut H) { self.0.hash(h); }
+    fn hash<H: hash::Hasher>(&self, h: &mut H) {
+        self.0.hash(h);
+    }
 }
 
 #[derive(Clone)]
@@ -63,9 +75,13 @@ impl<T> Index<T> {
 
 impl<T> std::ops::Index<Id<T>> for Index<T> {
     type Output = T;
-    fn index(&self, id: Id<T>) -> &Self::Output { &self.items[id.0] }
+    fn index(&self, id: Id<T>) -> &Self::Output {
+        &self.items[id.0]
+    }
 }
 
 impl<T> std::ops::IndexMut<Id<T>> for Index<T> {
-    fn index_mut(&mut self, id: Id<T>) -> &mut Self::Output { &mut self.items[id.0] }
+    fn index_mut(&mut self, id: Id<T>) -> &mut Self::Output {
+        &mut self.items[id.0]
+    }
 }

@@ -1,8 +1,8 @@
-use tao::{Options, SrcId, compile};
-use tao_vm::{exec, Env};
-use structopt::StructOpt;
-use std::{fs, path::PathBuf};
 use rand::prelude::*;
+use std::{fs, path::PathBuf};
+use structopt::StructOpt;
+use tao::{compile, Options, SrcId};
+use tao_vm::{exec, Env};
 
 #[derive(Clone, Debug, StructOpt)]
 pub struct Args {
@@ -38,8 +38,7 @@ impl Env for Stdio {
 
 fn main() {
     let args = Args::from_args();
-    let src = fs::read_to_string(&args.file)
-        .expect("Failed to read file");
+    let src = fs::read_to_string(&args.file).expect("Failed to read file");
     let src_id = SrcId::from_path(args.file);
     let prog = compile(
         src,

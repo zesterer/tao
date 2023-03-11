@@ -12,16 +12,25 @@ pub enum Delimiter {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
     // Sum
-    Add, Sub,
+    Add,
+    Sub,
     // Product
-    Mul, Div, Rem,
+    Mul,
+    Div,
+    Rem,
     // Equality
-    Eq, NotEq,
+    Eq,
+    NotEq,
     // Comparison
-    Less, LessEq,
-    More, MoreEq,
+    Less,
+    LessEq,
+    More,
+    MoreEq,
     // Logical
-    Not, And, Or, Xor,
+    Not,
+    And,
+    Or,
+    Xor,
     // Lists
     Join,
     Ellipsis,
@@ -216,7 +225,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         just('/').to(Op::Div),
         just('%').to(Op::Rem),
     ))
-        .map(Token::Op);
+    .map(Token::Op);
 
     let delim = choice((
         just('(').to(Token::Open(Delimiter::Paren)),
@@ -227,15 +236,16 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         just('}').to(Token::Close(Delimiter::Brace)),
     ));
 
-    let escape = just('\\')
-        .ignore_then(just('\\')
-        .or(just('/'))
-        .or(just('"'))
-        .or(just('b').to('\x08'))
-        .or(just('f').to('\x0C'))
-        .or(just('n').to('\n'))
-        .or(just('r').to('\r'))
-        .or(just('t').to('\t')));
+    let escape = just('\\').ignore_then(
+        just('\\')
+            .or(just('/'))
+            .or(just('"'))
+            .or(just('b').to('\x08'))
+            .or(just('f').to('\x0C'))
+            .or(just('n').to('\n'))
+            .or(just('r').to('\r'))
+            .or(just('t').to('\t')),
+    );
 
     let r#char = just('\'')
         .ignore_then(filter(|c| *c != '\\' && *c != '\'').or(escape))
@@ -288,43 +298,35 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         "when" => Token::When,
         "is" => Token::Is,
         "_" => Token::Wildcard,
-        _ => if s.chars().next().map_or(false, |c| c.is_uppercase()) {
-            Token::TypeIdent(ast::Ident::new(s))
-        } else {
-            Token::TermIdent(ast::Ident::new(s))
-        },
+        _ => {
+            if s.chars().next().map_or(false, |c| c.is_uppercase()) {
+                Token::TypeIdent(ast::Ident::new(s))
+            } else {
+                Token::TermIdent(ast::Ident::new(s))
+            }
+        }
     });
 
     let comments = just('#')
-        .then_ignore(just('(')
-            .ignore_then(take_until(just(")#")).ignored())
-            .or(none_of('\n').ignored().repeated().ignored()))
+        .then_ignore(
+            just('(')
+                .ignore_then(take_until(just(")#")).ignored())
+                .or(none_of('\n').ignored().repeated().ignored()),
+        )
         .padded()
         .ignored()
         .repeated();
 
     let token = choice((
-        ctrl,
-        word,
-        real,
-        int,
-        nat,
-        op,
-        delim,
-        string,
-        r#char,
-        intrinsic,
-        at,
+        ctrl, word, real, int, nat, op, delim, string, r#char, intrinsic, at,
     ))
-        .or(any()
-            .map(Token::Error)
-            .validate(|t, span, emit| {
-                emit(Error::expected_input_found(span, None, Some(t)));
-                t
-            }))
-        .map_with_span(move |token, span| (token, span))
-        .padded()
-        .recover_with(skip_then_retry_until([]));
+    .or(any().map(Token::Error).validate(|t, span, emit| {
+        emit(Error::expected_input_found(span, None, Some(t)));
+        t
+    }))
+    .map_with_span(move |token, span| (token, span))
+    .padded()
+    .recover_with(skip_then_retry_until([]));
 
     token
         .padded_by(comments)

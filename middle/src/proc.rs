@@ -29,11 +29,15 @@ impl Procs {
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (ProcId, &mut Proc)> {
-        self.procs.iter_mut().filter_map(|(id, proc)| Some((*id, proc.as_mut()?)))
+        self.procs
+            .iter_mut()
+            .filter_map(|(id, proc)| Some((*id, proc.as_mut()?)))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (ProcId, &Proc)> {
-        self.procs.iter().filter_map(|(id, proc)| Some((*id, proc.as_ref()?)))
+        self.procs
+            .iter()
+            .filter_map(|(id, proc)| Some((*id, proc.as_ref()?)))
     }
 
     pub fn declare(&mut self, id: ProcId) {
@@ -41,6 +45,9 @@ impl Procs {
     }
 
     pub fn define(&mut self, id: ProcId, proc: Proc) {
-        assert!(self.procs.insert(id, Some(proc)).unwrap().is_none(), "Proc defined without declaration");
+        assert!(
+            self.procs.insert(id, Some(proc)).unwrap().is_none(),
+            "Proc defined without declaration"
+        );
     }
 }
