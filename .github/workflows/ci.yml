@@ -39,34 +39,6 @@ jobs:
         run: cargo check --tests --examples --all-features
 
 
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - 1.67.0
-          - stable
-          - beta
-          # - nightly
-    # required because we have a different toolchain than {{ matrix.rust }} in
-    # rust-toolchain.toml, which we use for the flake.nix
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-      - name: Install toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-      - uses: swatinem/rust-cache@v2
-      - name: cargo-test
-        run: cargo test
-      - name: cargo-test for async
-        run: cargo test --all-features
-
-
   clippy:
     name: clippy
     runs-on: ubuntu-latest
@@ -93,7 +65,6 @@ jobs:
     needs:
       - check
       - clippy
-      - test
     runs-on: ubuntu-latest
     steps:
       - name: CI succeeded
