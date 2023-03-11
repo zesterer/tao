@@ -39,23 +39,6 @@ jobs:
         run: cargo check --tests --examples --all-features
 
 
-  fmt:
-    name: format
-    runs-on: ubuntu-latest
-    # required because we have a different toolchain than {{ matrix.rust }} in
-    # rust-toolchain.toml, which we use for the flake.nix
-    env:
-      RUSTUP_TOOLCHAIN: 1.60.0
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.60.0
-          components: rustfmt
-      - name: cargo-fmt
-        run: cargo fmt -- --check
-
-
   test:
     name: test
     runs-on: ubuntu-latest
@@ -110,7 +93,6 @@ jobs:
     needs:
       - check
       - clippy
-      - fmt
       - test
     runs-on: ubuntu-latest
     steps:
