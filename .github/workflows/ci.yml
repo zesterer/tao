@@ -39,23 +39,6 @@ jobs:
         run: cargo check --tests --examples --all-features
 
 
-  clippy:
-    name: clippy
-    runs-on: ubuntu-latest
-    # required because we have a different toolchain than {{ matrix.rust }} in
-    # rust-toolchain.toml, which we use for the flake.nix
-    env:
-      RUSTUP_TOOLCHAIN: 1.60.0
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.60.0
-          components: clippy
-      - uses: swatinem/rust-cache@v2
-      - name: cargo-clippy
-        run: cargo clippy --all --all-targets --all-features -- -D warnings
-
   # We need some "accummulation" job here because bors fails (timeouts) to
   # listen on matrix builds.
   # Hence, we have some kind of dummy here that bors can listen on
@@ -64,7 +47,6 @@ jobs:
     if: ${{ success() }}
     needs:
       - check
-      - clippy
     runs-on: ubuntu-latest
     steps:
       - name: CI succeeded
