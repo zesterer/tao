@@ -43,7 +43,7 @@ pub enum Ty {
     // (_, is_tuple)
     Record(BTreeMap<Ident, TyId>, bool),
     Func(TyId, TyId),
-    Data(DataId, Vec<TyId>),
+    Data(DataId, Vec<TyId>, Vec<EffectId>),
     Gen(usize, GenScopeId),
     SelfType,
     Assoc(TyId, (ClassId, Vec<TyId>, Vec<Option<EffectId>>), SrcNode<Ident>),
@@ -139,10 +139,15 @@ impl Types {
             (Ty::List(x), Ty::List(y)) => self.cmp_ty(x, y),
             (Ty::Record(_, _), Ty::Record(_, _)) => todo!("Record equality"),
             (Ty::Func(x_i, x_o), Ty::Func(y_i, y_o)) => self.cmp_ty(x_i, y_i).then_with(|| self.cmp_ty(x_o, y_o)),
-            (Ty::Data(x, xs), Ty::Data(y, ys)) => x.cmp(&y).then_with(|| xs
-                .into_iter()
-                .zip(ys)
-                .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y)))),
+            (Ty::Data(x, xs, xs_eff), Ty::Data(y, ys, ys_eff)) => x.cmp(&y)
+                .then_with(|| xs
+                    .into_iter()
+                    .zip(ys)
+                    .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y))))
+                .then_with(|| xs_eff
+                    .into_iter()
+                    .zip(ys_eff)
+                    .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| x.cmp(&y)))),
             (Ty::Gen(x, x_scope), Ty::Gen(y, y_scope)) => if x_scope == y_scope {
                 x.cmp(&y)
             } else {
@@ -169,7 +174,7 @@ impl Types {
                     Ty::List(_) => 2,
                     Ty::Record(_, _) => 3,
                     Ty::Func(_, _) => 4,
-                    Ty::Data(_, _) => 5,
+                    Ty::Data(_, _, _) => 5,
                     Ty::Gen(_, _) => 6,
                     Ty::SelfType => 7,
                     Ty::Assoc(_, _, _) => 8,
@@ -190,12 +195,13 @@ impl Types {
                 .into_iter()
                 .all(|(_, field)| self.has_inhabitants(datas, field, gen)),
             Ty::Func(_, _) => true,
-            Ty::Data(data, args) => datas
+            // TODO: Use effect parameter!
+            Ty::Data(data, gen_tys, _) => datas
                 .get_data(data)
                 .cons
                 .iter()
                 .any(|(_, ty)| {
-                    self.has_inhabitants(datas, *ty, &mut |id| self.has_inhabitants(datas, args[id], gen))
+                    self.has_inhabitants(datas, *ty, &mut |id| self.has_inhabitants(datas, gen_tys[id], gen))
                 }),
             Ty::Gen(id, _) => gen(id),
             Ty::SelfType => true,
@@ -290,14 +296,32 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                 },
                 Ty::Func(i, o) if self.lhs_exposed => write!(f, "({} -> {})", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
                 Ty::Func(i, o) => write!(f, "{} -> {}", self.with_ty(i, true), self.with_ty(o, self.lhs_exposed)),
-                Ty::Data(name, params) if self.lhs_exposed && params.len() > 0 => write!(f, "({}{})", *self.ctx.datas.get_data(name).name, params
-                    .iter()
-                    .map(|param| format!(" {}", self.with_ty(*param, true)))
-                    .collect::<String>()),
-                Ty::Data(name, params) => write!(f, "{}{}", *self.ctx.datas.get_data(name).name, params
-                    .iter()
-                    .map(|param| format!(" {}", self.with_ty(*param, true)))
-                    .collect::<String>()),
+                Ty::Data(name, gen_tys, gen_effs) if self.lhs_exposed && (gen_tys.len() > 0 || gen_effs.len() > 0) => write!(
+                    f,
+                    "({}{}{})",
+                    *self.ctx.datas.get_data(name).name,
+                    gen_tys
+                        .iter()
+                        .map(|ty| format!(" {}", self.with_ty(*ty, true)))
+                        .collect::<String>(),
+                    gen_effs
+                        .iter()
+                        .map(|eff| format!(" {}", self.with_eff(*eff, true)))
+                        .collect::<String>(),
+                ),
+                Ty::Data(name, gen_tys, gen_effs) => write!(
+                    f,
+                    "{}{}{}",
+                    *self.ctx.datas.get_data(name).name,
+                    gen_tys
+                        .iter()
+                        .map(|ty| format!(" {}", self.with_ty(*ty, true)))
+                        .collect::<String>(),
+                    gen_effs
+                        .iter()
+                        .map(|eff| format!(" {}", self.with_eff(*eff, true)))
+                        .collect::<String>(),
+                ),
                 Ty::Gen(index, scope) => write!(f, "{}", **self.ctx.tys.get_gen_scope(scope).get(index).name),
                 // TODO: Include class_id?
                 Ty::Assoc(inner, (class_id, gen_tys, gen_effs), assoc) => {
@@ -332,7 +356,14 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                     let effs = effs
                         .iter()
                         .map(|eff| match eff {
-                            Ok(EffectInst::Gen(idx, scope)) => format!("{}", **self.ctx.tys.get_gen_scope(*scope).get_eff(*idx).name),
+                            Ok(EffectInst::Gen(idx, scope)) => {
+                                let scope = self.ctx.tys.get_gen_scope(*scope);
+                                if *idx < scope.len_eff() {
+                                    format!("{}", **scope.get_eff(*idx).name)
+                                } else {
+                                    format!("!")
+                                }
+                            },
                             Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
                                 .iter()
                                 .map(|arg| format!(" {}", self.with_ty(*arg, true)))

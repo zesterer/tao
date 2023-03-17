@@ -213,13 +213,23 @@ impl ConContext {
                 self.derive_links(hir, x_i, *y_i, ty_link_gen, eff_link_gen);
                 self.derive_links(hir, x_o, *y_o, ty_link_gen, eff_link_gen);
             },
-            (Ty::Data(_, xs), ConTy::Data(y)) => xs
-                .into_iter()
-                .zip(y.0.1.iter())
-                .for_each(|(x, y)| self.derive_links(hir, x, *y, ty_link_gen, eff_link_gen)),
+            (Ty::Data(_, gen_tys, gen_effs), ConTy::Data(y)) => {
+                gen_tys
+                    .into_iter()
+                    .zip(y.0.1.iter())
+                    .for_each(|(x, y)| self.derive_links(hir, x, *y, ty_link_gen, eff_link_gen));
+                gen_effs
+                    .into_iter()
+                    .zip(y.0.2.iter())
+                    .for_each(|(x, y)| self.derive_links_effect(hir, x, y, ty_link_gen, eff_link_gen));
+            },
             (Ty::Effect(xs, x_out), ConTy::Effect(ys, y_out)) => {
                 self.derive_links_effect(hir, xs, ys, ty_link_gen, eff_link_gen);
                 self.derive_links(hir, x_out, *y_out, ty_link_gen, eff_link_gen);
+            },
+            (Ty::Effect(xs, x_out), _) => {
+                self.derive_links_effect(hir, xs, &[], ty_link_gen, eff_link_gen);
+                self.derive_links(hir, x_out, ty, ty_link_gen, eff_link_gen);
             },
             // Flatten empty effects
             (_, ConTy::Effect(effs, ty)) if effs.is_empty() => self.derive_links(hir, member, *ty, ty_link_gen, eff_link_gen),
@@ -296,12 +306,16 @@ impl ConContext {
                 self.lower_ty(hir, i, ty_insts),
                 self.lower_ty(hir, o, ty_insts),
             ),
-            Ty::Data(data, gen_tys) => {
+            Ty::Data(data, gen_tys, gen_effs) => {
                 let gen_tys = gen_tys
                     .into_iter()
-                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                    .map(|ty| self.lower_ty(hir, ty, ty_insts))
                     .collect::<Vec<_>>();
-                ConTy::Data(self.lower_data(hir, data, &gen_tys, &[]))
+                let gen_effs = gen_effs
+                    .into_iter()
+                    .map(|eff| self.lower_effect(hir, eff, ty_insts))
+                    .collect::<Vec<_>>();
+                ConTy::Data(self.lower_data(hir, data, &gen_tys, &gen_effs))
             },
             Ty::Gen(idx, _) => return ty_insts.gen_tys[idx],
             Ty::SelfType => return ty_insts.self_ty.expect("Self type required during concretization but none was provided"),

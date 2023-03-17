@@ -279,6 +279,42 @@ impl Context {
             );
         }
 
+        // Effect alias definition must go before members and defs because they might have type hints that make use of type
+        // aliases
+        for (attr, alias, alias_id, gen_scope) in effect_aliases {
+            let mut infer = Infer::new(&mut this, Some(gen_scope));
+                // TODO: Enforce these?
+                //.with_gen_scope_implied();
+
+            let effs = alias.effects
+                .iter()
+                .filter_map(|(name, params)| match infer.ctx().effects.lookup(**name) {
+                    None => todo!("No such effect!"),
+                    Some(Ok(eff)) => Some((
+                        SrcNode::new(eff, name.span()),
+                        params
+                            .iter()
+                            .map(|param| param.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                            .collect::<Vec<TyVar>>(),
+                    )),
+                    Some(Err(_)) => todo!("Nested effect aliases"),
+                })
+                .collect::<Vec<_>>();
+
+            let (mut checked, mut errs) = infer.into_checked();
+            errors.append(&mut errs);
+
+            let effs = effs
+                .into_iter()
+                .map(|(eff, params)| (eff, params
+                    .into_iter()
+                    .map(|param| checked.reify(param))
+                    .collect()))
+                .collect();
+
+            this.effects.define_alias_effects(alias_id, effs);
+        }
+
         let mut members = Vec::new();
         for (attr, member, class_id, gen_scope) in &members_init {
             let mut infer = Infer::new(&mut this, Some(*gen_scope))
@@ -363,42 +399,6 @@ impl Context {
                     ty,
                 },
             );
-        }
-
-        // Effect alias definition must go before members and defs because they might have type hints that make use of type
-        // aliases
-        for (attr, alias, alias_id, gen_scope) in effect_aliases {
-            let mut infer = Infer::new(&mut this, Some(gen_scope));
-                // TODO: Enforce these?
-                //.with_gen_scope_implied();
-
-            let effs = alias.effects
-                .iter()
-                .filter_map(|(name, params)| match infer.ctx().effects.lookup(**name) {
-                    None => todo!("No such effect!"),
-                    Some(Ok(eff)) => Some((
-                        SrcNode::new(eff, name.span()),
-                        params
-                            .iter()
-                            .map(|param| param.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
-                            .collect::<Vec<TyVar>>(),
-                    )),
-                    Some(Err(_)) => todo!("Nested effect aliases"),
-                })
-                .collect::<Vec<_>>();
-
-            let (mut checked, mut errs) = infer.into_checked();
-            errors.append(&mut errs);
-
-            let effs = effs
-                .into_iter()
-                .map(|(eff, params)| (eff, params
-                    .into_iter()
-                    .map(|param| checked.reify(param))
-                    .collect()))
-                .collect();
-
-            this.effects.define_alias_effects(alias_id, effs);
         }
 
         // Check for lang items
@@ -562,14 +562,23 @@ impl Context {
 
             // Generate `Self` type
             let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope_id);
-            let gen_tys = (0..gen_scope.len())
+            let gen_tys_len = gen_scope.len();
+            let gen_effs_len = gen_scope.len_eff();
+            let gen_tys = (0..gen_tys_len)
                 .map(|idx| {
                     let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope_id);
                     let span = gen_scope.get(idx).name.span();
                     infer.insert(span, TyInfo::Gen(idx, gen_scope_id, span))
                 })
                 .collect();
-            let self_ty = infer.insert(data.name.span(), TyInfo::Data(data_id, gen_tys));
+            let gen_effs = (0..gen_effs_len)
+                .map(|idx| {
+                    let gen_scope = infer.ctx().tys.get_gen_scope(gen_scope_id);
+                    let span = gen_scope.get_eff(idx).name.span();
+                    infer.insert_gen_eff(span, idx, gen_scope_id)
+                })
+                .collect();
+            let self_ty = infer.insert(data.name.span(), TyInfo::Data(data_id, gen_tys, gen_effs));
             let mut infer = infer.with_self_var(self_ty);
 
             let variants = data.variants
@@ -650,7 +659,7 @@ impl Context {
                     *member_obl.member,
                     member_obl.member.span(),
                     &mut |idx, _, _| member_gen_tys.get(idx).copied(),
-                    &mut |idx, _| todo!(),
+                    &mut |idx, _| member_gen_effs.get(idx).copied(),
                     Some(member_ty),
                     invariant(),
                 );
@@ -891,7 +900,7 @@ impl Context {
 
         loop {
             match self.tys.get(ty) {
-                Ty::Data(data, _gen_tys) => if already_seen.contains(&data) {
+                Ty::Data(data, _gen_tys, _gen_effs) => if already_seen.contains(&data) {
                     // We've already seen this data type, it must be recursive. Give up, it has no fields.
                     break None
                 } else {

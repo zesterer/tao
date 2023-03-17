@@ -17,13 +17,13 @@ pub struct Error {
     kind: ErrorKind,
     span: Span,
     while_parsing: Option<(Span, &'static str)>,
-    expected: HashSet<Pattern>,
+    // expected: HashSet<Pattern>,
     label: Option<&'static str>,
 }
 
 impl Error {
     pub fn expected(mut self, pat: Pattern) -> Self {
-        self.expected.insert(pat);
+        // self.expected.insert(pat);
         self
     }
 
@@ -39,16 +39,16 @@ impl Error {
             kind,
             span,
             while_parsing: None,
-            expected: HashSet::default(),
+            // expected: HashSet::default(),
             label: None,
         }
     }
 
     pub fn merge(mut self, other: Self) -> Self {
         // TODO: Use HashSet
-        for expected in other.expected.into_iter() {
-            self.expected.insert(expected);
-        }
+        // for expected in other.expected.into_iter() {
+        //     self.expected.insert(expected);
+        // }
         self
     }
 
@@ -68,11 +68,12 @@ impl Error {
             } else {
                 "".to_string()
             },
-            match self.expected.len() {
-                0 => "something else".to_string(),
-                1 => format!("{}", self.expected.into_iter().next().unwrap().fg(Color::Yellow)),
-                _ => format!("one of {}", self.expected.into_iter().map(|x| x.fg(Color::Yellow).to_string()).collect::<Vec<_>>().join(", ")),
-            },
+            "something else".to_string(),
+            // match self.expected.len() {
+            //     0 => "something else".to_string(),
+            //     1 => format!("{}", self.expected.into_iter().next().unwrap().fg(Color::Yellow)),
+            //     _ => format!("one of {}", self.expected.into_iter().map(|x| x.fg(Color::Yellow).to_string()).collect::<Vec<_>>().join(", ")),
+            // },
         );
 
         let report = Report::build(ReportKind::Error, self.span.src(), self.span.start())
@@ -138,10 +139,10 @@ impl<T: Into<Pattern>> chumsky::Error<T> for Error {
                 .unwrap_or(ErrorKind::UnexpectedEnd),
             span,
             while_parsing: None,
-            expected: expected
-                .into_iter()
-                .map(|x| x.map(Into::into).unwrap_or(Pattern::End))
-                .collect(),
+            // expected: expected
+            //     .into_iter()
+            //     .map(|x| x.map(Into::into).unwrap_or(Pattern::End))
+            //     .collect(),
             label: None,
         }
     }
@@ -161,7 +162,7 @@ impl<T: Into<Pattern>> chumsky::Error<T> for Error {
             },
             span,
             while_parsing: None,
-            expected: std::iter::once(expected.into()).collect(),
+            // expected: std::iter::once(expected.into()).collect(),
             label: None,
         }
     }

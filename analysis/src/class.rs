@@ -177,6 +177,15 @@ impl Classes {
         ty: ConTyId,
         (class, gen_tys, gen_effs): (ClassId, Vec<ConTyId>, Vec<Vec<ConEffectId>>),
     ) -> Option<MemberId> {
+        // println!(
+        //     "=== Looking up {:?} as {}{}...",
+        //     ctx.get_ty(ty),
+        //     **self.get(class).name,
+        //     gen_tys
+        //         .iter()
+        //         .map(|ty| format!(" {}", ctx.display(hir, *ty)))
+        //         .collect::<String>(),
+        // );
         // Returns true if member covers ty
         fn covers(
             hir: &Context,
@@ -187,7 +196,7 @@ impl Classes {
             gen_eff_links: &mut HashMap<usize, ConEffectId>,
         ) -> bool {
             match (hir.tys.get(member), ctx.get_ty(ty)) {
-                (Ty::Gen(idx, _), _) => *gen_ty_links.entry(idx).or_insert(ty) == ty,
+                (Ty::Gen(idx, _), _) if *gen_ty_links.entry(idx).or_insert(ty) == ty => true,
                 (Ty::Prim(a), ConTy::Prim(b)) if a == *b => true,
                 (Ty::List(x), ConTy::List(y)) => covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links),
                 // TODO: Care about field names!
@@ -198,15 +207,28 @@ impl Classes {
                 (Ty::Func(x_i, x_o), ConTy::Func(y_i, y_o)) => {
                     covers(hir, ctx, x_i, *y_i, gen_ty_links, gen_eff_links) && covers(hir, ctx, x_o, *y_o, gen_ty_links, gen_eff_links)
                 },
-                (Ty::Data(x, xs), ConTy::Data(y)) if x == y.0.0 && xs.len() == y.0.1.len() => xs
+                (Ty::Data(x, gen_tys, gen_effs), ConTy::Data(y)) if x == y.0.0
+                    && gen_tys.len() == y.0.1.len()
+                    && gen_effs.len() == y.0.2.len()
+                => gen_tys
                     .into_iter()
                     .zip(y.0.1.iter())
-                    .all(|(x, y)| covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)),
+                    .all(|(x, y)| covers(hir, ctx, x, *y, gen_ty_links, gen_eff_links)) && gen_effs
+                        .into_iter()
+                        .zip(y.0.2.iter())
+                        .all(|(x, y)| covers_eff(hir, ctx, x, y, gen_ty_links, gen_eff_links)),
                 // Flatten empty effects
                 (_, ConTy::Effect(eff, ty)) if eff.is_empty() => covers(hir, ctx, member, *ty, gen_ty_links, gen_eff_links),
+                (Ty::Effect(eff, member), _) => {
+                    // gen_eff_links.insert();
+                    covers(hir, ctx, member, ty, gen_ty_links, gen_eff_links)
+                },
                 (Ty::Effect(_, _), ConTy::Effect(_, _)) => todo!(),
                 (Ty::Error(_), _) => panic!("Error ty during monomorphisation"),
-                _ => false,
+                _ => {
+                    // println!("Coverage failed: {} with {}", hir.tys.display(hir, member), ctx.display(hir, ty));
+                    false
+                },
             }
         }
 
@@ -219,7 +241,7 @@ impl Classes {
             gen_eff_links: &mut HashMap<usize, ConEffectId>,
         ) -> bool {
             match (hir.tys.get_effect(member), effs) {
-                (Effect::Known(member_effs), effs) if member_effs.len() <= 1 || effs.len() <= 1  => effs
+                (Effect::Known(member_effs), effs) if member_effs.len() <= 1 || effs.len() <= 1 => effs
                     .iter()
                     .all(|eff| member_effs
                         .iter()
@@ -244,6 +266,7 @@ impl Classes {
                     .iter()
                     .filter(|m| {
                         let member = self.get_member(**m);
+                        // println!("=> Trying member {}", hir.tys.display(hir, member.member));
                         let mut gen_ty_links = HashMap::new();
                         let mut gen_eff_links = HashMap::new();
                         covers(hir, ctx, member.member, ty, &mut gen_ty_links, &mut gen_eff_links)

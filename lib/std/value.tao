@@ -69,3 +69,6 @@ $[util]
 fn unwrap_or A : A -> Maybe A -> A =
     | a, None => a
     \ _, Just a => a
+
+$[util]
+def todo A : A = todo

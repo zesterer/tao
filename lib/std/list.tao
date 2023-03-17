@@ -4,9 +4,8 @@ import "../core/ops.tao"
 import "value.tao"
 import "container.tao"
 
-for A, B, e member [A] of Map B e =
-    => Item = A
-    => Output = [B]
+for A, B, e member [A] of Map (A) B e =
+    => Output = e ~ [B]
     => map = fn
         | _, [] => []
         \ f, [x .. xs] => [x->f! .. xs->Self.map(f)!]

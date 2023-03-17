@@ -20,7 +20,7 @@ for A < Debug member [A] of Debug =
     => debug = fn xs => dispatch(
         xs,
         # Specialise on [Char]
-        fn s => "\"" ++ s ++ "\"",
+        fn s : Str => "\"" ++ s ++ "\"",
         # Fallback for [A]
         fn xs => "[" ++ xs -> fix(fn
             | _, [] => ""
@@ -33,6 +33,9 @@ member Char of Debug =
 
 member Nat of Debug =
     => debug = fn x => @display_int(--x)
+
+member () of Debug =
+    => debug = fn () => "()"
 
 for A < Debug, B < Debug member (A, B) of Debug =
     => debug = fn (a, b) => "(" ++ A.debug(a) ++ ", " ++ B.debug(b) ++ ")"

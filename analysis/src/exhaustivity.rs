@@ -202,7 +202,7 @@ impl AbstractPat {
                     }
                 }
             },
-            Ty::Data(data, gen_tys) => {
+            Ty::Data(data, gen_tys, _gen_effs) => {
                 let mut variants = HashMap::<_, Vec<_>>::default();
                 for pat in filter {
                     match pat {

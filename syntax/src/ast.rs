@@ -148,7 +148,7 @@ pub enum Type {
     Record(Vec<(SrcNode<Ident>, SrcNode<Self>)>),
     Func(SrcNode<Self>, SrcNode<Self>),
     // TODO: Replace name with `Item` when ready
-    Data(SrcNode<Ident>, Vec<SrcNode<Self>>),
+    Data(SrcNode<Ident>, Vec<SrcNode<Self>>, Vec<SrcNode<EffectSet>>),
     Assoc(SrcNode<Self>, Option<SrcNode<ClassInst>>, SrcNode<Ident>),
     Effect(SrcNode<EffectSet>, SrcNode<Self>),
 }
@@ -168,9 +168,18 @@ impl Type {
                 f(i);
                 f(o);
             },
-            Self::Data(data, args) => args
-                .iter()
-                .for_each(|arg| f(arg)),
+            Self::Data(data, gen_tys, gen_effs) => {
+                gen_tys
+                    .iter()
+                    .for_each(|ty| f(ty));
+                gen_effs
+                    .iter()
+                    .for_each(|effs| effs.effs
+                        .iter()
+                        .for_each(|(_, args)| args
+                            .iter()
+                            .for_each(|arg| f(arg))));
+            },
             // TODO: Recurse into class inst?
             Self::Assoc(inner, _, _) => f(inner),
             Self::Effect(set, out) => {
@@ -195,7 +204,7 @@ impl Type {
 
     pub fn mentions_ty(&self, name: Ident) -> bool {
         let mut mentions = match self {
-            Self::Data(data, _) => **data == name,
+            Self::Data(data, _, _) => **data == name,
             _ => false,
         };
         self.for_children(|ty| mentions |= ty.mentions_ty(name));
@@ -207,6 +216,11 @@ impl Type {
             Self::Effect(set, _) => set.effs
                 .iter()
                 .any(|(eff, _)| **eff == name),
+            Self::Data(_, _, gen_effs) => gen_effs
+                .iter()
+                .any(|set| set.effs
+                    .iter()
+                    .any(|(eff, _)| **eff == name),),
             _ => false,
         };
         self.for_children(|ty| mentions |= ty.mentions_eff(name));

@@ -23,9 +23,8 @@ for A < Debug, E < Debug member Result A E of Debug =
         | Ok x => "Ok " ++ x->debug
         \ Err e => "Err " ++ e->debug
 
-for A, B, E, e member Result A E of Map B e =
-    => Item = A
-    => Output = Result B E
+for A, B, E, e member Result A E of Map A B e =
+    => Output = e ~ Result B E
     => map = fn
         | f, Ok a => Ok a->f!
         \ _, Err e => Err e

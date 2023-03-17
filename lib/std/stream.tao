@@ -4,50 +4,58 @@
 
 import "value.tao"
 
-class Stream =
-    => Item
-    => next : Self -> Maybe (Self, Self.Item)
+class Stream A, e =
+    => next : Self -> Maybe (e ~ A, Self)
 
-class ToStream where
-    Self.Stream < Stream
+for A, e member Range A of Stream A e where
+    A < Ord + Add A with { Output = A } + One
+=
+    => next = fn Range (from, to) => if from >= to
+        then None
+        else
+            let one : A = one in # TODO: This line is silly, figure out why we can't infer this
+            Just (effect { from }, Range (from + one, to))
+
+data Stream S = S
+
+data Mapped S, A, B, e, f = ((e ~ A) -> f ~ B, S)
+
+for S < Stream A e, A, B, e member Mapped S A B e e of Stream B e =
+    => next = fn Mapped (f, s) => when s->S.next is
+        | None => None
+        \ Just (x, s) => Just (x->f, Mapped (f, s))
+
+for S, A, B, e, f member Stream S of Map (e ~ A) B f where
+    S < Stream A e
+=
+    => Output = Stream (Mapped S A B e f)
+    => map = fn f, Stream s => Stream Mapped (f, s)
+
+# fn collect2 S, A, e : Stream S -> e ~ [A] where
+#     S < Stream e ~ A
+# = Stream s => when S.next(s) is
+#     | None => []
+#     \ Just (x, s) => [x!] ++ (Stream s)->collect2!
+
+class ToStream A, e where
+    Self.Stream < Stream A e
 =
     => Stream
     => to_stream : Self -> Self.Stream
 
-for A member [A] of ToStream =
-    => Stream = [A]
+for A, e member [e ~ A] of ToStream A e =
+    => Stream = [e ~ A]
     => to_stream = fn xs => xs
 
-for A member Maybe A of Stream =
-    => Item = A
+for A, e member Maybe e ~ A of Stream A e =
     => next = fn
         | None => None
-        \ Just x => Just (None, x)
+        \ Just x => Just (x, None)
 
-for A member [A] of Stream =
-    => Item = A
+for A, e member [e ~ A] of Stream A e =
     => next = fn
         | [] => None
-        \ [x .. xs] => Just (xs, x)
-
-data Mapped S < Stream, B = (S, S.Item -> B)
-
-for S < Stream, B member Mapped S B of Stream =
-    => Item = B
-    => next = fn Mapped (s, f) => when s->S.next is
-        | None => None
-        \ Just (s, x) => Just (Mapped (s, f), x->f)
-
-for S < Stream, B member Mapped S B of ToStream =
-    => Stream = Self
-    => to_stream = fn s => s
-
-$[util]
-fn smap S, B : (S.Stream.Item -> B) -> S -> Mapped S.Stream B where
-    S < ToStream,
-    S.Stream < Stream,
-=
-    f, s => Mapped (S.to_stream(s), f)
+        \ [x .. xs] => Just (x, xs)
 
 class FromStream A =
     => from_stream : [A] -> Self
@@ -61,38 +69,12 @@ for A member Maybe A of FromStream A =
         \ [x ..] => Just x
 
 $[util]
-fn collect B < FromStream S.Item, S < Stream : S -> B =
-    s => let xs = s->fix(fn rec, s => when s->S.next is
+fn collect S < Stream A e, A, B < FromStream A, e : Stream S -> e ~ B =
+    Stream s => let xs = s->fix(fn rec, s => when s->S.next is
         | None => []
-        \ Just (s, x) => [x .. rec(s)]) in xs->B.from_stream
-
-$[util]
-fn collect_list S < Stream : S -> [S.Item] =
-    s => s->fix(fn rec, s => when s->S.next is
-        | None => []
-        \ Just (s, x) => [x .. rec(s)])
+        \ Just (x, s) => [x! .. rec(s)!])! in xs->B.from_stream
 
 data Range A = (A, A)
 
-for A member Range A of Stream where
-    A < Ord + Add A with { Output = A } + One
-=
-    => Item = A
-    => next = fn Range (from, to) => if from >= to
-        then None
-        else
-            let one : A = one in # TODO: This line is silly, figure out why we can't infer this
-            Just (Range (from + one, to), from)
-
-for A member Range A of Iter where
-    A < Ord + Add A with { Output = A } + One
-=
-    => Item = A
-    => next = fn Range (from, to) => if from >= to
-        then None
-        else
-            let one : A = one in # TODO: This line is silly, figure out why we can't infer this
-            Just (from, Range (from + one, to))
-
 $[util]
-fn range A : A -> A -> Range A = from, to => Range (from, to)
+fn range A : A -> A -> Stream (Range A) = from, to => Stream Range (from, to)

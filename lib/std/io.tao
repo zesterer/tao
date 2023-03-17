@@ -1,5 +1,6 @@
 type IO A = @ -> (@, A)
 
+effect pure = ()
 effect input = () => Str
 effect print = Str => ()
 effect rand = Nat => Nat

@@ -95,11 +95,11 @@ pub fn enforce_generic_obligations(
         let err = Error::WrongNumberOfGenerics(
             use_span,
             gen_tys.len(),
-            if gen_scope.len() == 0 {
+            // if gen_scope.len() == 0 {
                 item_span
-            } else {
+            /*} else {
                 gen_scope.get(0).name.span()
-            },
+            }*/,
             gen_scope.len(),
         );
         infer.ctx_mut().emit(err);
@@ -139,7 +139,7 @@ pub fn enforce_generic_obligations(
                     .flatten()
                     // Is it correct to use a free effect variable on error? Probably...
                     // TODO: This might need to be a closed set, not all other cases are actually errors!
-                    .unwrap_or_else(|| infer.insert_effect(member.member.span(), EffectInfo::free())))
+                    .unwrap_or_else(|| infer.insert_effect(member.member.span(), EffectInfo::Closed(Vec::new(), None))))
                 .collect::<Vec<_>>();
             let assoc = match &member.items {
                 ImpliedItems::Eq(assoc) => assoc.iter()
@@ -255,28 +255,32 @@ impl ToHir for ast::Type {
                 .map(|(name, field)| (**name, field.to_hir(cfg, infer, scope).meta().1))
                 .collect(), false),
             ast::Type::Func(i, o) => TyInfo::Func(i.to_hir(cfg, infer, scope).meta().1, o.to_hir(cfg, infer, scope).meta().1),
-            ast::Type::Data(name, gen_tys) => match (name.as_str(), gen_tys.len()) {
-                ("Self", 0) => if let Some(var) = infer.self_type() {
+            ast::Type::Data(name, gen_tys, gen_effs) => match (name.as_str(), gen_tys.len(), gen_effs.len()) {
+                ("Self", 0, 0) => if let Some(var) = infer.self_type() {
                     TyInfo::Ref(var)
                 } else {
                     infer.ctx_mut().emit(Error::SelfNotValidHere(name.span()));
                     TyInfo::Error(ErrorReason::Invalid)
                 },
-                ("Nat", 0) => TyInfo::Prim(Prim::Nat),
-                ("Int", 0) => TyInfo::Prim(Prim::Int),
-                ("Real", 0) => TyInfo::Prim(Prim::Real),
-                ("Char", 0) => TyInfo::Prim(Prim::Char),
+                ("Nat", 0, 0) => TyInfo::Prim(Prim::Nat),
+                ("Int", 0, 0) => TyInfo::Prim(Prim::Int),
+                ("Real", 0, 0) => TyInfo::Prim(Prim::Real),
+                ("Char", 0, 0) => TyInfo::Prim(Prim::Char),
                 _ => {
                     let gen_tys = gen_tys
                         .iter()
                         .map(|ty| ty.to_hir(cfg, infer, scope).meta().1)
+                        .collect::<Vec<_>>();
+                    let gen_effs = gen_effs
+                        .iter()
+                        .map(|set| lower_effect_set(set, cfg, infer, scope))
                         .collect::<Vec<_>>();
 
                     if let Some((scope, (gen_idx, gen_ty))) = infer
                         .gen_scope()
                         .and_then(|scope| Some((scope, infer.ctx().tys.get_gen_scope(scope).find(**name)?)))
                     {
-                        if gen_tys.is_empty() {
+                        if gen_tys.is_empty() && gen_effs.is_empty() {
                             TyInfo::Gen(gen_idx, scope, gen_ty.name.span())
                         } else {
                             infer.ctx_mut().emit(Error::Unsupported(self.span(), "higher kinded types"));
@@ -288,12 +292,13 @@ impl ToHir for ast::Type {
                             let alias_ty = alias.ty;
                             let alias_gen_scope = alias.gen_scope;
                             let mut get_gen = |index, scope, infer: &mut Infer| gen_tys.get(index).copied();
+                            let mut get_eff = |index, infer: &mut Infer| gen_effs.get(index).copied();
 
                             let res = enforce_generic_obligations(
                                 infer,
                                 alias_gen_scope,
                                 &gen_tys,
-                                &[],
+                                &gen_effs,
                                 self.span(),
                                 infer.ctx().datas.get_alias_span(alias_id),
                                 None,
@@ -318,7 +323,7 @@ impl ToHir for ast::Type {
                                     alias_ty,
                                     self.span(),
                                     &mut get_gen,
-                                    &mut |idx, _| todo!(),
+                                    &mut get_eff,
                                     None,
                                     invariant(),
                                 )),
@@ -338,14 +343,13 @@ impl ToHir for ast::Type {
                             infer,
                             data_gen_scope,
                             &gen_tys,
-                            &[],
+                            &gen_effs,
                             self.span(),
                             infer.ctx().datas.get_data_span(data_id),
                             None,
                         ) {
-                            Ok(()) => TyInfo::Data(data_id, gen_tys),
+                            Ok(()) => TyInfo::Data(data_id, gen_tys, gen_effs),
                             Err(()) => {
-
                                 let data_gen_scope = infer.ctx().tys.get_gen_scope(data_gen_scope);
                                 let err = Error::WrongNumberOfGenerics(
                                     self.span(),
@@ -560,7 +564,7 @@ impl ToHir for ast::Binding {
                 let inner = inner.to_hir(cfg, infer, scope);
                 infer.make_flow(inner_ty, inner.meta().1, self.span());
 
-                (TyInfo::Data(data, gen_tys), hir::Pat::Decons(SrcNode::new(data, self.span()), **name, inner))
+                (TyInfo::Data(data, gen_tys, gen_effs), hir::Pat::Decons(SrcNode::new(data, self.span()), **name, inner))
             } else {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression
@@ -861,7 +865,7 @@ impl ToHir for ast::Expr {
                 }
             },
             ast::Expr::If(pred, a, b) => if let Some(bool_data) = infer.ctx().datas.lang.r#bool {
-                let pred_ty = infer.insert(pred.span(), TyInfo::Data(bool_data, Vec::new()));
+                let pred_ty = infer.insert(pred.span(), TyInfo::Data(bool_data, Vec::new(), Vec::new()));
                 let output_ty = infer.unknown(self.span());
                 let pred = pred.to_hir(cfg, infer, scope);
                 infer.make_flow(pred.meta().1, pred_ty, EqInfo::new(self.span(), format!("Conditions must be booleans")));
@@ -1013,8 +1017,8 @@ impl ToHir for ast::Expr {
                     infer.instantiate(
                         inner_ty,
                         name.span(),
-                        &mut |index, _, infer: &mut Infer| gen_tys.get(index).copied(),
-                        &mut |idx, _| todo!(),
+                        &mut |idx, _, infer: &mut Infer| gen_tys.get(idx).copied(),
+                        &mut |idx, _| gen_effs.get(idx).copied(),
                         None,
                         invariant(),
                     )
@@ -1023,7 +1027,7 @@ impl ToHir for ast::Expr {
                 let inner = inner.to_hir(cfg, infer, scope);
                 infer.make_flow(inner.meta().1, inner_ty, self.span());
 
-                (TyInfo::Data(data, gen_tys), hir::Expr::Cons(SrcNode::new(data, name.span()), **name, inner))
+                (TyInfo::Data(data, gen_tys, gen_effs), hir::Expr::Cons(SrcNode::new(data, name.span()), **name, inner))
             } else {
                 infer.ctx_mut().emit(Error::NoSuchCons(name.clone()));
                 // TODO: Don't use a hard, preserve inner expression
@@ -1059,9 +1063,9 @@ impl ToHir for ast::Expr {
                     ("add_int",  Intrinsic::AddInt,  Prim::Int,  Prim::Int,  TyInfo::Prim(Prim::Int)),
                     ("mul_nat",  Intrinsic::MulNat,  Prim::Nat,  Prim::Nat,  TyInfo::Prim(Prim::Nat)),
                     ("mul_int",  Intrinsic::MulInt,  Prim::Int,  Prim::Int,  TyInfo::Prim(Prim::Int)),
-                    ("eq_char",  Intrinsic::EqChar,  Prim::Char, Prim::Char, TyInfo::Data(bool_data, Vec::new())),
-                    ("eq_nat",   Intrinsic::EqNat,   Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new())),
-                    ("less_nat", Intrinsic::LessNat, Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new())),
+                    ("eq_char",  Intrinsic::EqChar,  Prim::Char, Prim::Char, TyInfo::Data(bool_data, Vec::new(), Vec::new())),
+                    ("eq_nat",   Intrinsic::EqNat,   Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new(), Vec::new())),
+                    ("less_nat", Intrinsic::LessNat, Prim::Nat,  Prim::Nat,  TyInfo::Data(bool_data, Vec::new(), Vec::new())),
                 ];
 
                 if let Some((_, intrinsic, a_prim, out_ty)) = unary_ops
@@ -1101,7 +1105,7 @@ impl ToHir for ast::Expr {
                         "go" if args.len() == 2 => if let Some(go_data) = infer.ctx().datas.lang.go {
                             let c = args[1].meta().1;
                             let r = infer.unknown(self.span());
-                            let ret = infer.insert(args[0].meta().0, TyInfo::Data(go_data, vec![c, r]));
+                            let ret = infer.insert(args[0].meta().0, TyInfo::Data(go_data, vec![c, r], Vec::new()));
                             let f = infer.insert(args[0].meta().0, TyInfo::Func(c, ret));
                             infer.make_flow(args[0].meta().1, f, EqInfo::from(name.span()));
                             (TyInfo::Ref(r), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Go, name.span()), args))

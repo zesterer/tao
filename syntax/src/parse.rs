@@ -42,142 +42,172 @@ pub fn effect_set_parser(ty: impl Parser<SrcNode<ast::Type>> + 'static) -> impl 
     let effect_insts = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
         .map_with_span(SrcNode::new)
         .then(ty.repeated())
-        .separated_by(just(Token::Op(Op::Add)))
-        .at_least(1)
-        .allow_leading();
+        .separated_by(just(Token::Op(Op::Add)));
 
     nested_parser(
         effect_insts.clone(),
         Delimiter::Paren,
         |_| Vec::new()
     )
-        .or(effect_insts)
+        .or(effect_insts.at_least(1))
         .map(|effs| ast::EffectSet { effs })
 }
 
 pub fn type_parser() -> impl Parser<ast::Type> {
-    recursive(|ty| {
-        let data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready
-            .map_with_span(SrcNode::new)
-            .map(|data_name| ast::Type::Data(data_name, Vec::new()));
+    type_parser_inner().0
+}
 
-        let list = nested_parser(
-            ty.clone()
+pub fn single_type_parser() -> impl Parser<ast::Type> {
+    type_parser_inner().1
+}
+
+pub fn type_parser_inner() -> (impl Parser<ast::Type>, impl Parser<ast::Type>) {
+    let mut ty = Recursive::declare();
+
+    let mut data = Recursive::declare();
+
+    let single_ty = recursive({
+        let ty = ty.clone();
+        let data = data.clone();
+        move |single_ty| {
+            let single_data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready
                 .map_with_span(SrcNode::new)
-                .map(Some),
-            Delimiter::Brack,
-            |_| None,
-        )
-            .map(|ty| ty.map(ast::Type::List).unwrap_or(ast::Type::Error));
+                .map(|data_name| ast::Type::Data(data_name, Vec::new(), Vec::new()));
 
-        let tuple = nested_parser(
-            ty.clone()
+            let list = nested_parser(
+                ty.clone()
+                    .map_with_span(SrcNode::new)
+                    .map(Some),
+                Delimiter::Brack,
+                |_| None,
+            )
+                .map(|ty| ty.map(ast::Type::List).unwrap_or(ast::Type::Error));
+
+            let tuple = nested_parser(
+                ty.clone()
+                    .map_with_span(SrcNode::new)
+                    .separated_by(just(Token::Comma))
+                    .allow_trailing()
+                    .then_ignore(just(Token::Comma).or_not())
+                    .map(Some),
+                Delimiter::Paren,
+                |_| None,
+            )
+                .map(|tys| tys.map(ast::Type::Tuple).unwrap_or(ast::Type::Error));
+
+            let record = nested_parser(
+                term_ident_parser()
+                    .map_with_span(SrcNode::new)
+                    .then_ignore(just(Token::Colon))
+                    .then(ty.clone().map_with_span(SrcNode::new))
+                    .separated_by(just(Token::Comma))
+                    .allow_trailing()
+                    .then_ignore(just(Token::Comma).or_not())
+                    .map(Some)
+                    .boxed(),
+                Delimiter::Brace,
+                |_| None,
+            )
+                .map(|tys| tys.map(ast::Type::Record).unwrap_or(ast::Type::Error));
+
+            let unknown = just(Token::Question)
+                .map(|_| ast::Type::Unknown);
+
+            let universe = just(Token::At)
+                .map(|_| ast::Type::Universe);
+
+            let paren_ty = nested_parser(
+                ty.clone()
+                    .map_with_span(SrcNode::new)
+                    .map(Some),
+                Delimiter::Paren,
+                |_| None,
+            )
+                .map_with_span(|ty, span| ty.unwrap_or(SrcNode::new(ast::Type::Error, span)));
+
+            let atom = paren_ty
+                .or(single_data
+                    .or(list)
+                    .or(tuple)
+                    .or(record)
+                    .or(unknown)
+                    .or(universe)
+                    .or(select! { Token::Error(_) => () }.map(|_| ast::Type::Error))
+                    .map_with_span(SrcNode::new))
+                .boxed();
+
+            let assoc = atom
+                .then(just(Token::Op(Op::Dot))
+                    .ignore_then(type_ident_parser().map_with_span(SrcNode::new)
+                        .then(single_ty.clone().repeated())
+                        .delimited_by(just(Token::Op(Op::Less)), just(Token::Op(Op::More))))
+                    .map_with_span(SrcNode::new)
+                    .or_not()
+                    .then(just(Token::Op(Op::Dot)).ignore_then(type_ident_parser().map_with_span(SrcNode::new)))
+                    .repeated())
+                .foldl(|inner, (class, assoc)| {
+                    let class = class.map(|class| class.map(|(name, gen_tys)| ast::ClassInst {
+                        name,
+                        gen_tys,
+                        gen_effs: Vec::new(), // TODO: Allow specifying effects in explicit form
+                    }));
+                    let span = inner.span().union(assoc.span());
+                    SrcNode::new(ast::Type::Assoc(inner, class, assoc), span)
+                });
+
+            let effect = effect_set_parser(single_ty.clone())
                 .map_with_span(SrcNode::new)
-                .separated_by(just(Token::Comma))
-                .allow_trailing()
-                .then_ignore(just(Token::Comma).or_not())
-                .map(Some),
-            Delimiter::Paren,
-            |_| None,
-        )
-            .map(|tys| tys.map(ast::Type::Tuple).unwrap_or(ast::Type::Error));
+                .then_ignore(just(Token::Tilde))
+                .then(data)
+                .map(|(effs, out)| ast::Type::Effect(effs, out))
+                .or(assoc.map(|ty| ty.into_inner()));
 
-        let record = nested_parser(
-            term_ident_parser()
-                .map_with_span(SrcNode::new)
-                .then_ignore(just(Token::Colon))
-                .then(ty.clone().map_with_span(SrcNode::new))
-                .separated_by(just(Token::Comma))
-                .allow_trailing()
-                .then_ignore(just(Token::Comma).or_not())
-                .map(Some)
-                .boxed(),
-            Delimiter::Brace,
-            |_| None,
-        )
-            .map(|tys| tys.map(ast::Type::Record).unwrap_or(ast::Type::Error));
+            effect.map_with_span(SrcNode::new)
+        }
+    });
 
-        let unknown = just(Token::Question)
-            .map(|_| ast::Type::Unknown);
+    data.define(recursive(|data| type_ident_parser() // TODO: Replace with `data_item_parser` when ready
+        .map_with_span(SrcNode::new)
+        .then(single_ty.clone().map(Ok)
+            .or(effect_set_parser(data).map_with_span(SrcNode::new).map(Err))
+            .repeated().at_least(1))
+        .map(|(data, args)| {
+            let mut gen_tys = Vec::new();
+            let mut gen_effs = Vec::new();
+            for arg in args {
+                match arg {
+                    Ok(ty) => gen_tys.push(ty),
+                    Err(eff) => gen_effs.push(eff),
+                }
+            }
+            ast::Type::Data(data, gen_tys, gen_effs)
+        })
+        .map_with_span(SrcNode::new)
+        .or(single_ty.clone())));
 
-        let universe = just(Token::At)
-            .map(|_| ast::Type::Universe);
+    let func = data.clone()
+        .then(just(Token::Op(Op::RArrow))
+            .ignore_then(ty.clone().map_with_span(SrcNode::new))
+            .repeated())
+        .foldl(|i, o| {
+            let span = i.span().union(o.span());
+            SrcNode::new(ast::Type::Func(i, o), span)
+        })
+        .or(data)
+        .map(|ty| ty.into_inner());
 
-        let paren_ty = nested_parser(
-            ty.clone().map(Some),
-            Delimiter::Paren,
-            |_| None,
-        )
-            .map(|ty| ty.unwrap_or(ast::Type::Error));
+    ty.define(func);
 
-        let atom = paren_ty
-            .or(data)
-            .or(list)
-            .or(tuple)
-            .or(record)
-            .or(unknown)
-            .or(universe)
-            .or(select! { Token::Error(_) => () }.map(|_| ast::Type::Error))
-            .map_with_span(SrcNode::new)
-            .boxed();
-
-        let assoc = atom
-            .then(just(Token::Op(Op::Dot))
-                .ignore_then(type_ident_parser().map_with_span(SrcNode::new)
-                    .then(ty.clone().map_with_span(SrcNode::new).repeated())
-                    .delimited_by(just(Token::Op(Op::Less)), just(Token::Op(Op::More))))
-                .map_with_span(SrcNode::new)
-                .or_not()
-                .then(just(Token::Op(Op::Dot)).ignore_then(type_ident_parser().map_with_span(SrcNode::new)))
-                .repeated())
-            .foldl(|inner, (class, assoc)| {
-                let class = class.map(|class| class.map(|(name, gen_tys)| ast::ClassInst {
-                    name,
-                    gen_tys,
-                    gen_effs: Vec::new(), // TODO: Allow specifying effects in explicit form
-                }));
-                let span = inner.span().union(assoc.span());
-                SrcNode::new(ast::Type::Assoc(inner, class, assoc), span)
-            });
-
-        let data = type_ident_parser() // TODO: Replace with `data_item_parser` when ready
-            .map_with_span(SrcNode::new)
-            .then(assoc.clone().repeated().at_least(1))
-            .map(|(data, gen_tys)| ast::Type::Data(data, gen_tys))
-            .map_with_span(SrcNode::new)
-            .or(assoc)
-            .boxed();
-
-        let effect = effect_set_parser(data.clone())
-            .map_with_span(SrcNode::new)
-            .then_ignore(just(Token::Tilde))
-            .then(data.clone())
-            .map(|(effs, out)| ast::Type::Effect(effs, out))
-            .map_with_span(SrcNode::new)
-            .or(data)
-            .boxed();
-
-        effect.clone()
-            .then(just(Token::Op(Op::RArrow))
-                .ignore_then(ty.clone().map_with_span(SrcNode::new))
-                .repeated())
-            .foldl(|i, o| {
-                let span = i.span().union(o.span());
-                SrcNode::new(ast::Type::Func(i, o), span)
-            })
-            .or(effect)
-            .map(|ty| ty.into_inner())
-    })
-        .labelled("type")
+    (ty.labelled("type"), single_ty.labelled("type").map(|ty| ty.into_inner()))
 }
 
 pub fn class_inst_parser() -> impl Parser<ast::ClassInst> {
     type_ident_parser()
         .map_with_span(SrcNode::new)
-        .then(type_parser()
+        .then(single_type_parser()
             .map_with_span(SrcNode::new)
             .map(Ok)
-            .or(effect_set_parser(type_parser().map_with_span(SrcNode::new))
+            .or(effect_set_parser(single_type_parser().map_with_span(SrcNode::new))
                 .map_with_span(SrcNode::new)
                 .map(Err))
             .repeated())
@@ -500,7 +530,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 .map_with_span(SrcNode::new)
                 .map(|ty| {
                     let ty_span = ty.span();
-                    SrcNode::new(ast::Type::Data(ty, Vec::new()), ty_span)
+                    SrcNode::new(ast::Type::Data(ty, Vec::new(), Vec::new()), ty_span)
                 }))
             .then(just(Token::Op(Op::Dot))
                 .ignore_then(term_ident_parser().map_with_span(SrcNode::new)))
@@ -793,7 +823,7 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
         let binding = binding_parser().map_with_span(SrcNode::new);
         let handle = cons.then(just(Token::Handle).ignore_then(branches(
                 term_ident_parser().map_with_span(SrcNode::new)
-                    .then(type_parser()
+                    .then(single_type_parser()
                         .map_with_span(SrcNode::new)
                         .repeated())
                     .then_ignore(just(Token::With))
@@ -867,7 +897,7 @@ pub fn generics_parser() -> impl Parser<(Vec<(ast::GenericTy, Vec<SrcNode<ast::I
                 .unwrap_or_default()
                 .into_iter()
                 .map(move |(class, assoc)| SrcNode::new(ast::ImpliedMember {
-                    member: SrcNode::new(ast::Type::Data(name.clone(), Vec::new()), name.span()),
+                    member: SrcNode::new(ast::Type::Data(name.clone(), Vec::new(), Vec::new()), name.span()),
                     class,
                     assoc,
                 }, span))
@@ -1076,7 +1106,7 @@ pub fn class_parser() -> impl Parser<ast::Class> {
                         let class_span = class.name.span();
                         // TODO: Horrible
                         SrcNode::new(ast::ImpliedMember {
-                            member: SrcNode::new(ast::Type::Data(SrcNode::new(ast::Ident::new("Self"), class_span), Vec::new()), name.span()),
+                            member: SrcNode::new(ast::Type::Data(SrcNode::new(ast::Ident::new("Self"), class_span), Vec::new(), Vec::new()), name.span()),
                             class,
                             assoc: Vec::new(),
                         }, class_span)
@@ -1167,8 +1197,7 @@ pub fn effect_alias_parser() -> impl Parser<ast::EffectAlias> {
     let ty = type_parser()
         .map_with_span(SrcNode::new);
 
-    let effect = term_ident_parser().map_with_span(SrcNode::new)
-        .then(ty.repeated());
+    let effects = effect_set_parser(single_type_parser().map_with_span(SrcNode::new));
 
     just(Token::Effect)
         .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
@@ -1176,11 +1205,11 @@ pub fn effect_alias_parser() -> impl Parser<ast::EffectAlias> {
             .then(where_parser())
             .map(|((tys, effs), implied)| ast::Generics::from_tys_and_implied(tys, effs, implied)))
         .then_ignore(just(Token::Op(Op::Eq)))
-        .then(effect.separated_by(just(Token::Op(Op::Add))))
+        .then(effects)
         .map(|((name, generics), effects)| ast::EffectAlias {
             name,
             generics,
-            effects,
+            effects: effects.effs,
         })
         .boxed()
 }
