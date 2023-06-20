@@ -116,6 +116,18 @@ impl ConstFold {
                 Partial::Unknown(None)
             },
             Expr::Match(pred, arms) => {
+                // Commute branches if possible
+                if let Expr::Match(inner_pred, inner_arms) = &mut (**pred).clone() {
+                    *pred = inner_pred.clone();
+                    *arms = std::mem::take(inner_arms)
+                        .into_iter()
+                        .map(|(binding, inner_arm)| {
+                            let meta = inner_arm.meta().clone();
+                            (binding, MirNode::new(Expr::Match(inner_arm, arms.clone()), meta))
+                        })
+                        .collect();
+                }
+
                 let pred = self.eval(ctx, pred, locals);
                 let mut output = Partial::Never;
                 arms
