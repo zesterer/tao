@@ -135,7 +135,7 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
             } else {
                 assert_eq!(locals.len(), 0, "Local stack still has values, this is probably a bug");
                 assert_eq!(stack.len(), 1, "Stack size must be 1 on program exit");
-                // println!("Executed {} instructions.", tick);
+                println!("Executed {} instructions.", tick);
                 break if prog.does_io {
                     let mut r = stack.pop().unwrap().list();
                     assert_eq!(r.remove(0).universe(), universe_counter);

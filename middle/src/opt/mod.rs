@@ -29,88 +29,6 @@ pub trait Pass: Any {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum VisitOrder {
-    First,
-    Last,
-}
-
-/*
-impl Context {
-    pub fn visit_inner(
-        &mut self,
-        order: VisitOrder,
-        repr: &mut impl FnMut(&mut Repr),
-        binding: &mut impl FnMut(&mut Binding),
-        expr: &mut impl FnMut(&mut Expr),
-    ) {
-        self.procs
-            .iter_mut()
-            .for_each(|(_, proc)| proc.body.visit_inner(order, repr, binding, expr));
-
-        self.reprs
-            .iter_mut()
-            .for_each(|r| r.repr.visit_inner(order, repr, binding, expr));
-
-        self.reprs.datas
-            .values_mut()
-            .for_each(|r| r.as_mut().unwrap().repr.visit_inner(order, repr, binding, expr));
-    }
-    pub fn visit(
-        &mut self,
-        order: VisitOrder,
-        mut repr: impl FnMut(&mut Repr),
-        mut binding: impl FnMut(&mut Binding),
-        mut expr: impl FnMut(&mut Expr),
-    ) { self.visit_inner(order, &mut repr, &mut binding, &mut expr) }
-
-    // pub fn visit(
-    //     &mut self,
-    //     mut visit_repr: impl FnMut(&Repr, &mut Context) -> Option<Repr>,
-    //     mut visit_binding: impl FnMut(&Binding, &mut Context) -> Option<Repr>,
-    //     mut visit_expr: impl FnMut(&Expr, &mut Context) -> Option<Repr>,
-    // ) {
-    //     self.visit_inner(&mut visit_repr, &mut visit_binding, &mut visit_expr
-    // }
-}
-*/
-
-/*
-impl Repr {
-    fn visit_inner(
-        &mut self,
-        order: VisitOrder,
-        repr: &mut impl FnMut(&mut Repr),
-        binding: &mut impl FnMut(&mut Binding),
-        expr: &mut impl FnMut(&mut Expr),
-    ) {
-        if order == VisitOrder::First {
-            repr(self);
-        }
-
-        match self {
-            Repr::Prim(_) => {},
-            Repr::List(item) => item.visit_inner(order, repr, binding, expr),
-            Repr::Tuple(fields) => fields
-                .iter_mut()
-                .for_each(|field| field.visit_inner(order, repr, binding, expr)),
-            Repr::Sum(variants) => variants
-                .iter_mut()
-                .for_each(|variant| variant.visit_inner(order, repr, binding, expr)),
-            Repr::Data(data_id) => {},
-            Repr::Func(i, o) => {
-                i.visit_inner(order, repr, binding, expr);
-                o.visit_inner(order, repr, binding, expr);
-            },
-        }
-
-        if order == VisitOrder::Last {
-            repr(self);
-        }
-    }
-}
-*/
-
 impl Binding {
     pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
         match &self.pat {
@@ -155,46 +73,6 @@ impl Binding {
             mir::Pat::Data(_, inner) => f(inner),
         }
     }
-
-    /*
-    fn visit_inner(
-        self: &mut MirNode<Self>,
-        order: VisitOrder,
-        repr: &mut impl FnMut(&mut Repr),
-        binding: &mut impl FnMut(&mut Binding),
-        expr: &mut impl FnMut(&mut Expr),
-    ) {
-        if order == VisitOrder::First {
-            binding(self);
-        }
-
-        self.meta_mut().visit_inner(order, repr, binding, expr);
-
-        match &mut self.pat {
-            mir::Pat::Wildcard | mir::Pat::Literal(_) => {},
-            mir::Pat::Single(inner) => inner.visit_inner(order, repr, binding, expr),
-            mir::Pat::Add(lhs, _) => lhs.visit_inner(order, repr, binding, expr),
-            mir::Pat::Tuple(fields) => fields
-                .iter_mut()
-                .for_each(|field| field.visit_inner(order, repr, binding, expr)),
-            mir::Pat::ListExact(items) => items
-                .iter_mut()
-                .for_each(|item| item.visit_inner(order, repr, binding, expr)),
-            mir::Pat::ListFront(items, tail) => {
-                items
-                    .iter_mut()
-                    .for_each(|item| item.visit_inner(order, repr, binding, expr));
-                tail.as_mut().map(|tail| tail.visit_inner(order, repr, binding, expr));
-            },
-            mir::Pat::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
-            mir::Pat::Data(_, inner) => inner.visit_inner(order, repr, binding, expr),
-        }
-
-        if order == VisitOrder::Last {
-            binding(self);
-        }
-    }
-    */
 }
 
 impl Expr {
@@ -309,62 +187,6 @@ impl Expr {
             _ => self.for_children_mut(|expr| expr.inline_local(name, local_expr)),
         }
     }
-
-    /*
-    fn visit_inner(
-        self: &mut MirNode<Self>,
-        order: VisitOrder,
-        repr: &mut impl FnMut(&mut Repr),
-        binding: &mut impl FnMut(&mut Binding),
-        expr: &mut impl FnMut(&mut Expr),
-    ) {
-        if order == VisitOrder::First {
-            expr(self);
-        }
-
-        self.meta_mut().visit_inner(order, repr, binding, expr);
-
-        match &mut **self {
-            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
-            Expr::Intrinsic(_, args) => args
-                .iter_mut()
-                .for_each(|arg| arg.visit_inner(order, repr, binding, expr)),
-            Expr::Tuple(fields) => fields
-                .iter_mut()
-                .for_each(|field| field.visit_inner(order, repr, binding, expr)),
-            Expr::List(items) => items
-                .iter_mut()
-                .for_each(|item| item.visit_inner(order, repr, binding, expr)),
-            Expr::Match(pred, arms) => {
-                pred.visit_inner(order, repr, binding, expr);
-                for (b, body) in arms {
-                    b.visit_inner(order, repr, binding, expr);
-                    body.visit_inner(order, repr, binding, expr);
-                }
-            },
-            Expr::Func(_, body) => {
-                body.visit_inner(order, repr, binding, expr);
-            },
-            Expr::Go(_, body, init) => {
-                body.visit_inner(order, repr, binding, expr);
-                init.visit_inner(order, repr, binding, expr);
-            },
-            Expr::Apply(f, arg) => {
-                f.visit_inner(order, repr, binding, expr);
-                arg.visit_inner(order, repr, binding, expr);
-            },
-            Expr::Access(record, _) => record.visit_inner(order, repr, binding, expr),
-            Expr::Variant(_, inner) => inner.visit_inner(order, repr, binding, expr),
-            Expr::AccessVariant(inner, _) => inner.visit_inner(order, repr, binding, expr),
-            Expr::Data(_, inner) => inner.visit_inner(order, repr, binding, expr),
-            Expr::AccessData(inner, _) => inner.visit_inner(order, repr, binding, expr),
-        }
-
-        if order == VisitOrder::Last {
-            expr(self);
-        }
-    }
-    */
 }
 
 /// Ready a context for optimisation, making a variety of adjustments
@@ -412,7 +234,7 @@ pub fn check(ctx: &Context) {
         match (expr, repr) {
             (Expr::Data(a, inner), Repr::Data(b)) if a == b => {}, // TODO: Check inner
             // TODO: Check literals elsewhere
-            (Expr::Literal(Literal::Nat(_)), Repr::Prim(Prim::Nat)) => {},
+            (Expr::Literal(Literal::Int(_)), Repr::Prim(Prim::Int)) => {},
             (Expr::Literal(Literal::List(_)), Repr::List(_)) => {},
             (Expr::Literal(Literal::Tuple(_)), Repr::Tuple(_)) => {},
             (Expr::Literal(Literal::Sum(_, _)), _) => {},

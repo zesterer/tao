@@ -24,7 +24,7 @@ impl Context {
 
     pub fn lower_litr(&mut self, hir: &HirContext, con: &ConContext, litr: &hir::Literal) -> mir::Literal {
         match litr {
-            hir::Literal::Nat(x) => mir::Literal::Nat(*x),
+            hir::Literal::Nat(x) => mir::Literal::Int(*x as i64),
             hir::Literal::Int(x) => mir::Literal::Int(*x),
             hir::Literal::Str(s) => mir::Literal::List(s.chars().map(mir::Literal::Char).collect()),
             hir::Literal::Real(x) => mir::Literal::Real(*x),
@@ -51,8 +51,7 @@ impl Context {
     pub fn lower_ty(&mut self, hir: &HirContext, con: &ConContext, ty: ConTyId) -> Repr {
         fn prim_to_mir(prim: ty::Prim) -> repr::Prim {
             match prim {
-                ty::Prim::Nat => repr::Prim::Nat,
-                ty::Prim::Int => repr::Prim::Int,
+                ty::Prim::Nat | ty::Prim::Int => repr::Prim::Int,
                 ty::Prim::Real => repr::Prim::Real,
                 ty::Prim::Char => repr::Prim::Char,
                 ty::Prim::Universe => repr::Prim::Universe,
@@ -241,8 +240,7 @@ impl Context {
                         };
                         mir::Expr::Literal(mir::Literal::List(name.chars().map(mir::Literal::Char).collect()))
                     },
-                    hir::Intrinsic::NegNat => mir::Expr::Intrinsic(mir::Intrinsic::NegNat, vec![self.lower_expr(hir, con, &args[0], stack)]),
-                    hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegInt, vec![self.lower_expr(hir, con, &args[0], stack)]),
+                    hir::Intrinsic::NegNat | hir::Intrinsic::NegInt => mir::Expr::Intrinsic(mir::Intrinsic::NegInt, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::NegReal => mir::Expr::Intrinsic(mir::Intrinsic::NegReal, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::DisplayInt => mir::Expr::Intrinsic(mir::Intrinsic::DisplayInt, vec![self.lower_expr(hir, con, &args[0], stack)]),
                     hir::Intrinsic::CodepointChar => mir::Expr::Intrinsic(mir::Intrinsic::CodepointChar, vec![self.lower_expr(hir, con, &args[0], stack)]),
@@ -250,27 +248,19 @@ impl Context {
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
-                    hir::Intrinsic::EqNat => mir::Expr::Intrinsic(mir::Intrinsic::EqNat, vec![
+                    hir::Intrinsic::EqNat => mir::Expr::Intrinsic(mir::Intrinsic::EqInt, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
-                    hir::Intrinsic::LessNat => mir::Expr::Intrinsic(mir::Intrinsic::LessNat, vec![
+                    hir::Intrinsic::LessNat => mir::Expr::Intrinsic(mir::Intrinsic::LessInt, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
-                    hir::Intrinsic::AddNat => mir::Expr::Intrinsic(mir::Intrinsic::AddNat, vec![
+                    hir::Intrinsic::AddNat | hir::Intrinsic::AddInt => mir::Expr::Intrinsic(mir::Intrinsic::AddInt, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),
-                    hir::Intrinsic::AddInt => mir::Expr::Intrinsic(mir::Intrinsic::AddInt, vec![
-                        self.lower_expr(hir, con, &args[0], stack),
-                        self.lower_expr(hir, con, &args[1], stack),
-                    ]),
-                    hir::Intrinsic::MulNat => mir::Expr::Intrinsic(mir::Intrinsic::MulNat, vec![
-                        self.lower_expr(hir, con, &args[0], stack),
-                        self.lower_expr(hir, con, &args[1], stack),
-                    ]),
-                    hir::Intrinsic::MulInt => mir::Expr::Intrinsic(mir::Intrinsic::MulInt, vec![
+                    hir::Intrinsic::MulNat | hir::Intrinsic::MulInt => mir::Expr::Intrinsic(mir::Intrinsic::MulInt, vec![
                         self.lower_expr(hir, con, &args[0], stack),
                         self.lower_expr(hir, con, &args[1], stack),
                     ]),

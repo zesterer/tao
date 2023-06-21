@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, btree_map::Entry};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Prim {
-    Nat,
     Int,
     Real,
     Char,

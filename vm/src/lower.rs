@@ -8,7 +8,6 @@ fn litr_to_value(literal: &mir::Literal) -> Option<Value> {
     Some(match literal {
         mir::Literal::Never => return None, // Evaluating a `Never` is UB anyway, so who cares what it generates?
         mir::Literal::Unknown(x) => *x,
-        mir::Literal::Nat(x) => Value::Int(*x as i64),
         mir::Literal::Int(x) => Value::Int(*x),
         mir::Literal::Real(x) => Value::Real(*x),
         mir::Literal::Char(c) => Value::Char(*c),
@@ -147,7 +146,6 @@ impl Program {
                     }
                     match binding.meta() {
                         repr::Repr::Prim(repr::Prim::Bool) => self.push(Instr::EqBool),
-                        repr::Repr::Prim(repr::Prim::Nat) => self.push(Instr::EqInt),
                         repr::Repr::Prim(repr::Prim::Int) => self.push(Instr::EqInt),
                         repr::Repr::Prim(repr::Prim::Char) => self.push(Instr::EqChar),
                         r => todo!("repr = {:?}, litr = {:?}", r, litr),
@@ -294,16 +292,16 @@ impl Program {
                 match intrinsic {
                     Intrinsic::Debug => { self.push(Instr::Break); },
                     Intrinsic::MakeList(_) => { self.push(Instr::MakeList(args.len())); },
-                    Intrinsic::NegNat | Intrinsic::NegInt => { self.push(Instr::NegInt); },
+                    Intrinsic::NegInt => { self.push(Instr::NegInt); },
                     Intrinsic::NegReal => { self.push(Instr::NegReal); },
                     Intrinsic::DisplayInt => { self.push(Instr::Display); },
                     Intrinsic::CodepointChar => { self.push(Instr::Codepoint); },
-                    Intrinsic::AddNat | Intrinsic::AddInt => { self.push(Instr::AddInt); },
-                    Intrinsic::SubNat | Intrinsic::SubInt => { self.push(Instr::SubInt); },
-                    Intrinsic::MulNat | Intrinsic::MulInt => { self.push(Instr::MulInt); },
-                    Intrinsic::EqNat | Intrinsic::EqInt => { self.push(Instr::EqInt); },
+                    Intrinsic::AddInt => { self.push(Instr::AddInt); },
+                    Intrinsic::SubInt => { self.push(Instr::SubInt); },
+                    Intrinsic::MulInt => { self.push(Instr::MulInt); },
+                    Intrinsic::EqInt => { self.push(Instr::EqInt); },
                     Intrinsic::EqChar => { self.push(Instr::EqChar); },
-                    Intrinsic::NotEqNat | Intrinsic::NotEqInt => {
+                    Intrinsic::NotEqInt => {
                         self.push(Instr::EqInt);
                         self.push(Instr::NotBool);
                     },
@@ -311,10 +309,10 @@ impl Program {
                         self.push(Instr::EqChar);
                         self.push(Instr::NotBool);
                     },
-                    Intrinsic::LessNat | Intrinsic::LessInt => { self.push(Instr::LessInt); },
-                    Intrinsic::MoreNat | Intrinsic::MoreInt => { self.push(Instr::MoreInt); },
-                    Intrinsic::LessEqNat | Intrinsic::LessEqInt => { self.push(Instr::LessEqInt); },
-                    Intrinsic::MoreEqNat | Intrinsic::MoreEqInt => { self.push(Instr::MoreEqInt); },
+                    Intrinsic::LessInt => { self.push(Instr::LessInt); },
+                    Intrinsic::MoreInt => { self.push(Instr::MoreInt); },
+                    Intrinsic::LessEqInt => { self.push(Instr::LessEqInt); },
+                    Intrinsic::MoreEqInt => { self.push(Instr::MoreEqInt); },
                     Intrinsic::Join(_) => { self.push(Instr::JoinList); },
                     Intrinsic::Print => { self.push(Instr::Print); },
                     Intrinsic::Input => { self.push(Instr::Input); },

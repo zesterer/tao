@@ -22,7 +22,6 @@ pub enum Const<U> {
     Never,
     // Value could not be inferred at compile-time
     Unknown(U),
-    Nat(u64),
     Int(i64),
     Real(f64),
     Char(char),
@@ -36,7 +35,6 @@ pub type Literal = Const<!>;
 pub type Partial = Const<Option<Local>>;
 
 impl<U: fmt::Debug + Clone> Const<U> {
-    pub fn nat(&self) -> u64 { if let Const::Nat(x) = self { *x } else { panic!("{:?}", self) } }
     pub fn int(&self) -> i64 { if let Const::Int(x) = self { *x } else { panic!("{:?}", self) } }
     pub fn list(&self) -> Vec<Self> { if let Const::List(x) = self { x.clone() } else { panic!("{:?}", self) } }
 }
@@ -46,7 +44,6 @@ impl Partial {
         match self {
             Self::Never => Some(Literal::Never),
             Self::Unknown(_) => None,
-            Self::Nat(x) => Some(Literal::Nat(*x)),
             Self::Int(x) => Some(Literal::Int(*x)),
             Self::Real(x) => Some(Literal::Real(*x)),
             Self::Char(c) => Some(Literal::Char(*c)),
@@ -71,7 +68,6 @@ impl Partial {
             (Self::Unknown(a), Self::Unknown(b)) if a == b => Self::Unknown(a),
             (Self::Unknown(_), _) | (_, Self::Unknown(_)) => Self::Unknown(None),
 
-            (Self::Nat(x), Self::Nat(y)) if x == y => Self::Nat(x),
             (Self::Int(x), Self::Int(y)) if x == y => Self::Int(x),
             (Self::Real(x), Self::Real(y)) if x == y => Self::Real(x),
             (Self::Char(x), Self::Char(y)) if x == y => Self::Char(x),
@@ -97,7 +93,6 @@ impl Literal {
         match self {
             Self::Never => Partial::Never,
             Self::Unknown(x) => *x,
-            Self::Nat(x) => Partial::Nat(*x),
             Self::Int(x) => Partial::Int(*x),
             Self::Real(x) => Partial::Real(*x),
             Self::Char(c) => Partial::Char(*c),
@@ -120,7 +115,6 @@ impl fmt::Display for Literal {
         match self {
             Self::Never => write!(f, "!"),
             Self::Unknown(x) => *x,
-            Self::Nat(x) => write!(f, "{}", x),
             Self::Int(x) => write!(f, "{}", x),
             Self::Real(x) => write!(f, "{}", x),
             Self::Char('\t') => write!(f, "'\\t'"),
@@ -138,30 +132,20 @@ impl fmt::Display for Literal {
 pub enum Intrinsic {
     Debug,
     MakeList(Repr),
-    NegNat,
     NegInt,
     NegReal,
     DisplayInt,
     CodepointChar,
-    AddNat,
     AddInt,
-    SubNat,
     SubInt,
-    MulNat,
     MulInt,
-    EqNat,
     EqInt,
     EqChar,
-    NotEqNat,
     NotEqInt,
     NotEqChar,
-    LessNat,
     LessInt,
-    MoreNat,
     MoreInt,
-    LessEqNat,
     LessEqInt,
-    MoreEqNat,
     MoreEqInt,
     Join(Repr),
     Print,
@@ -600,17 +584,17 @@ impl Expr {
                     Expr::Variant(variant, inner) => write!(f, "#{} {}", variant, DisplayExpr(inner, self.1, false)),
                     Expr::Tuple(fields) => write!(f, "({})", fields.iter().map(|f| format!("{},", DisplayExpr(f, self.1, false))).collect::<Vec<_>>().join(" ")),
                     Expr::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", DisplayExpr(i, self.1 + 1, false))).collect::<Vec<_>>().join(", ")),
-                    Expr::Intrinsic(NegNat | NegInt | NegReal, args) => write!(f, "- {}", DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(NegInt | NegReal, args) => write!(f, "- {}", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(DisplayInt, args) => write!(f, "@display_int({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(CodepointChar, args) => write!(f, "@codepoint_char({})", DisplayExpr(&args[0], self.1, false)),
-                    Expr::Intrinsic(EqChar | EqNat | EqInt, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(AddNat | AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(SubNat | SubInt, args) => write!(f, "{} - {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(MulNat | MulInt, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(LessNat, args) => write!(f, "{} < {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(MoreNat, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(MoreEqNat, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(LessEqNat, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(EqChar | EqInt, args) => write!(f, "{} = {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(AddInt, args) => write!(f, "{} + {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(SubInt, args) => write!(f, "{} - {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(MulInt, args) => write!(f, "{} * {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(LessInt, args) => write!(f, "{} < {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(MoreInt, args) => write!(f, "{} > {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(MoreEqInt, args) => write!(f, "{} >= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
+                    Expr::Intrinsic(LessEqInt, args) => write!(f, "{} <= {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Join(_), args) => write!(f, "{} ++ {}", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Print, args) => write!(f, "@print({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(Input, args) => write!(f, "@input({})", DisplayExpr(&args[0], self.1, false)),

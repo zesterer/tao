@@ -1,7 +1,34 @@
 use super::*;
 
-/// Fold constants into one-another, eagerly evaluating expressions at compile-time where possible. Additionally,
-/// globals and locals will get const-folded if possible.
+/// Fold constants into one-another, eagerly evaluating expressions at compile-time where possible.
+///
+/// Additionally:
+///
+/// - globals and locals will get inlined if possible.
+/// - commutes nested branches (i.e: inline the outer match into the arms of the inner match).
+///
+/// Commuting nested branches makes it much easier for constant folding to by duplicating the context to remove
+/// conditionality of the input. For example:
+///
+/// ```ignore
+/// when (when xs is
+///     | [x] => bar(x)
+///     \ _ => False) is
+/// | True => False
+/// \ False => True
+/// ```
+///
+/// becomes
+///
+/// ```ignore
+/// when xs is
+/// | [x] => when bar(x) is
+///     | True => False
+///     \ False => True
+/// \ _ => when False is
+///     | True => False
+///     \ False => True
+/// ```
 #[derive(Default)]
 pub struct ConstFold {
     // Is inlining permitted?
@@ -70,9 +97,9 @@ impl ConstFold {
                         .all(|(x, y)| self.extract(ctx, x, y, locals))
                 },
                 (Pat::Add(inner, n), partial) => if let Some(rhs) = partial.to_literal() {
-                    let rhs = rhs.nat();
-                    if rhs >= *n {
-                        self.extract(ctx, inner, &Partial::Nat(rhs - *n), locals)
+                    let rhs = rhs.int();
+                    if rhs >= *n as i64 {
+                        self.extract(ctx, inner, &Partial::Int(rhs - *n as i64), locals)
                     } else {
                         false
                     }
@@ -303,30 +330,25 @@ impl Intrinsic {
         );
 
         match self {
-            Intrinsic::NegNat => op!(Nat(x) => Int(-(*x as i64))),
             Intrinsic::NegInt => op!(Int(x) => Int(-*x)),
             Intrinsic::DisplayInt => op!(Int(x) => List(x.to_string().chars().map(Const::Char).collect())),
-            Intrinsic::CodepointChar => op!(Char(c) => Nat(*c as u64)),
-            Intrinsic::AddNat => op!(Nat(x), Nat(y) => Nat(x + y)),
-            Intrinsic::SubNat => op!(Nat(x), Nat(y) => Int(*x as i64 - *y as i64)),
-            Intrinsic::MulNat => op!(Nat(x), Nat(y) => Nat(x * y)),
-            Intrinsic::LessNat => op!(Nat(x), Nat(y) => r#bool(x < y)),
-            Intrinsic::MoreNat => op!(Nat(x), Nat(y) => r#bool(x > y)),
-            Intrinsic::MoreEqNat => op!(Nat(x), Nat(y) => r#bool(x >= y)),
+            Intrinsic::CodepointChar => op!(Char(c) => Int(*c as i64)),
+            Intrinsic::LessInt => op!(Int(x), Int(y) => r#bool(x < y)),
+            Intrinsic::MoreInt => op!(Int(x), Int(y) => r#bool(x > y)),
+            Intrinsic::MoreEqInt => op!(Int(x), Int(y) => r#bool(x >= y)),
             Intrinsic::AddInt => op!(Int(x), Int(y) => Int(x + y)),
             Intrinsic::SubInt => op!(Int(x), Int(y) => Int(x - y)),
             Intrinsic::MulInt => op!(Int(x), Int(y) => Int(x * y)),
-            Intrinsic::EqNat => op!(Nat(x), Nat(y) => r#bool(x == y)),
+            Intrinsic::EqInt => op!(Int(x), Int(y) => r#bool(x == y)),
             Intrinsic::EqChar => op!(Char(x), Char(y) => r#bool(x == y)),
-            Intrinsic::EqNat => op!(Nat(x), Nat(y) => r#bool(x == y)),
             Intrinsic::Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
             Intrinsic::Print => Partial::Unknown(None),
             Intrinsic::Input => Partial::Unknown(None),
             Intrinsic::Rand => Partial::Unknown(None),
             Intrinsic::UpdateField(idx) => Partial::Unknown(None), // TODO
-            Intrinsic::LenList => op!(List(xs) => Nat(xs.len() as u64)),
-            Intrinsic::SkipList => op!(List(xs), Nat(i) => List(xs.clone().split_off((*i as usize).min(xs.len())))),
-            Intrinsic::TrimList => op!(List(xs), Nat(i) => List({
+            Intrinsic::LenList => op!(List(xs) => Int(xs.len() as i64)),
+            Intrinsic::SkipList => op!(List(xs), Int(i) => List(xs.clone().split_off((*i as usize).min(xs.len())))),
+            Intrinsic::TrimList => op!(List(xs), Int(i) => List({
                 let mut xs = xs.clone();
                 xs.truncate(*i as usize);
                 xs
