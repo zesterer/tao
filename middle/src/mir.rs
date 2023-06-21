@@ -438,7 +438,7 @@ impl Expr {
             Expr::Undefined => {},
             Expr::Literal(_) => {},
             Expr::Local(local) => {
-                if !stack.contains(local) {
+                if !stack.contains(local) && !required.contains(local) {
                     required.push(*local);
                 }
             },
