@@ -52,6 +52,7 @@ impl Context {
             opt::RemoveUnusedBindings::default().run(self, debug);
             opt::RemoveDeadProc::default().run(self, debug);
             opt::SimplifyArithmetic::default().run(self, debug);
+            opt::CommuteBranches::default().run(self, debug);
         }
     }
 

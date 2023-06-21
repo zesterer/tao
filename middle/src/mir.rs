@@ -259,6 +259,11 @@ impl Binding {
         binds
     }
 
+    // Returns true if the binding could trivially be swapped with an empty wildcard without changing behaviour
+    pub fn is_dead(self: &MirNode<Self>) -> bool {
+        !self.binds() && !self.is_refutable()
+    }
+
     fn refresh_locals_inner(&mut self, stack: &mut Vec<(Local, Local)>) {
         if let Some(name) = self.name {
             let new_name = stack.iter().rev().find(|(old, _)| *old == name).expect("No such local").1;

@@ -2,6 +2,7 @@ use super::*;
 use std::any::{Any, type_name};
 
 mod const_fold;
+mod commute_branches;
 mod flatten_single_field;
 mod remove_dead_proc;
 mod remove_unused_bindings;
@@ -9,6 +10,7 @@ mod simplify_arithmetic;
 
 pub use {
     const_fold::ConstFold,
+    commute_branches::CommuteBranches,
     flatten_single_field::FlattenSingleField,
     remove_dead_proc::RemoveDeadProc,
     remove_unused_bindings::RemoveUnusedBindings,
@@ -221,7 +223,10 @@ pub fn check(ctx: &Context) {
         match (&binding.pat, repr) {
             (Pat::Data(a, inner), Repr::Data(b)) if a == b => {}, // TODO: Check inner
             (Pat::Wildcard, _) => {},
-            (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => {},
+            (Pat::Literal(Literal::Int(_)), Repr::Prim(Prim::Int)) => {},
+            (Pat::Literal(Literal::Char(_)), Repr::Prim(Prim::Char)) => {},
+            (Pat::Add(a, _), Repr::Prim(Prim::Int)) => check_binding(ctx, a, repr, stack),
+            (Pat::Tuple(a), Repr::Tuple(b)) if a.len() == b.len() => a.iter().zip(b.iter()).for_each(|(a, b)| check_binding(ctx, a, b, stack)),
             (Pat::Variant(idx, inner), Repr::Sum(variants)) if *idx < variants.len() => check_binding(ctx, inner, &variants[*idx], stack),
             (Pat::Single(inner), _) => check_binding(ctx, inner, repr, stack),
             (Pat::ListExact(_), Repr::List(_)) => {},
@@ -242,11 +247,11 @@ pub fn check(ctx: &Context) {
             (Expr::Literal(Literal::Sum(_, _)), _) => {},
             (Expr::Literal(Literal::Data(a, _)), Repr::Data(b)) if a == b => {},
             (Expr::Global(_, _), _) => {}, // TODO
-            (Expr::Local(local), repr) if &stack
+            (Expr::Local(local), repr) => assert_eq!(&stack
                 .iter()
                 .rev()
                 .find(|(name, _)| name == local)
-                .unwrap_or_else(|| panic!("Failed to find local ${} in scope", local.0)).1 == repr => {},
+                .unwrap_or_else(|| panic!("Failed to find local ${} in scope", local.0)).1, repr, "Local ${} does not match repr {:?}", local.0, repr),
             (Expr::Func(i, body), Repr::Func(i_repr, _)) => {
                 stack.push((**i, (**i_repr).clone()));
                 visit_expr(ctx, body, stack);
@@ -304,7 +309,7 @@ pub fn check(ctx: &Context) {
 
     for (id, proc) in ctx.procs.iter() {
         println!("Checking {:?}", id);
-        println!("{}", proc.body.print());
+        // println!("{}", proc.body.print());
         assert_eq!(proc.body.required_locals(None).len(), 0, "Procedure requires locals");
         visit_expr(ctx, &proc.body, &mut Vec::new());
     }

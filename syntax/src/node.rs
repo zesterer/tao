@@ -43,6 +43,8 @@ impl<T, M> Node<T, M> {
 
     /// Get a mutable reference to the metadata.
     pub fn meta_mut(&mut self) -> &mut M { &mut self.meta }
+
+    pub fn as_mut(&mut self) -> (&mut T, &mut M) { (&mut self.inner, &mut self.meta) }
 }
 
 impl<T, M> Deref for Node<T, M> {

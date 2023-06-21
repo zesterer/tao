@@ -5,30 +5,6 @@ use super::*;
 /// Additionally:
 ///
 /// - globals and locals will get inlined if possible.
-/// - commutes nested branches (i.e: inline the outer match into the arms of the inner match).
-///
-/// Commuting nested branches makes it much easier for constant folding to by duplicating the context to remove
-/// conditionality of the input. For example:
-///
-/// ```ignore
-/// when (when xs is
-///     | [x] => bar(x)
-///     \ _ => False) is
-/// | True => False
-/// \ False => True
-/// ```
-///
-/// becomes
-///
-/// ```ignore
-/// when xs is
-/// | [x] => when bar(x) is
-///     | True => False
-///     \ False => True
-/// \ _ => when False is
-///     | True => False
-///     \ False => True
-/// ```
 #[derive(Default)]
 pub struct ConstFold {
     // Is inlining permitted?
@@ -143,18 +119,6 @@ impl ConstFold {
                 Partial::Unknown(None)
             },
             Expr::Match(pred, arms) => {
-                // Commute branches if possible
-                if let Expr::Match(inner_pred, inner_arms) = &mut (**pred).clone() {
-                    *pred = inner_pred.clone();
-                    *arms = std::mem::take(inner_arms)
-                        .into_iter()
-                        .map(|(binding, inner_arm)| {
-                            let meta = inner_arm.meta().clone();
-                            (binding, MirNode::new(Expr::Match(inner_arm, arms.clone()), meta))
-                        })
-                        .collect();
-                }
-
                 let pred = self.eval(ctx, pred, locals);
                 let mut output = Partial::Never;
                 arms
