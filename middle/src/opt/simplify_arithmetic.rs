@@ -32,8 +32,8 @@ impl Pass for SimplifyArithmetic {
             }
 
             // Simplify `a * 1` and `1 * a` to `a`
-            if let Expr::Intrinsic(intr @ Intrinsic::MulInt, args) = expr
-                && let [a, b] = args.as_mut_slice()
+            if let Expr::Intrinsic(Intrinsic::MulInt, args) = expr
+                && let [a, b] = args.as_slice()
                 && let (x, Expr::Literal(Literal::Int(1)))
                     | (Expr::Literal(Literal::Int(1)), x) = (&**a, &**b)
             {
@@ -41,8 +41,8 @@ impl Pass for SimplifyArithmetic {
             }
 
             // Simplify `a * 0` and `0 * a` to `a`
-            if let Expr::Intrinsic(intr @ Intrinsic::MulInt, args) = expr
-                && let [a, b] = args.as_mut_slice()
+            if let Expr::Intrinsic(Intrinsic::MulInt, args) = expr
+                && let [a, b] = args.as_slice()
                 && let (x, Expr::Literal(Literal::Int(0)))
                     | (Expr::Literal(Literal::Int(0)), x) = (&**a, &**b)
             {
@@ -50,8 +50,8 @@ impl Pass for SimplifyArithmetic {
             }
 
             // Simplify `a + 0` and `0 + a` to `a`
-            if let Expr::Intrinsic(intr @ Intrinsic::AddInt, args) = expr
-                && let [a, b] = args.as_mut_slice()
+            if let Expr::Intrinsic(Intrinsic::AddInt, args) = expr
+                && let [a, b] = args.as_slice()
                 && let (x, Expr::Literal(Literal::Int(0)))
                     | (Expr::Literal(Literal::Int(0)), x) = (&**a, &**b)
             {
