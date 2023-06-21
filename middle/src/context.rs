@@ -53,6 +53,7 @@ impl Context {
             opt::RemoveDeadProc::default().run(self, debug);
             opt::SimplifyArithmetic::default().run(self, debug);
             opt::CommuteBranches::default().run(self, debug);
+            opt::RemoveIdentityBranches::default().run(self, debug);
         }
     }
 

@@ -5,6 +5,7 @@ mod const_fold;
 mod commute_branches;
 mod flatten_single_field;
 mod remove_dead_proc;
+mod remove_identity_branches;
 mod remove_unused_bindings;
 mod simplify_arithmetic;
 
@@ -13,6 +14,7 @@ pub use {
     commute_branches::CommuteBranches,
     flatten_single_field::FlattenSingleField,
     remove_dead_proc::RemoveDeadProc,
+    remove_identity_branches::RemoveIdentityBranches,
     remove_unused_bindings::RemoveUnusedBindings,
     simplify_arithmetic::SimplifyArithmetic,
 };
