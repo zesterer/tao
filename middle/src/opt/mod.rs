@@ -3,6 +3,7 @@ use std::any::{Any, type_name};
 
 mod const_fold;
 mod commute_branches;
+mod inline;
 mod flatten_single_field;
 mod remove_dead_proc;
 mod remove_identity_branches;
@@ -12,6 +13,7 @@ mod simplify_arithmetic;
 pub use {
     const_fold::ConstFold,
     commute_branches::CommuteBranches,
+    inline::Inline,
     flatten_single_field::FlattenSingleField,
     remove_dead_proc::RemoveDeadProc,
     remove_identity_branches::RemoveIdentityBranches,

@@ -47,12 +47,10 @@ impl Context {
         }
 
         for _ in 0..3 {
+            opt::Inline::default().run(self, debug);
             opt::CommuteBranches::default().run(self, debug);
             opt::FlattenSingleField::default().run(self, debug);
-            opt::ConstFold {
-                inline: !matches!(opt_mode, OptMode::Size),
-            }
-                .run(self, debug);
+            opt::ConstFold::default().run(self, debug);
             opt::RemoveUnusedBindings::default().run(self, debug);
             opt::RemoveDeadProc::default().run(self, debug);
             opt::SimplifyArithmetic::default().run(self, debug);

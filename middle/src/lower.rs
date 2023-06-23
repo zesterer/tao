@@ -10,6 +10,7 @@ pub struct Lowerer<'a> {
     pub ctx: &'a mut Context,
     pub hir: &'a HirContext,
     pub con: &'a ConContext,
+    // (the proc currently being lowered, is_recursive)
     pub lower_stack: Vec<(ConProcId, bool)>,
 }
 
@@ -17,9 +18,10 @@ impl<'a> Lowerer<'a> {
     pub fn lower_proc(&mut self, proc: ConProcId) -> ProcId {
         let id = Procs::id_of_con(proc.clone());
 
-        // Instantiate proc if not already in progress
+        // If proc instantiation is already in progress, we know that this is a recursive call
         if let Some((_, is_recursive)) = self.lower_stack.iter_mut().find(|(stack_id, _)| *stack_id == id) {
             *is_recursive = true;
+        // Instantiate proc if not already done
         } else if self.ctx.procs.get(id).is_none() {
             self.lower_stack.push((id, false));
             let body = self.lower_expr(self.con.get_proc(proc), &mut Vec::new());
