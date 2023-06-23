@@ -20,7 +20,12 @@ impl Context {
         // TODO: Quite hacky
         this.reprs.r#bool = con.r#bool;
 
-        this.entry = Some(this.lower_proc(hir, con, con.entry_proc()));
+        this.entry = Some(Lowerer {
+            ctx: &mut this,
+            hir,
+            con,
+            lower_stack: Vec::new(),
+        }.lower_proc(con.entry_proc()));
 
         this
     }
@@ -29,8 +34,6 @@ impl Context {
         if matches!(opt_mode, OptMode::None) {
             return;
         }
-
-        opt::prepare(self);
 
         let debug_before = false;
         let debug = false;
@@ -44,6 +47,7 @@ impl Context {
         }
 
         for _ in 0..3 {
+            opt::CommuteBranches::default().run(self, debug);
             opt::FlattenSingleField::default().run(self, debug);
             opt::ConstFold {
                 inline: !matches!(opt_mode, OptMode::Size),
@@ -52,7 +56,6 @@ impl Context {
             opt::RemoveUnusedBindings::default().run(self, debug);
             opt::RemoveDeadProc::default().run(self, debug);
             opt::SimplifyArithmetic::default().run(self, debug);
-            opt::CommuteBranches::default().run(self, debug);
             opt::RemoveIdentityBranches::default().run(self, debug);
         }
     }

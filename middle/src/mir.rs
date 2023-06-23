@@ -1,10 +1,7 @@
 //! The MIR is *not* correct (in the context of Tao's abstract machine) by construction. See the 'SAFETY' notes.
 
 use super::*;
-use std::{
-    cell::Cell,
-    fmt,
-};
+use std::fmt;
 
 pub type EffectId = ConEffectId;
 
@@ -300,21 +297,6 @@ impl Binding {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct GlobalFlags {
-    /// Determines whether a global reference may be inlined. By default this is `true`, but inlining is not permitted
-    /// for recursive definitions.
-    pub can_inline: bool,
-}
-
-impl Default for GlobalFlags {
-    fn default() -> Self {
-        Self {
-            can_inline: true,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum Expr {
     /// SAFETY: this node must never be evaluated at run-time
@@ -322,7 +304,7 @@ pub enum Expr {
     Literal(Literal),
     /// SAFETY: The local *must* be available in the enclosing scope of the expression.
     Local(Local),
-    Global(ProcId, Cell<GlobalFlags>),
+    Global(ProcId),
 
     Intrinsic(Intrinsic, Vec<MirNode<Self>>),
     /// SAFETY: All possible *inhabitant* (i.e: values that can actually be generated at run-time) predicate values
@@ -367,7 +349,7 @@ impl Expr {
     }
 
     fn required_globals_inner(&self, globals: &mut HashSet<ProcId>) {
-        if let Expr::Global(proc, _) = self {
+        if let Expr::Global(proc) = self {
             globals.insert(*proc);
         }
 
@@ -442,7 +424,7 @@ impl Expr {
                     required.push(*local);
                 }
             },
-            Expr::Global(_, _) => {},
+            Expr::Global(_) => {},
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| arg.required_locals_inner(stack, required)),
@@ -509,7 +491,7 @@ impl Expr {
             Expr::Undefined => false,
             Expr::Literal(_) => false,
             Expr::Local(local) => false,
-            Expr::Global(_, _) => false,
+            Expr::Global(_) => false,
             Expr::Intrinsic(Intrinsic::Propagate(_), _) => true,
             Expr::Intrinsic(_, args) => args
                 .iter()
@@ -581,7 +563,7 @@ impl Expr {
                 }
                 match &**self.0 {
                     Expr::Local(local) => write!(f, "${}", local.0),
-                    Expr::Global(global, _) => write!(f, "{:?}", global),
+                    Expr::Global(global) => write!(f, "{:?}", global),
                     Expr::Literal(c) => write!(f, "{}", c),
                     Expr::Func(arg, body) => write!(f, "fn ${} =>\n{}", arg.0, DisplayExpr(body, self.1 + 1, true)),
                     Expr::Go(next, body, init) => write!(f, "go(${} => {}, {})", next.0, DisplayExpr(body, self.1, false), DisplayExpr(init, self.1, false)),

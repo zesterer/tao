@@ -110,8 +110,8 @@ impl ConstFold {
                 },
                 partial => partial,
             },
-            Expr::Global(proc_id, flags) => if flags.get().can_inline && self.inline {
-                *expr = ctx.procs.get(*proc_id).unwrap().body.inner().clone();
+            Expr::Global(proc_id) => if let Some(proc) = ctx.procs.get(*proc_id) && !proc.is_recursive {
+                *expr = proc.body.inner().clone();
                 expr.refresh_locals();
                 // Return directly, since we apply to itself
                 return self.eval(ctx, expr, &mut Vec::new())

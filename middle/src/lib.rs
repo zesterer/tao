@@ -15,6 +15,7 @@ pub use crate::{
     mir::{MirNode, Pat, Binding, Expr, Handler, Literal, Partial, Intrinsic, Local},
     repr::{Repr, Reprs, Prim, Data},
     context::{Context, OptMode},
+    lower::Lowerer,
 };
 pub use tao_analysis::Ident;
 

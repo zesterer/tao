@@ -283,7 +283,7 @@ impl Program {
                     .0;
                 self.push(Instr::GetLocal(idx));
             },
-            mir::Expr::Global(global, _) => { proc_fixups.push((*global, self.push(Instr::Call(0)))); }, // Fixed by #4
+            mir::Expr::Global(global) => { proc_fixups.push((*global, self.push(Instr::Call(0)))); }, // Fixed by #4
             mir::Expr::Intrinsic(intrinsic, args) => {
                 for arg in args {
                     self.compile_expr(mir, arg, stack, proc_fixups);

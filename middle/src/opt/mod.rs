@@ -84,7 +84,7 @@ impl Binding {
 impl Expr {
     pub fn for_children(&self, mut f: impl FnMut(&MirNode<Self>)) {
         match self {
-            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_) => {},
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .for_each(|arg| f(arg)),
@@ -126,7 +126,7 @@ impl Expr {
 
     pub fn for_children_mut(&mut self, mut f: impl FnMut(&mut MirNode<Self>)) {
         match self {
-            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_, _) => {},
+            Expr::Undefined | Expr::Literal(_) | Expr::Local(_) | Expr::Global(_) => {},
             Expr::Intrinsic(_, args) => args
                 .iter_mut()
                 .for_each(|arg| f(arg)),
@@ -195,30 +195,6 @@ impl Expr {
     }
 }
 
-/// Ready a context for optimisation, making a variety of adjustments
-pub fn prepare(ctx: &mut Context) {
-    fn mark_loop_breakers(ctx: &Context, expr: &Expr, proc_stack: &mut Vec<ProcId>) {
-        if let Expr::Global(proc, flags) = expr {
-            if proc_stack.contains(proc) {
-                flags.update(|mut flags| {
-                    flags.can_inline = false;
-                    flags
-                });
-            } else {
-                proc_stack.push(*proc);
-                mark_loop_breakers(ctx, &ctx.procs.get(*proc).unwrap().body, proc_stack);
-                proc_stack.pop();
-            }
-        } else {
-            expr.for_children(|c| mark_loop_breakers(ctx, c, proc_stack));
-        }
-    }
-
-    for (id, proc) in ctx.procs.iter() {
-        mark_loop_breakers(ctx, &proc.body, &mut vec![id]);
-    }
-}
-
 /// Check the self-consistency of the MIR
 pub fn check(ctx: &Context) {
     fn check_binding(ctx: &Context, binding: &Binding, repr: &Repr, stack: &mut Vec<(Local, Repr)>) {
@@ -248,7 +224,7 @@ pub fn check(ctx: &Context) {
             (Expr::Literal(Literal::Tuple(_)), Repr::Tuple(_)) => {},
             (Expr::Literal(Literal::Sum(_, _)), _) => {},
             (Expr::Literal(Literal::Data(a, _)), Repr::Data(b)) if a == b => {},
-            (Expr::Global(_, _), _) => {}, // TODO
+            (Expr::Global(_), _) => {}, // TODO
             (Expr::Local(local), repr) => assert_eq!(&stack
                 .iter()
                 .rev()

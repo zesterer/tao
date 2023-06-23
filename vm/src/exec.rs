@@ -43,7 +43,7 @@ impl Value {
             Value::Int(x) => format!("{}", x),
             Value::Real(x) => format!("{}", x),
             Value::Char(c) => format!("{}", c),
-            _ => todo!(),
+            v => todo!("displaying {v:?}"),
         }
     }
 }
