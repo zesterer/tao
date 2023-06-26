@@ -604,12 +604,16 @@ impl Context {
                     name: data.name.clone(),
                     attr: attr.to_vec(),
                     gen_scope: gen_scope_id,
+                    variance_ty: None,
+                    variance_eff: None,
                     cons,
                 },
             ) {
                 errors.append(&mut errs);
             }
         }
+
+        this.datas.derive_variance(&this.tys);
 
         // Enforce member obligations
         for (member, class_id, member_id, member_ty, gen_scope) in &members {
@@ -764,7 +768,7 @@ impl Context {
                     let gen_effs = member.class.gen_effs
                         .iter()
                         .enumerate()
-                        .map(|(i, eff)| infer.insert_gen_eff(eff.span(), i, *gen_scope))
+                        .map(|(i, eff)| lower::lower_effect_set(eff, &TypeLowerCfg::other(), &mut infer, &Scope::Empty))
                         .collect::<Vec<_>>();
 
                     // TODO: Report error on `gen_tys`/`gen_effs` length mismatch with class?

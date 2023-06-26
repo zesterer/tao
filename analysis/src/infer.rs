@@ -25,6 +25,25 @@ impl Variance {
         }
     }
 
+    pub fn combine(self, other: Self) -> Self {
+        match (self.is_in() || other.is_in(), self.is_out() || other.is_out()) {
+            (false, false) => Self::None,
+            (true, false) => Self::In,
+            (false, true) => Self::Out,
+            (true, true) => Self::InOut,
+        }
+    }
+
+    pub fn project_through(self, other: Self) -> Self {
+        match (!self.is_in() && other.is_in(), self.is_out() && other.is_out()) {
+            (false, false) => Self::None,
+            (true, false) => Self::In,
+            (false, true) => Self::Out,
+            (true, true) => Self::InOut,
+        }
+    }
+
+    fn is_in(&self) -> bool { matches!(self, Self::In | Self::InOut) }
     fn is_out(&self) -> bool { matches!(self, Self::Out | Self::InOut) }
 }
 
@@ -1012,7 +1031,7 @@ impl<'a> Infer<'a> {
         let res = Self::flow_effect(&mut check, (x, x_ty), (y, y_ty), Some((x_ty, y_ty)));
         match check.1 {
             Some(true) => Some(res.is_ok()),
-            None => if !res.is_ok() { Some(false) } else { None },
+            None => if res.is_err() { Some(false) } else { None },
             Some(false) => Some(false),
         }
     }
@@ -1063,9 +1082,9 @@ impl<'a> Infer<'a> {
                 .map(Err).unwrap_or(Ok(())),
             (EffectInstInfo::Gen(x, _), EffectInstInfo::Gen(y, _)) if x == y => Ok(()),
             (x, y) => {
-                if infer.as_ref().debug {
-                    println!("Failed to flow {:?} into {:?}", x, y);
-                }
+                // if infer.infer().debug && !infer.is_check() {
+                //     println!("Failed to flow {:?} into {:?}", x, y);
+                // }
                 Err((x_ty, y_ty))
             },
         }
@@ -1111,7 +1130,7 @@ impl<'a> Infer<'a> {
                 }
             },
             // Closed with opener into closed
-            (EffectInfo::Closed(x_effs, Some(x_opener)), EffectInfo::Closed(y_effs, None) | EffectInfo::Open(y_effs)) if x_effs.is_empty() => {
+            (EffectInfo::Closed(x_effs, Some(x_opener)), EffectInfo::Closed(y_effs, _) | EffectInfo::Open(y_effs)) if x_effs.is_empty() => {
                 Self::flow_effect(infer, (x_opener, x_ty), (y, y_ty), old)
             },
             // Closed into closed with opener
@@ -1151,7 +1170,8 @@ impl<'a> Infer<'a> {
                     infer.make_check_eff((x, x_ty), (y, y_ty));
                     Ok(())
                 } else {
-                    Err((x_ty, y_ty))
+                    infer.make_check_eff((x, x_ty), (y, y_ty));
+                    Ok(())
                 }
             },
             (EffectInfo::Open(_), EffectInfo::Closed(_, Some(_))) => {
@@ -1254,20 +1274,25 @@ impl<'a> Infer<'a> {
                 i_err.or(o_err).map(Err).unwrap_or(Ok(()))
             },
             (TyInfo::Data(x_data, xs, xs_eff), TyInfo::Data(y_data, ys, ys_eff)) if x_data == y_data && xs.len() == ys.len() && xs_eff.len() == ys_eff.len() => {
+                let variance_ty = infer.infer().ctx.datas.get_data(x_data).variance_ty.clone().unwrap();
+                let variance_eff = infer.infer().ctx.datas.get_data(x_data).variance_eff.clone().unwrap();
                 for i in 0..xs.len() {
-                    todo!()
+                    if variance_ty[i].is_out() {
+                        Self::flow_inner(infer, xs[i], ys[i], old)?;
+                    }
+                    if variance_ty[i].is_in() {
+                        Self::flow_inner(infer, ys[i], xs[i], old)?;
+                    }
                 }
-                // TODO: Unnecessarily conservative, variance of data type generics should be determined
-                let co_error = Self::flow_many(infer, xs.iter().copied(), ys.iter().copied(), old).err();
-                let contra_error = Self::flow_many(infer, ys, xs, old).err().map(|(a, b)| (b, a));
-                // TODO: Variance of effects
-                let eff_co_error = Self::flow_many_effect(infer, (xs_eff.iter().copied(), x), (ys_eff.iter().copied(), y), Some(old)).err();
-                let eff_contra_error = Self::flow_many_effect(infer, (ys_eff, y), (xs_eff, x), Some(old)).err();
-                co_error
-                    .or(contra_error)
-                    .or(eff_co_error)
-                    .or(eff_contra_error)
-                    .map(Err).unwrap_or(Ok(()))
+                for i in 0..xs_eff.len() {
+                    if variance_eff[i].is_out() {
+                        Self::flow_effect(infer, (xs_eff[i], x), (ys_eff[i], y), Some(old))?;
+                    }
+                    if variance_eff[i].is_in() {
+                        Self::flow_effect(infer, (ys_eff[i], y), (xs_eff[i], x), Some(old))?;
+                    }
+                }
+                Ok(())
             },
             (TyInfo::Gen(a, a_scope, _), TyInfo::Gen(b, b_scope, _)) if a == b && a_scope == b_scope => Ok(()),
             (TyInfo::SelfType, TyInfo::SelfType) => Ok(()),
@@ -1629,6 +1654,7 @@ impl<'a> Infer<'a> {
                     let fake_basin_ty = self.insert(self.effect_span(basin_eff), TyInfo::Effect(basin_eff, out_ty, fake_opaque));
 
                     self.make_flow_effect((eff, obj), (basin_eff, fake_basin_ty), EqInfo::from(op_span));
+                    // self.checks.push_back(Check::FlowEffect((eff, obj), (basin_eff, fake_basin_ty), EqInfo::from(op_span)));
                     Some(Ok(()))
                 },
                 _ => None,
@@ -2028,12 +2054,7 @@ impl<'a> Infer<'a> {
             },
 
             // Unknown types *could* match, maybe
-            (TyInfo::Unknown(_), _) => {
-                if self.debug {
-                    println!("Might succeed");
-                }
-                Ok(false)
-            },
+            (TyInfo::Unknown(_), _) => Ok(false),
             (var, ty) => {
                 if self.debug && false {
                     println!("{:?} does not cover {:?}", ty, var);

@@ -14,13 +14,13 @@ for A, e member Range A of Stream A e where
         then None
         else
             let one : A = one in # TODO: This line is silly, figure out why we can't infer this
-            Just (effect { from }, Range (from + one, to))
+            Just (from, Range (from + one, to))
 
 data Stream S = S
 
 data Mapped S, A, B, e, f = ((e ~ A) -> f ~ B, S)
 
-for S < Stream A e, A, B, e member Mapped S A B e e of Stream B e =
+for S < Stream A e, A, B, e, f member Mapped S A B e f of Stream B f =
     => next = fn Mapped (f, s) => when s->S.next is
         | None => None
         \ Just (x, s) => Just (x->f, Mapped (f, s))
@@ -30,6 +30,9 @@ for S, A, B, e, f member Stream S of Map (e ~ A) B f where
 =
     => Output = Stream (Mapped S A B e f)
     => map = fn f, Stream s => Stream Mapped (f, s)
+
+fn smap S, A, B, e, f : (e ~ A -> f ~ B) -> Stream S -> Stream (Mapped S A B e f) =
+    \ f, Stream s => Stream Mapped (f, s)
 
 # fn collect2 S, A, e : Stream S -> e ~ [A] where
 #     S < Stream e ~ A

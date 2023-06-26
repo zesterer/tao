@@ -1,8 +1,9 @@
 import "../lib/main.tao"
 
+$[ty_debug]
 def main : io ~ () = do {
-    let sum : [Nat] = range(0, 10)
-        -> map(fn x : Nat => do {
+    let sum : [?] = range(0, 10)
+        -> map(fn x => do {
             print(x->show)!;
             x + 2
         })
@@ -11,5 +12,5 @@ def main : io ~ () = do {
     #     | [x] => x!
     #     \ _ => ()
     # ;
-    print("Hello, world!" + sum)!;
+    print("Hello, world!" + sum->show)!;
 }

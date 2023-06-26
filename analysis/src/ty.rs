@@ -417,7 +417,7 @@ pub struct GenScopeId(usize);
 
 pub struct GenScope {
     pub item_span: Span,
-    types: Vec<(GenTy, Option<Variance>)>,
+    types: Vec<GenTy>,
     effects: Vec<GenEff>,
     // TODO: Don't store this here, it's silly
     pub ast_implied_members: Vec<SrcNode<ast::ImpliedMember>>,
@@ -448,7 +448,7 @@ impl GenScope {
                     if !mentions_ty(*gen_ty.name) {
                         errors.push(Error::NotMentioned(gen_ty.name.clone()));
                     }
-                    (GenTy { name: gen_ty.name.clone() }, None)
+                    GenTy { name: gen_ty.name.clone() }
                 })
                 .collect(),
             effects: generics.effs
@@ -469,11 +469,7 @@ impl GenScope {
     pub fn len_eff(&self) -> usize { self.effects.len() }
 
     pub fn get(&self, index: usize) -> &GenTy {
-        &self.types[index].0
-    }
-
-    pub fn get_variance(&self, index: usize) -> Variance {
-        self.types[index].1.unwrap()
+        &self.types[index]
     }
 
     pub fn get_eff(&self, index: usize) -> &GenEff {
@@ -482,7 +478,6 @@ impl GenScope {
 
     pub fn find(&self, name: Ident) -> Option<(usize, &GenTy)> {
         self.types.iter()
-            .map(|(ty, _)| ty)
             .enumerate()
             .find(|(_, ty)| &*ty.name == &name)
     }
