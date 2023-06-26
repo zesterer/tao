@@ -93,7 +93,7 @@ impl Addr {
 
 #[derive(Default, Debug)]
 pub struct Program {
-    instrs: Vec<Instr>,
+    pub instrs: Vec<Instr>,
     debug: Vec<(Addr, String)>,
     pub entry: Addr,
     pub does_io: bool,
@@ -103,6 +103,8 @@ impl Program {
     pub fn debug(&mut self, msg: impl ToString) {
         self.debug.push((self.next_addr(), msg.to_string()));
     }
+
+    pub fn last_addr(&self) -> Addr { Addr(self.instrs.len().saturating_sub(1)) }
 
     pub fn next_addr(&self) -> Addr { Addr(self.instrs.len()) }
 
