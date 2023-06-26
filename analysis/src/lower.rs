@@ -128,6 +128,7 @@ pub fn enforce_generic_obligations(
             let member_gen_effs = member.gen_effs
                 .iter()
                 .map(|eff| eff
+                    .ok_or(())
                     .and_then(|eff| infer.instantiate_eff(
                         eff,
                         member.member.span(),
@@ -135,11 +136,11 @@ pub fn enforce_generic_obligations(
                         &mut |idx, _| gen_effs.get(idx).copied(),
                         self_ty,
                         invariant(),
-                    ).ok())
-                    .flatten()
+                    ))
+                    .map(|eff| eff.unwrap_or_else(|| infer.insert_effect(member.member.span(), EffectInfo::Closed(Vec::new(), None))))
                     // Is it correct to use a free effect variable on error? Probably...
                     // TODO: This might need to be a closed set, not all other cases are actually errors!
-                    .unwrap_or_else(|| infer.insert_effect(member.member.span(), EffectInfo::Closed(Vec::new(), None))))
+                    .unwrap_or_else(|()| infer.insert_effect(member.member.span(), EffectInfo::Closed(Vec::new(), None))))
                 .collect::<Vec<_>>();
             let assoc = match &member.items {
                 ImpliedItems::Eq(assoc) => assoc.iter()
