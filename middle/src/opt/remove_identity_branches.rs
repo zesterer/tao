@@ -23,7 +23,7 @@ fn is_identity_literal(binding: &Binding, litr: &Literal) -> bool {
 
 fn is_identity(binding: &Binding, expr: &Expr) -> bool {
     match (&binding.pat, expr) {
-        (Pat::Wildcard, Expr::Local(local)) if binding.name == Some(*local) => true,
+        (_, Expr::Local(local)) if binding.name == Some(*local) => true,
         // TODO: Remember `binding.name` so that it can be used by the inner call to catch `x ~ y => x`?
         (Pat::Single(binding), y) => is_identity(binding, y),
         (Pat::Add(x, n), y) => if let Expr::Intrinsic(Intrinsic::AddInt, args) = y

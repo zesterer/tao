@@ -46,15 +46,15 @@ impl Context {
             println!("\n======\n");
         }
 
-        for _ in 0..3 {
-            opt::Inline::default().run(self, debug);
-            opt::CommuteBranches::default().run(self, debug);
-            opt::FlattenSingleField::default().run(self, debug);
-            opt::ConstFold::default().run(self, debug);
-            opt::RemoveUnusedBindings::default().run(self, debug);
-            opt::RemoveDeadProc::default().run(self, debug);
-            opt::SimplifyArithmetic::default().run(self, debug);
-            opt::RemoveIdentityBranches::default().run(self, debug);
+        for _ in 0..4 {
+            opt::Inline::create(opt_mode).run(self, debug);
+            opt::CommuteBranches::create(opt_mode).run(self, debug);
+            opt::FlattenSingleField::create(opt_mode).run(self, debug);
+            opt::ConstFold::create(opt_mode).run(self, debug);
+            opt::RemoveUnusedBindings::create(opt_mode).run(self, debug);
+            opt::RemoveDeadProc::create(opt_mode).run(self, debug);
+            opt::SimplifyArithmetic::create(opt_mode).run(self, debug);
+            opt::RemoveIdentityBranches::create(opt_mode).run(self, debug);
         }
     }
 

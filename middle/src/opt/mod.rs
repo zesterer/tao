@@ -21,7 +21,11 @@ pub use {
     simplify_arithmetic::SimplifyArithmetic,
 };
 
-pub trait Pass: Any {
+pub trait Pass: Default {
+    fn create(opt_mode: OptMode) -> Self {
+        Self::default()
+    }
+
     fn apply(&mut self, ctx: &mut Context);
 
     fn run(&mut self, ctx: &mut Context, debug: bool) {
