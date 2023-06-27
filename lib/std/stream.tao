@@ -50,6 +50,10 @@ for A, e member [e ~ A] of ToStream A e =
     => Stream = [e ~ A]
     => to_stream = fn xs => xs
 
+for S < Stream A e, A, e member Stream S of ToStream A e =
+    => Stream = S
+    => to_stream = fn Stream s => s
+
 for A, e member Maybe e ~ A of Stream A e =
     => next = fn
         | None => None
@@ -76,6 +80,24 @@ fn collect S < Stream A e, A, B < FromStream A, e : Stream S -> e ~ B =
     Stream s => let xs = s->fix(fn rec, s => when s->S.next is
         | None => []
         \ Just (x, s) => [x! .. rec(s)!])! in xs->B.from_stream
+
+# $[util]
+# fn collect S < ToStream A e, A, B < FromStream A, e : S -> e ~ B =
+#     s => let xs = s->S.to_stream->fix(fn rec, s => when s-><S.Stream>.next is
+#         | None => []
+#         \ Just (x, s) => [x! .. rec(s)!])! in xs->B.from_stream
+
+$[util]
+fn collect_sum S < Stream A e, A, B < Zero + Add A with { Output = B }, e : Stream S -> e ~ B =
+    Stream s => s->fix(fn rec, s => when s->S.next is
+        | None => B.zero
+        \ Just (x, s) => let x = x! in rec(s)! + x)!
+
+$[util]
+fn collect_list S < Stream A e, A, e : Stream S -> e ~ [A] =
+    Stream s => s->fix(fn rec, s => when s->S.next is
+        | None => []
+        \ Just (x, s) => [x! .. rec(s)!])!
 
 data Range A = (A, A)
 

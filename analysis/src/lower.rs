@@ -754,7 +754,7 @@ impl ToHir for ast::Expr {
                 };
 
                 if let Some(class_id) = class_id {
-                    let class = infer.make_class_field_known(a.meta().1, field.clone(), (class_id, Vec::new(), Vec::new()), func, self.span());
+                    let class = infer.make_class_field_known(a.meta().1, field.clone(), (class_id, Vec::new(), Vec::new()), func, self.span(), op.span());
 
                     (TyInfo::Ref(output_ty), hir::Expr::Apply(InferNode::new(hir::Expr::ClassAccess(*a.meta(), class, field), (op.span(), func)), a))
                 } else {
@@ -762,6 +762,8 @@ impl ToHir for ast::Expr {
                 }
             },
             ast::Expr::Binary(op, a, b) => {
+                let b_span = b.span();
+
                 let a = a.to_hir(cfg, infer, scope);
                 let b = b.to_hir(cfg, infer, scope);
                 let output_ty = infer.unknown(self.span());
@@ -790,7 +792,7 @@ impl ToHir for ast::Expr {
                     //infer.make_flow(b.meta().1, a.meta().1, EqInfo::from(self.span()));
 
                     // TODO: Pass second arg to class
-                    let class = infer.make_class_field_known(a.meta().1, field.clone(), (class_id, class_gen_tys, Vec::new()), func, self.span());
+                    let class = infer.make_class_field_known(a.meta().1, field.clone(), (class_id, class_gen_tys, Vec::new()), func, b_span, a.meta().0);
 
                     let expr = hir::Expr::Apply(
                         InferNode::new(hir::Expr::Apply(
@@ -1037,7 +1039,7 @@ impl ToHir for ast::Expr {
             ast::Expr::ClassAccess(ty, field) => {
                 let ty = ty.to_hir(&TypeLowerCfg::other(), infer, scope);
                 let field_ty = infer.unknown(self.span());
-                let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, self.span());
+                let class = infer.make_class_field(ty.meta().1, field.clone(), field_ty, self.span(), field.span());
                 (TyInfo::Ref(field_ty), hir::Expr::ClassAccess(*ty.meta(), class, field.clone()))
             },
             ast::Expr::Intrinsic(name, args) => if let Some(bool_data) = infer.ctx().datas.lang.r#bool {

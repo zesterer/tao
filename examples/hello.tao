@@ -1,17 +1,11 @@
 import "../lib/main.tao"
 
-$[ty_debug]
 def main : io ~ () = do {
-    let sum : [?] = range(0, 10)
-        -> smap(fn x => do {
+    let list : [?] = range(0, 10)
+        -> map(fn x => do {
             print(x->show)!;
             x + 2
         })
-        -> collect;
-    # when sum is
-    #     | [x] => x!
-    #     \ _ => ()
-    # ;
-    let x = input!;
-    print("Hello, world!" + sum->show)!;
+        -> collect!;
+    print("Hello, world!" + list)!;
 }

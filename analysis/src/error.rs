@@ -7,6 +7,7 @@ pub enum Error {
     CannotCoerce(TyId, TyId, Option<(TyId, TyId)>, EqInfo),
     CannotInfer(TyId, Option<Span>),
     CannotInferEffect(Span, Result<EffectInst, ()>),
+    CannotInferClass(Span),
     NotEffectful(TyId, Span, Span),
     Recursive(TyId, Span, Span),
     AliasNotPermitted(AliasId, Span),
@@ -118,6 +119,11 @@ impl Error {
                 vec![(span, format!("Cannot be inferred"), Color::Red)],
                 vec![],
             ),
+            Error::CannotInferClass(span) => (
+                format!("Cannot infer class instance"),
+                vec![(span, format!("Cannot be inferred"), Color::Red)],
+                vec![],
+            ),
             Error::NotEffectful(ty, obj_span, span) => (
                 format!("Type {} has no effects to be propagated", display(ty).fg(Color::Yellow)),
                 vec![
@@ -194,13 +200,15 @@ impl Error {
                     format!("Type {} is not a member of {}", display(ty).fg(Color::Red), (&class).fg(Color::Cyan)),
                     {
                         let mut labels = vec![
-                            (use_span, format!("Because it is used here"), Color::Yellow),
                             (ctx.tys.get_span(ty), format!(
                                 "This is of type {}",
                                 display(ty).fg(Color::Red),
                             ), Color::Red),
                             (obl_span, format!("{} is required to be a member of {} here", display(ty).fg(Color::Red), (&class).fg(Color::Cyan)), Color::Cyan),
                         ];
+                        if use_span != ctx.tys.get_span(ty) {
+                            labels.push((use_span, format!("Because it is used here"), Color::Yellow));
+                        }
                         if let Some(gen_span) = gen_span {
                             labels.push((gen_span, format!(
                                 "Consider adding a class constraint like {}",
