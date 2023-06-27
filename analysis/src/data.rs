@@ -4,6 +4,8 @@ pub struct Data {
     pub name: SrcNode<Ident>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
+    pub variance_ty: Option<Vec<Variance>>,
+    pub variance_eff: Option<Vec<Variance>>,
     pub cons: Vec<(SrcNode<Ident>, TyId)>,
 }
 
@@ -158,5 +160,82 @@ impl Datas {
 
     pub fn define_alias(&mut self, id: AliasId, alias: Alias) {
         self.aliases[id.0].1 = Some(alias);
+    }
+
+    // Result<gen_ty, gen_eff>
+    pub fn derive_variance_ty(&mut self, tys: &Types, ty: TyId, stack: &mut Vec<DataId>, apply_variance: &mut dyn FnMut(Result<usize, usize>, Variance)) {
+        match tys.get(ty) {
+            Ty::Error(_) | Ty::Prim(_) | Ty::SelfType => {},
+            Ty::Gen(idx, _) => apply_variance(Ok(idx), Variance::Out),
+            Ty::List(item) => self.derive_variance_ty(tys, item, stack, apply_variance),
+            Ty::Record(fields, _) => fields.values().for_each(|field| self.derive_variance_ty(tys, *field, stack, apply_variance)),
+            Ty::Func(i, o) => {
+                self.derive_variance_ty(tys, i, stack, &mut |idx, var| apply_variance(idx, var.flip())); // Contravariance
+                self.derive_variance_ty(tys, o, stack, apply_variance);
+            },
+            Ty::Data(data_id, gen_tys, gen_effs) => {
+                self.derive_variance_for(tys, data_id, stack);
+
+                let ty_variances = self.get_data(data_id).variance_ty.clone()
+                    // If recursive, no variance applied (TODO: is this sound?)
+                    .unwrap_or_else(|| vec![Variance::None; gen_tys.len()]);
+                for (i, ty) in gen_tys.into_iter().enumerate() {
+                    self.derive_variance_ty(tys, ty, stack, &mut |idx, var| apply_variance(idx, var.project_through(ty_variances[i])));
+                }
+                // TODO: effects
+            },
+            // Everything projected through an associated type is invariant
+            Ty::Assoc(ty, (_, gen_tys, gen_effs), _) => {
+                // TODO: Does the self type need to be invariant?
+                self.derive_variance_ty(tys, ty, stack, &mut |idx, var| apply_variance(idx, var.combine(Variance::InOut)));
+                for ty in gen_tys {
+                    self.derive_variance_ty(tys, ty, stack, &mut |idx, var| apply_variance(idx, var.combine(Variance::InOut)));
+                }
+            },
+            Ty::Effect(eff, ty) => {
+                self.derive_variance_ty(tys, ty, stack, apply_variance);
+                match tys.get_effect(eff) {
+                    Effect::Error => {},
+                    Effect::Known(effs) => effs
+                        .iter()
+                        .filter_map(|eff| eff.as_ref().ok())
+                        .for_each(|eff_inst| match eff_inst {
+                            EffectInst::Gen(idx, _) => apply_variance(Err(*idx), Variance::InOut),
+                            EffectInst::Concrete(_, gen_tys) => {
+                                for ty in gen_tys {
+                                    self.derive_variance_ty(tys, *ty, stack, &mut |idx, var| apply_variance(idx, var.combine(Variance::InOut)));
+                                }
+                            },
+                        }),
+                }
+            },
+            ty => todo!("{ty:?}"),
+        }
+    }
+
+    pub fn derive_variance_for(&mut self, tys: &Types, data_id: DataId, stack: &mut Vec<DataId>) {
+        let data = self.get_data(data_id);
+        if stack.contains(&data_id) {
+            // Recursive
+        } else if data.variance_ty.is_none() {
+            let mut ty_variances = vec![Variance::None; tys.get_gen_scope(data.gen_scope).len()];
+            let mut eff_variances = vec![Variance::None; tys.get_gen_scope(data.gen_scope).len_eff()];
+            for (_, ty) in data.cons.clone() {
+                stack.push(data_id);
+                self.derive_variance_ty(tys, ty, stack, &mut |idx, var| match idx {
+                    Ok(idx) => ty_variances[idx] = ty_variances[idx].combine(var),
+                    Err(idx) => eff_variances[idx] = eff_variances[idx].combine(var),
+                });
+                stack.pop();
+            }
+            self.datas[data_id.0].1.as_mut().unwrap().variance_ty = Some(ty_variances);
+            self.datas[data_id.0].1.as_mut().unwrap().variance_eff = Some(eff_variances);
+        }
+    }
+
+    pub fn derive_variance(&mut self, tys: &Types) {
+        for data_id in self.iter_datas().collect::<Vec<_>>() {
+            self.derive_variance_for(tys, data_id, &mut Vec::new());
+        }
     }
 }

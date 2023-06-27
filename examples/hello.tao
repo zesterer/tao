@@ -1,15 +1,11 @@
 import "../lib/main.tao"
 
 def main : io ~ () = do {
-    let sum : [Nat] = range(0, 10)
-        -> map(fn x : Nat => do {
+    let list : [?] = range(0, 10)
+        -> map(fn x => do {
             print(x->show)!;
             x + 2
         })
-        -> collect;
-    # when sum is
-    #     | [x] => x!
-    #     \ _ => ()
-    # ;
-    print("Hello, world!" + sum)!;
+        -> collect!;
+    print("Hello, world!" + list)!;
 }

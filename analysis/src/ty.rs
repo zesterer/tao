@@ -477,7 +477,9 @@ impl GenScope {
     }
 
     pub fn find(&self, name: Ident) -> Option<(usize, &GenTy)> {
-        self.types.iter().enumerate().find(|(_, ty)| &*ty.name == &name)
+        self.types.iter()
+            .enumerate()
+            .find(|(_, ty)| &*ty.name == &name)
     }
 
     pub fn find_eff(&self, name: Ident) -> Option<(usize, &GenEff)> {

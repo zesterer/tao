@@ -14,13 +14,13 @@ for A, e member Range A of Stream A e where
         then None
         else
             let one : A = one in # TODO: This line is silly, figure out why we can't infer this
-            Just (effect { from }, Range (from + one, to))
+            Just (from, Range (from + one, to))
 
 data Stream S = S
 
 data Mapped S, A, B, e, f = ((e ~ A) -> f ~ B, S)
 
-for S < Stream A e, A, B, e member Mapped S A B e e of Stream B e =
+for S < Stream A e, A, B, e, f member Mapped S A B e f of Stream B f =
     => next = fn Mapped (f, s) => when s->S.next is
         | None => None
         \ Just (x, s) => Just (x->f, Mapped (f, s))
@@ -30,6 +30,9 @@ for S, A, B, e, f member Stream S of Map (e ~ A) B f where
 =
     => Output = Stream (Mapped S A B e f)
     => map = fn f, Stream s => Stream Mapped (f, s)
+
+fn smap S, A, B, e, f : (e ~ A -> f ~ B) -> Stream S -> Stream (Mapped S A B e f) =
+    \ f, Stream s => Stream Mapped (f, s)
 
 # fn collect2 S, A, e : Stream S -> e ~ [A] where
 #     S < Stream e ~ A
@@ -46,6 +49,10 @@ class ToStream A, e where
 for A, e member [e ~ A] of ToStream A e =
     => Stream = [e ~ A]
     => to_stream = fn xs => xs
+
+for S < Stream A e, A, e member Stream S of ToStream A e =
+    => Stream = S
+    => to_stream = fn Stream s => s
 
 for A, e member Maybe e ~ A of Stream A e =
     => next = fn
@@ -73,6 +80,24 @@ fn collect S < Stream A e, A, B < FromStream A, e : Stream S -> e ~ B =
     Stream s => let xs = s->fix(fn rec, s => when s->S.next is
         | None => []
         \ Just (x, s) => [x! .. rec(s)!])! in xs->B.from_stream
+
+# $[util]
+# fn collect S < ToStream A e, A, B < FromStream A, e : S -> e ~ B =
+#     s => let xs = s->S.to_stream->fix(fn rec, s => when s-><S.Stream>.next is
+#         | None => []
+#         \ Just (x, s) => [x! .. rec(s)!])! in xs->B.from_stream
+
+$[util]
+fn collect_sum S < Stream A e, A, B < Zero + Add A with { Output = B }, e : Stream S -> e ~ B =
+    Stream s => s->fix(fn rec, s => when s->S.next is
+        | None => B.zero
+        \ Just (x, s) => let x = x! in rec(s)! + x)!
+
+$[util]
+fn collect_list S < Stream A e, A, e : Stream S -> e ~ [A] =
+    Stream s => s->fix(fn rec, s => when s->S.next is
+        | None => []
+        \ Just (x, s) => [x! .. rec(s)!])!
 
 data Range A = (A, A)
 
