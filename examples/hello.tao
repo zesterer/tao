@@ -7,9 +7,9 @@ def main : io ~ () = do {
             x + 2
         })
         -> map(fn x => do {
-            input;
+            print("Hello!")!;
             x + 2
         })
-        -> collect_list!;
+        -> collect!;
     print("Hello, world! " + list)!;
 }
