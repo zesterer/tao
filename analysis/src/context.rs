@@ -838,6 +838,7 @@ impl Context {
 
             this.classes.define_member_fields(*member_id, *class_id, fields);
         }
+
         // Def impls
         for (attr, def) in defs {
             let id = this.defs
@@ -869,6 +870,7 @@ impl Context {
 
             let (mut checked, mut errs) = infer.into_checked();
             errors.append(&mut errs);
+
 
             let body = body.reify(&mut checked);
 

@@ -6,6 +6,10 @@ def main : io ~ () = do {
             print(x->show)!;
             x + 2
         })
-        -> collect!;
-    print("Hello, world!" + list)!;
+        -> map(fn x => do {
+            input;
+            x + 2
+        })
+        -> collect_list!;
+    print("Hello, world! " + list)!;
 }

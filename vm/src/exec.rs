@@ -36,7 +36,7 @@ impl Value {
     pub fn func(self) -> (Addr, Vector<Self>) { if let Value::Func(f_addr, captures) = self { (f_addr, captures) } else { panic!("{}", self) } }
     pub fn sum(self) -> (usize, Rc<Self>) { if let Value::Sum(variant, inner) = self { (variant, inner) } else { panic!("{}", self) } }
     pub fn universe(self) -> u64 { if let Value::Universe(x) = self { x } else { panic!("{}", self) } }
-    pub fn eff(self) -> Rc<Effect> { if let Value::Effect(eff) = self { eff } else { panic!("{}", self) } }
+    pub fn eff(self) -> Result<Rc<Effect>, Self> { if let Value::Effect(eff) = self { Ok(eff) } else { Err(self) } }
 
     pub fn display(self) -> String {
         match self {
@@ -341,12 +341,17 @@ pub fn exec<E: Env>(prog: &Program, env: &mut E) -> Option<Value> {
                 stack.push(func);
             },
             Instr::Propagate => {
-                let eff = stack.pop().unwrap().eff();
+                match stack.pop().unwrap().eff() {
+                    Ok(eff) => {
+                        funcs.push(next_addr);
+                        next_addr = eff.addr;
 
-                funcs.push(next_addr);
-                next_addr = eff.addr;
-
-                locals.extend(eff.captures.iter().cloned());
+                        locals.extend(eff.captures.iter().cloned());
+                    },
+                    Err(val) => {
+                        stack.push(val);
+                    },
+                }
             },
             Instr::Suspend(eff_id) => {
                 let handler = handlers

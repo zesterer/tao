@@ -738,7 +738,7 @@ impl ToHir for ast::Expr {
                     infer.insert_effect(a.meta().0, EffectInfo::free()) // TODO: EffectInfo::Error instead
                 };
 
-                infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span(), self.span());
+                infer.make_effect_propagate(a.meta().1, basin_eff, out_ty, a.meta().0, op.span(), op.span());
 
                 (TyInfo::Ref(out_ty), hir::Expr::Intrinsic(SrcNode::new(Intrinsic::Propagate, op.span()), vec![a]))
             } else {
@@ -1188,7 +1188,7 @@ impl ToHir for ast::Expr {
                                 // TODO: Probably bad!
                                 // eff
                                 let eff_inst = infer.insert_effect_inst(self.span(), EffectInstInfo::Unknown);
-                                let eff = infer.insert_effect(self.span(), EffectInfo::Open(vec![eff_inst]));
+                                let eff = infer.insert_effect(self.span(), EffectInfo::Open(vec![eff_inst], Vec::new()));
                                 let phoney_ty = infer.insert(self.span(), TyInfo::tuple([]));
                                 infer.make_flow_effect((eff, phoney_ty), (basin_eff, phoney_ty), EqInfo::default());
                                 eff_inst

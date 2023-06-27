@@ -18,27 +18,21 @@ for A, e member Range A of Stream A e where
 
 data Stream S = S
 
-data Mapped S, A, B, e, f = ((e ~ A) -> f ~ B, S)
+data Mapped S, A, B, f = (A -> f ~ B, S)
 
-for S < Stream A e, A, B, e, f member Mapped S A B e f of Stream B f =
+for S < Stream A f, A, B, f member Mapped S A B f of Stream B f =
     => next = fn Mapped (f, s) => when s->S.next is
         | None => None
-        \ Just (x, s) => Just (x->f, Mapped (f, s))
+        \ Just (x, s) => Just (effect { x!->f! }, Mapped (f, s))
 
-for S, A, B, e, f member Stream S of Map (e ~ A) B f where
-    S < Stream A e
+for S, A, B, f member Stream S of Map A B f where
+    S < Stream A f
 =
-    => Output = Stream (Mapped S A B e f)
+    => Output = Stream (Mapped S A B f)
     => map = fn f, Stream s => Stream Mapped (f, s)
 
-fn smap S, A, B, e, f : (e ~ A -> f ~ B) -> Stream S -> Stream (Mapped S A B e f) =
+fn smap S, A, B, f : (A -> f ~ B) -> Stream S -> Stream (Mapped S A B f) =
     \ f, Stream s => Stream Mapped (f, s)
-
-# fn collect2 S, A, e : Stream S -> e ~ [A] where
-#     S < Stream e ~ A
-# = Stream s => when S.next(s) is
-#     | None => []
-#     \ Just (x, s) => [x!] ++ (Stream s)->collect2!
 
 class ToStream A, e where
     Self.Stream < Stream A e
