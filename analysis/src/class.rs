@@ -332,8 +332,8 @@ impl Classes {
         tys: &Types,
         a: TyId,
         b: TyId,
-        a_links: &mut HashMap<usize, Vec<TyId>>,
-        b_links: &mut HashMap<usize, Vec<TyId>>,
+        a_links: &mut impl FnMut(usize, TyId),
+        b_links: &mut impl FnMut(usize, TyId),
     ) -> bool {
         match (tys.get(a), tys.get(b)) {
             // Errors never overlap
@@ -345,8 +345,10 @@ impl Classes {
             (_, Ty::Effect(_, b)) => self.overlap_between_tys(tys, a, b, a_links, b_links),
 
             // Generics are always considered an overlap
-            (Ty::Gen(idx, _), _) => { a_links.entry(idx).or_default().push(b); true },
-            (_, Ty::Gen(idx, _)) => { b_links.entry(idx).or_default().push(a); true },
+            // TODO: This could be made smarter here. In the final `a_links` overlap check below, we could check to see
+            // whether an overlap would imply a recursive type and, if so, decide that an overlap does *not* occur.
+            (Ty::Gen(idx, _), _) => { a_links(idx, b); true },
+            (_, Ty::Gen(idx, _)) => { b_links(idx, a); true },
 
             (Ty::Prim(a), Ty::Prim(b)) => a == b,
             (Ty::List(a), Ty::List(b)) => self.overlap_between_tys(tys, a, b, a_links, b_links),
@@ -377,13 +379,24 @@ impl Classes {
         let member_a = self.get_member(member_a);
         let member_b = self.get_member(member_b);
 
-        let mut a_links = HashMap::default();
-        let mut b_links = HashMap::default();
+        let mut a_links = HashMap::<_, Vec<TyId>>::default();
+        let mut b_links = HashMap::<_, Vec<TyId>>::default();
 
-        let member_overlap = self.overlap_between_tys(tys, member_a.member, member_b.member, &mut a_links, &mut b_links);
+        let member_overlap = self.overlap_between_tys(
+            tys,
+            member_a.member,
+            member_b.member,
+            &mut |idx, ty| a_links.entry(idx).or_default().push(ty),
+            &mut |idx, ty| b_links.entry(idx).or_default().push(ty),
+        );
 
-        let gen_ty_overlap = member_a.gen_tys.iter().zip(member_b.gen_tys.iter())
-            .all(|(ty_a, ty_b)| self.overlap_between_tys(tys, *ty_a, *ty_b, &mut a_links, &mut b_links));
+        let gen_ty_overlap = member_a.gen_tys.iter().zip(member_b.gen_tys.iter()).all(|(ty_a, ty_b)| self.overlap_between_tys(
+            tys,
+            *ty_a,
+            *ty_b,
+            &mut |idx, ty| a_links.entry(idx).or_default().push(ty),
+            &mut |idx, ty| b_links.entry(idx).or_default().push(ty),
+        ));
 
         // Note: We don't currently check overlap of effects since effects are assumed to *always* overlap with
         // one-another
@@ -393,8 +406,12 @@ impl Classes {
         // in one member and types in another member, and then ensure that all types that match each generic in the
         // other overlap at the end.
         // TODO: is_eq returns false when comparing an effect and a non-effect, but this should really return true
-        let a_links_overlap = a_links.values().all(|t| t.windows(2).all(|t| tys.is_eq(t[0], t[1])));
-        let b_links_overlap = b_links.values().all(|t| t.windows(2).all(|t| tys.is_eq(t[0], t[1])));
+        let a_links_overlap = a_links
+            .values()
+            .all(|t| t.windows(2).all(|t| self.overlap_between_tys(tys, t[0], t[1], &mut |_, _| {}, &mut |_, _| {})));
+        let b_links_overlap = b_links
+            .values()
+            .all(|t| t.windows(2).all(|t| self.overlap_between_tys(tys, t[0], t[1], &mut |_, _| {}, &mut |_, _| {})));
 
         if member_overlap && gen_ty_overlap && a_links_overlap && b_links_overlap {
             Err(Error::OverlappingMembers(tys.get_span(member_a.member), tys.get_span(member_b.member)))
