@@ -372,6 +372,8 @@ impl Context {
             members.push((*member, *class_id, member_id, member_ty, *gen_scope));
         }
 
+        errors.append(&mut this.classes.check_coherence(&this.tys));
+
         // Alias definition must go before members and defs because they might have type hints that make use of type
         // aliases
         for (attr, alias, _) in aliases {

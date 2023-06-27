@@ -326,6 +326,97 @@ impl Classes {
             .iter()
             .map(|m| (*m, self.get_member(*m)))
     }
+
+    fn overlap_between_tys(
+        &self,
+        tys: &Types,
+        a: TyId,
+        b: TyId,
+        a_links: &mut HashMap<usize, Vec<TyId>>,
+        b_links: &mut HashMap<usize, Vec<TyId>>,
+    ) -> bool {
+        match (tys.get(a), tys.get(b)) {
+            // Errors never overlap
+            (Ty::Error(_), _) => false,
+            (_, Ty::Error(_)) => false,
+
+            // Effects always overlap, even with non-effects
+            (Ty::Effect(_, a), _) => self.overlap_between_tys(tys, a, b, a_links, b_links),
+            (_, Ty::Effect(_, b)) => self.overlap_between_tys(tys, a, b, a_links, b_links),
+
+            // Generics are always considered an overlap
+            (Ty::Gen(idx, _), _) => { a_links.entry(idx).or_default().push(b); true },
+            (_, Ty::Gen(idx, _)) => { b_links.entry(idx).or_default().push(a); true },
+
+            (Ty::Prim(a), Ty::Prim(b)) => a == b,
+            (Ty::List(a), Ty::List(b)) => self.overlap_between_tys(tys, a, b, a_links, b_links),
+            (Ty::Record(a_fields, _), Ty::Record(b_fields, _)) if a_fields.len() == b_fields.len() && a_fields
+                .keys()
+                .all(|a| b_fields.contains_key(a)) => a_fields
+                    .into_iter()
+                    .all(|(a, a_ty)| self.overlap_between_tys(tys, a_ty, b_fields[&a], a_links, b_links)),
+            (Ty::Func(a_i, a_o), Ty::Func(b_i, b_o)) => self.overlap_between_tys(tys, a_i, b_i, a_links, b_links)
+                && self.overlap_between_tys(tys, a_o, b_o, a_links, b_links),
+            (Ty::Data(a_data, a_gen_tys, _), Ty::Data(b_data, b_gen_tys, _)) => a_data == b_data
+                && a_gen_tys
+                    .into_iter()
+                    .zip(b_gen_tys.into_iter())
+                    .all(|(a, b)| self.overlap_between_tys(tys, a, b, a_links, b_links)),
+            (Ty::Assoc(a, (a_class, a_gen_tys, _), _), Ty::Assoc(b, (b_class, b_gen_tys, _), _)) => a_class == b_class
+                && self.overlap_between_tys(tys, a, b, a_links, b_links)
+                && a_gen_tys
+                    .into_iter()
+                    .zip(b_gen_tys.into_iter())
+                    .all(|(a, b)| self.overlap_between_tys(tys, a, b, a_links, b_links)),
+            (Ty::SelfType, _) | (_, Ty::SelfType) => unreachable!("self type shouldn't be permitted here"),
+            (_, _) => false,
+        }
+    }
+
+    fn check_coherence_of(&self, tys: &Types, member_a: MemberId, member_b: MemberId) -> Result<(), Error> {
+        let member_a = self.get_member(member_a);
+        let member_b = self.get_member(member_b);
+
+        let mut a_links = HashMap::default();
+        let mut b_links = HashMap::default();
+
+        let member_overlap = self.overlap_between_tys(tys, member_a.member, member_b.member, &mut a_links, &mut b_links);
+
+        let gen_ty_overlap = member_a.gen_tys.iter().zip(member_b.gen_tys.iter())
+            .all(|(ty_a, ty_b)| self.overlap_between_tys(tys, *ty_a, *ty_b, &mut a_links, &mut b_links));
+
+        // Note: We don't currently check overlap of effects since effects are assumed to *always* overlap with
+        // one-another
+
+        // If we have an overlap like `for A member A of Foo A` and `member Nat of Foo Int`, a simple generics-based
+        // overlap check would generate a false positive. To get around this, we generate a link table between generics
+        // in one member and types in another member, and then ensure that all types that match each generic in the
+        // other overlap at the end.
+        // TODO: is_eq returns false when comparing an effect and a non-effect, but this should really return true
+        let a_links_overlap = a_links.values().all(|t| t.windows(2).all(|t| tys.is_eq(t[0], t[1])));
+        let b_links_overlap = b_links.values().all(|t| t.windows(2).all(|t| tys.is_eq(t[0], t[1])));
+
+        if member_overlap && gen_ty_overlap && a_links_overlap && b_links_overlap {
+            Err(Error::OverlappingMembers(tys.get_span(member_a.member), tys.get_span(member_b.member)))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn check_coherence(&self, tys: &Types) -> Vec<Error> {
+        let mut errors = Vec::new();
+        'class: for (class_id, member_ids) in &self.member_lut {
+            for member_a in member_ids.iter() {
+                for member_b in member_ids.iter().filter(|id| *id != member_a) {
+                    if let Err(err) = self.check_coherence_of(tys, *member_a, *member_b) {
+                        errors.push(err);
+                        continue 'class;
+                    }
+                }
+            }
+        }
+        errors
+    }
 }
 
 pub enum MemberItem {

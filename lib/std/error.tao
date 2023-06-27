@@ -7,11 +7,13 @@ data Result A, E =
 
 data Never =|
 
-for A member Result A Never of From A =
-    => from = fn x => Ok x
+# TODO: Reenable when coherence checker is cleverer
+# for A member Result A Never of From A =
+#     => from = fn x => Ok x
 
-for A member A of From (Result A Never) =
-    => from = fn Ok x => x
+# TODO: Reenable when coherence checker is cleverer
+# for A member A of From (Result A Never) =
+#     => from = fn Ok x => x
 
 for A < Show, E < Show member Result A E of Show =
     => show = fn

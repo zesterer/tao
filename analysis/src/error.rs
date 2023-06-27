@@ -50,6 +50,7 @@ pub enum Error {
     MissingLangItem(&'static str),
     NoBasin(Span),
     NotMentioned(SrcNode<Ident>),
+    OverlappingMembers(Span, Span),
 }
 
 impl Error {
@@ -476,6 +477,14 @@ impl Error {
                     (param.span(), format!("The item this generic parameterises does not mention it"), Color::Red),
                 ],
                 vec![format!("Generic parameters must always be mentioned by the thing they parameterise")],
+            ),
+            Error::OverlappingMembers(a_span, b_span) => (
+                format!("Overlapping class members"),
+                vec![
+                    (a_span, format!("This member overlaps"), Color::Red),
+                    (b_span, format!("This member overlaps"), Color::Red),
+                ],
+                vec![],
             ),
         };
 
