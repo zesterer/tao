@@ -17,9 +17,8 @@ for A < Arbitrary, B < Arbitrary member (A, B) of Arbitrary =
 
 for A < Arbitrary member [A] of Arbitrary =
     => gen = range(0, rand(100)!)
-        -> collect_list
-        -> map(fn _ => arbitrary!)!
-        -> collect
+        -> map(fn _ => arbitrary!)
+        -> collect!
 
 # Allows values of a type to be minimised
 class Minimise =
@@ -64,6 +63,7 @@ fn quickcheck A < Arbitrary + Minimise, B : (A -> B) -> (A -> B -> Bool) -> rand
         -> find_first(fn x => !x->f->check(x))
         # Try 100 times to minimise the value
         -> flat_map(fn x => Just range(0, 100)
+            -> collect_list
             -> fold(x, fn x, _ => x
                 -> minimise!
                 # Only take minimised values that fail to pass the check
