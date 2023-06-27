@@ -1,4 +1,4 @@
-import "../lib/std.tao"
+import "../lib/main.tao"
 
 # Natural numbers
 
@@ -17,6 +17,8 @@ type Nine = Succ Eight
 type Ten = Succ Nine
 
 # Utility that allows us to print the result of operations
+# Note that this isn't really doing any runtime calculations, other than recursively summing
+# the number by walking back through the successor chain
 
 class Number =
     => as_nat : Nat
@@ -48,9 +50,9 @@ for B member Zero of TMul B =
 
 for A, B member Succ A of TMul B where
     A < TMul B,
-    A.Output < TAdd B,
+    A.<TMul B>.Output < TAdd B,
 =
-    => Output = A.Output.Output
+    => Output = A.<TMul B>.Output.Output
 
 fn f A < TMul Zero : A -> () =
     _ => ()
@@ -81,8 +83,8 @@ for A, B member TFalse of If (A) B =
     => Output = B
 
 # Demo
-def main =
-    <TTrue.<If
+def main : io ~ () =
+    print("Answer = " + <TTrue.<If
         TTrue.<If
             Six.<TMul Seven>.Output
             Ten.<TMul Four>.Output
@@ -91,4 +93,4 @@ def main =
             Three.<TMul Two>.Output
             Nine.<TMul Nine>.Output
         >.Output
-    >.Output>.as_nat
+    >.Output>.as_nat)!

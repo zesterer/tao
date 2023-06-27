@@ -1667,7 +1667,7 @@ impl<'a> Infer<'a> {
                     // whether the effect can grow or shrink in input or output position, like
                     // `EffectInfo::Set(grow: bool, grow_rev: bool, Vec<EffectInstInfo>)`. `Open` then becomes
                     // `Set(true, true, ...)` and `Closed` becomes `Set(false, false, ...)`.
-                    // self.checks.push_back(Check::EffectNonEmpty(obj, eff, span));
+                    // self.checks.push_back(Check::EffectNonEmpty(obj, eff, out_span));
 
                     // Generating a whole new type variable for this is stupid, it should be possible to flow effects without tying them to a ty
                     let fake_opaque = self.opaque(op_span, true);
@@ -1769,7 +1769,7 @@ impl<'a> Infer<'a> {
                 else { return Some(Ok(None)) }; // Resolving an error type always succeeds;
 
             match (implied_candidates.len(), external_candidates.len()) {
-                // Easy case: we found exactly 1 candidate implied by the gen scope, so we know it much be the one we're looking for.
+                // Easy case: we found exactly 1 candidate implied by the gen scope, so we know it must be the one we're looking for.
                 (1, _) => {
                     // Can't fail
                     let member = implied_candidates.into_iter().next().unwrap();
