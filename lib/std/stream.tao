@@ -31,9 +31,6 @@ for S, A, B, f member Stream S of Map A B f where
     => Output = Stream (Mapped S A B f)
     => map = fn f, Stream s => Stream Mapped (f, s)
 
-fn smap S, A, B, f : (A -> f ~ B) -> Stream S -> Stream (Mapped S A B f) =
-    \ f, Stream s => Stream Mapped (f, s)
-
 class ToStream A, e where
     Self.Stream < Stream A e
 =

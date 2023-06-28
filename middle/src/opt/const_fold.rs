@@ -98,7 +98,12 @@ impl<'a> Evaluator<'a> {
                     true
                 },
                 (Pat::Data(a, inner), Partial::Data(b, partial)) => {
-                    debug_assert_eq!(a, b);
+                    let a = &self.ctx.reprs.get(*a).repr;
+                    let b = &self.ctx.reprs.get(*b).repr;
+                    // TODO: Currently `T` is always assumed to coerce to `e ~ T` implicitly, so this is not a valid
+                    // check. Really, this is a bug in the analysis stage: code that implicitly coerces in this way
+                    // shouldn't be emitted to the middle-end.
+                    // debug_assert_eq!(a, b, "{:?} does not match {:?}", a, b);
                     self.extract(inner, partial)
                 },
                 (p, v) => todo!("Pattern:\n\n{:?}\n\nPartial:\n\n{:?}\n\n", p, v),

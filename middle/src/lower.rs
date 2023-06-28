@@ -319,7 +319,7 @@ impl<'a> Lowerer<'a> {
                         ConTy::Effect(effs, _) => mir::Expr::Intrinsic(mir::Intrinsic::Propagate(effs.clone()), vec![
                             self.lower_expr(&args[0], stack),
                         ]),
-                        _ => unreachable!(),
+                        _ => unreachable!("cannot lower propagation of non-effect"),
                         // _ => self.lower_expr(&args[0], stack).into_inner(),
                     },
                     hir::Intrinsic::Dispatch => panic!("Type dispatching should have occurred during concretisation!"),
