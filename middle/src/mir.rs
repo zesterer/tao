@@ -492,7 +492,7 @@ impl Expr {
             Expr::Literal(_) => false,
             Expr::Local(local) => false,
             Expr::Global(_) => false,
-            Expr::Intrinsic(Intrinsic::Propagate(_), _) => true,
+            Expr::Intrinsic(Intrinsic::Propagate(_) | Intrinsic::Suspend(_), _) => true,
             Expr::Intrinsic(_, args) => args
                 .iter()
                 .any(|arg| arg.may_have_effect()),

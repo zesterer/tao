@@ -200,6 +200,14 @@ impl<'a> Evaluator<'a> {
                 }
             },
             Expr::Intrinsic(intrinsic, args) => {
+                // Effect basins that get immediately propagated can be flattened
+                if let Intrinsic::Propagate(_) = intrinsic
+                    && let Expr::Basin(_, inner) = &*args[0]
+                {
+                    *expr = (**inner).clone();
+                    return self.eval(expr);
+                }
+
                 let args = args
                     .iter_mut()
                     .map(|arg| self.eval(arg))
@@ -331,7 +339,8 @@ impl Intrinsic {
                 xs
             })),
             Intrinsic::Suspend(_) => Partial::Unknown(None),
-            Intrinsic::Propagate(_) => Partial::Unknown(None),
+            // TODO: This might become unsound if we choose to represent effect objects with `Partial`.
+            Intrinsic::Propagate(_) => args[0].clone(),
             i => todo!("{:?}", i),
         }
     }
