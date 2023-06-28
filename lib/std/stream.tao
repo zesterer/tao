@@ -45,6 +45,9 @@ for S < Stream A e, A, e member Stream S of ToStream A e =
     => Stream = S
     => to_stream = fn Stream s => s
 
+fn to_stream S < ToStream A e, A, e : S -> Stream S.Stream =
+    \ s => Stream s->S.to_stream
+
 for A, e member Maybe e ~ A of Stream A e =
     => next = fn
         | None => None
@@ -65,6 +68,9 @@ for A member Maybe A of FromStream A =
     => from_stream = fn
         | [] => None
         \ [x ..] => Just x
+
+member () of FromStream () =
+    => from_stream = fn _ => ()
 
 $[util]
 fn collect S < Stream A e, A, B < FromStream A, e : Stream S -> e ~ B =

@@ -1,13 +1,21 @@
 #! Utilities for handling mutation via effects.
 
-effect mut A = (A -> A) => ()
+effect mut A = (A -> A) => A
 
 $[util]
-fn mut A : (A -> A) -> mut A ~ () = f => @suspend(f)
+fn mut A : (A -> A) -> mut A ~ () =
+    f => do { @suspend(f); }
+
+$[util]
+fn set A : A -> mut A ~ () =
+    x => mut(fn _ => x)!
+
+$[util]
+def get A : mut A ~ A = @suspend(fn x => x)
 
 $[util]
 fn apply A : mut A ~ () -> A -> A =
     # TODO: Why is this hint necessary?
     m : mut A ~ (), x => let (_, x) = (m, x)
-        handle mut A with f, x => ((), x -> f)
+        handle mut A with f, x => let x = x -> f in (x, x)
     in x

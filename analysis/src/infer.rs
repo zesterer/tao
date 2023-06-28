@@ -1741,9 +1741,6 @@ impl<'a> Infer<'a> {
                 })
                 .ok_or_else(|| InferError::CannotCoerce(x_ty, other, None, eq_info)),
             Check::EffectNonEmpty(ty, eff, span) => if self.collect_eff_insts(eff).is_empty() {
-                if self.debug {
-                    println!("No of effects: {}", self.collect_eff_insts(eff).len());
-                }
                 Err(InferError::NotEffectful(ty, self.span(ty), span))
             } else {
                 Ok(())

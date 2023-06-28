@@ -31,18 +31,18 @@ fn insert K < Ord, V : K -> V -> Map K V -> Map K V =
         else MBranch (k_ref, a, b->insert(k, v))
 
 $[util]
-fn get K < Ord, V : K -> Map K V -> Maybe V =
+fn index K < Ord, V : K -> Map K V -> Maybe V =
     | _, MEmpty => None
     | k, MLeaf (k_old, v) => if K.eq(k, k_old)
         then Just v
         else None
     \ k, MBranch (k_ref, a, b) => if K.less(k, k_ref)
-        then a->get(k)
-        else b->get(k)
+        then a->index(k)
+        else b->index(k)
 
 $[util]
 fn contains K < Ord, V : K -> Map K V -> Bool =
-    k, m => when m->get(k) is
+    k, m => when m->index(k) is
         | Just _ => True
         \ None => False
 
