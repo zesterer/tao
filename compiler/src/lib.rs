@@ -51,6 +51,7 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
         if let Some(module) = module {
             let imports = std::mem::take(&mut module.imports);
 
+            // TODO: Remove these in favour of the `ItemKind::Module`
             for import in imports {
                 match make_src(parent_src, import.as_str()).and_then(|src_id| Some((src_id, get_file(src_id)?))) {
                     Some((src_id, src)) => {
@@ -63,12 +64,39 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
 
                             if let Some(mut ast) = ast {
                                 let mut old_items = std::mem::take(&mut module.items);
-                                module.items.append(&mut ast.items);
+                                module.items.append(&mut ast.items.clone());
                                 module.items.append(&mut old_items);
                             }
                         }
                     },
                     None => import_errors.push(Error::CannotImport(import.clone())),
+                }
+            }
+
+            let modules = std::mem::take(&mut module.modules);
+
+            for (module_name, module_path) in modules {
+                match make_src(parent_src, module_path.as_str()).and_then(|src_id| Some((src_id, get_file(src_id)?))) {
+                    Some((src_id, src)) => {
+                        // Check for cycles
+                        if imported.insert(src_id, src.clone()).is_none() {
+                            let (mut ast, mut new_syntax_errors) = parse_module(&src, src_id);
+                            syntax_errors.append(&mut new_syntax_errors);
+
+                            resolve_imports(src_id, ast.as_deref_mut(), imported, import_errors, syntax_errors, get_file, make_src);
+
+                            if let Some(ast) = ast {
+                                module.items.push(ast::Item {
+                                    kind: ast::ItemKind::ModuleDecl(ast::ModuleDecl {
+                                        name: module_name,
+                                        module: ast.into_inner(),
+                                    }),
+                                    attrs: Vec::new(), // TODO?
+                                });
+                            }
+                        }
+                    },
+                    None => import_errors.push(Error::CannotImport(module_path.clone())),
                 }
             }
         }

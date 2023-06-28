@@ -1278,15 +1278,22 @@ pub fn module_parser() -> impl Parser<ast::Module> {
     let imports = just(Token::Import)
         .ignore_then(select! { Token::Str(path) => path }.map_with_span(SrcNode::new))
         .repeated();
+    let modules = just(Token::Mod)
+        .ignore_then(term_ident_parser().map_with_span(SrcNode::new))
+        .then_ignore(just(Token::Op(Op::Eq)))
+        .then(select! { Token::Str(path) => path }.map_with_span(SrcNode::new))
+        .repeated();
 
     imports
+        .then(modules)
         .then(item_parser()
             .map(Some)
             .recover_with(skip_until(ITEM_STARTS, |_| None).skip_start())
             .repeated())
         .then_ignore(end())
-        .map(|(imports, items)| ast::Module {
+        .map(|((imports, modules), items)| ast::Module {
             imports,
+            modules,
             items: items.into_iter().flatten().collect(),
         })
 }

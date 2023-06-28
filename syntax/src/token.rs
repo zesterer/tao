@@ -108,6 +108,7 @@ pub enum Token {
     As,
     When,
     Is,
+    Mod,
 }
 
 impl fmt::Display for Token {
@@ -164,6 +165,7 @@ impl fmt::Display for Token {
             Token::At => write!(f, "@"),
             Token::When => write!(f, "when"),
             Token::Is => write!(f, "is"),
+            Token::Mod => write!(f, "mod"),
         }
     }
 }
@@ -287,6 +289,7 @@ pub fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Error> {
         "xor" => Token::Op(Op::Xor),
         "when" => Token::When,
         "is" => Token::Is,
+        "mod" => Token::Mod,
         "_" => Token::Wildcard,
         _ => if s.chars().next().map_or(false, |c| c.is_uppercase()) {
             Token::TypeIdent(ast::Ident::new(s))

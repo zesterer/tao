@@ -235,7 +235,7 @@ pub struct ClassInst {
     pub gen_effs: Vec<SrcNode<EffectSet>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Pat {
     // Generated only by parser errors.
     Error,
@@ -251,14 +251,14 @@ pub enum Pat {
     Deconstruct(SrcNode<Ident>, SrcNode<Binding>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Binding {
     pub pat: SrcNode<Pat>,
     pub name: Option<SrcNode<Ident>>,
     pub ty: Option<SrcNode<Type>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     // Generated only by parser errors.
     Error,
@@ -288,7 +288,7 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Handler {
     pub eff_name: SrcNode<Ident>,
     pub eff_gen_tys: Vec<SrcNode<Type>>,
@@ -304,17 +304,17 @@ pub struct ImpliedMember {
     pub assoc: Vec<(SrcNode<Ident>, SrcNode<Type>)>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GenericTy {
     pub name: SrcNode<Ident>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GenericEffect {
     pub name: SrcNode<Ident>,
 }
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Generics {
     pub tys: Vec<GenericTy>,
     pub effs: Vec<GenericEffect>,
@@ -341,21 +341,21 @@ impl Generics {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Data {
     pub name: SrcNode<Ident>,
     pub generics: Generics,
     pub variants: Vec<(SrcNode<Ident>, SrcNode<Type>)>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Alias {
     pub name: SrcNode<Ident>,
     pub generics: Generics,
     pub ty: SrcNode<Type>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Def {
     pub name: SrcNode<Ident>,
     pub generics: Generics,
@@ -363,7 +363,7 @@ pub struct Def {
     pub body: SrcNode<Expr>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ClassItem {
     Value {
         name: SrcNode<Ident>,
@@ -375,14 +375,14 @@ pub enum ClassItem {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Class {
     pub name: SrcNode<Ident>,
     pub generics: Generics,
     pub items: Vec<ClassItem>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MemberItem {
     Value {
         name: SrcNode<Ident>,
@@ -394,7 +394,7 @@ pub enum MemberItem {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Member {
     pub generics: Generics,
     pub member: SrcNode<Type>,
@@ -402,7 +402,7 @@ pub struct Member {
     pub items: Vec<MemberItem>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Effect {
     pub name: SrcNode<Ident>,
     pub generics: Generics,
@@ -410,14 +410,14 @@ pub struct Effect {
     pub recv: SrcNode<Type>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EffectAlias {
     pub name: SrcNode<Ident>,
     pub generics: Generics,
     pub effects: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>)>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ItemKind {
     Data(Data),
     Alias(Alias),
@@ -426,6 +426,13 @@ pub enum ItemKind {
     Member(Member),
     Effect(Effect),
     EffectAlias(EffectAlias),
+    ModuleDecl(ModuleDecl),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModuleDecl {
+    pub name: SrcNode<Ident>,
+    pub module: Module,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -434,14 +441,15 @@ pub struct Attr {
     pub args: Option<Vec<SrcNode<Self>>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     pub kind: ItemKind,
     pub attrs: Vec<SrcNode<Attr>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Module {
+    pub modules: Vec<(SrcNode<Ident>, SrcNode<Intern<String>>)>,
     pub imports: Vec<SrcNode<Intern<String>>>,
     pub items: Vec<Item>,
 }
@@ -450,63 +458,70 @@ impl Module {
     pub fn classes(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Class)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Class(class) => Some((item.attrs.as_slice(), class)),
-                _ => None,
+            .flat_map(|item| match &item.kind {
+                ItemKind::Class(class) => vec![(item.attrs.as_slice(), class)],
+                ItemKind::ModuleDecl(decl) => decl.module.classes().collect(),
+                _ => Vec::new(),
             })
     }
 
     pub fn datas(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Data)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Data(data) => Some((item.attrs.as_slice(), data)),
-                _ => None,
+            .flat_map(|item| match &item.kind {
+                ItemKind::Data(data) => vec![(item.attrs.as_slice(), data)],
+                ItemKind::ModuleDecl(decl) => decl.module.datas().collect(),
+                _ => Vec::new(),
             })
     }
 
     pub fn aliases(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Alias)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Alias(alias) => Some((item.attrs.as_slice(), alias)),
-                _ => None,
+            .flat_map(|item| match &item.kind {
+                ItemKind::Alias(alias) => vec![(item.attrs.as_slice(), alias)],
+                ItemKind::ModuleDecl(decl) => decl.module.aliases().collect(),
+                _ => Vec::new(),
             })
     }
 
     pub fn members(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Member)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Member(member) => Some((item.attrs.as_slice(), member)),
-                _ => None,
+            .flat_map(|item| match &item.kind {
+                ItemKind::Member(member) => vec![(item.attrs.as_slice(), member)],
+                ItemKind::ModuleDecl(decl) => decl.module.members().collect(),
+                _ => Vec::new(),
             })
     }
 
     pub fn defs(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Def)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Def(def) => Some((item.attrs.as_slice(), def)),
-                _ => None,
+            .flat_map(|item| match &item.kind {
+                ItemKind::Def(def) => vec![(item.attrs.as_slice(), def)],
+                ItemKind::ModuleDecl(decl) => decl.module.defs().collect(),
+                _ => Vec::new(),
             })
     }
 
     pub fn effects(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &Effect)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::Effect(eff) => Some((item.attrs.as_slice(), eff)),
-                _ => None,
+            .flat_map(|item| match &item.kind {
+                ItemKind::Effect(eff) => vec![(item.attrs.as_slice(), eff)],
+                ItemKind::ModuleDecl(decl) => decl.module.effects().collect(),
+                _ => Vec::new(),
             })
     }
 
     pub fn effect_aliases(&self) -> impl Iterator<Item = (&[SrcNode<Attr>], &EffectAlias)> + '_ {
         self.items
             .iter()
-            .filter_map(|item| match &item.kind {
-                ItemKind::EffectAlias(eff) => Some((item.attrs.as_slice(), eff)),
-                _ => None,
+            .flat_map(|item| match &item.kind {
+                ItemKind::EffectAlias(eff) => vec![(item.attrs.as_slice(), eff)],
+                ItemKind::ModuleDecl(decl) => decl.module.effect_aliases().collect(),
+                _ => Vec::new(),
             })
     }
 }

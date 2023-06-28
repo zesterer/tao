@@ -1,4 +1,4 @@
-import "../lib/main.tao"
+mod main = "../lib/main.tao"
 
 def main : io ~ () = do {
     let list : [?] = range(0, 10)
