@@ -27,75 +27,88 @@ struct Evaluator<'a> {
 }
 
 impl<'a> Evaluator<'a> {
-    // Returns `true` if the branch *could* still match the partial value and the partial value has inhabitants. If
-    // `false` is returned, there's no saying what was or wasn't added to the self.locals.
-    fn extract(&mut self, binding: &mut MirNode<Binding>, partial: &Partial) -> bool {
+    // Some(true) => the binding *definitely* matches
+    // None => the binding could match but we aren't sure
+    // Some(false) => the binding *definitely does not* match. If this is returned, there's no saying what was or wasn't added to the self.locals.
+    fn extract(&mut self, binding: &mut MirNode<Binding>, partial: &Partial) -> Option<bool> {
+        fn and(x: Option<bool>, y: Option<bool>) -> Option<bool> {
+            match (x, y) {
+                (Some(x), Some(y)) => Some(x && y),
+                (None, Some(false)) | (Some(false), None) => Some(false),
+                (None, _) | (_, None) => None,
+            }
+        }
+
         if let Some(name) = binding.name {
             self.locals.push((name, partial.clone()));
         }
 
         if !binding.has_matches(self.ctx) {
-            false
+            Some(false)
         } else if let Partial::Unknown(_) = partial {
             // Extract child bindings
-            let mut matches = true;
+            // We start off with `None` because we're not properly checking this binding to see if it matches. Ergo,
+            // we can only ever say 'this binding may match' or 'this binding definitely doesn't match' (in the latter
+            // case, there may be something about the binding that makes it inherently matchless, like a lack of
+            // repr inhabitants).
+            let mut matches = None;
             binding.for_children_mut(|binding| {
                 // TODO: This will become unsound if or patterns are ever added because it assumes that all child
                 // patterns are and patterns.
-                matches &= self.extract(binding, &Partial::Unknown(None));
+                matches = and(matches, self.extract(binding, &Partial::Unknown(None)));
             });
             matches
         } else {
             match (&mut binding.pat, partial) {
-                (Pat::Wildcard, _) => true,
+                (Pat::Wildcard, _) => Some(true),
                 (Pat::Literal(litr), partial) => if let Some(rhs) = partial.to_literal() {
-                    litr == &rhs
+                    Some(litr == &rhs)
                 } else {
-                    true
+                    None
                 },
                 (Pat::Single(inner), partial) => self.extract(inner, partial),
                 (Pat::Variant(variant, x), Partial::Sum(tag, y)) => if variant == tag {
                     self.extract(x, y)
                 } else {
-                    false
+                    Some(false)
                 },
                 (Pat::Tuple(xs), Partial::Tuple(ys)) => {
                     debug_assert_eq!(xs.len(), ys.len());
                     xs
                         .iter_mut()
                         .zip(ys.iter())
-                        .all(|(x, y)| self.extract(x, y))
+                        .fold(Some(true), |matches, (x, y)| and(matches, self.extract(x, y)))
                 },
                 (Pat::ListExact(xs), Partial::List(ys)) => if xs.len() != ys.len() {
-                    false
+                    Some(false)
                 } else {
                     xs
                         .iter_mut()
                         .zip(ys.iter())
-                        .all(|(x, y)| self.extract(x, y))
+                        .fold(Some(true), |matches, (x, y)| and(matches, self.extract(x, y)))
                 },
                 (Pat::ListFront(xs, tail), Partial::List(ys)) => if ys.len() < xs.len() {
-                    false
+                    Some(false)
                 } else {
                     let could_match_tail = if let Some(tail) = tail {
                         self.extract(tail, &Partial::List(ys[xs.len()..].to_vec()))
                     } else {
-                        true
+                        Some(true)
                     };
-                    could_match_tail && xs
+                    and(could_match_tail, xs
                         .iter_mut()
                         .zip(ys.iter())
-                        .all(|(x, y)| self.extract(x, y))
+                        .fold(Some(true), |matches, (x, y)| and(matches, self.extract(x, y))))
                 },
                 (Pat::Add(inner, n), partial) => if let Some(rhs) = partial.to_literal() {
                     let rhs = rhs.int();
                     if rhs >= *n as i64 {
                         self.extract(inner, &Partial::Int(rhs - *n as i64))
                     } else {
-                        false
+                        Some(false)
                     }
                 } else {
-                    true
+                    None
                 },
                 (Pat::Data(a, inner), Partial::Data(b, partial)) => {
                     let a = &self.ctx.reprs.get(*a).repr;
@@ -134,20 +147,26 @@ impl<'a> Evaluator<'a> {
             Expr::Match(pred, arms) => {
                 let pred = self.eval(pred);
                 let mut output = Partial::Never;
+                let mut cull_remainder = false;
                 arms
                     // Remove arms that cannot possibly match
                     .drain_filter(|(binding, arm)| {
                         let old_locals = self.locals.len();
-                        let cull = if self.extract(binding, &pred) {
-                            let arm_output = self.eval(arm);
+                        let cull = cull_remainder || match self.extract(binding, &pred) {
+                            res @ (Some(true) | None) => {
+                                let arm_output = self.eval(arm);
 
-                            // Combine outputs together in an attempt to unify their values
-                            output = std::mem::replace(&mut output, Partial::Unknown(None)).or(arm_output);
+                                // Combine outputs together in an attempt to unify their values
+                                output = std::mem::replace(&mut output, Partial::Unknown(None)).or(arm_output);
 
-                            false
-                        } else {
-                            // Arm could not possibly match, cull it
-                            true
+                                // If this arm *definitely* matches, we can freely cull all remaining branches
+                                if res == Some(true) {
+                                    cull_remainder = true;
+                                }
+
+                                false
+                            }
+                            Some(false) => true, // Arm could not possibly match, cull it
                         };
                         self.locals.truncate(old_locals);
 

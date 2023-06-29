@@ -2753,10 +2753,13 @@ impl<'a> Infer<'a> {
                         // Propagate errors to avoid spurious errors
                         self.set_error(ty);
                         self.set_error_class(class);
-                        for (_, assoc_ty) in assoc {
-                            self.set_error(assoc_ty);
-                        }
                         errors.push(InferError::TypeDoesNotFulfil(class, ty, obl_span, gen_span, use_span));
+                    }
+
+                    // Given that we failed to infer this obligation, propagate an error to all projected outputs of
+                    // this obligation to avoid false-positive errors
+                    for (_, assoc_ty) in assoc {
+                        self.set_error(assoc_ty);
                     }
                 },
                 Constraint::ClassField(_ty, _class, field, _field_ty, _span, _use_span) => {
@@ -2777,7 +2780,8 @@ impl<'a> Infer<'a> {
             }
         }
 
-        // Only emit inference errors if we have no other errors
+        // Only emit inference errors if we have no other errors (since inference errors are much more likely to be
+        // false positives due to a failure in previous logic)
         if errors.is_empty() {
             // Report errors for types that cannot be inferred
             let tys = self.iter().collect::<Vec<_>>();
