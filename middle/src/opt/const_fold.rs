@@ -147,12 +147,12 @@ impl<'a> Evaluator<'a> {
             Expr::Match(pred, arms) => {
                 let pred = self.eval(pred);
                 let mut output = Partial::Never;
-                let mut cull_remainder = false;
+                let mut cull_remaining = false;
                 arms
                     // Remove arms that cannot possibly match
-                    .drain_filter(|(binding, arm)| {
+                    .retain_mut(|(binding, arm)| {
                         let old_locals = self.locals.len();
-                        let cull = cull_remainder || match self.extract(binding, &pred) {
+                        let cull = cull_remaining || match self.extract(binding, &pred) {
                             res @ (Some(true) | None) => {
                                 let arm_output = self.eval(arm);
 
@@ -161,7 +161,7 @@ impl<'a> Evaluator<'a> {
 
                                 // If this arm *definitely* matches, we can freely cull all remaining branches
                                 if res == Some(true) {
-                                    cull_remainder = true;
+                                    cull_remaining = true;
                                 }
 
                                 false
@@ -170,9 +170,8 @@ impl<'a> Evaluator<'a> {
                         };
                         self.locals.truncate(old_locals);
 
-                        cull
-                    })
-                    .for_each(|_| {});
+                        !cull
+                    });
                 output
             },
             Expr::Func(arg, body) => {

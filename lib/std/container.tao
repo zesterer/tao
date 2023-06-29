@@ -15,23 +15,28 @@ for A, B, e member Maybe A of Map A B e =
 $[util]
 def map V < Map A B e, A, B, e : (A -> e ~ B) -> V -> V.Output = V.map
 
-class Iter =
-    => Item
-    => next : Self -> Maybe (Self.Item, Self)
+$[util]
+fn sfold S < Stream A e, A, B, e : B -> (B -> A -> e ~ B) -> S -> e ~ B =
+    b, f, s => when s->S.next is
+        | None => b
+        \ Just (x, s) => sfold(f(b, x!)!, f, s)!
 
 $[util]
-fn fold A, I < Iter, e : A -> (A -> I.Item -> e ~ A) -> I -> e ~ A = a, f, xs => when I.next(xs) is
-    | None => a
-    \ Just (x, xs) => fold(f(a, x)!, f, xs)!
+fn fold S < ToStream A e, A, B, e : B -> (B -> A -> e ~ B) -> S -> e ~ B =
+    b, f, s => s->S.to_stream->sfold(b, f)!
 
 $[util]
-def sum C, A : C -> A where
-    C < Iter with { Item = A },
+fn sum S, A, e : S -> e ~ A where
+    S < ToStream A e,
     A < Zero + Add A with { Output = A },
-= fold(A.zero, fn x, y => x + y)
+=
+    # TODO: Why is this hint required?
+    s => s->fold(A.zero, fn x, y : A => x + y)
 
 $[util]
-def product C, A : C -> A where
-    C < Iter with { Item = A },
+fn product S, A, e : S -> e ~ A where
+    S < ToStream A e,
     A < One + Mul A with { Output = A },
-= fold(A.one, fn x, y => x * y)
+=
+    # TODO: Why is this hint required?
+    s => s->fold(A.one, fn x, y : A => x * y)

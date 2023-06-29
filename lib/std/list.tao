@@ -10,12 +10,6 @@ for A, B, e member [A] of Map (A) B e =
         | _, [] => []
         \ f, [x .. xs] => [x->f! .. xs->Self.map(f)!]
 
-for A member [A] of Iter =
-    => Item = A
-    => next = fn
-        | [] => None
-        \ [x .. xs] => Just (x, xs)
-
 $[util]
 fn filter A : (A -> Bool) -> [A] -> [A] =
     | _, [] => []
@@ -28,10 +22,6 @@ fn find_first A : (A -> Bool) -> [A] -> Maybe A = f, xs => when xs->filter(f) is
 
 $[util]
 fn len A : [A] -> Nat = xs => @len_list(xs)
-
-# fn fold A, B : A -> (A -> B -> A) -> [B] -> A =
-#     | init, _, [] => init
-#     \ init, f, [x .. tail] => fold(f(init, x), f, tail)
 
 $[util]
 fn repeat A : Nat -> [A] -> [A] =

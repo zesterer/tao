@@ -51,19 +51,18 @@ fn apply_event : Event -> State -> io ~ State =
 
 fn game_loop : State -> io ~ () = state => do {
     let cmd = input!;
-    let res = (
-        when cmd is
-        | "quit" => Done
-        | "help" => do {
-            print("Commands: 'help', 'quit', 'look', 'grab'")!;
-            Next None
-        }
-        | "look" => do {
-            state->describe!;
-            Next None
-        }
-        | "grab" => Next Just Grab
-        \ other => when state.loc
+    let res = when cmd is
+    | "quit" => Done
+    | "help" => do {
+        print("Commands: 'help', 'quit', 'look', 'grab'")!;
+        Next None
+    }
+    | "look" => do {
+        state->describe!;
+        Next None
+    }
+    | "grab" => Next Just Grab
+    \ other => when state.loc
             -> directions
             -> find_first(fn (name, _) => name = cmd)
         is
@@ -71,8 +70,7 @@ fn game_loop : State -> io ~ () = state => do {
             \ None => do {
                 print("Unknown command '" ++ cmd ++ "'")!;
                 Next None
-            }
-    );
+            };
     when res is
         | Next Just event => game_loop(state->apply_event(event)!)!
         | Next None => game_loop(state)!
