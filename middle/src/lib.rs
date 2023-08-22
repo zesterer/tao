@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types, cell_update, never_type, drain_filter, let_chains)]
+#![feature(arbitrary_self_types, cell_update, never_type, let_chains)]
 
 pub mod error;
 pub mod proc;

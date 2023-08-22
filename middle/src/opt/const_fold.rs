@@ -315,42 +315,69 @@ impl Intrinsic {
         use mir::Const::{self, *};
 
         macro_rules! op {
-            ($($X:ident($x:ident)),* => $out:expr) => {
+            ($($($x:pat),* $(if $pred:expr)? => $out:expr),* $(,)?) => {
                 {
-                    let mut args = args.iter();
-                    #[allow(unused_parens)]
-                    match ($({ let $x = args.next().unwrap(); $x }),*) {
-                        ($($X($x)),*) => $out,
+                    match args {
+                        $([$($x),*] $(if $pred)? => $out,)*
                         _ => Unknown(None),
                     }
                 }
             };
         }
 
-        let r#bool = |x| Data(
-            ctx.reprs.r#bool.expect("bool type must be known here"),
-            Box::new(Sum(x as usize, Box::new(Tuple(Vec::new())))),
-        );
+        let r#bool = |x| {
+            Data(
+                ctx.reprs.r#bool.expect("bool type must be known here"),
+                Box::new(Sum(x as usize, Box::new(Tuple(Vec::new())))),
+            )
+        };
 
         match self {
             Intrinsic::NegInt => op!(Int(x) => Int(-*x)),
-            Intrinsic::DisplayInt => op!(Int(x) => List(x.to_string().chars().map(Const::Char).collect())),
+            Intrinsic::DisplayInt => {
+                op!(Int(x) => List(x.to_string().chars().map(Const::Char).collect()))
+            }
             Intrinsic::CodepointChar => op!(Char(c) => Int(*c as i64)),
-            Intrinsic::LessInt => op!(Int(x), Int(y) => r#bool(x < y)),
-            Intrinsic::MoreInt => op!(Int(x), Int(y) => r#bool(x > y)),
-            Intrinsic::MoreEqInt => op!(Int(x), Int(y) => r#bool(x >= y)),
+            Intrinsic::LessInt => op! {
+                Int(x), Int(y) => r#bool(x < y),
+                Unknown(Some(x)), Unknown(Some(y)) if x == y => r#bool(false),
+            },
+            Intrinsic::MoreInt => op! {
+                Int(x), Int(y) => r#bool(x > y),
+                Unknown(Some(x)), Unknown(Some(y)) if x == y => r#bool(false),
+            },
+            Intrinsic::MoreEqInt => op! {
+                Int(x), Int(y) => r#bool(x >= y),
+                Unknown(Some(x)), Unknown(Some(y)) if x == y => r#bool(true),
+            },
             Intrinsic::AddInt => op!(Int(x), Int(y) => Int(x + y)),
-            Intrinsic::SubInt => op!(Int(x), Int(y) => Int(x - y)),
+            Intrinsic::SubInt => op! {
+                Int(x), Int(y) => Int(x - y),
+                Unknown(Some(x)), Unknown(Some(y)) if x == y => Int(0),
+            },
             Intrinsic::MulInt => op!(Int(x), Int(y) => Int(x * y)),
-            Intrinsic::EqInt => op!(Int(x), Int(y) => r#bool(x == y)),
-            Intrinsic::EqChar => op!(Char(x), Char(y) => r#bool(x == y)),
-            Intrinsic::Join(_) => op!(List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect())),
+            Intrinsic::EqInt => op! {
+                Int(x), Int(y) => r#bool(x == y),
+                Unknown(Some(x)), Unknown(Some(y)) if x == y => r#bool(true),
+            },
+            Intrinsic::EqChar => op! {
+                Char(x), Char(y) => r#bool(x == y),
+                Unknown(Some(x)), Unknown(Some(y)) if x == y => r#bool(true),
+            },
+            Intrinsic::Join(_) => op! {
+                List(xs), List(ys) => List(xs.iter().chain(ys).cloned().collect()),
+                List(xs), y if xs.is_empty() => y.clone(),
+                x, List(ys) if ys.is_empty() => x.clone(),
+            },
             Intrinsic::Print => Partial::Unknown(None),
             Intrinsic::Input => Partial::Unknown(None),
             Intrinsic::Rand => Partial::Unknown(None),
             Intrinsic::UpdateField(idx) => Partial::Unknown(None), // TODO
             Intrinsic::LenList => op!(List(xs) => Int(xs.len() as i64)),
-            Intrinsic::SkipList => op!(List(xs), Int(i) => List(xs.clone().split_off((*i as usize).min(xs.len())))),
+            Intrinsic::SkipList => op! {
+                List(xs), Int(i) => List(xs.clone().split_off((*i as usize).min(xs.len()))),
+                List(xs), _ if xs.is_empty() => List(Vec::new()),
+            },
             Intrinsic::TrimList => op!(List(xs), Int(i) => List({
                 let mut xs = xs.clone();
                 xs.truncate(*i as usize);
