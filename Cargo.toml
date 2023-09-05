@@ -8,6 +8,7 @@ members = [
     "vm",
     "util",
     "web_demo",
+    "site",
 ]
 
 [profile.dev]
