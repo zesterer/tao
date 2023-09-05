@@ -1137,10 +1137,16 @@ name = "site"
 version = "0.1.0"
 dependencies = [
  "gloo",
+ "include_dir",
  "js-sys",
+ "rand",
+ "tao",
+ "tao_vm",
  "wasm-bindgen",
  "web-sys",
+ "wee_alloc",
  "yew",
+ "yew-ansi",
 ]
 
 [[package]]
@@ -1640,6 +1646,14 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "yew-macro",
+]
+
+[[package]]
+name = "yew-ansi"
+version = "0.1.0"
+source = "git+https://github.com/zesterer/yew-ansi.git#87a69536bd405b867aeb40a49856e759f80b46a5"
+dependencies = [
+ "yew",
 ]
 
 [[package]]

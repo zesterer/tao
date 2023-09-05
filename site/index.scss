@@ -1,18 +1,32 @@
-button {
-  background-color: #008f53; /* Green */
-  border: 0;
-  color: white;
-  padding: 14px 14px;
-  text-align: center;
-  font-size: 16px;
-  margin: 2px 2px;
-  width: 100px;
+body {
+    background: #444;
+    color: white;
 }
 
-.counter {
-    color: #008f53;
-    font-size: 48px;
-    text-align: center;
+.panel {
+    border: 0;
+    text-align: left;
+    font-size: 16px;
+    margin: 0.5em;
+}
+
+.panel * {
+    border: 0;
+    padding: 0.3em 1em;
+}
+
+.panel select {
+    background-color: #b0b2c0;
+}
+.panel select:hover {
+   background-color:#9092a0
+}
+
+.panel .run {
+    background-color: #b0c0b2;
+}
+.panel .run:hover {
+   background-color: #90a092;
 }
 
 .footer {
@@ -20,7 +34,36 @@ button {
     font-size: 12px;
 }
 
-.panel {
-  display: flex;
-  justify-content: center;
+.splitter {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
 }
+
+.split {
+}
+
+#editor {
+    margin: 4px;
+    padding: 8px;
+    background: #222;
+    color: white;
+    border: 0;
+    top: 0;
+    left: 0;
+    height: 90vh;
+    font-family: monospace;
+    overflow: scroll;
+}
+
+.output {
+    margin: 4px;
+    padding: 8px;
+    background-color: #222;
+    color: white;
+    white-space:  pre;
+    font-family: monospace;
+    overflow:scroll;
+    scroll-margin: 10px;
+    max-height: 90vh;
+}
+
