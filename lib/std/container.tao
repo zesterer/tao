@@ -26,17 +26,13 @@ fn fold S < ToStream A e, A, B, e : B -> (B -> A -> e ~ B) -> S -> e ~ B =
     b, f, s => s->S.to_stream->sfold(b, f)!
 
 $[util]
-fn sum S, A, e : S -> e ~ A where
+def sum S, A, e : S -> e ~ A where
     S < ToStream A e,
     A < Zero + Add A with { Output = A },
-=
-    # TODO: Why is this hint required?
-    s => s->fold(A.zero, fn x, y : A => x + y)
+= fold(A.zero, A.add)
 
 $[util]
-fn product S, A, e : S -> e ~ A where
+def product S, A, e : S -> e ~ A where
     S < ToStream A e,
     A < One + Mul A with { Output = A },
-=
-    # TODO: Why is this hint required?
-    s => s->fold(A.one, fn x, y : A => x * y)
+= fold(A.one, A.mul)

@@ -1945,45 +1945,6 @@ impl<'a> Infer<'a> {
         }
     }
 
-    // fn eff_covers_eff(&self, var: EffectVar, eff: EffectVar) -> Option<bool> {
-    //     let effs_cover_effs = |effs: Vec<EffectInstVar>, effs_of: Vec<EffectInstVar>| if effs
-    //         .into_iter()
-    //         .all(|eff| effs_of
-    //             .iter()
-    //             .any(|var| match (self.follow_effect_inst(*var), self.follow_effect_inst(eff)) {
-    //                 (EffectInstInfo::Error, _) | (_, EffectInstInfo::Error) => true, // Errors always cover
-    //                 (EffectInstInfo::Unknown, _) | (_, EffectInstInfo::Unknown) => false,
-    //                 (EffectInstInfo::Gen(x, _), EffectInstInfo::Gen(y, _)) if x == y => true,
-    //                 (EffectInstInfo::Known(x, x_gen_tys), EffectInstInfo::Known(y, y_gen_tys)) if x == y => x_gen_tys
-    //                     .into_iter()
-    //                     .zip(y_gen_tys.into_iter())
-    //                     .fold(Some(true), |a, (x, y)| Some(a? && self.var_covers_var(x, y)?))
-    //                     .unwrap_or(false),
-    //                 (_, _) => false,
-    //             }))
-    //     {
-    //         Some(true)
-    //     } else {
-    //         dbg!("{:?} covers {:?}", self.info_effect(var), self.info_effect(eff));
-    //         None
-    //     };
-
-    //     // TODO: These cases generate an obligation that lhs covers rhs. A check probably needs to be generated for this!
-    //     match (self.info_effect(var), self.info_effect(eff)) {
-    //         (var, EffectInfo::Open(effs)| EffectInfo::Closed(effs, None)) => {
-    //             effs_cover_effs(effs, self.effs_of(var))
-    //         },
-    //         (EffectInfo::Closed(x_effs, Some(x_opener)), EffectInfo::Closed(y_effs, Some(y_opener))) if x_effs.is_empty() && y_effs.is_empty() => {
-    //             self.eff_covers_eff(x_opener, y_opener)
-    //         },
-    //         // (EffectInfo::Closed(x_effs, None), EffectInfo::Closed(y_effs, None)) => effs_cover_effs(x_effs, y_effs),
-    //         (x, y) => {
-    //             dbg!("{:?} covers {:?}", x, y);
-    //             None
-    //         },
-    //     }
-    // }
-
     fn class_covers_class(&self, x: ClassVar, y: ClassVar) -> Option<bool> {
         match (self.follow_class(x), self.follow_class(y)) {
             (ClassInfo::Unknown, _) => Some(false),
@@ -2113,66 +2074,6 @@ impl<'a> Infer<'a> {
             },
         }
     }
-
-    // fn covers_var_eff(
-    //     &self,
-    //     (var, var_ty): (EffectVar, TyVar),
-    //     eff: EffectId,
-    //     ty_gens: &mut HashMap<usize, TyVar>,
-    //     eff_gens: &mut HashMap<usize, Option<(EffectVar, TyVar)>>,
-    //     todo: &mut Vec<Check>,
-    // ) -> Result<bool, ()> {
-    //     match (self.info_effect(var), self.ctx.tys.get_effect(eff)) {
-    //         (EffectInfo::Open(var_effs) | EffectInfo::Closed(var_effs, None), Effect::Known(effs)) => {
-    //             if var_effs
-    //                 .into_iter()
-    //                 .all(|x| effs
-    //                     .iter()
-    //                     .any(|y| match (self.follow_effect_inst(x), y) {
-    //                         (_, Ok(EffectInst::Gen(idx, _))) => match eff_gens.get(&idx) {
-    //                             Some(Some((other_gen_var, other_ty))) => {
-    //                                 // Invariance check of generic types with one-another
-    //                                 match (
-    //                                     self.check_flow_eff((var, var_ty), (*other_gen_var, *other_ty)),
-    //                                     self.check_flow_eff((*other_gen_var, *other_ty), (var, var_ty)),
-    //                                 ) {
-    //                                     (Some(true), Some(true)) => true,
-    //                                     (Some(false), _) | (_, Some(false)) => false,
-    //                                     (_, _) => false,
-    //                                 }
-    //                             },
-    //                             Some(None) => false,
-    //                             None => {
-    //                                 eff_gens.insert(*idx, Some((var, var_ty)));
-    //                                 true
-    //                             },
-    //                         },
-    //                         (EffectInstInfo::Known(x, x_gen_tys), Ok(EffectInst::Concrete(y, y_gen_tys))) if x == *y => x_gen_tys
-    //                             .into_iter()
-    //                             .zip(y_gen_tys.into_iter())
-    //                             .try_fold(true, |a, (x, y)| Ok(a && self.covers_var(x, *y, ty_gens, eff_gens, todo)?))
-    //                             .unwrap_or_else(|()| false),
-    //                         (x, y) => {
-    //                             dbg!("{:?} covers {:?}", x, y);
-    //                             false
-    //                         },
-    //                     }))
-    //             {
-    //                 Ok(true)
-    //             } else {
-    //                 dbg!("{:?} covers {:?}", self.info_effect(var), self.ctx.tys.get_effect(eff));
-    //                 Err(())
-    //             }
-    //         },
-    //         (EffectInfo::Closed(var_effs, Some(opener)), _) if var_effs.is_empty() => {
-    //             self.covers_var_eff((opener, var_ty), eff, ty_gens, eff_gens, todo)
-    //         },
-    //         (x, y) => {
-    //             dbg!("{:?} covers {:?}", x, y);
-    //             Err(())
-    //         }, // TODO: Other cases
-    //     }
-    // }
 
     // Link the generic types of a class member with type variables in the current scope so obligations
     // can be generated

@@ -21,9 +21,11 @@ data Stream S = S
 data Mapped S, A, B, f = (A -> f ~ B, S)
 
 for S < Stream A f, A, B, f member Mapped S A B f of Stream B f =
-    => next = fn Mapped (f, s) => when s->S.next is
-        | None => None
-        \ Just (x, s) => Just (effect { x!->f! }, Mapped (f, s))
+    => next = fn Mapped (f, s) =>
+        s->S.next->map(fn (x, s) => (effect { x!->f! }, Mapped (f, s)))
+        # when s->S.next is
+        # | None => None
+        # \ Just (x, s) => Just (effect { x!->f! }, Mapped (f, s))
 
 for S, A, B, f member Stream S of Map A B f where
     S < Stream A f
