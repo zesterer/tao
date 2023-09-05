@@ -107,7 +107,7 @@ impl Component for App {
                     </button>
 
                     <span>{ "Example:" }</span>
-                    <select name="examples" onchange={ctx.link().callback(|e: Event| {
+                    <select name="examples" required=false onchange={ctx.link().callback(|e: Event| {
                         let tgt = e.target().unwrap_throw().dyn_into::<HtmlSelectElement>().unwrap_throw();
                         Msg::SwitchExample(tgt.selected_index() as usize)
                     })} id="examples">
@@ -140,7 +140,7 @@ impl Component for App {
 
                 <div class="splitter">
                     // Input
-                    <textarea class="split" id="editor" oninput={ctx.link().callback(|e: InputEvent| {
+                    <textarea class="split" id="editor" autofocus=true oninput={ctx.link().callback(|e: InputEvent| {
                         let tgt = e.target().unwrap_throw();
                         let tgt = tgt.dyn_into::<HtmlTextAreaElement>().unwrap_throw();
                         Msg::SetSrc(tgt.value().into())
