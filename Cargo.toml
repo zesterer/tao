@@ -7,7 +7,6 @@ members = [
     "cir",
     "vm",
     "util",
-    "web_demo",
     "site",
 ]
 
