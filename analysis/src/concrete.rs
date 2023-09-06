@@ -74,13 +74,40 @@ impl fmt::Debug for ConDataId {
             write!(f, "{:?}::<{}>", self.0.0, self.0.1
                 .iter()
                 .map(|a| format!("{:?}", a))
+                .chain(self.0.2
+                    .iter()
+                    .map(|e| format!("{:?}", e)))
                 .collect::<Vec<_>>()
                 .join(", "))
         }
     }
 }
 
-pub type ConEffectId = Intern<(EffectDeclId, Vec<ConTyId>)>;
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ConEffectId(Intern<(EffectDeclId, Vec<ConTyId>, Vec<Vec<ConEffectId>>)>);
+
+impl ConEffectId {
+    pub fn decl(&self) -> EffectDeclId { self.0.0 }
+    pub fn gen_tys(&self) -> &[ConTyId] { &self.0.1 }
+    pub fn gen_effs(&self) -> &[Vec<ConEffectId>] { &self.0.2 }
+}
+
+impl fmt::Debug for ConEffectId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.0.1.is_empty() {
+            write!(f, "{:?}", self.0.0)
+        } else {
+            write!(f, "{:?}::<{}>", self.0.0, self.0.1
+                .iter()
+                .map(|a| format!("{:?}", a))
+                .chain(self.0.2
+                    .iter()
+                    .map(|e| format!("{:?}", e)))
+                .collect::<Vec<_>>()
+                .join(", "))
+        }
+    }
+}
 
 pub struct TyInsts<'a> {
     self_ty: Option<ConTyId>,
@@ -251,10 +278,22 @@ impl ConContext {
             (Effect::Known(member_effs), _) if member_effs.len() <= 1 => member_effs
                 .iter()
                 .for_each(|effect| match effect.as_ref().expect("effect instance cannot be an error") {
-                    EffectInst::Concrete(_, args) => args
-                        .iter()
-                        .zip(&effs[0].1)
-                        .for_each(|(x, y)| self.derive_links(hir, *x, *y, ty_link_gen, eff_link_gen)),
+                    EffectInst::Concrete(_, gen_tys, gen_effs) => {
+                        gen_tys
+                            .iter()
+                            .zip(effs[0].gen_tys())
+                            .for_each(|(x, y)| self.derive_links(hir, *x, *y, ty_link_gen, eff_link_gen));
+                        gen_effs
+                            .iter()
+                            .zip(effs[0].gen_effs())
+                            .for_each(|(x, y)| self.derive_links_effect(
+                                hir,
+                                x.expect("effect instance cannot be an error"),
+                                y,
+                                ty_link_gen,
+                                eff_link_gen,
+                            ));
+                    },
                     EffectInst::Gen(idx, _) => eff_link_gen(*idx, effs.to_vec()),
                 }),
             x => todo!("{:?}", x),
@@ -389,12 +428,16 @@ impl ConContext {
                         .into_iter()
                         .flat_map(|eff| match eff {
                             Ok(EffectInst::Gen(idx, _)) => ty_insts.gen_effs[idx].clone(),
-                            Ok(EffectInst::Concrete(decl, args)) => {
-                                let args = args
+                            Ok(EffectInst::Concrete(decl, gen_tys, gen_effs)) => {
+                                let gen_tys = gen_tys
                                     .into_iter()
-                                    .map(|arg| self.lower_ty(hir, arg, ty_insts))
+                                    .map(|ty| self.lower_ty(hir, ty, ty_insts))
                                     .collect::<Vec<_>>();
-                                vec![Intern::new((decl, args.to_vec()))]
+                                let gen_effs = gen_effs
+                                    .into_iter()
+                                    .map(|e| e.map(|e| self.lower_effect(hir, e, ty_insts)).unwrap_or_default())
+                                    .collect::<Vec<_>>();
+                                vec![ConEffectId(Intern::new((decl, gen_tys, gen_effs)))]
                             },
                             Err(()) => panic!("Concretizable effect instance cannot be an error"),
                         })
@@ -735,15 +778,19 @@ impl ConContext {
     pub fn lower_effect_inst(&mut self, hir: &Context, eff: EffectInst, ty_insts: &TyInsts) -> Result<ConEffectId, Vec<ConEffectId>> {
         match eff {
             EffectInst::Gen(idx, _) => Err(ty_insts.gen_effs[idx].clone()),
-            EffectInst::Concrete(decl, gen_tys) => {
+            EffectInst::Concrete(decl, gen_tys, gen_effs) => {
                 let gen_tys = gen_tys
                     .iter()
-                    .map(|arg| self.lower_ty(hir, *arg, ty_insts))
+                    .map(|ty| self.lower_ty(hir, *ty, ty_insts))
                     .collect::<Vec<_>>();
-                let id = Intern::new((decl, gen_tys.clone()));
+                let gen_effs = gen_effs
+                    .iter()
+                    .map(|e| e.map(|e| self.lower_effect(hir, e, ty_insts)).unwrap_or_default())
+                    .collect::<Vec<_>>();
+                let id = ConEffectId(Intern::new((decl, gen_tys.clone(), gen_effs.clone())));
                 if !self.effects.contains_key(&id) {
                     let decl = hir.effects.get_decl(decl);
-                    let ty_insts = TyInsts { self_ty: None, gen_tys: &gen_tys, gen_effs: &[] };
+                    let ty_insts = TyInsts { self_ty: None, gen_tys: &gen_tys, gen_effs: &gen_effs };
                     let eff = ConEffect {
                         send: self.lower_ty(hir, decl.send.unwrap(), &ty_insts),
                         recv: self.lower_ty(hir, decl.recv.unwrap(), &ty_insts),
@@ -803,10 +850,15 @@ impl<'a> fmt::Display for ConTyDisplay<'a> {
                 .collect::<String>()),
             ConTy::Effect(effs, out) => {
                 for eff_id in effs {
-                    write!(f, "{}{}", *self.effects.get_decl(eff_id.0).name, eff_id.1
-                        .iter()
-                        .map(|param| format!(" {}", self.with_ty(*param, true)))
-                        .collect::<String>())?;
+                    write!(
+                        f,
+                        "{}{}",
+                        *self.effects.get_decl(eff_id.decl()).name,
+                        eff_id.gen_tys()
+                            .iter()
+                            .map(|param| format!(" {}", self.with_ty(*param, true)))
+                            .collect::<String>(),
+                    )?;
                 }
                 write!(f, " ~ {}", self.with_ty(out, true))
             },

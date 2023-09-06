@@ -39,18 +39,36 @@ pub fn nested_parser<'a, T: 'a>(parser: impl Parser<T> + 'a, delimiter: Delimite
 }
 
 pub fn effect_set_parser(ty: impl Parser<SrcNode<ast::Type>> + 'static) -> impl Parser<ast::EffectSet> {
-    let effect_insts = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
-        .map_with_span(SrcNode::new)
-        .then(ty.repeated())
-        .separated_by(just(Token::Op(Op::Add)));
+    recursive(|eff_set| {
+        let effect_insts = term_ident_parser() // TODO: Replace with `term_item_parser` when ready
+            .map_with_span(SrcNode::new)
+            .then(ty
+                .map(Ok)
+                .or(eff_set.map_with_span(SrcNode::new).map(Err))
+                .repeated())
+            .separated_by(just(Token::Op(Op::Add)));
 
-    nested_parser(
-        effect_insts.clone(),
-        Delimiter::Paren,
-        |_| Vec::new()
-    )
-        .or(effect_insts.at_least(1))
-        .map(|effs| ast::EffectSet { effs })
+        nested_parser(
+            effect_insts.clone(),
+            Delimiter::Paren,
+            |_| Vec::new()
+        )
+            .or(effect_insts.at_least(1))
+            .map(|effs| ast::EffectSet { effs: effs
+                    .into_iter()
+                    .map(|(name, args)| {
+                        let mut gen_tys = Vec::new();
+                        let mut gen_effs = Vec::new();
+                        for arg in args {
+                            match arg {
+                                Ok(ty) => gen_tys.push(ty),
+                                Err(eff) => gen_effs.push(eff),
+                            }
+                        }
+                        (name, gen_tys, gen_effs)
+                    })
+                    .collect() })
+    })
 }
 
 pub fn type_parser() -> impl Parser<ast::Type> {
@@ -825,7 +843,10 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                 term_ident_parser().map_with_span(SrcNode::new)
                     .then(single_type_parser()
                         .map_with_span(SrcNode::new)
-                        .repeated())
+                        .repeated()
+                        .then(effect_set_parser(type_parser().map_with_span(SrcNode::new))
+                            .map_with_span(SrcNode::new)
+                            .repeated()))
                     .then_ignore(just(Token::With))
                     .then(binding.clone())
                     .then(just(Token::Comma).ignore_then(binding).or_not())
@@ -838,9 +859,10 @@ pub fn expr_parser() -> impl Parser<ast::Expr> {
                     expr,
                     handlers: handlers
                         .into_iter()
-                        .map(|((((eff_name, eff_gen_tys), send), state), recv)| ast::Handler {
+                        .map(|((((eff_name, (eff_gen_tys, eff_gen_effs)), send), state), recv)| ast::Handler {
                             eff_name,
                             eff_gen_tys,
+                            eff_gen_effs,
                             send,
                             state,
                             recv,

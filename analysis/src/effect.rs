@@ -21,7 +21,7 @@ pub struct EffectAlias {
     pub name: SrcNode<Ident>,
     pub attr: Vec<SrcNode<ast::Attr>>,
     pub gen_scope: GenScopeId,
-    pub effects: Option<Vec<(SrcNode<EffectDeclId>, Vec<TyId>)>>,
+    pub effects: Option<Vec<(SrcNode<EffectDeclId>, Vec<TyId>, Vec<Option<EffectId>>)>>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -106,7 +106,7 @@ impl Effects {
         self.effect_decls[id.0].recv = Some(recv);
     }
 
-    pub fn define_alias_effects(&mut self, id: EffectAliasId, effs: Vec<(SrcNode<EffectDeclId>, Vec<TyId>)>) {
+    pub fn define_alias_effects(&mut self, id: EffectAliasId, effs: Vec<(SrcNode<EffectDeclId>, Vec<TyId>, Vec<Option<EffectId>>)>) {
         self.effect_aliases[id.0].effects = Some(effs);
     }
 }

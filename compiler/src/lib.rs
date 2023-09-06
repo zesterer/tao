@@ -10,12 +10,7 @@ use tao_vm::Program;
 use ariadne::sources;
 use structopt::StructOpt;
 use internment::Intern;
-use std::{
-    str::FromStr,
-    io::Write,
-    collections::HashMap,
-    fmt,
-};
+use std::{io::Write, collections::HashMap};
 use error::Error;
 
 #[derive(Clone, Debug, Default, StructOpt)]
@@ -62,7 +57,7 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
 
                             resolve_imports(src_id, ast.as_deref_mut(), imported, import_errors, syntax_errors, get_file, make_src);
 
-                            if let Some(mut ast) = ast {
+                            if let Some(ast) = ast {
                                 let mut old_items = std::mem::take(&mut module.items);
                                 module.items.append(&mut ast.items.clone());
                                 module.items.append(&mut old_items);
@@ -125,7 +120,7 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
     }
 
     if let Some(ast) = ast {
-        let (ctx, mut analysis_errors) = HirContext::from_module(&ast);
+        let (ctx, analysis_errors) = HirContext::from_module(&ast);
 
         if options.debug.contains(&"hir".to_string()) {
             for (_, def) in ctx.defs.iter() {
@@ -147,7 +142,7 @@ pub fn compile<F: FnMut(SrcId) -> Option<String>, G: FnMut(SrcId, &str) -> Optio
             }
             None
         } else {
-            let (concrete, mut con_errors) = ctx.concretize();
+            let (concrete, con_errors) = ctx.concretize();
 
             if !con_errors.is_empty() {
                 for e in con_errors {

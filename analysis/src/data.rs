@@ -173,7 +173,7 @@ impl Datas {
                 self.derive_variance_ty(tys, i, stack, &mut |idx, var| apply_variance(idx, var.flip())); // Contravariance
                 self.derive_variance_ty(tys, o, stack, apply_variance);
             },
-            Ty::Data(data_id, gen_tys, gen_effs) => {
+            Ty::Data(data_id, gen_tys, _gen_effs) => {
                 self.derive_variance_for(tys, data_id, stack);
 
                 let ty_variances = self.get_data(data_id).variance_ty.clone()
@@ -185,12 +185,13 @@ impl Datas {
                 // TODO: effects
             },
             // Everything projected through an associated type is invariant
-            Ty::Assoc(ty, (_, gen_tys, gen_effs), _) => {
+            Ty::Assoc(ty, (_, gen_tys, _gen_effs), _) => {
                 // TODO: Does the self type need to be invariant?
                 self.derive_variance_ty(tys, ty, stack, &mut |idx, var| apply_variance(idx, var.combine(Variance::InOut)));
                 for ty in gen_tys {
                     self.derive_variance_ty(tys, ty, stack, &mut |idx, var| apply_variance(idx, var.combine(Variance::InOut)));
                 }
+                // TODO: effects
             },
             Ty::Effect(eff, ty) => {
                 self.derive_variance_ty(tys, ty, stack, apply_variance);
@@ -201,10 +202,11 @@ impl Datas {
                         .filter_map(|eff| eff.as_ref().ok())
                         .for_each(|eff_inst| match eff_inst {
                             EffectInst::Gen(idx, _) => apply_variance(Err(*idx), Variance::InOut),
-                            EffectInst::Concrete(_, gen_tys) => {
+                            EffectInst::Concrete(_, gen_tys, _gen_effs) => {
                                 for ty in gen_tys {
                                     self.derive_variance_ty(tys, *ty, stack, &mut |idx, var| apply_variance(idx, var.combine(Variance::InOut)));
                                 }
+                                // TODO: effects
                             },
                         }),
                 }

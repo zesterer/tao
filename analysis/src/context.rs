@@ -288,14 +288,18 @@ impl Context {
 
             let effs = alias.effects
                 .iter()
-                .filter_map(|(name, params)| match infer.ctx().effects.lookup(**name) {
+                .filter_map(|(name, gen_tys, gen_effs)| match infer.ctx().effects.lookup(**name) {
                     None => todo!("No such effect!"),
                     Some(Ok(eff)) => Some((
                         SrcNode::new(eff, name.span()),
-                        params
+                        gen_tys
                             .iter()
-                            .map(|param| param.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
+                            .map(|ty| ty.to_hir(&TypeLowerCfg::other(), &mut infer, &Scope::Empty).meta().1)
                             .collect::<Vec<TyVar>>(),
+                        gen_effs
+                            .iter()
+                            .map(|eff| lower::lower_effect_set(eff, &TypeLowerCfg::other(), &mut infer, &Scope::Empty))
+                            .collect::<Vec<EffectVar>>(),
                     )),
                     Some(Err(_)) => todo!("Nested effect aliases"),
                 })
@@ -306,10 +310,17 @@ impl Context {
 
             let effs = effs
                 .into_iter()
-                .map(|(eff, params)| (eff, params
-                    .into_iter()
-                    .map(|param| checked.reify(param))
-                    .collect()))
+                .map(|(eff, gen_tys, gen_effs)| (
+                    eff,
+                    gen_tys
+                        .into_iter()
+                        .map(|ty| checked.reify(ty))
+                        .collect(),
+                    gen_effs
+                        .into_iter()
+                        .map(|e| checked.reify_effect(e))
+                        .collect(),
+                ))
                 .collect();
 
             this.effects.define_alias_effects(alias_id, effs);
@@ -334,15 +345,24 @@ impl Context {
                 .collect::<Vec<_>>();
 
             let class_gen_scope = infer.ctx().tys.get_gen_scope(infer.ctx().classes.get(*class_id).gen_scope);
-            if class_gen_scope.len() != gen_tys.len() || class_gen_scope.len_eff() != gen_effs.len() {
+            if class_gen_scope.len() != gen_tys.len() {
                 let item_span = class_gen_scope.item_span;
                 let class_gen_scope_len = class_gen_scope.len();
-                // TODO: Proper error for effects
                 infer.ctx_mut().emit(Error::WrongNumberOfGenerics(
                     member.class.span(),
                     gen_tys.len(),
                     item_span,
                     class_gen_scope_len,
+                ));
+            } else if class_gen_scope.len_eff() != gen_effs.len() {
+                let item_span = class_gen_scope.item_span;
+                let class_gen_scope_len_eff = class_gen_scope.len_eff();
+                // TODO: Proper error for effects
+                infer.ctx_mut().emit(Error::WrongNumberOfGenerics(
+                    member.class.span(),
+                    gen_effs.len(),
+                    item_span,
+                    class_gen_scope_len_eff,
                 ));
             }
 

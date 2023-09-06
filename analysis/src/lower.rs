@@ -184,10 +184,14 @@ impl TypeLowerCfg {
 
 pub fn lower_effect_set(set: &SrcNode<ast::EffectSet>, cfg: &TypeLowerCfg, infer: &mut Infer, scope: &Scope) -> EffectVar {
     let mut eff_insts = Vec::new();
-    for (name, gen_tys) in &set.effs {
+    for (name, gen_tys, gen_effs) in &set.effs {
         let gen_tys = gen_tys
             .iter()
             .map(|ty| ty.to_hir(cfg, infer, scope).meta().1)
+            .collect::<Vec<_>>();
+        let gen_effs = gen_effs
+            .iter()
+            .map(|effs| lower_effect_set(effs, cfg, infer, scope))
             .collect::<Vec<_>>();
 
         if let Some((gen_scope_id, (idx, _))) = infer
@@ -205,12 +209,12 @@ pub fn lower_effect_set(set: &SrcNode<ast::EffectSet>, cfg: &TypeLowerCfg, infer
                         infer,
                         eff_gen_scope,
                         &gen_tys,
-                        &[],
+                        &gen_effs,
                         set.span(),
                         eff_span,
                         None,
                     ) {
-                        Ok(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Known(eff_id, gen_tys)),
+                        Ok(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Known(eff_id, gen_tys, gen_effs)),
                         Err(()) => infer.insert_effect_inst(name.span(), EffectInstInfo::Error),
                     });
                 },
@@ -218,9 +222,10 @@ pub fn lower_effect_set(set: &SrcNode<ast::EffectSet>, cfg: &TypeLowerCfg, infer
                     fn build_effect_set(infer: &mut Infer, eff_insts: &mut Vec<EffectInstVar>, eff: EffectAliasId) {
                         match &infer.ctx().effects.get_alias(eff).effects {
                             Some(effs) => {
-                                for (name, gen_tys) in effs.clone() {
-                                    eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Known(*name, Vec::new())));
+                                for (name, gen_tys, gen_effs) in effs.clone() {
+                                    eff_insts.push(infer.insert_effect_inst(name.span(), EffectInstInfo::Known(*name, Vec::new(), Vec::new())));
                                     assert_eq!(gen_tys.len(), 0);
+                                    assert_eq!(gen_effs.len(), 0);
                                 }
                             },
                             None => todo!("Effect alias cycle, should generate an error"),
@@ -1260,7 +1265,7 @@ impl ToHir for ast::Expr {
                 let mut state_ty = None;
                 handlers
                     .iter()
-                    .map(|ast::Handler { eff_name, eff_gen_tys, send, state, recv }| {
+                    .map(|ast::Handler { eff_name, eff_gen_tys, eff_gen_effs, send, state, recv }| {
                         let send = send.to_hir(cfg, infer, &scope);
                         let state = state.as_ref().map(|state| state.to_hir(cfg, infer, &scope));
                         let recv = recv.to_hir(cfg, infer, &scope
@@ -1271,6 +1276,10 @@ impl ToHir for ast::Expr {
                             .iter()
                             .map(|ty| ty.to_hir(&TypeLowerCfg::other(), infer, scope).meta().1)
                             .collect::<Vec<_>>();
+                        let eff_gen_effs = eff_gen_effs
+                            .iter()
+                            .map(|effs| lower_effect_set(effs, &TypeLowerCfg::other(), infer, scope))
+                            .collect::<Vec<_>>();
 
                         if let Some(Ok(eff_id)) = infer.ctx().effects.lookup(**eff_name) {
                             let eff = infer.ctx().effects.get_decl(eff_id);
@@ -1280,20 +1289,20 @@ impl ToHir for ast::Expr {
                                 infer,
                                 eff_gen_scope,
                                 &eff_gen_tys,
-                                &[],
+                                &eff_gen_effs,
                                 self.span(),
                                 eff_span,
                                 None,
                             ) {
                                 Ok(()) => {
-                                    let eff = infer.insert_effect_inst(self.span(), EffectInstInfo::Known(eff_id, eff_gen_tys));
+                                    let eff = infer.insert_effect_inst(self.span(), EffectInstInfo::Known(eff_id, eff_gen_tys, eff_gen_effs));
 
                                     if let Some(state) = &state {
                                         let recv_ty = infer.unknown(recv.meta().0);
                                         let recv_and_state = infer.insert(expr.meta().0, TyInfo::tuple([recv_ty, state.meta().1]));
                                         infer.make_flow(recv.meta().1, recv_and_state, EqInfo::from(self.span()));
 
-                                        infer.make_effect_send_recv(eff, send.meta().1, recv_ty, eff_name.span());
+                                        infer.make_effect_send_recv(eff, send.meta().1, recv_ty, self.span());
 
                                         match &mut state_ty {
                                             Some(state_ty) => {

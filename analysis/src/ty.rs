@@ -54,7 +54,7 @@ pub type TyId = Id<(Span, Ty)>;
 
 #[derive(Clone, Debug)]
 pub enum EffectInst {
-    Concrete(EffectDeclId, Vec<TyId>),
+    Concrete(EffectDeclId, Vec<TyId>, Vec<Option<EffectId>>),
     Gen(usize, GenScopeId),
 }
 
@@ -113,12 +113,19 @@ impl Types {
                 .into_iter()
                 .zip(ys)
                 .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| match (x, y) {
-                    (Ok(EffectInst::Concrete(x_decl, x_args)), Ok(EffectInst::Concrete(y_decl, y_args))) => x_decl
+                    (Ok(EffectInst::Concrete(x_decl, x_gen_tys, x_gen_effs)), Ok(EffectInst::Concrete(y_decl, y_gen_tys, y_gen_effs))) => x_decl
                         .cmp(&y_decl)
-                        .then_with(|| x_args
+                        .then_with(|| x_gen_tys
                             .into_iter()
-                            .zip(y_args)
-                            .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y)))),
+                            .zip(y_gen_tys)
+                            .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| self.cmp_ty(x, y))))
+                        .then_with(|| x_gen_effs
+                            .into_iter()
+                            .zip(y_gen_effs)
+                            .fold(Ordering::Equal, |a, (x, y)| a.then_with(|| match (x, y) {
+                                (Some(x), Some(y)) => self.cmp_eff(x, y),
+                                (x, y) => x.map(|_| ()).cmp(&y.map(|_| ())),
+                            }))),
                     (Ok(EffectInst::Gen(x, _)), Ok(EffectInst::Gen(y, _))) => x.cmp(&y),
                     _ => Ordering::Equal, // Errors always equal (bad?)
                 }))),
@@ -364,9 +371,16 @@ impl<'a> fmt::Display for TyDisplay<'a> {
                                     format!("!")
                                 }
                             },
-                            Ok(EffectInst::Concrete(decl, args)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, args
+                            Ok(EffectInst::Concrete(decl, gen_tys, gen_effs)) => format!("{}{}", *self.ctx.effects.get_decl(*decl).name, gen_tys
                                 .iter()
-                                .map(|arg| format!(" {}", self.with_ty(*arg, true)))
+                                .map(|ty| format!(" {}", self.with_ty(*ty, true)))
+                                .chain(gen_effs
+                                    .iter()
+                                    .map(|e| if let Some(e) = e {
+                                        format!(" {}", self.with_eff(*e, true))
+                                    } else {
+                                        format!(" ()")
+                                    }))
                                 .collect::<String>()),
                             Err(()) => format!("!"),
                         })

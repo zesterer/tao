@@ -116,24 +116,28 @@ impl fmt::Debug for Literal {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectSet {
-    pub effs: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>)>,
+    pub effs: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>, Vec<SrcNode<EffectSet>>)>,
 }
 
 impl EffectSet {
     pub fn mentions_ty(&self, name: Ident) -> bool {
         self.effs
             .iter()
-            .any(|(_, params)| params
+            .any(|(_, gen_tys, gen_effs)| gen_tys
                 .iter()
-                .any(|p| p.mentions_ty(name)))
+                .any(|p| p.mentions_ty(name)) || gen_effs
+                    .iter()
+                    .any(|e| e.mentions_ty(name)))
     }
 
     pub fn mentions_eff(&self, name: Ident) -> bool {
         self.effs
             .iter()
-            .any(|(eff, params)| **eff == name || params
+            .any(|(eff, gen_tys, gen_effs)| **eff == name || gen_tys
                 .iter()
-                .any(|p| p.mentions_eff(name)))
+                .any(|p| p.mentions_eff(name)) || gen_effs
+                .iter()
+                .any(|e| e.mentions_eff(name)))
     }
 }
 
@@ -154,7 +158,18 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn for_children(&self, mut f: impl FnMut(&Self)) {
+    pub fn for_children(&self, mut f: &mut impl FnMut(&Self)) {
+        fn for_eff(eff: &EffectSet, mut f: &mut impl FnMut(&Type)) {
+            for (_, gen_tys, gen_effs) in &eff.effs {
+                for ty in gen_tys {
+                    ty.for_children(&mut*f);
+                }
+                for eff in gen_effs {
+                    for_eff(eff, &mut*f);
+                }
+            }
+        }
+
         match self {
             Self::Error | Self::Universe | Self::Unknown => {},
             Self::List(x) => f(x),
@@ -176,9 +191,14 @@ impl Type {
                     .iter()
                     .for_each(|effs| effs.effs
                         .iter()
-                        .for_each(|(_, args)| args
-                            .iter()
-                            .for_each(|arg| f(arg))));
+                        .for_each(|(_, gen_tys, gen_effs)| {
+                            gen_tys
+                                .iter()
+                                .for_each(|ty| f(ty));
+                            gen_effs
+                                .iter()
+                                .for_each(|eff| for_eff(eff, f));
+                        }));
             },
             // TODO: Recurse into class inst?
             Self::Assoc(inner, _, _) => f(inner),
@@ -186,9 +206,14 @@ impl Type {
                 f(out);
                 set.effs
                     .iter()
-                    .for_each(|(_, args)| args
-                        .iter()
-                        .for_each(|arg| f(arg)));
+                    .for_each(|(_, gen_tys, gen_effs)| {
+                        gen_tys
+                            .iter()
+                            .for_each(|ty| f(ty));
+                        gen_effs
+                            .iter()
+                            .for_each(|e| for_eff(e, f));
+                    });
             },
         }
     }
@@ -198,7 +223,7 @@ impl Type {
             Self::Unknown => false,
             _ => true,
         };
-        self.for_children(|ty| specified &= ty.is_fully_specified());
+        self.for_children(&mut |ty| specified &= ty.is_fully_specified());
         specified
     }
 
@@ -207,7 +232,7 @@ impl Type {
             Self::Data(data, _, _) => **data == name,
             _ => false,
         };
-        self.for_children(|ty| mentions |= ty.mentions_ty(name));
+        self.for_children(&mut |ty| mentions |= ty.mentions_ty(name));
         mentions
     }
 
@@ -215,15 +240,15 @@ impl Type {
         let mut mentions = match self {
             Self::Effect(set, _) => set.effs
                 .iter()
-                .any(|(eff, _)| **eff == name),
+                .any(|(eff, _, _)| **eff == name),
             Self::Data(_, _, gen_effs) => gen_effs
                 .iter()
                 .any(|set| set.effs
                     .iter()
-                    .any(|(eff, _)| **eff == name),),
+                    .any(|(eff, _, _)| **eff == name),),
             _ => false,
         };
-        self.for_children(|ty| mentions |= ty.mentions_eff(name));
+        self.for_children(&mut |ty| mentions |= ty.mentions_eff(name));
         mentions
     }
 }
@@ -292,6 +317,7 @@ pub enum Expr {
 pub struct Handler {
     pub eff_name: SrcNode<Ident>,
     pub eff_gen_tys: Vec<SrcNode<Type>>,
+    pub eff_gen_effs: Vec<SrcNode<EffectSet>>,
     pub send: SrcNode<Binding>,
     pub state: Option<SrcNode<Binding>>,
     pub recv: SrcNode<Expr>,
@@ -414,7 +440,7 @@ pub struct Effect {
 pub struct EffectAlias {
     pub name: SrcNode<Ident>,
     pub generics: Generics,
-    pub effects: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>)>,
+    pub effects: Vec<(SrcNode<Ident>, Vec<SrcNode<Type>>, Vec<SrcNode<EffectSet>>)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

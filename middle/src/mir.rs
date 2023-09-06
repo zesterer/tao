@@ -590,7 +590,7 @@ impl Expr {
                     Expr::Intrinsic(LenList, args) => write!(f, "@len_list({})", DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(SkipList, args) => write!(f, "@skip_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
                     Expr::Intrinsic(TrimList, args) => write!(f, "@trim_list({}, {})", DisplayExpr(&args[0], self.1, false), DisplayExpr(&args[1], self.1, false)),
-                    Expr::Intrinsic(Suspend(eff), args) => write!(f, "@suspend::<{:?}>({})", eff.0, DisplayExpr(&args[0], self.1, false)),
+                    Expr::Intrinsic(Suspend(eff), args) => write!(f, "@suspend::<{:?}>({})", eff.decl(), DisplayExpr(&args[0], self.1, false)),
                     Expr::Intrinsic(Propagate(_), args) => write!(f, "{}!", DisplayExpr(&args[0], self.1, false)),
                     Expr::Match(pred, arms) if arms.len() == 1 => {
                         let (arm, body) = &arms[0];
