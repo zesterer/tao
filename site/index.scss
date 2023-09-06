@@ -65,6 +65,8 @@ body {
     font-family: monospace;
     resize: none;
     overflow: auto;
+    spellcheck: false;
+    autofocus: true;
 }
 
 .output {
