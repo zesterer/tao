@@ -1,12 +1,24 @@
 use std::path::{self, PathBuf};
 use yew::{html, Component, Context, Html, InputEvent, Event};
 use yew_ansi::Ansi;
-use web_sys::{HtmlTextAreaElement, HtmlSelectElement, window};
+use web_sys::{HtmlTextAreaElement, HtmlSelectElement, HtmlElement, HtmlIFrameElement, window};
 use wasm_bindgen::{JsCast, UnwrapThrowExt};
 use include_dir::{include_dir, Dir};
 use rand::prelude::*;
 use tao::{compile, SrcId, Options, OptMode};
 use tao_vm::{Env, exec};
+
+const TEXT_CODE_PLACEHOLDER: &str = "\
+Write code here, or choose an example from the menu above.
+
+Click 'Run' to compile and run the code.
+
+'Mode' allows switching between various compiler output modes.
+
+'Optimization' changes the optimization level and strategy of the compiler.
+";
+const TEXT_PANEL: &str = "Tao is a functional programming language with generalised algebraic effects and typeclasses";
+const URL_GITHUB: &str = "https://www.github.com/zesterer/tao";
 
 static LIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../lib");
 
@@ -92,7 +104,38 @@ impl Component for App {
             },
             Msg::Run => {
                 log!("Running...");
-                self.run();
+                let compiled = self.run();
+
+                let document = window()
+                    .unwrap_throw()
+                    .document()
+                    .unwrap_throw();
+
+                let is_graph = compiled && self.mode == "call_graph";
+
+                if is_graph {
+                    let url = format!("https://dreampuf.github.io/GraphvizOnline/#{}", urlencoding::encode(&self.output));
+                    // Switch out the iframe
+                    let iframe_holder = document
+                        .get_elements_by_class_name("iframe-holder")
+                        .item(0)
+                        .unwrap_throw();
+                    iframe_holder.set_inner_html(&format!("<iframe class=\"split call_graph\" src=\"{url}\"/>"));
+                }
+
+                // Toggle between graph and text output
+                for (class, set) in [("call_graph", false), ("output", true)] {
+                    document
+                        .get_elements_by_class_name(class)
+                        .item(0)
+                        .unwrap_throw()
+                        .dyn_into::<HtmlElement>()
+                        .unwrap_throw()
+                        .style()
+                        .set_property("display", if is_graph ^ set { "block" } else { "none" })
+                        .unwrap_throw();
+                }
+
                 true
             },
         }
@@ -123,7 +166,7 @@ impl Component for App {
                         <option value = "exec" selected=true>{ "Execute" }</option>
                         <option value = "ast">{ "AST" }</option>
                         <option value = "hir">{ "HIR" }</option>
-                        //<option value = "call_graph">{ "Call Graph" }</option>
+                        <option value = "call_graph">{ "Call Graph" }</option>
                         <option value = "mir">{ "MIR" }</option>
                         <option value = "bytecode">{ "Bytecode" }</option>
                     </select>
@@ -137,7 +180,7 @@ impl Component for App {
                         <option value = "size">{ "Size" }</option>
                     </select>
 
-                    <span>{ "Tao is a functional programming language with generalised algebraic effects and typeclasses" }<a href="https://www.github.com/zesterer/tao">{ "Github" }<i class="fa fa-github"></i></a></span>
+                    <span>{ TEXT_PANEL }<a href={ URL_GITHUB }>{ "Github" }<i class="fa fa-github"></i></a></span>
                 </div>
 
                 <div class="splitter">
@@ -147,11 +190,12 @@ impl Component for App {
                             let tgt = e.target().unwrap_throw();
                             let tgt = tgt.dyn_into::<HtmlTextAreaElement>().unwrap_throw();
                             Msg::SetSrc(tgt.value().into())
-                        })} rows="5" cols="60" name="text" placeholder="Enter code">{ &self.output }</textarea>
+                        })} rows="5" cols="60" name="text" placeholder={TEXT_CODE_PLACEHOLDER}>{ &self.output }</textarea>
                     </aside>
                     <aside class="right">
                         // Output
                         <Ansi class="split output" text={ self.output.clone() }/>
+                        <div class="iframe-holder"></div>
                     </aside>
                 </div>
             </div>
@@ -160,7 +204,7 @@ impl Component for App {
 }
 
 impl App {
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> bool {
         self.output.clear();
 
         let mut stderr = Vec::<u8>::new();
@@ -221,10 +265,12 @@ impl App {
         self.print(output);
 
         if debug.is_empty() {
-            if let Some(prog) = prog {
-                exec(&prog, self);
+            if let Some(prog) = &prog {
+                exec(prog, self);
             }
         }
+
+        prog.is_some()
     }
 }
 

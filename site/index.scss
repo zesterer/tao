@@ -87,3 +87,17 @@ a:visited { color: #bbd; }
     overflow: auto;
 }
 
+.call_graph {
+    height: 92.5vh;
+    width: 50vw;
+    max-width: 50vw;
+
+    margin: 4px;
+    padding: 8px;
+    background-color: #222;
+    color: white;
+    white-space:  pre;
+    font-family: monospace;
+    overflow: auto;
+    display: none;
+}
