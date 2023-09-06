@@ -107,9 +107,9 @@ impl Component for App {
                 let compiled = self.run();
 
                 let document = window()
-                    .unwrap_throw()
+                    .expect_throw("failed to get window")
                     .document()
-                    .unwrap_throw();
+                    .expect_throw("failed to get document");
 
                 let is_graph = compiled && self.mode == "call_graph";
 
@@ -119,7 +119,7 @@ impl Component for App {
                     let iframe_holder = document
                         .get_elements_by_class_name("iframe-holder")
                         .item(0)
-                        .unwrap_throw();
+                        .expect_throw("failed to get iframe-holder");
                     iframe_holder.set_inner_html(&format!("<iframe class=\"split call_graph\" src=\"{url}\"/>"));
                 }
 
@@ -128,12 +128,12 @@ impl Component for App {
                     document
                         .get_elements_by_class_name(class)
                         .item(0)
-                        .unwrap_throw()
+                        .expect_throw("failed to get element")
                         .dyn_into::<HtmlElement>()
-                        .unwrap_throw()
+                        .expect_throw("failed to get downcast element")
                         .style()
                         .set_property("display", if is_graph ^ set { "block" } else { "none" })
-                        .unwrap_throw();
+                        .expect_throw("failed to set display property");
                 }
 
                 true
