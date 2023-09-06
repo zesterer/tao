@@ -1,7 +1,11 @@
 body {
     background: #444;
     color: white;
+    font-family: "monospace";
 }
+
+a:link { color: #abd; }
+a:visited { color: #bbd; }
 
 .panel {
     border: 0;

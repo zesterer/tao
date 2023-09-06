@@ -136,6 +136,8 @@ impl Component for App {
                         <option value = "fast">{ "Fast" }</option>
                         <option value = "size">{ "Size" }</option>
                     </select>
+
+                    <span>{ "Tao is a functional programming language with generalised algebraic effects and typeclasses" }<a href="https://www.github.com/zesterer/tao">{ "Github" }<i class="fa fa-github"></i></a></span>
                 </div>
 
                 <div class="splitter">
