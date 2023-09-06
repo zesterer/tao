@@ -139,14 +139,18 @@ impl Component for App {
                 </div>
 
                 <div class="splitter">
-                    // Input
-                    <textarea class="split" id="editor" autofocus=true oninput={ctx.link().callback(|e: InputEvent| {
-                        let tgt = e.target().unwrap_throw();
-                        let tgt = tgt.dyn_into::<HtmlTextAreaElement>().unwrap_throw();
-                        Msg::SetSrc(tgt.value().into())
-                    })} rows="5" cols="60" name="text" placeholder="Enter code">{ &self.output }</textarea>
-                    // Output
-                    <Ansi class="split output" text={ self.output.clone() }/>
+                    <aside class="left">
+                        // Input
+                        <textarea class="split" id="editor" autofocus=true oninput={ctx.link().callback(|e: InputEvent| {
+                            let tgt = e.target().unwrap_throw();
+                            let tgt = tgt.dyn_into::<HtmlTextAreaElement>().unwrap_throw();
+                            Msg::SetSrc(tgt.value().into())
+                        })} rows="5" cols="60" name="text" placeholder="Enter code">{ &self.output }</textarea>
+                    </aside>
+                    <aside class="right">
+                        // Output
+                        <Ansi class="split output" text={ self.output.clone() }/>
+                    </aside>
                 </div>
             </div>
         }
