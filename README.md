@@ -194,12 +194,26 @@ the side effect (as might be the case in a Rust-style `try_map`), just a single 
 
 As a result of this change, `map` now accepts mapping functions that perform *any* side effect: throwing errors, IO,
 yielding values, mutation, and many more. It also accepts function that perform arbitrary combinations of effects, or
-those that have no side effects at all (the empty set is still a valid effect set!).
+those that have no side effects at all (the empty set is still a valid effect set!):
+
+```py
+# Yield each element of the list, resulting in a generator
+[1, 2, 3, 4]
+    -> map(fn x => yield(x)!)!
+
+# Generate an error if any element of the list is `0`
+[1, 2, 3, 4]
+    -> map(fn x => if x = 0 then err("no zeroes allowed")! else x)!
+
+# Print each element of the list
+[1, 2, 3, 4]
+    -> map(fn x => print(x)!)!
+```
 
 This is the expressive power of algebraic effect systems: we no longer need to worry about
 [function colours](https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/), hidden
 panics/exceptions, or write many versions of a function to handle all kinds of irregular control flow. Because algebraic
-effect generalise so well, it also becomes possible to use them to separate out interfaces from implementations in a
+effects generalise so well, it also becomes possible to use them to separate out interfaces from implementations in a
 composable way, allowing developers to swap out the implementation of even very core APIs (such as filesystem access) as
 required without the complexity and awkwardness of intricate callback systems.
 
