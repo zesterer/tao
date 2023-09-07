@@ -193,8 +193,11 @@ Note that, otherwise, the implementation remains the same: we have not needed to
 the side effect (as might be the case in a Rust-style `try_map`), just a single additional operator.
 
 As a result of this change, `map` now accepts mapping functions that perform *any* side effect: throwing errors, IO,
-yielding values, mutation, and many more. This is the expressive power of algebraic effect systems: we no longer need to
-worry about [function colours](https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/), hidden
+yielding values, mutation, and many more. It also accepts function that perform arbitrary combinations of effects, or
+those that have no side effects at all (the empty set is still a valid effect set!).
+
+This is the expressive power of algebraic effect systems: we no longer need to worry about
+[function colours](https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/), hidden
 panics/exceptions, or write many versions of a function to handle all kinds of irregular control flow. Because algebraic
 effect generalise so well, it also becomes possible to use them to separate out interfaces from implementations in a
 composable way, allowing developers to swap out the implementation of even very core APIs (such as filesystem access) as
