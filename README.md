@@ -153,7 +153,7 @@ fn map A, B : (A -> B) -> [A] -> [B]
 
 ```py
 [1, 2, 3, 4]
-    -> map(fn x => x + 1)
+    -> map(fn x => x * 2)
 
 # Result: [2, 4, 6, 8]
 ```
@@ -166,7 +166,9 @@ necessary to do one of two things:
 - Have the function 'silently' exit through stack unwinding, as is the case in C#, C++, etc.
 - Create a copy of the function that can handle failure like `try_map` as in Rust
 
-*It's worth noting that Haskell mostly solves this problem with monads: but they're frequently unwieldy*
+*It's worth noting that Haskell mostly solves this problem with monads: but they're frequently unwieldy. Effect systems
+and monads have many similarities, but the former works much harder to make them integrate better with regular control
+flow.*
 
 In Tao, this problem can be solved by making `map` generic over an effect parameter, like so:
 
