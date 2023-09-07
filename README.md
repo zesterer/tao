@@ -64,6 +64,7 @@ have a few goals for the language itself:
     - [x] Arbitrary `where` clauses (including associated type equality)
     - [x] Lazy associated item inference (`Foo.Bar.Baz.Biz` lazily infers the class at each step!)
     - [x] Type checker is Turing-complete (is this a feature? Probably not...)
+    - [x] Variance is properly tracked through both type and effect parameters
 - [x] Pattern matching
     - [x] Destructuring and binding
     - [x] ADT patterns
@@ -87,6 +88,7 @@ have a few goals for the language itself:
     - [x] Effect sets (i.e: can express values that have multiple side effects)
     - [x] Effect aliases
     - [x] Effect handlers (including stateful handlers, allowing expressing effect-driven IO in terms of monadic IO)
+    - [x] Effects can be parameterised by both types and other effects
 - [x] Built-in lists
     - [x] Dedicated list construction syntax (`[a, b, c]`, `[a, b .. c, d]`, etc.)
 - [x] Explicit tail call optimisation
@@ -119,7 +121,7 @@ have a few goals for the language itself:
         - [ ] Transform `data Nat = Succ Nat | Zero` into a runtime integer
         - [ ] Transform `data List A = Cons (A, List A) | Nil` into a vector
 - [ ] Algebraic effects
-    - [ ] Higher-ranked effects (needed for async, etc.)
+    - [ ] Higher-ranked effects (needed for proper `async` support)
     - [ ] Arbitrary resuming/suspending of effect objects
     - [ ] Full monomorphisation of effect objects
 
@@ -132,6 +134,74 @@ have a few goals for the language itself:
 ## Interesting features
 
 Here follows a selection of features that are either unique to Tao or are uncommon among other languages.
+
+### Generalised algebraic effects
+
+Tao has support for 'generalised algebraic effects'. 'Effects' means that Tao can express the side-effects of functions
+(IO, mutation, exceptions, async, etc.) in type signatures. 'Generalised' means that it's possible for you to create
+and use your own effects to express whatever your heart desires. 'Algebraic' means that Tao allows code to be generic
+over an effect (or set of effects). For example, consider the `map` function, used to apply a function to each element
+of a list in turn:
+
+```py
+fn map A, B : (A -> B) -> [A] -> [B]
+    | _, [] => []
+    \ f, [x .. xs] => [f(x) .. xs]
+```
+
+`map` can be used like so to, for example, double all elements of a list:
+
+```py
+[1, 2, 3, 4]
+    -> map(fn x => x + 1)
+
+# Result: [2, 4, 6, 8]
+```
+
+Most languages, such as Rust, have a function like this. Unfortunately, it breaks down quickly when we want to do
+anything even *slightly* different to a 'pure' mapping between elements within the mapping function. For example,
+consider a program for which the mapping function is fallible, or requires some asynchronous operation to complete. It's
+necessary to do one of two things:
+
+- Have the function 'silently' exit through stack unwinding, as is the case in C#, C++, etc.
+- Create a copy of the function that can handle failure like `try_map` as in Rust
+
+*It's worth noting that Haskell mostly solves this problem with monads: but they're frequently unwieldy*
+
+In Tao, this problem can be solved by making `map` generic over an effect parameter, like so:
+
+```py
+fn map A, B, e : (A -> e ~ B) -> [A] -> e ~ [B]
+    | _, [] => []
+    \ f, [x .. xs] => [f(x)! .. xs]
+```
+
+A few things have changed here.
+
+Firstly, we've introduced an effect parameter, `e`. Secondly, the type signature has changed: the mapper function,
+`A -> B`, now has `e` attached to its return type, resulting in `A -> e ~ B`. This is also present in the final return
+type of the function, `e ~ [B]`, expressing that the side effects of the function as a whole correspond to those
+performed by the mapping function.
+
+Secondly, a `!` operator has appeared within the implementation after calling the mapping function. This is the 'effect
+propagation' operator and signals to the compiler that the side effects of `f` should be lifted to the signature of the
+function as a whole.
+
+Note that, otherwise, the implementation remains the same: we have not needed to use any complicated machinery to handle
+the side effect (as might be the case in a Rust-style `try_map`), just a single additional operator.
+
+As a result of this change, `map` now accepts mapping functions that perform *any* side effect: throwing errors, IO,
+yielding values, mutation, and many more. This is the expressive power of algebraic effect systems: we no longer need to
+worry about [function colours](https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/), hidden
+panics/exceptions, or write many versions of a function to handle all kinds of irregular control flow. Because algebraic
+effect generalise so well, it also becomes possible to use them to separate out interfaces from implementations in a
+composable way, allowing developers to swap out the implementation of even very core APIs (such as filesystem access) as
+required without the complexity and awkwardness of intricate callback systems.
+
+In Tao, effects are [kinds](https://en.wikipedia.org/wiki/Kind_(type_theory)), just like types, lifetimes, and constants
+in Rust. They're also represented independently of function signatures too, as 'effect objects' (you can think of effect
+objects as being like `Future`/`Promise`s, but generalised to all side effects). Because of this, it's possible to use
+them in a vast array of contexts.
 
 ### Arithmetic patterns
 
@@ -206,7 +276,9 @@ understandable.
     <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/call_graph.svg" alt="Call graph of an expression parser in Tao"/>
 </a>
 
-## Commands
+## Usage
+
+### Commands
 
 Compile/run a `.tao` file
 
@@ -226,7 +298,7 @@ Compile/run the standard library
 cargo run -- lib/std.tao
 ```
 
-## Compiler arguments
+### Compiler arguments
 
 - `--opt`: Specify an optimisation mode (`none`, `fast`, `size`)
 
