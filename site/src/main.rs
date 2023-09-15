@@ -120,20 +120,22 @@ impl Component for App {
                         .get_elements_by_class_name("iframe-holder")
                         .item(0)
                         .expect_throw("failed to get iframe-holder");
-                    iframe_holder.set_inner_html(&format!("<iframe class=\"split call_graph\" src=\"{url}\"/>"));
+                    iframe_holder.set_inner_html(&format!("<iframe class=\"call_graph\" src=\"{url}\"/>"));
                 }
 
                 // Toggle between graph and text output
                 for (class, set) in [("call_graph", false), ("output", true)] {
-                    document
+                    if let Some(elem) = document
                         .get_elements_by_class_name(class)
                         .item(0)
-                        .expect_throw("failed to get element")
-                        .dyn_into::<HtmlElement>()
-                        .expect_throw("failed to get downcast element")
-                        .style()
-                        .set_property("display", if is_graph ^ set { "block" } else { "none" })
-                        .expect_throw("failed to set display property");
+                    {
+                        elem
+                            .dyn_into::<HtmlElement>()
+                            .expect_throw("failed to get downcast element")
+                            .style()
+                            .set_property("display", if is_graph ^ set { "block" } else { "none" })
+                            .expect_throw("failed to set display property");
+                    }
                 }
 
                 true
@@ -194,8 +196,8 @@ impl Component for App {
                     </aside>
                     <aside class="right">
                         // Output
-                        <Ansi class="split output" text={ self.output.clone() }/>
-                        <div class="iframe-holder"></div>
+                        <div class="split output"><Ansi text={ self.output.clone() }/></div>
+                        <div class="split iframe-holder"></div>
                     </aside>
                 </div>
             </div>
