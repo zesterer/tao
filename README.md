@@ -146,7 +146,7 @@ of a list in turn:
 ```py
 fn map A, B : (A -> B) -> [A] -> [B]
     | _, [] => []
-    \ f, [x .. xs] => [f(x) .. xs]
+    \ f, [x .. xs] => [f(x) .. map(f, xs)]
 ```
 
 `map` can be used like so to, for example, double all elements of a list:
@@ -175,7 +175,7 @@ In Tao, this problem can be solved by making `map` generic over an effect parame
 ```py
 fn map A, B, e : (A -> e ~ B) -> [A] -> e ~ [B]
     | _, [] => []
-    \ f, [x .. xs] => [f(x)! .. xs]
+    \ f, [x .. xs] => [f(x)! .. map(f, xs)!]
 ```
 
 A few things have changed here.
