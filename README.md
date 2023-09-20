@@ -2,8 +2,8 @@
 
 [You can now test Tao in the browser!](https://tao.jsbarretto.com/)
 
-A statically-typed functional language with polymorphism, typeclasses, algebraic effects, sum types, pattern-matching,
-first-class functions, currying, good diagnostics, and much more!
+A statically-typed functional language with polymorphism, typeclasses, generalised algebraic effects, sum types,
+pattern-matching, first-class functions, currying, good diagnostics, and much more!
 
 <a href = "https://www.github.com/zesterer/tao">
     <img src="https://raw.githubusercontent.com/zesterer/tao/master/misc/example.png" alt="Demo of Tao's features"/>
@@ -46,7 +46,8 @@ have a few goals for the language itself:
     - I have only a high-school knowledge of mathematics. I want to use Tao as a test bench to help me learn more about
       mathematics, proofs, type systems, logic, and computation.
     - In addition, I hope that Tao can serve as a useful tool for others looking to get into language design, compiler
-      development, or simply functional programming in general.
+      development, or simply functional programming in general: the codebase is relatively small and pragmatic (at
+      least, given the complexity of some of the language features).
 
 ## Features
 
@@ -92,6 +93,7 @@ have a few goals for the language itself:
 - [x] Built-in lists
     - [x] Dedicated list construction syntax (`[a, b, c]`, `[a, b .. c, d]`, etc.)
 - [x] Explicit tail call optimisation
+    - [ ] Better syntax/guarantees
 - [x] Optimisation
     - [x] Monomorphisation of generic code
     - [x] Inlining
@@ -127,9 +129,37 @@ have a few goals for the language itself:
 
 ## Planned features
 
-- [ ] Better syntax
+- [ ] Better syntax (perhaps indentation-sensitivity for pattern matching?)
 - [ ] Module system (instead of `import` copy/paste)
 - [ ] LLVM/Cranelift backend
+
+## Philosophy
+
+- **Prefer general solutions over special casing**: Flexible and general features should be preferred over specific
+  solutions that might produce rough edges down the line that require even more special-case solutions to solve. It is
+  better to provide a smaller core of general features than to grow the language into an eclectic mess.
+
+- **Correctness over convenience**: If something is wrong or has edge-cases, don't paper over the cracks. Tao tries to
+  force the programmer to write programs that are as well-formed and as bug-free as reasonably possible. Under/overflow
+  *matters*. Unhandled patterns *matter*. Overlapping class impls *matter*.
+
+- **Do the obvious thing**: When there's a choice to be made about behaviour, the thing that's most often correct should
+  be done. All other things should be default-on lints or errors.
+
+- **Similar concepts should have similar syntax**: List/record/data type construction and destruction (i.e: pattern
+  matching) share the same syntax. Function argument patterns and `when` patterns share the same syntax.
+
+- **Local reasoning**: Where possible, the behaviour of a program/function/expression should be obvious with local-only
+  information. No wild overrides or behavioural changes that require looking at imports to understand.
+
+- **Say what you mean**: Syntax *does* matter! Programs are designed to be read, and Tao should encourage the writing of
+  programs that tell a linear story. If you're needing to jump forward and backward to understand a program, that's
+  something that needs fixing, if at all possible.
+
+- **Abstraction should preserve 'core' semantics**: Many languages provide complex macro systems that allow immense
+  towers of meta-programming. Tao is not opposed to meta-programming and abstraction, but aggressively tries to keep
+  such things in terms of the surface syntax, improving legibility and minimising the element of surprise. As a nice
+  addition, rejecting macros makes Tao much friendlier to IDEs and static analysis systems.
 
 ## Interesting features
 
