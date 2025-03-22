@@ -1,0 +1,4 @@
+def num = 1
+def num = 2
+
+def main = 42

@@ -1,0 +1,9 @@
+[package]
+name = "tao"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ariadne = "0.5.1"
+chumsky = { git = "https://github.com/zesterer/chumsky.git", features = ["pratt"] }
+internment = { version = "0.8.6", features = ["arc"] }
