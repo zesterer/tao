@@ -60,6 +60,7 @@ where
 #[derive(Debug)]
 pub enum Expr {
     Nat(u64),
+    Local(Ident),
 }
 
 #[derive(Debug)]
@@ -99,10 +100,12 @@ where
     let ident = select_ref! { TokenTree::Token(Token::Ident(ident)) => ident.clone() };
 
     {
-        let atom = choice((
+        let atom = select_ref! {
             // Literals
-            select_ref! { TokenTree::Token(Token::Nat(x)) => Expr::Nat(*x) },
-        ));
+            TokenTree::Token(Token::Nat(x)) => Expr::Nat(*x),
+            // Identifiers
+            TokenTree::Token(Token::Ident(x)) => Expr::Local(x.clone()),
+        };
 
         parsers.expr.define(
             atom /*.pratt(())*/
