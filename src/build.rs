@@ -18,9 +18,7 @@ pub fn lower_pkg(build: &RwLock<Build>, id: PkgId, fname: Filename) {
         let eoi = Span::new(fname.clone(), 0..src.len());
 
         // Lex
-        let (tokens, errors) = lexer()
-            .parse(src.with_context(fname))
-            .into_output_errors();
+        let (tokens, errors) = lexer().parse(src.with_context(fname)).into_output_errors();
         for err in errors {
             pkg_ctx.emit_error(err.into());
         }

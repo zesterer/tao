@@ -1,8 +1,8 @@
 use super::*;
 use core::{
-    ops::{Deref, DerefMut},
-    marker::PhantomData,
     hash::Hash,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -37,7 +37,9 @@ pub struct Id<T>(usize, PhantomData<T>);
 
 impl<T> Copy for Id<T> {}
 impl<T> Clone for Id<T> {
-    fn clone(&self) -> Self { *self }
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 #[derive(Debug)]
@@ -65,12 +67,18 @@ impl<T, N: Hash + Eq> Store<T, N> {
                 self.items.push(item);
                 e.insert(id);
                 Ok(id)
-            },
+            }
         }
     }
 
-    pub fn lookup(&self, name: &N) -> Option<Id<T>> { self.lut.get(name).copied() }
+    pub fn lookup(&self, name: &N) -> Option<Id<T>> {
+        self.lut.get(name).copied()
+    }
 
-    pub fn get(&self, id: Id<T>) -> &T { &self.items[id.0] }
-    pub fn get_mut(&mut self, id: Id<T>) -> &mut T { &mut self.items[id.0] }
+    pub fn get(&self, id: Id<T>) -> &T {
+        &self.items[id.0]
+    }
+    pub fn get_mut(&mut self, id: Id<T>) -> &mut T {
+        &mut self.items[id.0]
+    }
 }

@@ -61,10 +61,10 @@ impl Error {
                 }
                 ErrorKind::ExpectedFound(expected, found) => {
                     format!("Found `{found}`, but expected {}", expected.join(", "))
-                },
+                }
                 ErrorKind::UnresolvedLocal(local) => {
                     format!("Local `{local}` was not found in scope")
-                },
+                }
             })
             .with_labels({
                 let labels = match &self.kind {
@@ -72,12 +72,12 @@ impl Error {
                         (format!("first instance"), self.labels[0].clone()),
                         (format!("second instance"), self.labels[1].clone()),
                     ],
-                    ErrorKind::ExpectedFound(_, found) => vec![
-                        (format!("unexpected `{found}`"), self.labels[0].clone()),
-                    ],
-                    ErrorKind::UnresolvedLocal(_) => vec![
-                        (format!("not found"), self.labels[0].clone()),
-                    ],
+                    ErrorKind::ExpectedFound(_, found) => {
+                        vec![(format!("unexpected `{found}`"), self.labels[0].clone())]
+                    }
+                    ErrorKind::UnresolvedLocal(_) => {
+                        vec![(format!("not found"), self.labels[0].clone())]
+                    }
                 };
 
                 labels
@@ -93,15 +93,18 @@ impl Error {
     }
 }
 
-
 impl<'src> From<chumsky::error::Rich<'src, char, Span>> for Error {
     fn from(rich: chumsky::error::Rich<'src, char, Span>) -> Self {
         Self {
             kind: match rich.reason() {
-                chumsky::error::RichReason::ExpectedFound { expected, found } => ErrorKind::ExpectedFound(
-                    expected.into_iter().map(|e| e.to_string()).collect(),
-                    found.map(|e| e.to_string()).unwrap_or_else(|| "end of input".to_string()),
-                ),
+                chumsky::error::RichReason::ExpectedFound { expected, found } => {
+                    ErrorKind::ExpectedFound(
+                        expected.into_iter().map(|e| e.to_string()).collect(),
+                        found
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(|| "end of input".to_string()),
+                    )
+                }
                 chumsky::error::RichReason::Custom(_) => todo!(),
             },
             labels: vec![rich.span().clone()],
@@ -113,10 +116,15 @@ impl<'src> From<chumsky::error::Rich<'src, syntax::TokenTree, Span>> for Error {
     fn from(rich: chumsky::error::Rich<'src, syntax::TokenTree, Span>) -> Self {
         Self {
             kind: match rich.reason() {
-                chumsky::error::RichReason::ExpectedFound { expected, found } => ErrorKind::ExpectedFound(
-                    expected.into_iter().map(|e| format!("{e:?}")).collect(),
-                    found.as_ref().map(|e| format!("{e:?}")).unwrap_or_else(|| "end of input".to_string()),
-                ),
+                chumsky::error::RichReason::ExpectedFound { expected, found } => {
+                    ErrorKind::ExpectedFound(
+                        expected.into_iter().map(|e| format!("{e:?}")).collect(),
+                        found
+                            .as_ref()
+                            .map(|e| format!("{e:?}"))
+                            .unwrap_or_else(|| "end of input".to_string()),
+                    )
+                }
                 chumsky::error::RichReason::Custom(_) => todo!(),
             },
             labels: vec![rich.span().clone()],

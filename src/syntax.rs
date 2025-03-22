@@ -1,6 +1,7 @@
 use super::*;
 use chumsky::{
     input::{BorrowInput, StrInput},
+    pratt::*,
     prelude::*,
 };
 use std::{fmt, path::PathBuf};
@@ -22,7 +23,11 @@ pub type Ident = ArcIntern<String>;
 pub enum Token {
     Ident(Ident),
     Nat(u64),
+    // Keywords
     Def,
+    Let,
+    In,
+    // Operators
     Eq,
 }
 
@@ -41,6 +46,8 @@ where
         let token = choice((
             // Keywords
             text::keyword("def").to(Token::Def),
+            text::keyword("let").to(Token::Let),
+            text::keyword("in").to(Token::In),
             // Punctuation
             just("=").to(Token::Eq),
             // Identifiers
@@ -61,6 +68,7 @@ where
 pub enum Expr {
     Nat(u64),
     Local(Ident),
+    Let(SrcNode<Ident>, Box<SrcNode<Expr>>, Box<SrcNode<Expr>>),
 }
 
 #[derive(Debug)]
@@ -97,7 +105,7 @@ where
     };
 
     let tok = |tok| just(TokenTree::Token(tok));
-    let ident = select_ref! { TokenTree::Token(Token::Ident(ident)) => ident.clone() };
+    let ident = select_ref! { TokenTree::Token(Token::Ident(ident)) = e => SrcNode::new(ident.clone(), e.span()) };
 
     {
         let atom = select_ref! {
@@ -105,17 +113,30 @@ where
             TokenTree::Token(Token::Nat(x)) => Expr::Nat(*x),
             // Identifiers
             TokenTree::Token(Token::Ident(x)) => Expr::Local(x.clone()),
-        };
+        }
+        .map_with(|expr, e| SrcNode::new(expr, e.span()));
 
         parsers.expr.define(
-            atom /*.pratt(())*/
-                .map_with(|tt, e| SrcNode::new(tt, e.span())),
+            atom.pratt((
+                // let x = y in z
+                prefix(
+                    1,
+                    tok(Token::Let)
+                        .ignore_then(ident)
+                        .then_ignore(tok(Token::Eq))
+                        .then(parsers.expr.clone())
+                        .then_ignore(tok(Token::In)),
+                    |(local, rhs), then, e| {
+                        SrcNode::new(Expr::Let(local, Box::new(rhs), Box::new(then)), e.span())
+                    },
+                ),
+            )),
         );
     }
 
     {
         let def = tok(Token::Def)
-            .ignore_then(ident.map_with(|tt, e| SrcNode::new(tt, e.span())))
+            .ignore_then(ident)
             .then_ignore(tok(Token::Eq))
             .then(parsers.expr.clone())
             .map(|(name, body)| Def { name, body });

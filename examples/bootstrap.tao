@@ -1,4 +1,5 @@
 def five = 5
-def five2 = five
+def five2 =
+	let x = five in x
 
 def main = 42

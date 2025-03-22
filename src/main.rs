@@ -8,7 +8,7 @@ use crate::{
     build::{lower_pkg, Build, PkgId},
     error::Error,
     syntax::{lexer, parsers, Filename, Ident, Span},
-    util::{SrcNode, Id, Store},
+    util::{Id, SrcNode, Store},
 };
 use chumsky::{input::Input as _, span::Span as _, Parser as _};
 use std::{
@@ -30,5 +30,7 @@ fn main() {
 
     let build = build.into_inner().unwrap();
 
-    if !build.is_err { dbg!(build); }
+    if !build.is_err {
+        dbg!(build);
+    }
 }

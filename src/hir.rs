@@ -27,8 +27,9 @@ pub struct Def {
 pub enum Expr {
     Error,
     Nat(u64),
-    Local(()),
+    Local(Ident),
     Def(Id<Def>),
+    Let(Ident, Box<Expr>, Box<Expr>),
 }
 
 pub struct PkgCtx<'build> {
@@ -52,12 +53,12 @@ impl<'build, 'ctx> Scope<'build, 'ctx> {
         }
     }
 
-    fn resolve_local(&self, name: &Ident) -> Option<()> {
+    fn resolve_local(&self, name: &Ident) -> Option<Ident> {
         self.locals
             .iter()
             .rev()
             .find(|local| *local == name)
-            .map(|_| ())
+            .cloned()
     }
 
     fn resolve_def(&self, name: Ident) -> Option<Id<Def>> {
@@ -68,17 +69,37 @@ impl<'build, 'ctx> Scope<'build, 'ctx> {
         }
     }
 
+    fn with_locals<R>(
+        &mut self,
+        locals: impl IntoIterator<Item = Ident>,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let old_locals = self.locals.len();
+        self.locals.extend(locals);
+        let r = f(self);
+        self.locals.truncate(old_locals);
+        r
+    }
+
     fn lower_expr(&mut self, expr: &SrcNode<syntax::Expr>) -> Expr {
         match &expr.inner {
             syntax::Expr::Nat(x) => Expr::Nat(*x),
-            syntax::Expr::Local(local) => if let Some(local) = self.resolve_local(local) {
-                Expr::Local(local)
-            } else if let Some(def) = self.resolve_def(local.clone()) {
-                Expr::Def(def)
-            } else {
-                self.ctx.emit_error(Error::unresolved_local(local.clone(), expr.span.clone()));
-                Expr::Error
-            },
+            syntax::Expr::Local(local) => {
+                if let Some(local) = self.resolve_local(local) {
+                    Expr::Local(local)
+                } else if let Some(def) = self.resolve_def(local.clone()) {
+                    Expr::Def(def)
+                } else {
+                    self.ctx
+                        .emit_error(Error::unresolved_local(local.clone(), expr.span.clone()));
+                    Expr::Error
+                }
+            }
+            syntax::Expr::Let(local, rhs, then) => {
+                let rhs = self.lower_expr(rhs);
+                let then = self.with_locals([local.inner.clone()], |scope| scope.lower_expr(then));
+                Expr::Let(local.inner.clone(), Box::new(rhs), Box::new(then))
+            }
         }
     }
 }
@@ -105,9 +126,12 @@ impl<'build> PkgCtx<'build> {
             match &item.inner {
                 syntax::Item::Def(def) => match self.pkg.defs.add(
                     path.add((*def.name).clone()),
-                    Def { decl_span: def.name.span.clone(), body: None },
+                    Def {
+                        decl_span: def.name.span.clone(),
+                        body: None,
+                    },
                 ) {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(old) => {
                         let old_span = old.decl_span.clone();
                         self.emit_error(Error::duplicate_def(
@@ -115,7 +139,7 @@ impl<'build> PkgCtx<'build> {
                             old_span,
                             def.name.span.clone(),
                         ));
-                    },
+                    }
                 },
             }
         }
@@ -127,7 +151,11 @@ impl<'build> PkgCtx<'build> {
             match &item.inner {
                 syntax::Item::Def(def) => {
                     let hir_def = Scope::new(self, path.clone()).lower_expr(&def.body);
-                    let def_id = self.pkg.defs.lookup(&path.add((*def.name).clone())).unwrap();
+                    let def_id = self
+                        .pkg
+                        .defs
+                        .lookup(&path.add((*def.name).clone()))
+                        .unwrap();
                     self.pkg.defs.get_mut(def_id).body.get_or_insert(hir_def);
                 }
             }
