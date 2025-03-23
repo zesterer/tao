@@ -1,52 +1,51 @@
 use super::*;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    OnceLock,
+};
 
 pub type PkgId = Filename;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Build {
-    pub is_err: bool,
-    pkgs: HashMap<PkgId, hir::Pkg>,
+    pub is_err: AtomicBool,
+    pub pkgs: HashMap<PkgId, (PkgManifest, OnceLock<hir::Pkg>)>,
 }
 
-pub fn lower_pkg(build: &RwLock<Build>, id: PkgId, fname: Filename) {
-    let (is_err, pkg) = {
-        let build = &*build.read().unwrap();
-        let mut pkg_ctx = hir::PkgCtx::new(build);
+pub fn lower_pkg(build: &Build, id: PkgId, fname: Filename) {
+    let mut pkg_ctx = hir::PkgCtx::new(build);
 
-        // Read from disk
-        let src = match std::fs::read_to_string(&*fname.0) {
-            Ok(src) => src,
-            Err(err) => panic!("Could not open `{fname}`: {err}"),
-        };
-        let eoi = Span::new(fname.clone(), 0..src.len());
-
-        // Lex
-        let (tokens, errors) = lexer().parse(src.with_context(fname)).into_output_errors();
-        for err in errors {
-            pkg_ctx.emit_error(err.into());
-        }
-        let tokens = tokens.unwrap_or_default();
-
-        // Parser
-        let (module, errors) = parsers()
-            .module
-            .parse(tokens.map(eoi, |tt| (&tt.inner, &tt.span)))
-            .into_output_errors();
-        for err in errors {
-            pkg_ctx.emit_error(err.into());
-        }
-
-        // Lower to HIR
-        if let Some(module) = module {
-            pkg_ctx.declare_module(hir::ItemPath::default(), &module);
-            pkg_ctx.lower_module(hir::ItemPath::default(), &module);
-        }
-
-        (pkg_ctx.is_err, pkg_ctx.pkg)
+    // Read from disk
+    let src = match std::fs::read_to_string(&*fname.0) {
+        Ok(src) => src,
+        Err(err) => panic!("Could not open `{fname}`: {err}"),
     };
-    let mut build = build.write().unwrap();
-    build.is_err |= is_err;
-    build.pkgs.insert(id, pkg);
+    let eoi = Span::new(fname.clone(), 0..src.len());
+
+    // Lex
+    let (tokens, errors) = lexer().parse(src.with_context(fname)).into_output_errors();
+    for err in errors {
+        pkg_ctx.emit_error(err.into());
+    }
+    let tokens = tokens.unwrap_or_default();
+
+    // Parser
+    let (module, errors) = parsers()
+        .module
+        .parse(tokens.map(eoi, |tt| (&tt.inner, &tt.span)))
+        .into_output_errors();
+    for err in errors {
+        pkg_ctx.emit_error(err.into());
+    }
+
+    // Lower to HIR
+    if let Some(module) = module {
+        pkg_ctx.declare_module(hir::ItemPath::default(), &module);
+        pkg_ctx.lower_module(hir::ItemPath::default(), &module);
+    }
+
+    build.is_err.fetch_or(pkg_ctx.is_err, Ordering::Relaxed);
+    let _ = build.pkgs[&id].1.set(pkg_ctx.pkg);
 }
 
 #[derive(Clone, Debug)]
@@ -110,16 +109,16 @@ fn parse_manifest(pkg_id: PkgId) -> Result<(PkgManifest, Span), Error> {
     Ok((manifest, Span::new(fname, 0..src.len())))
 }
 
-pub fn walk_deps(pkg_id: PkgId) -> Result<HashMap<PkgId, PkgManifest>, Error> {
+pub fn walk_deps(pkg_id: PkgId) -> Result<Build, Error> {
     fn walk(
         pkg_id: PkgId,
         stack: &mut Vec<PkgId>,
-        pkgs: &mut HashMap<PkgId, PkgManifest>,
+        pkgs: &mut HashMap<PkgId, (PkgManifest, OnceLock<hir::Pkg>)>,
     ) -> Result<(), Error> {
         if let Entry::Vacant(e) = pkgs.entry(pkg_id.clone()) {
             let (manifest, manifest_span) = parse_manifest(pkg_id.clone())?;
 
-            e.insert(manifest.clone());
+            e.insert((manifest.clone(), OnceLock::new()));
 
             stack.push(pkg_id);
             for (_, (dep_id, dep_span)) in &manifest.deps {
@@ -141,5 +140,8 @@ pub fn walk_deps(pkg_id: PkgId) -> Result<HashMap<PkgId, PkgManifest>, Error> {
 
     let mut pkgs = HashMap::default();
     walk(pkg_id, &mut Vec::new(), &mut pkgs)?;
-    Ok(pkgs)
+    Ok(Build {
+        is_err: AtomicBool::new(false),
+        pkgs,
+    })
 }

@@ -46,18 +46,16 @@ fn main() {
         args.path
             .unwrap_or_else(|| std::env::current_dir().unwrap()),
     ));
-    let pkgs = match build::walk_deps(manifest_path) {
-        Ok(pkgs) => pkgs,
+    let mut build = match build::walk_deps(manifest_path) {
+        Ok(build) => build,
         Err(err) => {
             err.emit();
             return;
         }
     };
 
-    let build = RwLock::new(Build::default());
-
     std::thread::scope(|s| {
-        let mut todo = pkgs.keys().cloned().collect::<Vec<_>>();
+        let mut todo = build.pkgs.keys().cloned().collect::<Vec<_>>();
         let mut done = Vec::new();
 
         let (tx, rx) = std::sync::mpsc::channel::<PkgId>();
@@ -69,12 +67,13 @@ fn main() {
 
             // Start compiling any packages if their dependencies have all been compiled.
             for pkg_id in todo.extract_if(.., |todo| {
-                pkgs[todo]
+                build.pkgs[todo]
+                    .0
                     .deps
                     .values()
                     .all(|(dep_id, _)| done.contains(dep_id))
             }) {
-                let pkg = &pkgs[&pkg_id];
+                let pkg = &build.pkgs[&pkg_id].0;
                 let root_module = Filename(ArcIntern::new(
                     [pkg_id.0.as_path(), pkg.root.as_path()]
                         .into_iter()
@@ -96,9 +95,7 @@ fn main() {
         }
     });
 
-    let build = build.into_inner().unwrap();
-
-    // if !build.is_err {
-    //     dbg!(build);
-    // }
+    if !build.is_err.into_inner() {
+        dbg!(build.pkgs);
+    }
 }
