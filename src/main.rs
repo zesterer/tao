@@ -56,37 +56,49 @@ fn main() {
 
     let build = RwLock::new(Build::default());
 
-    for (pkg_id, pkg) in pkgs {
-        let root_module = Filename(ArcIntern::new(
-            [pkg_id.0.as_path(), pkg.root.as_path()]
-                .into_iter()
-                .collect(),
-        ));
-        build::lower_pkg(&build, pkg_id, root_module);
-    }
+    std::thread::scope(|s| {
+        let mut todo = pkgs.keys().cloned().collect::<Vec<_>>();
+        let mut done = Vec::new();
 
-    // std::thread::scope(|s| {
-    //     // let mut started = Vec::new();
-    //     // let mut done = Vec::new();
-    //     // let mut todo = args.deps.clone();
-    //     // todo.push(args.pkg.clone());
+        let (tx, rx) = std::sync::mpsc::channel::<PkgId>();
 
-    //     // let (tx, rx) = std::sync::mpsc::channel();
+        loop {
+            if todo.is_empty() {
+                break;
+            }
 
-    //     // loop {
-    //     //     if done
-    //     // }
+            // Start compiling any packages if their dependencies have all been compiled.
+            for pkg_id in todo.extract_if(.., |todo| {
+                pkgs[todo]
+                    .deps
+                    .values()
+                    .all(|(dep_id, _)| done.contains(dep_id))
+            }) {
+                let pkg = &pkgs[&pkg_id];
+                let root_module = Filename(ArcIntern::new(
+                    [pkg_id.0.as_path(), pkg.root.as_path()]
+                        .into_iter()
+                        .collect(),
+                ));
+                s.spawn({
+                    let build = &build;
+                    let tx = tx.clone();
+                    move || {
+                        println!("Compiling {}...", pkg.name);
+                        build::lower_pkg(build, pkg_id.clone(), root_module);
+                        tx.send(pkg_id).unwrap();
+                    }
+                });
+            }
 
-    //     // for (name, path) in &args.deps {
-
-    //     // }
-
-    //     // s.spawn
-    // });
+            // When a package has finished compiling, add it to the done set
+            done.push(rx.recv().unwrap());
+        }
+    });
 
     let build = build.into_inner().unwrap();
 
-    if !build.is_err {
-        dbg!(build);
-    }
+    // if !build.is_err {
+    //     dbg!(build);
+    // }
 }
