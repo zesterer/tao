@@ -1,0 +1,3 @@
+name std
+root "src/std.tao"
+dependencies {}

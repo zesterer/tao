@@ -1,0 +1,5 @@
+name bootstrap
+root "src/bootstrap.tao"
+dependencies {
+    std "lib/std"
+}

@@ -62,6 +62,7 @@ where
     })
     .repeated()
     .collect()
+    .padded()
 }
 
 #[derive(Debug)]
