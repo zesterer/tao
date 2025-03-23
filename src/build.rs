@@ -13,14 +13,14 @@ pub struct Build {
 }
 
 pub fn lower_pkg(build: &Build, id: PkgId, fname: Filename) {
-    let mut pkg_ctx = hir::PkgCtx::new(build);
-
     // Read from disk
     let src = match std::fs::read_to_string(&*fname.0) {
         Ok(src) => src,
         Err(err) => panic!("Could not open `{fname}`: {err}"),
     };
     let eoi = Span::new(fname.clone(), 0..src.len());
+
+    let mut pkg_ctx = hir::PkgCtx::new(build, eoi.clone());
 
     // Lex
     let (tokens, errors) = lexer().parse(src.with_context(fname)).into_output_errors();
@@ -42,9 +42,13 @@ pub fn lower_pkg(build: &Build, id: PkgId, fname: Filename) {
     if let Some(module) = module {
         pkg_ctx.declare_module(hir::ItemPath::default(), &module);
         pkg_ctx.lower_module(hir::ItemPath::default(), &module);
+    } else {
+        // TODO: Mark the package as broken? Or not? Should recovery handle this case?
     }
 
-    build.is_err.fetch_or(pkg_ctx.is_err, Ordering::Relaxed);
+    if pkg_ctx.is_err {
+        build.is_err.store(true, Ordering::Relaxed);
+    }
     let _ = build.pkgs[&id].1.set(pkg_ctx.pkg);
 }
 

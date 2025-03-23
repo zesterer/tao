@@ -7,6 +7,7 @@ pub enum ErrorKind {
     UnresolvedLocal(Ident),
     CyclicDependency(PkgId, Vec<PkgId>),
     MissingManifestKey(Ident),
+    NoMain,
 }
 
 #[derive(Debug)]
@@ -43,6 +44,13 @@ impl Error {
             labels: vec![span],
         }
     }
+
+    pub fn no_main(span: Span) -> Self {
+        Self {
+            kind: ErrorKind::NoMain,
+            labels: vec![span],
+        }
+    }
 }
 
 impl Error {
@@ -72,6 +80,7 @@ impl Error {
                 ErrorKind::UnresolvedLocal(..) => 3,
                 ErrorKind::CyclicDependency(..) => 4,
                 ErrorKind::MissingManifestKey(..) => 5,
+                ErrorKind::NoMain => 6,
             })
             .with_message(match &self.kind {
                 ErrorKind::DuplicateDef(name) => {
@@ -96,6 +105,9 @@ impl Error {
                 ErrorKind::MissingManifestKey(key) => {
                     format!("Manifest key `{key}` is required in this node")
                 }
+                ErrorKind::NoMain => {
+                    format!("Root package does not contain a `main` def")
+                }
             })
             .with_labels({
                 let labels = match &self.kind {
@@ -109,10 +121,21 @@ impl Error {
                     ErrorKind::UnresolvedLocal(..) => {
                         vec![(format!("not found"), self.labels[0].clone())]
                     }
-                    ErrorKind::CyclicDependency(..) => Vec::new(),
+                    ErrorKind::CyclicDependency(..) => {
+                        vec![(
+                            format!("this package is cyclically dependent"),
+                            self.labels[0].clone(),
+                        )]
+                    }
                     ErrorKind::MissingManifestKey(key) => {
                         vec![(
                             format!("manifest key `{key}` should be present in this node"),
+                            self.labels[0].clone(),
+                        )]
+                    }
+                    ErrorKind::NoMain => {
+                        vec![(
+                            format!("does not contain a `main` def"),
                             self.labels[0].clone(),
                         )]
                     }

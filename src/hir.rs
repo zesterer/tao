@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct ItemPath(Vec<Ident>);
+pub struct ItemPath(pub Vec<Ident>);
 
 impl ItemPath {
     pub fn add(&self, part: Ident) -> Self {
@@ -11,16 +11,17 @@ impl ItemPath {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Pkg {
     // TODO: Also list pkg dependencies
-    defs: Store<Def, ItemPath>,
+    pub defs: Store<Def, ItemPath>,
+    pub root_module_span: Span,
 }
 
 #[derive(Debug)]
 pub struct Def {
     decl_span: Span,
-    body: Option<Expr>,
+    pub body: Option<Expr>,
 }
 
 #[derive(Debug)]
@@ -105,10 +106,13 @@ impl<'build, 'ctx> Scope<'build, 'ctx> {
 }
 
 impl<'build> PkgCtx<'build> {
-    pub fn new(build: &'build Build) -> Self {
+    pub fn new(build: &'build Build, root_module_span: Span) -> Self {
         Self {
             build,
-            pkg: Pkg::default(),
+            pkg: Pkg {
+                defs: Store::default(),
+                root_module_span,
+            },
             is_err: false,
         }
     }

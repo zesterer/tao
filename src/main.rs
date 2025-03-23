@@ -1,6 +1,7 @@
 pub mod build;
 pub mod error;
 pub mod hir;
+pub mod mir;
 pub mod syntax;
 pub mod util;
 
@@ -14,48 +15,35 @@ use chumsky::{input::Input as _, span::Span as _, Parser as _};
 use std::{
     collections::{hash_map::Entry, HashMap},
     path::PathBuf,
+    process::ExitCode,
     sync::RwLock,
 };
 
 use internment::ArcIntern;
 
-fn parse_dep(s: &str) -> Result<(String, PathBuf), String> {
-    use chumsky::prelude::*;
-    let dep = text::ident::<_, extra::Err<Rich<char>>>()
-        .then_ignore(just('@'))
-        .then(any().repeated().to_slice());
-    dep.parse(s)
-        .into_result()
-        .map(|(name, path)| (name.to_string(), PathBuf::from(path)))
-        .map_err(|mut errs| errs.remove(0).to_string())
-}
-
 #[derive(clap::Parser)]
 pub struct Args {
     path: Option<PathBuf>,
-    // #[arg(value_parser = parse_dep)]
-    // pkg: (String, PathBuf),
-    // #[arg(long = "dep", value_parser = parse_dep)]
-    // deps: Vec<(String, PathBuf)>,
 }
 
-fn main() {
+fn main() -> ExitCode {
     let args = <Args as clap::Parser>::parse();
 
-    let manifest_path = Filename(ArcIntern::new(
+    let root_pkg_id = Filename(ArcIntern::new(
         args.path
             .unwrap_or_else(|| std::env::current_dir().unwrap()),
     ));
-    let mut build = match build::walk_deps(manifest_path) {
+    let mut build = match build::walk_deps(root_pkg_id.clone()) {
         Ok(build) => build,
         Err(err) => {
             err.emit();
-            return;
+            return ExitCode::FAILURE;
         }
     };
 
     std::thread::scope(|s| {
         let mut todo = build.pkgs.keys().cloned().collect::<Vec<_>>();
+        let mut started = 0;
         let mut done = Vec::new();
 
         let (tx, rx) = std::sync::mpsc::channel::<PkgId>();
@@ -73,6 +61,7 @@ fn main() {
                     .values()
                     .all(|(dep_id, _)| done.contains(dep_id))
             }) {
+                started += 1;
                 let pkg = &build.pkgs[&pkg_id].0;
                 let root_module = Filename(ArcIntern::new(
                     [pkg_id.0.as_path(), pkg.root.as_path()]
@@ -83,7 +72,7 @@ fn main() {
                     let build = &build;
                     let tx = tx.clone();
                     move || {
-                        println!("Compiling {}...", pkg.name);
+                        println!("[{started}/{}] Compiling {}...", build.pkgs.len(), pkg.name);
                         build::lower_pkg(build, pkg_id.clone(), root_module);
                         tx.send(pkg_id).unwrap();
                     }
@@ -95,7 +84,32 @@ fn main() {
         }
     });
 
-    if !build.is_err.into_inner() {
-        dbg!(build.pkgs);
+    let mut prog = mir::Program::default();
+
+    let root_pkg = build.pkgs[&root_pkg_id].1.get().unwrap();
+    let entry_path = hir::ItemPath(vec![Ident::from_ref("main")]);
+    let main_def = root_pkg.defs.lookup(&entry_path);
+
+    if main_def.is_none() {
+        Error::no_main(root_pkg.root_module_span.clone()).emit();
+        *build.is_err.get_mut() = true;
+    };
+
+    // Final bail point of no return
+    // If an error was previously encountered, we exit. From now on, all compiler errors are ICEs.
+    if *build.is_err.get_mut() {
+        println!(
+            "Compilation of `{}` terminated due to previous errors.",
+            build.pkgs[&root_pkg_id].0.name
+        );
+        return ExitCode::FAILURE;
     }
+
+    prog.lower(&build, (root_pkg_id.clone(), main_def.unwrap()));
+
+    println!(
+        "Compilation of `{}` succeeded.",
+        build.pkgs[&root_pkg_id].0.name
+    );
+    ExitCode::SUCCESS
 }
